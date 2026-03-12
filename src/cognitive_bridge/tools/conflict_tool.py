@@ -11,17 +11,16 @@ from typing import Optional
 
 from fastmcp import Context
 
+from cognitive_bridge.engine.resolver import resolve_conflict
 from cognitive_bridge.models import (
     AssertionAuthor,
+    CompositionStage,
     Conflict,
     ConflictDetectionLayer,
     EventType,
     ResolutionPath,
-    CompositionStage,
 )
-from cognitive_bridge.engine.resolver import resolve_conflict
 from cognitive_bridge.server import mcp, save_stage_to_db
-
 
 # ═══════════════════════════════════════════════════════════════
 # Internal Helpers
@@ -284,7 +283,8 @@ async def cb_manage_conflict(
             f"At path: {topic_path}\n"
             f"Layer: DELEGATED (manually created by Claude)\n"
             f"Status: {new_conflict.status.value}\n"
-            "Use cb_manage_conflict(action='resolve'|'challenge'|'defer'|'propose_experiment') to act."
+            "Use cb_manage_conflict(action='resolve'|'challenge'"
+            "|'defer'|'propose_experiment') to act."
         )
 
     # ── propose_experiment ────────────────────────────────────

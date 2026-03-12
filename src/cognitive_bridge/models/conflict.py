@@ -1,7 +1,7 @@
 """Conflict model — detected contradictions between assertions."""
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -48,7 +48,10 @@ class Conflict(BaseModel):
     )
     experiment_protocol: Optional[str] = Field(
         default=None,
-        description="Concrete test to settle the debate empirically. Required for PROPOSE_EXPERIMENT.",
+        description=(
+            "Concrete test to settle the debate empirically. "
+            "Required for PROPOSE_EXPERIMENT."
+        ),
     )
     experiment_result: Optional[str] = Field(
         default=None,

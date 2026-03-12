@@ -18,7 +18,10 @@ class Decision(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     id: str = Field(default_factory=lambda: _new_id("dec"))
-    topic_path: str = Field(..., description="Hierarchical path of the domain this decision governs")
+    topic_path: str = Field(
+        ...,
+        description="Hierarchical path of the domain this decision governs",
+    )
     decision: str = Field(..., description="What was decided")
     rationale: str = Field(..., description="Why this was decided")
 
@@ -50,7 +53,10 @@ class Decision(BaseModel):
     )
     reversibility: str = Field(
         default="unknown",
-        description="How reversible? 'trivial' | 'moderate' | 'costly' | 'irreversible' | 'unknown'",
+        description=(
+            "How reversible? "
+            "'trivial' | 'moderate' | 'costly' | 'irreversible' | 'unknown'"
+        ),
     )
 
     created_at: datetime = Field(default_factory=_now_utc)

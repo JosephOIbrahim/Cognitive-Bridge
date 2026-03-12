@@ -31,8 +31,8 @@ _SEMANTIC_AVAILABLE = False
 _MODEL = None
 
 try:
-    from sentence_transformers import SentenceTransformer
     import numpy as np  # bundled with sentence-transformers
+    from sentence_transformers import SentenceTransformer
     _SEMANTIC_AVAILABLE = True
 except ImportError:
     pass

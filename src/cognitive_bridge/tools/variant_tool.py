@@ -20,7 +20,6 @@ from cognitive_bridge.models import (
 )
 from cognitive_bridge.server import mcp, save_stage_to_db
 
-
 # ═══════════════════════════════════════════════════════════════
 # Internal Helpers
 # ═══════════════════════════════════════════════════════════════
