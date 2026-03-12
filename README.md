@@ -178,6 +178,64 @@ You should see 8 tools starting with `cb_`.
 
 ---
 
+## Claude Code Setup
+
+Claude Code (the CLI) uses `~/.claude.json` for global MCP server configuration.
+
+### 1. Add to your config
+
+Open `~/.claude.json` in a text editor. Find the top-level `"mcpServers"` object
+and add the `cognitive-bridge` entry:
+
+```json
+{
+  "mcpServers": {
+    "cognitive-bridge": {
+      "type": "stdio",
+      "command": "/path/to/Cognitive-Bridge/.venv/Scripts/python.exe",
+      "args": ["-m", "cognitive_bridge.server"],
+      "env": {
+        "CB_DB_DIR": "/path/to/.cognitive_bridge/projects"
+      }
+    }
+  }
+}
+```
+
+Replace `/path/to/` with your actual paths. On Windows:
+
+```json
+"command": "C:/Users/YourName/Cognitive-Bridge/.venv/Scripts/python.exe"
+```
+
+On macOS/Linux:
+
+```json
+"command": "/home/yourname/Cognitive-Bridge/.venv/bin/python"
+```
+
+### 2. Restart Claude Code
+
+Start a new Claude Code session. The Cognitive Bridge tools will be
+available immediately.
+
+### 3. Verify
+
+In Claude Code, the tools appear automatically. You can confirm by
+asking Claude to list MCP tools, or by calling:
+
+```
+cb_manage_project(action="create", project_id="my-project")
+```
+
+### Project-scoped configuration
+
+If you only want the bridge available in a specific project, add the
+`mcpServers` entry to that project's `.claude/settings.json` instead
+of the global `~/.claude.json`.
+
+---
+
 ## How It Works
 
 ### Composition Arcs (LIVRPS)
