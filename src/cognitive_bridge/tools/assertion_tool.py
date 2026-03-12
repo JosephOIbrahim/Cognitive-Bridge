@@ -19,7 +19,7 @@ from typing import Optional
 from fastmcp import Context
 
 from cognitive_bridge.engine.conflict_detector import detect_semantic_conflicts
-from cognitive_bridge.tools._common import get_active_stage
+from cognitive_bridge.tools._common import auto_export_usda, get_active_stage
 from cognitive_bridge.engine.resolver import (
     ResolutionResult,
     add_assertion,
@@ -302,6 +302,7 @@ async def cb_manage_assertion(
                     orphan_deps.append(dep_path)
 
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         response = _format_resolution_result(result, "ASSERT")
         if orphan_deps:
             dep_warning = (
@@ -328,6 +329,7 @@ async def cb_manage_assertion(
         except ValueError as e:
             return f"ERROR: {e}"
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         return _format_resolution_result(result, "PROMOTE")
 
     # ── retract ─────────────────────────────────────────────────
@@ -339,6 +341,7 @@ async def cb_manage_assertion(
         except ValueError as e:
             return f"ERROR: {e}"
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         return _format_resolution_result(result, "RETRACT")
 
     # ── falsify ─────────────────────────────────────────────────
@@ -355,6 +358,7 @@ async def cb_manage_assertion(
         except ValueError as e:
             return f"ERROR: {e}"
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         return _format_resolution_result(result, "FALSIFY")
 
     # ── unknown ─────────────────────────────────────────────────

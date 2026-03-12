@@ -12,7 +12,7 @@ from typing import Optional
 from fastmcp import Context
 
 from cognitive_bridge.engine.resolver import resolve_conflict
-from cognitive_bridge.tools._common import get_active_stage
+from cognitive_bridge.tools._common import auto_export_usda, get_active_stage
 from cognitive_bridge.models import (
     AssertionAuthor,
     CompositionStage,
@@ -140,6 +140,7 @@ async def cb_manage_conflict(
             return f"ERROR: {exc}"
 
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         lines = [
             f"Conflict {conflict_id} resolved.",
             f"Resolution: {path.value}",
@@ -176,6 +177,7 @@ async def cb_manage_conflict(
             return f"ERROR: {exc}"
 
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         lines = [
             f"Challenge registered for conflict {conflict_id}.",
             f"Steelman: {steelman_summary}",
@@ -203,6 +205,7 @@ async def cb_manage_conflict(
             return f"ERROR: {exc}"
 
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         lines = [
             f"Conflict {conflict_id} deferred.",
             f"Status: {conflict.status.value}",
@@ -247,6 +250,7 @@ async def cb_manage_conflict(
             },
         )
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         return (
             f"Conflict created: {new_conflict.id}\n"
             f"Between: {assertion_a_id} vs {assertion_b_id}\n"
@@ -281,6 +285,7 @@ async def cb_manage_conflict(
             return f"ERROR: {exc}"
 
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
         lines = [
             f"Experiment proposed for conflict {conflict_id}.",
             f"Protocol: {experiment_protocol}",
