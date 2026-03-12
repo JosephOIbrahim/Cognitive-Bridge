@@ -1,0 +1,193 @@
+"""CUTLASS-informed GEMM benchmark across precisions.
+
+Measures real GPU throughput via PyTorch torch.mm() and compares against
+RTX 4090 theoretical peaks. Results feed into the GPU Specialist expert
+for benchmark-driven optimization recommendations.
+
+Usage:
+    python benchmarks/cutlass_bench.py
+"""
+
+from __future__ import annotations
+
+import sys
+import time
+
+# RTX 4090 theoretical peak TFLOPS (Ada Lovelace SM89)
+_RTX4090_PEAKS = {
+    "fp32": 82.6,
+    "tf32": 165.2,
+    "fp16": 330.3,
+    "bf16": 330.3,
+}
+
+_DEFAULT_SIZES = [1024, 2048, 4096, 8192]
+_DEFAULT_PRECISIONS = ["fp32", "tf32", "fp16", "bf16"]
+
+
+def run_benchmark(
+    sizes: list[int] | None = None,
+    precisions: list[str] | None = None,
+    warmup_iters: int = 3,
+    bench_iters: int = 10,
+) -> list[dict]:
+    """Run GEMM benchmarks and return structured results.
+
+    Returns list of dicts matching CUTLASSBenchmarkResult fields.
+    """
+    try:
+        import torch
+    except ImportError:
+        print("PyTorch not installed -- skipping CUTLASS benchmark")
+        return []
+
+    if not torch.cuda.is_available():
+        print("CUDA not available -- skipping CUTLASS benchmark")
+        return []
+
+    sizes = sizes or _DEFAULT_SIZES
+    precisions = precisions or _DEFAULT_PRECISIONS
+    device = torch.device("cuda:0")
+
+    print(f"Device: {torch.cuda.get_device_name(device)}")
+    print(f"CUDA: {torch.version.cuda}")
+    print(f"PyTorch: {torch.__version__}")
+    print()
+
+    # Warmup GPU
+    x = torch.randn(1024, 1024, device=device)
+    for _ in range(warmup_iters):
+        _ = x @ x
+    torch.cuda.synchronize()
+
+    results: list[dict] = []
+
+    dtype_map = {
+        "fp32": torch.float32,
+        "tf32": torch.float32,  # TF32 uses float32 tensors with TF32 math
+        "fp16": torch.float16,
+        "bf16": torch.bfloat16,
+    }
+
+    for precision in precisions:
+        dtype = dtype_map.get(precision)
+        if dtype is None:
+            continue
+
+        peak = _RTX4090_PEAKS.get(precision, 82.6)
+
+        # TF32 isolation: explicitly control the matmul backend
+        if precision == "tf32":
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        elif precision == "fp32":
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = False
+
+        for n in sizes:
+            a = torch.randn(n, n, device=device, dtype=dtype)
+            b = torch.randn(n, n, device=device, dtype=dtype)
+
+            # Warmup this size
+            for _ in range(warmup_iters):
+                _ = torch.mm(a, b)
+            torch.cuda.synchronize()
+
+            # Benchmark
+            start = time.perf_counter()
+            for _ in range(bench_iters):
+                _ = torch.mm(a, b)
+            torch.cuda.synchronize()
+            elapsed = time.perf_counter() - start
+
+            time_ms = (elapsed / bench_iters) * 1000
+            flops = 2 * n * n * n
+            tflops = flops * bench_iters / elapsed / 1e12
+            efficiency = (tflops / peak) * 100
+
+            results.append({
+                "precision": precision,
+                "matrix_size": n,
+                "tflops": round(tflops, 2),
+                "theoretical_peak": peak,
+                "efficiency_pct": round(efficiency, 1),
+                "time_ms": round(time_ms, 3),
+            })
+
+    # Restore TF32 defaults
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+    # Memory bandwidth test (same method as pytorch_bench.py)
+    size_gb = 4
+    n_elements = size_gb * 1024 * 1024 * 1024 // 4
+    data = torch.randn(n_elements, device=device, dtype=torch.float32)
+    torch.cuda.synchronize()
+
+    start = time.perf_counter()
+    for _ in range(bench_iters):
+        _ = data.clone()
+    torch.cuda.synchronize()
+    elapsed = time.perf_counter() - start
+
+    bw_gbs = 2 * size_gb * bench_iters / elapsed  # read + write
+    results.append({
+        "precision": "memory_bandwidth",
+        "matrix_size": 0,
+        "tflops": 0.0,
+        "theoretical_peak": 1008.0,  # RTX 4090 theoretical BW in GB/s
+        "efficiency_pct": round((bw_gbs / 1008.0) * 100, 1),
+        "time_ms": round((elapsed / bench_iters) * 1000, 3),
+    })
+
+    del data
+    torch.cuda.empty_cache()
+
+    return results
+
+
+def print_results(results: list[dict]) -> None:
+    """Print benchmark results with efficiency bars and summary."""
+    if not results:
+        print("No results to display.")
+        return
+
+    print("=" * 72)
+    print(f"{'Precision':<12} {'Size':>6} {'TFLOPS':>8} {'Peak':>8} {'Eff%':>6}  Bar")
+    print("-" * 72)
+
+    for r in results:
+        if r["precision"] == "memory_bandwidth":
+            bw = r["efficiency_pct"] * 1008.0 / 100
+            bar_len = int(r["efficiency_pct"] / 2)
+            bar = "#" * bar_len + "." * (50 - bar_len)
+            print(f"{'mem_bw':<12} {'4GB':>6} {bw:>7.1f}G {'1008':>7}G {r['efficiency_pct']:>5.1f}%  [{bar}]")
+            continue
+
+        bar_len = int(r["efficiency_pct"] / 2)
+        bar = "#" * min(bar_len, 50) + "." * max(50 - bar_len, 0)
+        print(
+            f"{r['precision']:<12} {r['matrix_size']:>6} "
+            f"{r['tflops']:>8.2f} {r['theoretical_peak']:>8.1f} "
+            f"{r['efficiency_pct']:>5.1f}%  [{bar}]"
+        )
+
+    # Summary: best efficiency per precision
+    print()
+    print("Peak efficiency per precision:")
+    precisions_seen: dict[str, float] = {}
+    for r in results:
+        p = r["precision"]
+        if p == "memory_bandwidth":
+            continue
+        if p not in precisions_seen or r["efficiency_pct"] > precisions_seen[p]:
+            precisions_seen[p] = r["efficiency_pct"]
+
+    for p in sorted(precisions_seen.keys()):
+        eff = precisions_seen[p]
+        print(f"  {p:<8}: {eff:>5.1f}%")
+
+
+if __name__ == "__main__":
+    bench_results = run_benchmark()
+    print_results(bench_results)

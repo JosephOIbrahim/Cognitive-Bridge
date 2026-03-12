@@ -1,0 +1,770 @@
+2026-02-25T00:27:46.105Z [DEBUG] MDM settings load completed in 14ms
+2026-02-25T00:27:46.114Z [DEBUG] [init] configureGlobalMTLS starting
+2026-02-25T00:27:46.114Z [DEBUG] [init] configureGlobalMTLS complete
+2026-02-25T00:27:46.114Z [DEBUG] [init] configureGlobalAgents starting
+2026-02-25T00:27:46.114Z [DEBUG] [init] configureGlobalAgents complete
+2026-02-25T00:27:46.134Z [DEBUG] Using bash path: "C:\Program Files\Git\bin\bash.exe"
+2026-02-25T00:27:46.139Z [DEBUG] Applying permission update: Adding 21 allow rule(s) to destination 'localSettings': ["Bash(cd:*)","Bash(cd /c/Users/User/usd-cognitive-substrate && git checkout -b lossless-v10 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m pytest tests/lossless/unit/test_schema.py -v 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m pytest tests/lossless/unit/test_clean_channel.py -v 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m pytest tests/lossless/unit/test_injection.py -v 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m pytest tests/lossless/unit/test_routing.py -v 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m pytest tests/lossless/unit/test_experts.py -v 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m pytest tests/lossless/integration/ -v 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m pytest tests/lossless/unit/ -v --tb=short 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m pytest tests/lossless/ -v --tb=short 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -c \"\nfrom pathlib import Path\nfrom src.lossless.consistency.report import generate_report\nroot = Path\\('cognitive_substrate/lossless_root.usda'\\)\nreport = generate_report\\(root\\)\nPath\\('CONSISTENCY_REPORT.md'\\).write_text\\(report, encoding='utf-8'\\)\nprint\\(report\\)\n\" 2>&1)","Bash(head:*)","Bash(cd /c/Users/User/usd-cognitive-substrate && git push -u origin lossless-v10 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && git fetch --all 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && git pull origin lossless-v10 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m src.lossless.integration.cli compile --dry-run 2>&1)","Bash(cd /c/Users/User/usd-cognitive-substrate && python -m src.lossless.integration.cli compile 2>&1)","Bash(cd C:/Users/User/usd-cognitive-substrate && python -m src.lossless.integration.cli compile 2>&1)","Bash(python:*)","Bash(dir C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude:*)","Bash(mkdir -p /c/Users/User/AppData/Local/Temp/claude/C--Users-User-usd-cognitive-substrate/tasks && cd /c/Users/User/usd-cognitive-substrate && python -m src.lossless.integration.cli compile 2>&1)"]
+2026-02-25T00:27:46.140Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-02-25T00:27:46.142Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-02-25T00:27:46.143Z [DEBUG] [STARTUP] Running setup()...
+2026-02-25T00:27:46.146Z [DEBUG] Loading skills from: managed=C:\Program Files\ClaudeCode\.claude\skills, user=C:\Users\User\.claude\skills, project=[]
+2026-02-25T00:27:46.149Z [DEBUG] Error log sink initialized
+2026-02-25T00:27:46.152Z [DEBUG] [STARTUP] setup() completed in 9ms
+2026-02-25T00:27:46.152Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-02-25T00:27:46.184Z [DEBUG] [Claude in Chrome] Found chrome profiles: Default
+2026-02-25T00:27:46.191Z [DEBUG] [Claude in Chrome] Extension fcoeoabgfenejglbffodgkkbkcdhcgfn found in chrome Default
+2026-02-25T00:27:46.192Z [DEBUG] Git remote URL: https://github.com/JosephOIbrahim/usd-cognitive-substrate.git
+2026-02-25T00:27:46.192Z [DEBUG] Parsed repository: github.com/JosephOIbrahim/usd-cognitive-substrate from URL: https://github.com/JosephOIbrahim/usd-cognitive-substrate.git
+2026-02-25T00:27:46.197Z [DEBUG] Loading plugin superpowers-developing-for-claude-code from source: "./"
+2026-02-25T00:27:46.197Z [DEBUG] Loading plugin last30days from source: "./"
+2026-02-25T00:27:46.197Z [DEBUG] Loading plugin image-generator from source: "./plugins/image-generator"
+2026-02-25T00:27:46.197Z [DEBUG] Loading plugin llm-council from source: "./plugins/llm-council"
+2026-02-25T00:27:46.199Z [DEBUG] Using manifest version for image-generator@dair-academy-plugins: 1.1.1
+2026-02-25T00:27:46.199Z [DEBUG] Using manifest version for superpowers-developing-for-claude-code@superpowers-developing-for-claude-code-dev: 0.3.1
+2026-02-25T00:27:46.199Z [DEBUG] Using manifest version for llm-council@dair-academy-plugins: 1.0.0
+2026-02-25T00:27:46.199Z [DEBUG] Using manifest version for last30days@last30days: 2.0.0
+2026-02-25T00:27:46.200Z [DEBUG] Plugin llm-council@dair-academy-plugins version 1.0.0 already cached at C:\Users\User\.claude\plugins\cache\dair-academy-plugins\llm-council\1.0.0
+2026-02-25T00:27:46.200Z [DEBUG] Resolved local plugin llm-council to versioned cache: C:\Users\User\.claude\plugins\cache\dair-academy-plugins\llm-council\1.0.0
+2026-02-25T00:27:46.200Z [DEBUG] Plugin last30days@last30days version 2.0.0 already cached at C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0
+2026-02-25T00:27:46.200Z [DEBUG] Resolved local plugin last30days to versioned cache: C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0
+2026-02-25T00:27:46.200Z [DEBUG] Plugin superpowers-developing-for-claude-code@superpowers-developing-for-claude-code-dev version 0.3.1 already cached at C:\Users\User\.claude\plugins\cache\superpowers-developing-for-claude-code-dev\superpowers-developing-for-claude-code\0.3.1
+2026-02-25T00:27:46.200Z [DEBUG] Resolved local plugin superpowers-developing-for-claude-code to versioned cache: C:\Users\User\.claude\plugins\cache\superpowers-developing-for-claude-code-dev\superpowers-developing-for-claude-code\0.3.1
+2026-02-25T00:27:46.200Z [DEBUG] Plugin image-generator@dair-academy-plugins version 1.1.1 already cached at C:\Users\User\.claude\plugins\cache\dair-academy-plugins\image-generator\1.1.1
+2026-02-25T00:27:46.200Z [DEBUG] Resolved local plugin image-generator to versioned cache: C:\Users\User\.claude\plugins\cache\dair-academy-plugins\image-generator\1.1.1
+2026-02-25T00:27:46.206Z [DEBUG] Loaded 90 unique skills (90 unconditional, 0 conditional, managed: 0, user: 23, project: 0, additional: 0, legacy commands: 67)
+2026-02-25T00:27:46.208Z [DEBUG] Found 4 plugins (4 enabled, 0 disabled)
+2026-02-25T00:27:46.208Z [DEBUG] getPluginSkills: Processing 4 enabled plugins
+2026-02-25T00:27:46.208Z [DEBUG] Checking plugin superpowers-developing-for-claude-code: skillsPath=exists, skillsPaths=0 paths
+2026-02-25T00:27:46.208Z [DEBUG] Attempting to load skills from plugin superpowers-developing-for-claude-code default skillsPath: C:\Users\User\.claude\plugins\cache\superpowers-developing-for-claude-code-dev\superpowers-developing-for-claude-code\0.3.1\skills
+2026-02-25T00:27:46.208Z [DEBUG] Total plugin commands loaded: 0
+2026-02-25T00:27:46.208Z [DEBUG] Registered 0 hooks from 4 plugins
+2026-02-25T00:27:46.208Z [DEBUG] Total plugin agents loaded: 0
+2026-02-25T00:27:46.208Z [DEBUG] Loaded 2 skills from plugin superpowers-developing-for-claude-code default directory
+2026-02-25T00:27:46.208Z [DEBUG] Checking plugin last30days: skillsPath=none, skillsPaths=1 paths
+2026-02-25T00:27:46.208Z [DEBUG] Attempting to load skills from plugin last30days skillsPaths: C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0\
+2026-02-25T00:27:46.208Z [DEBUG] Loading from skillPath: C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0\ for plugin last30days
+2026-02-25T00:27:46.214Z [DEBUG] Loaded 1 skills from plugin last30days custom path: C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0\
+2026-02-25T00:27:46.214Z [DEBUG] Checking plugin image-generator: skillsPath=exists, skillsPaths=0 paths
+2026-02-25T00:27:46.214Z [DEBUG] Attempting to load skills from plugin image-generator default skillsPath: C:\Users\User\.claude\plugins\cache\dair-academy-plugins\image-generator\1.1.1\skills
+2026-02-25T00:27:46.215Z [DEBUG] Loaded 1 skills from plugin image-generator default directory
+2026-02-25T00:27:46.215Z [DEBUG] Checking plugin llm-council: skillsPath=exists, skillsPaths=0 paths
+2026-02-25T00:27:46.215Z [DEBUG] Attempting to load skills from plugin llm-council default skillsPath: C:\Users\User\.claude\plugins\cache\dair-academy-plugins\llm-council\1.0.0\skills
+2026-02-25T00:27:46.215Z [DEBUG] Loaded 1 skills from plugin llm-council default directory
+2026-02-25T00:27:46.215Z [DEBUG] Total plugin skills loaded: 5
+2026-02-25T00:27:46.215Z [DEBUG] getSkills returning: 90 skill dir commands, 5 plugin skills, 3 bundled skills
+2026-02-25T00:27:46.216Z [DEBUG] [STARTUP] Commands and agents loaded in 64ms
+2026-02-25T00:27:46.218Z [DEBUG] [STARTUP] Running showSetupScreens()...
+2026-02-25T00:27:46.271Z [DEBUG] Grove: Using fresh cached config
+2026-02-25T00:27:46.276Z [DEBUG] Path C:\Users\User\usd-cognitive-substrate already tracked for repo josephoibrahim/usd-cognitive-substrate
+2026-02-25T00:27:46.277Z [DEBUG] [Perfetto] initializePerfettoTracing called, env value: undefined
+2026-02-25T00:27:46.277Z [DEBUG] [3P telemetry] isTelemetryEnabled=false (CLAUDE_CODE_ENABLE_TELEMETRY=undefined)
+2026-02-25T00:27:46.282Z [DEBUG] [keybindings] KeybindingSetup initialized with 103 bindings, 0 warnings
+2026-02-25T00:27:46.293Z [DEBUG] [keybindings] Watching for changes to C:\Users\User\.claude\keybindings.json
+2026-02-25T00:27:46.325Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979266325
+2026-02-25T00:27:46.325Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:27:46.326Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:27:46.326Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:27:46.326Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979266325 to C:\Users\User\.claude.json
+2026-02-25T00:27:46.326Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:27:46.658Z [DEBUG] [STARTUP] showSetupScreens() completed in 440ms
+2026-02-25T00:27:46.658Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-02-25T00:27:46.658Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-02-25T00:27:46.658Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-02-25T00:27:46.658Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:27:46.658Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:27:46.658Z [DEBUG] Passes: Using fresh cached eligibility data
+2026-02-25T00:27:46.659Z [DEBUG] [STARTUP] MCP configs loaded in 519ms
+2026-02-25T00:27:46.661Z [DEBUG] MCP server "unreal": Starting connection with timeout of 30000ms
+2026-02-25T00:27:46.696Z [DEBUG] All plugins already exist, skipping migration
+2026-02-25T00:27:46.696Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:27:46.697Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-02-25T00:27:46.697Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:27:46.697Z [DEBUG] Matched 2 unique hooks for query "startup" (2 before deduplication)
+2026-02-25T00:27:46.698Z [DEBUG] Loaded 4 installed plugins from C:\Users\User\.claude\plugins\installed_plugins.json
+2026-02-25T00:27:46.698Z [DEBUG] Initialized versioned plugins system with 4 plugins
+2026-02-25T00:27:46.699Z [DEBUG] [Reconnection] computeInitialTeamContext: No teammate context set (not a teammate)
+2026-02-25T00:27:46.701Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979266701
+2026-02-25T00:27:46.701Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:27:46.703Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:27:46.703Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:27:46.703Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979266701 to C:\Users\User\.claude.json
+2026-02-25T00:27:46.703Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:27:46.718Z [DEBUG] [keybindings] KeybindingSetup initialized with 103 bindings, 0 warnings
+2026-02-25T00:27:46.741Z [DEBUG] [REPL:mount] REPL mounted, disabled=false
+2026-02-25T00:27:46.742Z [DEBUG] Official marketplace auto-install skipped: already_attempted
+2026-02-25T00:27:46.742Z [DEBUG] performStartupChecks called
+2026-02-25T00:27:46.742Z [DEBUG] Starting background plugin installations
+2026-02-25T00:27:46.742Z [DEBUG] performBackgroundPluginInstallations called
+2026-02-25T00:27:46.743Z [DEBUG] Loaded 3 CLAUDE.md/rules files:
+  [User] C:\Users\User\.claude\CLAUDE.md (17773 chars)
+  [Project] C:\Users\User\CLAUDE.md (12361 chars)
+  [Project] C:\Users\User\usd-cognitive-substrate\CLAUDE.md (12251 chars)
+2026-02-25T00:27:46.764Z [DEBUG] Watching for changes in setting files C:\Users\User\.claude\settings.json, C:\Users\User\usd-cognitive-substrate\.claude\settings.json, C:\Users\User\usd-cognitive-substrate\.claude\settings.local.json, C:\Program Files\ClaudeCode\managed-settings.json...
+2026-02-25T00:27:46.793Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-02-25T00:27:46.796Z [DEBUG] [claudeai-mcp] Checking gate (cached)...
+2026-02-25T00:27:46.796Z [DEBUG] [claudeai-mcp] Gate returned: true
+2026-02-25T00:27:46.796Z [DEBUG] [claudeai-mcp] Fetching from https://api.anthropic.com/v1/mcp_servers?limit=1000
+2026-02-25T00:27:46.798Z [DEBUG] Found 4 enabled plugins
+2026-02-25T00:27:46.798Z [DEBUG] All plugins already exist, skipping migration
+2026-02-25T00:27:46.798Z [DEBUG] Found 4 installed plugins (V2 format)
+2026-02-25T00:27:46.798Z [DEBUG] Found 0 missing plugins (not installed):
+2026-02-25T00:27:46.798Z [DEBUG] Setting installation status: 0 marketplaces, 0 installable plugins, 0 uninstallable plugins
+2026-02-25T00:27:46.807Z [DEBUG] Security messages are fresh (<1h old), skipping fetch
+2026-02-25T00:27:46.808Z [DEBUG] Org fast mode: enabled
+2026-02-25T00:27:46.808Z [DEBUG] Total LSP servers loaded: 0
+2026-02-25T00:27:46.808Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-02-25T00:27:46.808Z [DEBUG] LSP manager initialized with 0 servers
+2026-02-25T00:27:46.808Z [DEBUG] LSP server manager initialized successfully
+2026-02-25T00:27:46.808Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-02-25T00:27:46.808Z [DEBUG] Watching for changes in skill/command directories: C:\Users\User\.claude\skills, C:\Users\User\.claude\commands...
+2026-02-25T00:27:46.826Z [DEBUG] Loaded plugins - Enabled: 4, Disabled: 0, Commands: 0, Agents: 0, Errors: 0
+2026-02-25T00:27:46.877Z [DEBUG] [claudeai-mcp] Fetched 4 servers
+2026-02-25T00:27:46.878Z [DEBUG] MCP server "claude.ai Gmail": Initializing claude.ai proxy transport for server mcpsrv_01Nh1FBruws7rZjRsDecLKyg
+2026-02-25T00:27:46.878Z [DEBUG] MCP server "claude.ai Gmail": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_01Nh1FBruws7rZjRsDecLKyg
+2026-02-25T00:27:46.878Z [DEBUG] MCP server "claude.ai Gmail": claude.ai proxy transport created successfully
+2026-02-25T00:27:46.878Z [DEBUG] MCP server "claude.ai Gmail": Starting connection with timeout of 30000ms
+2026-02-25T00:27:46.879Z [DEBUG] MCP server "claude.ai Google Calendar": Initializing claude.ai proxy transport for server mcpsrv_01XFtuwjYrg1X6WLuK6ap5F6
+2026-02-25T00:27:46.879Z [DEBUG] MCP server "claude.ai Google Calendar": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_01XFtuwjYrg1X6WLuK6ap5F6
+2026-02-25T00:27:46.879Z [DEBUG] MCP server "claude.ai Google Calendar": claude.ai proxy transport created successfully
+2026-02-25T00:27:46.879Z [DEBUG] MCP server "claude.ai Google Calendar": Starting connection with timeout of 30000ms
+2026-02-25T00:27:46.879Z [DEBUG] MCP server "claude.ai Vercel": Initializing claude.ai proxy transport for server mcpsrv_013PZdcxtpsWHjHjzHQVVg7K
+2026-02-25T00:27:46.879Z [DEBUG] MCP server "claude.ai Vercel": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_013PZdcxtpsWHjHjzHQVVg7K
+2026-02-25T00:27:46.879Z [DEBUG] MCP server "claude.ai Vercel": claude.ai proxy transport created successfully
+2026-02-25T00:27:46.880Z [DEBUG] MCP server "claude.ai Vercel": Starting connection with timeout of 30000ms
+2026-02-25T00:27:46.880Z [DEBUG] MCP server "claude.ai Hugging Face": Initializing claude.ai proxy transport for server mcpsrv_014HaudWSTEBpeVtLFa6nELD
+2026-02-25T00:27:46.880Z [DEBUG] MCP server "claude.ai Hugging Face": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_014HaudWSTEBpeVtLFa6nELD
+2026-02-25T00:27:46.880Z [DEBUG] MCP server "claude.ai Hugging Face": claude.ai proxy transport created successfully
+2026-02-25T00:27:46.880Z [DEBUG] MCP server "claude.ai Hugging Face": Starting connection with timeout of 30000ms
+2026-02-25T00:27:46.903Z [ERROR] MCP server "unreal" Server stderr: python: can't open file 'C:\\Users\\User\\Translators-Game\\TranslatorsGame\\ue-bridge\\mcp\\mcp_server.py': [Errno 2] No such file or directory
+2026-02-25T00:27:46.903Z [DEBUG] MCP server "unreal": Connection failed after 244ms: MCP error -32000: Connection closed
+2026-02-25T00:27:46.903Z [ERROR] MCP server "unreal" Connection failed: MCP error -32000: Connection closed
+2026-02-25T00:27:46.926Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:27:46.991Z [DEBUG] Checking for native installer update to version 2.1.53
+2026-02-25T00:27:46.992Z [DEBUG] Found 2.1.53 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-02-25T00:27:47.041Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=C:\Users\User\.local\bin\claude.exe)
+2026-02-25T00:27:47.353Z [DEBUG] MCP server "claude.ai Gmail": Successfully connected to claudeai-proxy server in 475ms
+2026-02-25T00:27:47.354Z [DEBUG] MCP server "claude.ai Gmail": Connection established with capabilities: {"hasTools":true,"hasPrompts":false,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"mcp-server-gmail","version":"0.1.0"}}
+2026-02-25T00:27:47.354Z [DEBUG] [MCP] Server "claude.ai Gmail" connected with subscribe=false
+2026-02-25T00:27:47.373Z [DEBUG] MCP server "claude.ai Google Calendar": Successfully connected to claudeai-proxy server in 494ms
+2026-02-25T00:27:47.373Z [DEBUG] MCP server "claude.ai Google Calendar": Connection established with capabilities: {"hasTools":true,"hasPrompts":true,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"mcp-server-gcal","version":"0.1.0"}}
+2026-02-25T00:27:47.373Z [DEBUG] [MCP] Server "claude.ai Google Calendar" connected with subscribe=false
+2026-02-25T00:27:47.432Z [DEBUG] MCP server "claude.ai Hugging Face": Successfully connected to claudeai-proxy server in 552ms
+2026-02-25T00:27:47.432Z [DEBUG] MCP server "claude.ai Hugging Face": Connection established with capabilities: {"hasTools":true,"hasPrompts":true,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"@huggingface/mcp-services","title":"Hugging Face","icons":[{"src":"https://huggingface.co/favicon.ico"}],"version":"0.3.5","websiteUrl":"https://huggingface.co/mcp"}}
+2026-02-25T00:27:47.432Z [DEBUG] [MCP] Server "claude.ai Hugging Face" connected with subscribe=false
+2026-02-25T00:27:47.702Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:27:47.702Z [DEBUG] [FileIndex] getProjectFiles called, respectGitignore=true
+2026-02-25T00:27:47.702Z [DEBUG] [FileIndex] getFilesUsingGit called
+2026-02-25T00:27:47.707Z [DEBUG] [useDeferredValue] Messages deferred by 4 (0→4)
+2026-02-25T00:27:47.726Z [DEBUG] Failed to follow symlink C:\Users\User\.claude\skills\linkedin-content: ENOENT: no such file or directory, stat 'C:\Users\User\.claude\skills\linkedin-content'
+2026-02-25T00:27:47.732Z [DEBUG] Skipping already visited directory (circular symlink): C:\Users\User\.claude\skills\superpowers-developing-for-claude-code\skills\developing-claude-code-plugins
+2026-02-25T00:27:47.735Z [DEBUG] Skipping already visited directory (circular symlink): C:\Users\User\.claude\skills\working-with-claude-code
+2026-02-25T00:27:47.737Z [WARN] Failed to parse YAML frontmatter in C:\Users\User\.claude\skills\last30days\SKILL-original.md: YAML Parse error: Unexpected token
+2026-02-25T00:27:47.741Z [DEBUG] [FileIndex] git ls-files (tracked) took 39ms
+2026-02-25T00:27:47.741Z [DEBUG] [FileIndex] git ls-files: 98 tracked files in 39ms
+2026-02-25T00:27:47.744Z [DEBUG] [FileIndex] using git ls-files result (98 files)
+2026-02-25T00:27:47.800Z [DEBUG] [FileIndex] cache refresh completed in 98ms (rust index)
+2026-02-25T00:27:47.800Z [DEBUG] [FileIndex] background untracked fetch: 56 files
+2026-02-25T00:27:47.800Z [DEBUG] [FileIndex] rebuilt Rust index with 98 tracked + 56 untracked files
+2026-02-25T00:27:47.922Z [DEBUG] MCP server "claude.ai Vercel": Successfully connected to claudeai-proxy server in 1043ms
+2026-02-25T00:27:47.922Z [DEBUG] MCP server "claude.ai Vercel": Connection established with capabilities: {"hasTools":true,"hasPrompts":true,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"Vercel MCP Server","version":"2"}}
+2026-02-25T00:27:47.922Z [DEBUG] [MCP] Server "claude.ai Vercel" connected with subscribe=false
+2026-02-25T00:27:56.244Z [DEBUG] High write ratio: blit=480, write=852 (64.0% writes), screen=14x120
+2026-02-25T00:27:57.738Z [DEBUG] High write ratio: blit=480, write=852 (64.0% writes), screen=14x120
+2026-02-25T00:27:57.767Z [DEBUG] High write ratio: blit=480, write=853 (64.0% writes), screen=14x120
+2026-02-25T00:27:57.783Z [DEBUG] High write ratio: blit=480, write=837 (63.6% writes), screen=14x120
+2026-02-25T00:27:57.917Z [DEBUG] High write ratio: blit=480, write=838 (63.6% writes), screen=14x120
+2026-02-25T00:27:57.939Z [DEBUG] High write ratio: blit=480, write=803 (62.6% writes), screen=14x120
+2026-02-25T00:27:58.239Z [DEBUG] High write ratio: blit=480, write=804 (62.6% writes), screen=14x120
+2026-02-25T00:27:58.467Z [DEBUG] High write ratio: blit=480, write=927 (65.9% writes), screen=14x120
+2026-02-25T00:27:58.593Z [DEBUG] High write ratio: blit=480, write=928 (65.9% writes), screen=14x120
+2026-02-25T00:27:59.034Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-02-25T00:28:00.198Z [DEBUG] Checking for native installer update to version 2.1.53
+2026-02-25T00:28:00.198Z [DEBUG] Found 2.1.53 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-02-25T00:28:04.605Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979284605
+2026-02-25T00:28:04.605Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:04.609Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:04.609Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:04.609Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979284605 to C:\Users\User\.claude.json
+2026-02-25T00:28:04.609Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:04.620Z [DEBUG] Metadata string for inject:
+2026-02-25T00:28:04.620Z [DEBUG] <command-message>inject</command-message>
+<command-name>/inject</command-name>
+<command-args>classical</command-args>
+2026-02-25T00:28:04.620Z [DEBUG] command-message tags in metadata: 1
+2026-02-25T00:28:04.621Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:28:04.621Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:28:04.621Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:28:04.621Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:28:04.622Z [DEBUG] Sending 93 skills via attachment (initial, 93 total sent)
+2026-02-25T00:28:04.622Z [DEBUG] Skill prompt: showing "superpowers-developing-for-claude-code:developing-claude-code-plugins" (userFacingName="developing-claude-code-plugins")
+2026-02-25T00:28:04.622Z [DEBUG] Skill prompt: showing "superpowers-developing-for-claude-code:working-with-claude-code" (userFacingName="working-with-claude-code")
+2026-02-25T00:28:04.622Z [DEBUG] Skill prompt: showing "last30days:2.0.0" (userFacingName="last30days")
+2026-02-25T00:28:04.622Z [DEBUG] Skill prompt: showing "image-generator:image-generator" (userFacingName="Image Generator")
+2026-02-25T00:28:04.622Z [DEBUG] Skill prompt: showing "llm-council:llm-council" (userFacingName="LLM Council")
+2026-02-25T00:28:04.622Z [DEBUG] processPromptSlashCommand creating 4 messages for inject
+2026-02-25T00:28:04.622Z [DEBUG] Message 1: <command-message>inject</command-message>
+<command-name>/inject</command-name>
+<command-args>classical</command-args>
+2026-02-25T00:28:04.622Z [DEBUG] Message 2 [META]: [{"type":"text","text":"Base directory for this skill: C:\\Users\\User\\.claude\\commands\\inject\n\n# /inject — Digital Injection Profile Switcher\n\nSwitch the active injection profile. One command,
+2026-02-25T00:28:04.622Z [DEBUG] Message 3: [ATTACHMENT]
+2026-02-25T00:28:04.622Z [DEBUG] Message 4: [ATTACHMENT]
+2026-02-25T00:28:04.623Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-02-25T00:28:04.623Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:04.623Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-02-25T00:28:04.624Z [DEBUG] FileHistory: Added snapshot for 5759c8bd-f1d4-49b5-a3be-516079408051, tracking 0 files
+2026-02-25T00:28:04.625Z [DEBUG] [useDeferredValue] Messages deferred by 4 (4→8)
+2026-02-25T00:28:04.646Z [DEBUG] Total plugin output styles loaded: 0
+2026-02-25T00:28:04.661Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979284661
+2026-02-25T00:28:04.662Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:04.664Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:04.664Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:04.664Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979284661 to C:\Users\User\.claude.json
+2026-02-25T00:28:04.664Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:04.675Z [DEBUG] autocompact: tokens=3899 threshold=167000 effectiveWindow=180000
+2026-02-25T00:28:04.678Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:04.678Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:04.678Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:04.899Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:28:04.903Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979284903
+2026-02-25T00:28:04.903Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:04.904Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:04.904Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:04.904Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979284903 to C:\Users\User\.claude.json
+2026-02-25T00:28:04.904Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:04.914Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:28:04.915Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:28:04.915Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:04.915Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:04.916Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:07.628Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:28:08.429Z [DEBUG] [useDeferredValue] Messages deferred by 1 (8→9)
+2026-02-25T00:28:09.442Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-02-25T00:28:09.443Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-02-25T00:28:09.443Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:28:09.443Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-02-25T00:28:09.447Z [DEBUG] [useDeferredValue] Messages deferred by 1 (9→10)
+2026-02-25T00:28:09.505Z [DEBUG] [useDeferredValue] Messages deferred by 1 (10→11)
+2026-02-25T00:28:09.520Z [WARN] [3P telemetry] Event dropped (no event logger initialized): api_request
+2026-02-25T00:28:09.532Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:28:09.571Z [DEBUG] tree-sitter: loaded from embedded
+2026-02-25T00:28:09.576Z [DEBUG] Permission suggestions for Bash: []
+2026-02-25T00:28:09.577Z [DEBUG] executePermissionRequestHooks called for tool: Bash
+2026-02-25T00:28:09.578Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Bash
+2026-02-25T00:28:09.578Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:09.578Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:28:10.723Z [DEBUG] Creating shell snapshot for bash (C:\Program Files\Git\bin\bash.exe)
+2026-02-25T00:28:10.723Z [DEBUG] Looking for shell config file: C:\Users\User\.bashrc
+2026-02-25T00:28:10.724Z [DEBUG] Shell config file not found: C:\Users\User\.bashrc, creating snapshot with Claude Code defaults only
+2026-02-25T00:28:10.724Z [DEBUG] Snapshots directory: C:\Users\User\.claude\shell-snapshots
+2026-02-25T00:28:10.745Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-02-25T00:28:10.764Z [DEBUG] Creating snapshot at: C:\Users\User\.claude\shell-snapshots\snapshot-bash-1771979290724-4nwk34.sh
+2026-02-25T00:28:10.764Z [DEBUG] Execution timeout: 10000ms
+2026-02-25T00:28:11.038Z [DEBUG] Shell snapshot created successfully (308 bytes)
+2026-02-25T00:28:11.038Z [DEBUG] Session environment not yet supported on Windows
+2026-02-25T00:28:11.039Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-02-25T00:28:11.040Z [DEBUG] Bash tool error (319ms): EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\bwhynl77j.output'
+2026-02-25T00:28:11.040Z [ERROR] Error: Error: EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\bwhynl77j.output'
+    at openSync (unknown)
+    at $3$ (B:/~BUN/root/claude.exe:1756:2307)
+    at processTicksAndRejections (native:7:39)
+2026-02-25T00:28:11.042Z [DEBUG] Getting matching hook commands for PostToolUseFailure with query: Bash
+2026-02-25T00:28:11.042Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:11.042Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:28:11.042Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:28:11.042Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:28:11.042Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:28:11.042Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:28:11.043Z [DEBUG] autocompact: tokens=30544 threshold=167000 effectiveWindow=180000
+2026-02-25T00:28:11.043Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:28:11.046Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979291046
+2026-02-25T00:28:11.046Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:11.047Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:11.047Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:11.047Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979291046 to C:\Users\User\.claude.json
+2026-02-25T00:28:11.048Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:11.058Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:28:11.059Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:28:11.059Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:11.059Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:11.059Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:11.061Z [DEBUG] [useDeferredValue] Messages deferred by 1 (11→12)
+2026-02-25T00:28:13.173Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:28:13.256Z [DEBUG] Checking for native installer update to version 2.1.53
+2026-02-25T00:28:13.257Z [DEBUG] Found 2.1.53 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-02-25T00:28:13.874Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-02-25T00:28:13.875Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-02-25T00:28:13.875Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:28:13.875Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-02-25T00:28:13.878Z [DEBUG] [useDeferredValue] Messages deferred by 1 (12→13)
+2026-02-25T00:28:13.892Z [DEBUG] [useDeferredValue] Messages deferred by 1 (13→14)
+2026-02-25T00:28:13.964Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:28:13.969Z [DEBUG] Permission suggestions for Bash: [
+  {
+    "type": "addRules",
+    "rules": [
+      {
+        "toolName": "Read",
+        "ruleContent": "//c/Users/User/.claude/cognitive_substrate/**"
+      }
+    ],
+    "behavior": "allow",
+    "destination": "session"
+  }
+]
+2026-02-25T00:28:13.969Z [DEBUG] executePermissionRequestHooks called for tool: Bash
+2026-02-25T00:28:13.970Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Bash
+2026-02-25T00:28:13.970Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:13.970Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:28:16.315Z [DEBUG] Applying permission update: Adding 1 allow rule(s) to destination 'session': ["Read(//c/Users/User/.claude/cognitive_substrate/**)"]
+2026-02-25T00:28:16.337Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-02-25T00:28:16.338Z [DEBUG] Session environment not yet supported on Windows
+2026-02-25T00:28:16.338Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-02-25T00:28:16.339Z [DEBUG] Bash tool error (24ms): EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\b6irgjerq.output'
+2026-02-25T00:28:16.339Z [ERROR] Error: Error: EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\b6irgjerq.output'
+    at openSync (unknown)
+    at $3$ (B:/~BUN/root/claude.exe:1756:2307)
+    at processTicksAndRejections (native:7:39)
+2026-02-25T00:28:16.341Z [DEBUG] Getting matching hook commands for PostToolUseFailure with query: Bash
+2026-02-25T00:28:16.341Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:16.341Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:28:16.341Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:28:16.341Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:28:16.341Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:28:16.341Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:28:16.342Z [DEBUG] autocompact: tokens=30719 threshold=167000 effectiveWindow=180000
+2026-02-25T00:28:16.342Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:28:16.344Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979296344
+2026-02-25T00:28:16.344Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:16.346Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:16.346Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:16.346Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979296344 to C:\Users\User\.claude.json
+2026-02-25T00:28:16.346Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:16.358Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:28:16.358Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:28:16.358Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:16.358Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:16.358Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:16.361Z [DEBUG] [useDeferredValue] Messages deferred by 1 (14→15)
+2026-02-25T00:28:16.393Z [DEBUG] High write ratio: blit=0, write=1006 (100.0% writes), screen=23x120
+2026-02-25T00:28:16.439Z [DEBUG] Checking for native installer update to version 2.1.53
+2026-02-25T00:28:16.440Z [DEBUG] Found 2.1.53 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-02-25T00:28:18.429Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:28:19.202Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-02-25T00:28:19.204Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-02-25T00:28:19.204Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:28:19.204Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-02-25T00:28:19.207Z [DEBUG] [useDeferredValue] Messages deferred by 1 (15→16)
+2026-02-25T00:28:19.217Z [DEBUG] [useDeferredValue] Messages deferred by 1 (16→17)
+2026-02-25T00:28:19.220Z [DEBUG] High write ratio: blit=0, write=1083 (100.0% writes), screen=26x120
+2026-02-25T00:28:19.222Z [DEBUG] [useDeferredValue] Messages deferred by 1 (16→17)
+2026-02-25T00:28:19.236Z [DEBUG] High write ratio: blit=0, write=1083 (100.0% writes), screen=26x120
+2026-02-25T00:28:19.288Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:28:19.292Z [DEBUG] Session environment not yet supported on Windows
+2026-02-25T00:28:19.292Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-02-25T00:28:19.295Z [DEBUG] Bash tool error (3ms): EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\b2x2ik7ds.output'
+2026-02-25T00:28:19.295Z [ERROR] Error: Error: EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\b2x2ik7ds.output'
+    at openSync (unknown)
+    at $3$ (B:/~BUN/root/claude.exe:1756:2307)
+    at processTicksAndRejections (native:7:39)
+2026-02-25T00:28:19.296Z [DEBUG] Getting matching hook commands for PostToolUseFailure with query: Bash
+2026-02-25T00:28:19.296Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:19.296Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:28:19.296Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:28:19.296Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:28:19.296Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:28:19.296Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:28:19.297Z [DEBUG] autocompact: tokens=30878 threshold=167000 effectiveWindow=180000
+2026-02-25T00:28:19.297Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:28:19.299Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979299299
+2026-02-25T00:28:19.299Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:19.300Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:19.301Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:19.301Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979299299 to C:\Users\User\.claude.json
+2026-02-25T00:28:19.301Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:19.311Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:28:19.312Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:28:19.312Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:19.312Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:19.312Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:19.313Z [DEBUG] [useDeferredValue] Messages deferred by 1 (17→18)
+2026-02-25T00:28:19.319Z [DEBUG] High write ratio: blit=0, write=1083 (100.0% writes), screen=26x120
+2026-02-25T00:28:19.340Z [DEBUG] High write ratio: blit=0, write=1083 (100.0% writes), screen=26x120
+2026-02-25T00:28:21.317Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:28:22.015Z [DEBUG] [useDeferredValue] Messages deferred by 1 (18→19)
+2026-02-25T00:28:22.018Z [DEBUG] [useDeferredValue] Messages deferred by 1 (18→19)
+2026-02-25T00:28:22.043Z [DEBUG] High write ratio: blit=0, write=1164 (100.0% writes), screen=29x120
+2026-02-25T00:28:22.592Z [DEBUG] executePreToolHooks called for tool: Glob
+2026-02-25T00:28:22.593Z [DEBUG] Getting matching hook commands for PreToolUse with query: Glob
+2026-02-25T00:28:22.593Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:28:22.593Z [DEBUG] Matched 0 unique hooks for query "Glob" (0 before deduplication)
+2026-02-25T00:28:22.602Z [DEBUG] [useDeferredValue] Messages deferred by 1 (19→20)
+2026-02-25T00:28:22.607Z [DEBUG] High write ratio: blit=0, write=1120 (100.0% writes), screen=27x120
+2026-02-25T00:28:22.633Z [DEBUG] High write ratio: blit=0, write=1183 (100.0% writes), screen=30x120
+2026-02-25T00:28:22.851Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979302851
+2026-02-25T00:28:22.851Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:22.852Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:22.853Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:22.853Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979302851 to C:\Users\User\.claude.json
+2026-02-25T00:28:22.853Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:22.864Z [DEBUG] Getting matching hook commands for PostToolUse with query: Glob
+2026-02-25T00:28:22.864Z [DEBUG] Found 7 hook matchers in settings
+2026-02-25T00:28:22.864Z [DEBUG] Matched 2 unique hooks for query "Glob" (2 before deduplication)
+2026-02-25T00:28:22.942Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:28:22.952Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:28:22.952Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:28:22.952Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:28:22.952Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:28:22.953Z [DEBUG] autocompact: tokens=31030 threshold=167000 effectiveWindow=180000
+2026-02-25T00:28:22.953Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:28:22.956Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979302956
+2026-02-25T00:28:22.956Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:22.958Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:22.958Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:22.958Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979302956 to C:\Users\User\.claude.json
+2026-02-25T00:28:22.958Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:22.968Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:28:22.969Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:28:22.969Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:22.969Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:22.969Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:22.971Z [DEBUG] [useDeferredValue] Messages deferred by 5 (20→25)
+2026-02-25T00:28:22.977Z [DEBUG] High write ratio: blit=0, write=1183 (100.0% writes), screen=30x120
+2026-02-25T00:28:22.999Z [DEBUG] High write ratio: blit=0, write=1183 (100.0% writes), screen=30x120
+2026-02-25T00:28:25.029Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:28:25.885Z [DEBUG] [useDeferredValue] Messages deferred by 1 (25→26)
+2026-02-25T00:28:25.891Z [DEBUG] High write ratio: blit=0, write=1183 (100.0% writes), screen=30x120
+2026-02-25T00:28:25.918Z [DEBUG] High write ratio: blit=0, write=1245 (100.0% writes), screen=31x120
+2026-02-25T00:28:26.514Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-02-25T00:28:26.515Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-02-25T00:28:26.515Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:28:26.515Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-02-25T00:28:26.518Z [DEBUG] [useDeferredValue] Messages deferred by 1 (26→27)
+2026-02-25T00:28:26.523Z [DEBUG] High write ratio: blit=0, write=1245 (100.0% writes), screen=31x120
+2026-02-25T00:28:26.529Z [DEBUG] [useDeferredValue] Messages deferred by 1 (27→28)
+2026-02-25T00:28:26.550Z [DEBUG] High write ratio: blit=0, write=1345 (100.0% writes), screen=34x120
+2026-02-25T00:28:26.598Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:28:26.601Z [DEBUG] Session environment not yet supported on Windows
+2026-02-25T00:28:26.601Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-02-25T00:28:26.603Z [DEBUG] Bash tool error (3ms): EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\b0vtancfu.output'
+2026-02-25T00:28:26.603Z [ERROR] Error: Error: EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\b0vtancfu.output'
+    at openSync (unknown)
+    at $3$ (B:/~BUN/root/claude.exe:1756:2307)
+    at processTicksAndRejections (native:7:39)
+2026-02-25T00:28:26.604Z [DEBUG] Getting matching hook commands for PostToolUseFailure with query: Bash
+2026-02-25T00:28:26.604Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:26.604Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:28:26.605Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:28:26.605Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:28:26.605Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:28:26.605Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:28:26.605Z [DEBUG] autocompact: tokens=31187 threshold=167000 effectiveWindow=180000
+2026-02-25T00:28:26.606Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:28:26.608Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979306608
+2026-02-25T00:28:26.608Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:26.609Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:26.609Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:26.609Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979306608 to C:\Users\User\.claude.json
+2026-02-25T00:28:26.610Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:26.620Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:28:26.620Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:28:26.620Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:26.620Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:26.620Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:26.622Z [DEBUG] [useDeferredValue] Messages deferred by 1 (28→29)
+2026-02-25T00:28:26.628Z [DEBUG] High write ratio: blit=0, write=1345 (100.0% writes), screen=34x120
+2026-02-25T00:28:26.651Z [DEBUG] High write ratio: blit=0, write=1477 (100.0% writes), screen=35x120
+2026-02-25T00:28:28.971Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:28:29.514Z [DEBUG] [useDeferredValue] Messages deferred by 1 (29→30)
+2026-02-25T00:28:29.519Z [DEBUG] High write ratio: blit=0, write=1477 (100.0% writes), screen=35x120
+2026-02-25T00:28:29.520Z [DEBUG] [useDeferredValue] Messages deferred by 1 (29→30)
+2026-02-25T00:28:29.539Z [DEBUG] High write ratio: blit=0, write=1556 (100.0% writes), screen=37x120
+2026-02-25T00:28:30.134Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-02-25T00:28:30.136Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-02-25T00:28:30.136Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:28:30.136Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-02-25T00:28:30.138Z [DEBUG] [useDeferredValue] Messages deferred by 1 (30→31)
+2026-02-25T00:28:30.144Z [DEBUG] High write ratio: blit=0, write=1556 (100.0% writes), screen=37x120
+2026-02-25T00:28:30.151Z [DEBUG] [useDeferredValue] Messages deferred by 1 (31→32)
+2026-02-25T00:28:30.156Z [DEBUG] [useDeferredValue] Messages deferred by 1 (31→32)
+2026-02-25T00:28:30.162Z [DEBUG] High write ratio: blit=0, write=1586 (100.0% writes), screen=40x120
+2026-02-25T00:28:30.225Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:28:30.227Z [DEBUG] Session environment not yet supported on Windows
+2026-02-25T00:28:30.227Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-02-25T00:28:30.230Z [DEBUG] Bash tool error (3ms): EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\bq0kwxpsx.output'
+2026-02-25T00:28:30.230Z [ERROR] Error: Error: EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\bq0kwxpsx.output'
+    at openSync (unknown)
+    at $3$ (B:/~BUN/root/claude.exe:1756:2307)
+    at processTicksAndRejections (native:7:39)
+2026-02-25T00:28:30.231Z [DEBUG] Getting matching hook commands for PostToolUseFailure with query: Bash
+2026-02-25T00:28:30.231Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:30.231Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:28:30.232Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:28:30.232Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:28:30.232Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:28:30.232Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:28:30.232Z [DEBUG] autocompact: tokens=31476 threshold=167000 effectiveWindow=180000
+2026-02-25T00:28:30.232Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:28:30.235Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979310235
+2026-02-25T00:28:30.235Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:30.237Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:30.237Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:30.237Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979310235 to C:\Users\User\.claude.json
+2026-02-25T00:28:30.237Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:30.247Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:28:30.247Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:28:30.247Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:30.247Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:30.248Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:30.249Z [DEBUG] [useDeferredValue] Messages deferred by 2 (32→34)
+2026-02-25T00:28:30.255Z [DEBUG] High write ratio: blit=0, write=1586 (100.0% writes), screen=40x120
+2026-02-25T00:28:30.274Z [DEBUG] High write ratio: blit=0, write=1718 (100.0% writes), screen=41x120
+2026-02-25T00:28:32.196Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:28:35.895Z [DEBUG] [useDeferredValue] Messages deferred by 1 (34→35)
+2026-02-25T00:28:35.910Z [DEBUG] High write ratio: blit=0, write=2433 (100.0% writes), screen=59x120
+2026-02-25T00:28:35.917Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-02-25T00:28:35.917Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:35.917Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-02-25T00:28:35.917Z [DEBUG] autocompact: tokens=31995 threshold=167000 effectiveWindow=180000
+2026-02-25T00:28:35.918Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:28:35.920Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979315920
+2026-02-25T00:28:35.920Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:35.922Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:35.922Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:35.922Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979315920 to C:\Users\User\.claude.json
+2026-02-25T00:28:35.922Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:35.933Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:28:35.933Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:28:35.933Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:28:35.933Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:28:35.933Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:28:35.936Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979315936
+2026-02-25T00:28:35.936Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:35.938Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:35.938Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:35.938Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979315936 to C:\Users\User\.claude.json
+2026-02-25T00:28:35.938Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:35.948Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979315948
+2026-02-25T00:28:35.948Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:28:35.950Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:28:35.950Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:28:35.950Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979315948 to C:\Users\User\.claude.json
+2026-02-25T00:28:35.950Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:28:35.964Z [DEBUG] High write ratio: blit=0, write=2420 (100.0% writes), screen=57x120
+2026-02-25T00:28:38.088Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:28:38.409Z [DEBUG] Forked agent [prompt_suggestion] received message: type=assistant
+2026-02-25T00:28:38.428Z [DEBUG] Getting matching hook commands for SubagentStop with query:
+2026-02-25T00:28:38.428Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:28:38.428Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-02-25T00:28:38.429Z [DEBUG] Forked agent [prompt_suggestion] finished: 1 messages, types=[assistant], totalUsage: input=295 output=10 cacheRead=31494 cacheCreate=223
+2026-02-25T00:28:38.429Z [DEBUG] [Speculation] enabled=false
+2026-02-25T00:29:03.230Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:29:03.230Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:29:03.230Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:29:03.230Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:29:03.232Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-02-25T00:29:03.232Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:29:03.232Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-02-25T00:29:03.232Z [DEBUG] FileHistory: Making snapshot for message 309201df-5d87-4fa7-8055-9fc8aa33aaae
+2026-02-25T00:29:03.232Z [DEBUG] FileHistory: Added snapshot for 309201df-5d87-4fa7-8055-9fc8aa33aaae, tracking 0 files
+2026-02-25T00:29:03.233Z [DEBUG] [useDeferredValue] Messages deferred by 1 (35→36)
+2026-02-25T00:29:03.239Z [DEBUG] High write ratio: blit=0, write=2520 (100.0% writes), screen=60x120
+2026-02-25T00:29:03.242Z [DEBUG] Tool search disabled for model 'claude-haiku-4-5-20251001': model does not support tool_reference blocks. This feature is only available on Claude Sonnet 4+, Opus 4+, and newer models.
+2026-02-25T00:29:03.243Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.d34; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:29:03.243Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:29:03.243Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:29:03.243Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:29:03.254Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979343254
+2026-02-25T00:29:03.254Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:29:03.257Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:29:03.257Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:29:03.257Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979343254 to C:\Users\User\.claude.json
+2026-02-25T00:29:03.258Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:29:03.269Z [DEBUG] autocompact: tokens=31727 threshold=167000 effectiveWindow=180000
+2026-02-25T00:29:03.269Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:29:03.271Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979343271
+2026-02-25T00:29:03.271Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:29:03.273Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:29:03.273Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:29:03.273Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979343271 to C:\Users\User\.claude.json
+2026-02-25T00:29:03.273Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:29:03.283Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:29:03.284Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:29:03.284Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:29:03.284Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:29:03.284Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:29:03.290Z [DEBUG] [useDeferredValue] Messages deferred by 1 (35→36)
+2026-02-25T00:29:03.316Z [DEBUG] High write ratio: blit=0, write=2551 (100.0% writes), screen=62x120
+2026-02-25T00:29:03.784Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:29:05.695Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:29:05.716Z [DEBUG] High write ratio: blit=0, write=2551 (100.0% writes), screen=62x120
+2026-02-25T00:29:06.684Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-02-25T00:29:06.686Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-02-25T00:29:06.686Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:29:06.686Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-02-25T00:29:06.689Z [DEBUG] [useDeferredValue] Messages deferred by 1 (36→37)
+2026-02-25T00:29:06.695Z [DEBUG] High write ratio: blit=0, write=2551 (100.0% writes), screen=62x120
+2026-02-25T00:29:06.697Z [DEBUG] [useDeferredValue] Messages deferred by 2 (36→38)
+2026-02-25T00:29:06.710Z [DEBUG] High write ratio: blit=0, write=2704 (100.0% writes), screen=66x120
+2026-02-25T00:29:06.770Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:29:06.777Z [DEBUG] Permission suggestions for Bash: [
+  {
+    "type": "addRules",
+    "rules": [
+      {
+        "toolName": "Bash",
+        "ruleContent": "powershell.exe -Command \"cd $HOME\\.claude\\cognitive_substrate; $env:PYTHONIOENCODING=''utf-8''; python converter.py --inject classical\""
+      }
+    ],
+    "behavior": "allow",
+    "destination": "localSettings"
+  }
+]
+2026-02-25T00:29:06.778Z [DEBUG] executePermissionRequestHooks called for tool: Bash
+2026-02-25T00:29:06.779Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Bash
+2026-02-25T00:29:06.779Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:29:06.779Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:29:06.788Z [DEBUG] High write ratio: blit=0, write=2903 (100.0% writes), screen=75x120
+2026-02-25T00:29:08.896Z [DEBUG] Persisting permission update: addRules to source 'localSettings'
+2026-02-25T00:29:08.896Z [DEBUG] Persisting 1 allow rule(s) to localSettings
+2026-02-25T00:29:08.898Z [DEBUG] Writing to temp file: C:\Users\User\usd-cognitive-substrate\.claude\settings.local.json.tmp.182404.1771979348898
+2026-02-25T00:29:08.898Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:29:08.901Z [DEBUG] Temp file written successfully, size: 2440 bytes
+2026-02-25T00:29:08.901Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:29:08.901Z [DEBUG] Renaming C:\Users\User\usd-cognitive-substrate\.claude\settings.local.json.tmp.182404.1771979348898 to C:\Users\User\usd-cognitive-substrate\.claude\settings.local.json
+2026-02-25T00:29:08.902Z [DEBUG] File C:\Users\User\usd-cognitive-substrate\.claude\settings.local.json written atomically
+2026-02-25T00:29:08.908Z [DEBUG] Applying permission update: Adding 1 allow rule(s) to destination 'localSettings': ["Bash(powershell.exe:*)"]
+2026-02-25T00:29:08.915Z [DEBUG] Session environment not yet supported on Windows
+2026-02-25T00:29:08.915Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-02-25T00:29:08.924Z [DEBUG] High write ratio: blit=0, write=2705 (100.0% writes), screen=66x120
+2026-02-25T00:29:08.941Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-02-25T00:29:08.942Z [DEBUG] Bash tool error (27ms): EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\bsvj7qfqn.output'
+2026-02-25T00:29:08.942Z [ERROR] Error: Error: EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\bsvj7qfqn.output'
+    at openSync (unknown)
+    at $3$ (B:/~BUN/root/claude.exe:1756:2307)
+    at processTicksAndRejections (native:7:39)
+2026-02-25T00:29:08.944Z [DEBUG] Getting matching hook commands for PostToolUseFailure with query: Bash
+2026-02-25T00:29:08.944Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:29:08.944Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:29:08.944Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:29:08.944Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:29:08.944Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:29:08.944Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:29:08.945Z [DEBUG] autocompact: tokens=31880 threshold=167000 effectiveWindow=180000
+2026-02-25T00:29:08.945Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:29:08.948Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979348948
+2026-02-25T00:29:08.948Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:29:08.950Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:29:08.951Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:29:08.951Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979348948 to C:\Users\User\.claude.json
+2026-02-25T00:29:08.951Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:29:08.962Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:29:08.962Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:29:08.963Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:29:08.963Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:29:08.963Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:29:08.965Z [DEBUG] [useDeferredValue] Messages deferred by 1 (38→39)
+2026-02-25T00:29:08.973Z [DEBUG] High write ratio: blit=0, write=2705 (100.0% writes), screen=66x120
+2026-02-25T00:29:09.000Z [DEBUG] High write ratio: blit=0, write=2857 (100.0% writes), screen=67x120
+2026-02-25T00:29:09.047Z [DEBUG] Checking for native installer update to version 2.1.53
+2026-02-25T00:29:09.048Z [DEBUG] Found 2.1.53 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-02-25T00:29:11.405Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:29:12.781Z [DEBUG] [useDeferredValue] Messages deferred by 1 (39→40)
+2026-02-25T00:29:12.784Z [DEBUG] [useDeferredValue] Messages deferred by 1 (39→40)
+2026-02-25T00:29:12.788Z [DEBUG] [useDeferredValue] Messages deferred by 1 (39→40)
+2026-02-25T00:29:12.816Z [DEBUG] High write ratio: blit=0, write=3088 (100.0% writes), screen=72x120
+2026-02-25T00:29:13.609Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-02-25T00:29:13.610Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-02-25T00:29:13.610Z [DEBUG] Found 2 hook matchers in settings
+2026-02-25T00:29:13.610Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-02-25T00:29:13.613Z [DEBUG] [useDeferredValue] Messages deferred by 1 (40→41)
+2026-02-25T00:29:13.620Z [DEBUG] High write ratio: blit=0, write=3088 (100.0% writes), screen=72x120
+2026-02-25T00:29:13.630Z [DEBUG] [useDeferredValue] Messages deferred by 1 (41→42)
+2026-02-25T00:29:13.638Z [DEBUG] High write ratio: blit=0, write=3202 (100.0% writes), screen=75x120
+2026-02-25T00:29:13.640Z [DEBUG] [useDeferredValue] Messages deferred by 1 (41→42)
+2026-02-25T00:29:13.663Z [DEBUG] High write ratio: blit=0, write=3202 (100.0% writes), screen=75x120
+2026-02-25T00:29:13.694Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-02-25T00:29:13.697Z [DEBUG] Permission suggestions for Bash: [
+  {
+    "type": "addDirectories",
+    "directories": [
+      "C:\\Users\\User\\AppData\\Local\\Temp\\claude\\C--Users-User-usd-cognitive-substrate\\tasks"
+    ],
+    "destination": "session"
+  },
+  {
+    "type": "setMode",
+    "mode": "acceptEdits",
+    "destination": "session"
+  }
+]
+2026-02-25T00:29:13.697Z [DEBUG] executePermissionRequestHooks called for tool: Bash
+2026-02-25T00:29:13.698Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Bash
+2026-02-25T00:29:13.698Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:29:13.698Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:29:13.707Z [DEBUG] High write ratio: blit=0, write=3286 (100.0% writes), screen=81x120
+2026-02-25T00:29:15.593Z [DEBUG] Applying permission update: Adding 1 directory with destination 'session': ["C:\\Users\\User\\AppData\\Local\\Temp\\claude\\C--Users-User-usd-cognitive-substrate\\tasks"]
+2026-02-25T00:29:15.593Z [DEBUG] Applying permission update: Setting mode to 'acceptEdits'
+2026-02-25T00:29:15.602Z [DEBUG] High write ratio: blit=0, write=3240 (100.0% writes), screen=76x120
+2026-02-25T00:29:15.617Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-02-25T00:29:15.618Z [DEBUG] Session environment not yet supported on Windows
+2026-02-25T00:29:15.618Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-02-25T00:29:15.619Z [DEBUG] Bash tool error (26ms): EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\b694n1a2m.output'
+2026-02-25T00:29:15.619Z [ERROR] Error: Error: EINVAL: invalid argument, open 'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-usd-cognitive-substrate\tasks\b694n1a2m.output'
+    at openSync (unknown)
+    at $3$ (B:/~BUN/root/claude.exe:1756:2307)
+    at processTicksAndRejections (native:7:39)
+2026-02-25T00:29:15.621Z [DEBUG] Getting matching hook commands for PostToolUseFailure with query: Bash
+2026-02-25T00:29:15.621Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:29:15.621Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-02-25T00:29:15.621Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-02-25T00:29:15.621Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-02-25T00:29:15.621Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-02-25T00:29:15.621Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-02-25T00:29:15.622Z [DEBUG] autocompact: tokens=32133 threshold=167000 effectiveWindow=180000
+2026-02-25T00:29:15.622Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:29:15.624Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979355624
+2026-02-25T00:29:15.624Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:29:15.626Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:29:15.626Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:29:15.626Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979355624 to C:\Users\User\.claude.json
+2026-02-25T00:29:15.626Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:29:15.637Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:29:15.637Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:29:15.639Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:29:15.639Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:29:15.639Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:29:15.641Z [DEBUG] [useDeferredValue] Messages deferred by 1 (42→43)
+2026-02-25T00:29:15.649Z [DEBUG] High write ratio: blit=0, write=3260 (100.0% writes), screen=76x120
+2026-02-25T00:29:15.670Z [DEBUG] High write ratio: blit=0, write=3392 (100.0% writes), screen=77x120
+2026-02-25T00:29:17.351Z [DEBUG] Checking for native installer update to version 2.1.53
+2026-02-25T00:29:17.352Z [DEBUG] Found 2.1.53 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-02-25T00:29:17.805Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:29:20.543Z [DEBUG] [useDeferredValue] Messages deferred by 1 (43→44)
+2026-02-25T00:29:20.566Z [DEBUG] High write ratio: blit=0, write=3829 (100.0% writes), screen=86x120
+2026-02-25T00:29:20.569Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-02-25T00:29:20.569Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:29:20.569Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-02-25T00:29:20.569Z [DEBUG] autocompact: tokens=32566 threshold=167000 effectiveWindow=180000
+2026-02-25T00:29:20.570Z [DEBUG] Auto tool search enabled: 28009 tokens (threshold: 20000, 10% of context) [source: query]
+2026-02-25T00:29:20.572Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.182404.1771979360572
+2026-02-25T00:29:20.572Z [DEBUG] Preserving file permissions: 100666
+2026-02-25T00:29:20.575Z [DEBUG] Temp file written successfully, size: 39773 bytes
+2026-02-25T00:29:20.575Z [DEBUG] Applied original permissions to temp file
+2026-02-25T00:29:20.575Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.182404.1771979360572 to C:\Users\User\.claude.json
+2026-02-25T00:29:20.575Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-02-25T00:29:20.586Z [DEBUG] Dynamic tool loading: 0/49 deferred tools included
+2026-02-25T00:29:20.586Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.53.2d9; cc_entrypoint=cli; cch=00000;
+2026-02-25T00:29:20.587Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-02-25T00:29:20.587Z [DEBUG] [API:auth] OAuth token check starting
+2026-02-25T00:29:20.587Z [DEBUG] [API:auth] OAuth token check complete
+2026-02-25T00:29:20.595Z [DEBUG] High write ratio: blit=0, write=3729 (100.0% writes), screen=83x120
+2026-02-25T00:29:22.782Z [DEBUG] Stream started - received first chunk
+2026-02-25T00:29:23.022Z [DEBUG] Forked agent [prompt_suggestion] received message: type=assistant
+2026-02-25T00:29:23.055Z [DEBUG] Getting matching hook commands for SubagentStop with query:
+2026-02-25T00:29:23.055Z [DEBUG] Found 0 hook matchers in settings
+2026-02-25T00:29:23.055Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-02-25T00:29:23.055Z [DEBUG] Forked agent [prompt_suggestion] finished: 1 messages, types=[assistant], totalUsage: input=295 output=9 cacheRead=32170 cacheCreate=118
+2026-02-25T00:29:23.055Z [DEBUG] [Speculation] enabled=false
+2026-02-25T00:29:34.181Z [DEBUG] High write ratio: blit=960, write=3596 (78.9% writes), screen=83x120
+2026-02-25T00:29:44.460Z [DEBUG] High write ratio: blit=960, write=3596 (78.9% writes), screen=83x120

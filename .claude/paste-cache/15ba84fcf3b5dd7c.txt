@@ -1,0 +1,341 @@
+
+# ComfyUI Error Report
+## Error Details
+- **Node ID:** N/A
+- **Node Type:** N/A
+- **Exception Type:** Loading aborted due to error reloading workflow data
+- **Exception Message:** TypeError: Cannot read properties of undefined (reading 'addEventListener')
+## Stack Trace
+```
+TypeError: Cannot read properties of undefined (reading 'addEventListener')
+    at #setup (http://127.0.0.1:8188/extensions/comfyui-custom-scripts/js/common/autocomplete.js:398:11)
+    at new TextAreaAutoComplete (http://127.0.0.1:8188/extensions/comfyui-custom-scripts/js/common/autocomplete.js:394:14)
+    at ComfyWidgets.STRING (http://127.0.0.1:8188/extensions/comfyui-custom-scripts/js/autocompleter.js:313:5)
+    at ComfyWidgets.STRING (http://127.0.0.1:8188/extensions/comfyui-custom-scripts/js/mathExpression.js:9:21)
+    at ComfyWidgets.STRING (http://127.0.0.1:8188/extensions/comfyui-custom-scripts/js/workflowImage.js:542:27)
+    at e.onNodeCreated (http://127.0.0.1:8188/assets/core-v4P8lot7.js:3:14571)
+    at e.onNodeCreated (http://127.0.0.1:8188/assets/core-v4P8lot7.js:5:4062)
+    at e.onNodeCreated (http://127.0.0.1:8188/extensions/comfyui-easy-use/assets/extensions-ByfbHFiH.js:1:158938)
+    at LiteGraphGlobal.createNode (http://127.0.0.1:8188/assets/api-DVBbKmol.js:2:387742)
+    at Subgraph.configure (http://127.0.0.1:8188/assets/api-DVBbKmol.js:2:373601)
+```
+## System Information
+- **ComfyUI Version:** 0.16.4
+- **Arguments:** main.py --reserve-vram 1.0
+- **OS:** win32
+- **Python Version:** 3.14.2 (tags/v3.14.2:df79316, Dec  5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]
+- **Embedded Python:** false
+- **PyTorch Version:** 2.9.1+cu130
+## Devices
+
+- **Name:** cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync
+  - **Type:** cuda
+  - **VRAM Total:** 25756696576
+  - **VRAM Free:** 24154996736
+  - **Torch VRAM Total:** 0
+  - **Torch VRAM Free:** 0
+
+## Logs
+```
+2026-03-11T22:04:43.141736 -  2026-03-11T22:04:43.141766 - G:\COMFY\ComfyUI\user\__manager\config.ini2026-03-11T22:04:43.141796 - 
+2026-03-11T22:04:43.141831 - ** Log path:2026-03-11T22:04:43.141861 -  2026-03-11T22:04:43.153780 - G:\COMFY\ComfyUI\user\comfyui.log2026-03-11T22:04:43.153841 - 
+2026-03-11T22:04:44.383079 - 
+Prestartup times for custom nodes:
+2026-03-11T22:04:44.383220 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\rgthree-comfy
+2026-03-11T22:04:44.383287 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-marigold
+2026-03-11T22:04:44.383343 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-easy-use
+2026-03-11T22:04:44.383398 -    3.3 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-Manager
+2026-03-11T22:04:44.383440 - 
+2026-03-11T22:04:46.273471 - Found comfy_kitchen backend triton: {'available': True, 'disabled': True, 'unavailable_reason': None, 'capabilities': ['apply_rope', 'apply_rope1', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8']}
+2026-03-11T22:04:46.273697 - Found comfy_kitchen backend cuda: {'available': True, 'disabled': False, 'unavailable_reason': None, 'capabilities': ['apply_rope', 'apply_rope1', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8', 'scaled_mm_nvfp4']}
+2026-03-11T22:04:46.273788 - Found comfy_kitchen backend eager: {'available': True, 'disabled': False, 'unavailable_reason': None, 'capabilities': ['apply_rope', 'apply_rope1', 'dequantize_nvfp4', 'dequantize_per_tensor_fp8', 'quantize_nvfp4', 'quantize_per_tensor_fp8', 'scaled_mm_nvfp4']}
+2026-03-11T22:04:46.279946 - Checkpoint files will always be loaded safely.
+2026-03-11T22:04:46.393947 - Total VRAM 24564 MB, total RAM 130568 MB
+2026-03-11T22:04:46.394123 - pytorch version: 2.9.1+cu130
+2026-03-11T22:04:46.394682 - Set vram state to: NORMAL_VRAM
+2026-03-11T22:04:46.395030 - Device: cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync
+2026-03-11T22:04:46.414253 - Using async weight offloading with 2 streams
+2026-03-11T22:04:46.414640 - Enabled pinned memory 58755.0
+2026-03-11T22:04:46.417635 - working around nvidia conv3d memory bug.
+2026-03-11T22:04:46.581654 - Using pytorch attention
+2026-03-11T22:04:47.965216 - DynamicVRAM support detected and enabled
+2026-03-11T22:04:47.965431 - Python version: 3.14.2 (tags/v3.14.2:df79316, Dec  5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]
+2026-03-11T22:04:47.965550 - ComfyUI version: 0.16.4
+2026-03-11T22:04:47.966495 - comfy-aimdo version: 0.2.10
+2026-03-11T22:04:47.967157 - comfy-kitchen version: 0.2.7
+2026-03-11T22:04:47.968664 - ComfyUI frontend version: 1.41.15
+2026-03-11T22:04:47.969551 - [Prompt Server] web root: C:\Users\User\AppData\Roaming\Python\Python314\site-packages\comfyui_frontend_package\static
+2026-03-11T22:04:47.970143 - Asset seeder disabled
+2026-03-11T22:04:49.914548 - Traceback (most recent call last):
+  File "G:\COMFY\ComfyUI\nodes.py", line 2223, in load_custom_node
+    module_spec.loader.exec_module(module)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 759, in exec_module
+  File "<frozen importlib._bootstrap>", line 491, in _call_with_frames_removed
+  File "G:\COMFY\ComfyUI\custom_nodes\.disabled_ComfyUI-IF_AI_tools\__init__.py", line 9, in <module>
+    from .IFChatPromptNode import IFChatPrompt
+  File "G:\COMFY\ComfyUI\custom_nodes\.disabled_ComfyUI-IF_AI_tools\IFChatPromptNode.py", line 25, in <module>
+    from .graphRAG_module import GraphRAGapp
+  File "G:\COMFY\ComfyUI\custom_nodes\.disabled_ComfyUI-IF_AI_tools\graphRAG_module.py", line 23, in <module>
+    from nano_graphrag.graphrag import GraphRAG, QueryParam
+ModuleNotFoundError: No module named 'nano_graphrag'
+
+2026-03-11T22:04:49.914867 - Cannot import G:\COMFY\ComfyUI\custom_nodes\.disabled_ComfyUI-IF_AI_tools module for custom nodes: No module named 'nano_graphrag'
+2026-03-11T22:04:49.916746 - Traceback (most recent call last):
+  File "G:\COMFY\ComfyUI\nodes.py", line 2223, in load_custom_node
+    module_spec.loader.exec_module(module)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 759, in exec_module
+  File "<frozen importlib._bootstrap>", line 491, in _call_with_frames_removed
+  File "G:\COMFY\ComfyUI\custom_nodes\.disabled_comfyui_tensorrt\__init__.py", line 1, in <module>
+    from .tensorrt_convert import DYNAMIC_TRT_MODEL_CONVERSION
+  File "G:\COMFY\ComfyUI\custom_nodes\.disabled_comfyui_tensorrt\tensorrt_convert.py", line 7, in <module>
+    import tensorrt as trt
+ModuleNotFoundError: No module named 'tensorrt'
+
+2026-03-11T22:04:49.916868 - Cannot import G:\COMFY\ComfyUI\custom_nodes\.disabled_comfyui_tensorrt module for custom nodes: No module named 'tensorrt'
+2026-03-11T22:04:51.874650 - Traceback (most recent call last):
+  File "G:\COMFY\ComfyUI\nodes.py", line 2223, in load_custom_node
+    module_spec.loader.exec_module(module)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 759, in exec_module
+  File "<frozen importlib._bootstrap>", line 491, in _call_with_frames_removed
+  File "G:\COMFY\ComfyUI\custom_nodes\ComfyUI-3D-Pack\__init__.py", line 54, in <module>
+    module = importlib.import_module(f".{nodes_filename}", package=__name__)
+  File "C:\Python314\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1398, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1371, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1342, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 938, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 759, in exec_module
+  File "<frozen importlib._bootstrap>", line 491, in _call_with_frames_removed
+  File "G:\COMFY\ComfyUI\custom_nodes\ComfyUI-3D-Pack\nodes.py", line 53, in <module>
+    from FlexiCubes.flexicubes_trainer import FlexiCubesTrainer
+  File "G:\COMFYUI_Database\Custom_Nodes\ComfyUI-3D-Pack\MVs_Algorithms\FlexiCubes\flexicubes_trainer.py", line 10, in <module>
+    from .flexicubes_renderer import FlexiCubesRenderer
+  File "G:\COMFYUI_Database\Custom_Nodes\ComfyUI-3D-Pack\MVs_Algorithms\FlexiCubes\flexicubes_renderer.py", line 5, in <module>
+    import nvdiffrast.torch as dr
+ModuleNotFoundError: No module named 'nvdiffrast'
+
+2026-03-11T22:04:51.874873 - Cannot import G:\COMFY\ComfyUI\custom_nodes\ComfyUI-3D-Pack module for custom nodes: No module named 'nvdiffrast'
+2026-03-11T22:04:51.948555 - [34m[ComfyUI-Easy-Use] server: [0mv1.3.6 [92mLoaded[0m2026-03-11T22:04:51.948652 - 
+2026-03-11T22:04:51.948704 - [34m[ComfyUI-Easy-Use] web root: [0mG:\COMFYUI_Database\Custom_Nodes\comfyui-easy-use\web_version/v2 [92mLoaded[0m2026-03-11T22:04:51.948739 - 
+2026-03-11T22:04:51.958010 - Total VRAM 24564 MB, total RAM 130568 MB
+2026-03-11T22:04:51.958115 - pytorch version: 2.9.1+cu130
+2026-03-11T22:04:51.958576 - Set vram state to: NORMAL_VRAM
+2026-03-11T22:04:51.958694 - Device: cuda:0 NVIDIA GeForce RTX 4090 : cudaMallocAsync
+2026-03-11T22:04:51.981031 - Using async weight offloading with 2 streams
+2026-03-11T22:04:51.981471 - Enabled pinned memory 58755.0
+2026-03-11T22:04:51.984976 - ### Loading: ComfyUI-Impact-Pack (V8.28.2)
+2026-03-11T22:04:52.092340 - [Impact Pack] Wildcard total size (0.00 MB) is within cache limit (50.00 MB). Using full cache mode.
+2026-03-11T22:04:52.093919 - [Impact Pack] Wildcards loading done.
+2026-03-11T22:04:52.099801 - ============================================================2026-03-11T22:04:52.099861 - 
+2026-03-11T22:04:52.099902 - Deterministic Toolkit v4.1.0 loaded2026-03-11T22:04:52.099934 - 
+2026-03-11T22:04:52.099966 -   7 nodes registered2026-03-11T22:04:52.099996 - 
+2026-03-11T22:04:52.100027 -     - JetBlockCascadeMode2026-03-11T22:04:52.100056 - 
+2026-03-11T22:04:52.100117 -     - JetBlockHybridProfiler2026-03-11T22:04:52.100156 - 
+2026-03-11T22:04:52.100187 -     - JetBlockMamba2Deterministic2026-03-11T22:04:52.100216 - 
+2026-03-11T22:04:52.100246 -     - JetBlockNemotronOptimizer2026-03-11T22:04:52.100274 - 
+2026-03-11T22:04:52.100303 -     - JetBlockUniversalDeterminism2026-03-11T22:04:52.100332 - 
+2026-03-11T22:04:52.100360 -     - JetBlockV4DeterministicSampler2026-03-11T22:04:52.100388 - 
+2026-03-11T22:04:52.100416 -     - JetBlockV4ModeSwitch2026-03-11T22:04:52.100444 - 
+2026-03-11T22:04:52.100473 - ============================================================2026-03-11T22:04:52.100502 - 
+2026-03-11T22:04:52.124981 - [LoRA-Manager] Added path mapping: G:/COMFYUI_Database/Models/loras -> G:/COMFY/ComfyUI/models/loras
+2026-03-11T22:04:52.125509 - [LoRA-Manager] Found LoRA roots:
+ - G:/COMFY/ComfyUI/models/loras
+2026-03-11T22:04:52.126060 - [LoRA-Manager] Added path mapping: G:/COMFYUI_Database/Models/checkpoints -> G:/COMFY/ComfyUI/models/checkpoints
+2026-03-11T22:04:52.126442 - [LoRA-Manager] Added path mapping: G:/COMFYUI_Database/Models/diffusion_models -> G:/COMFY/ComfyUI/models/diffusion_models
+2026-03-11T22:04:52.126810 - [LoRA-Manager] Added path mapping: G:/COMFYUI_Database/Models/unet -> G:/COMFY/ComfyUI/models/unet
+2026-03-11T22:04:52.127122 - [LoRA-Manager] Found checkpoint roots:
+ - G:/COMFY/ComfyUI/models/checkpoints
+ - G:/COMFY/ComfyUI/models/diffusion_models
+ - G:/COMFY/ComfyUI/models/unet
+2026-03-11T22:04:52.127388 - [LoRA-Manager] Added path mapping: G:/COMFYUI_Database/Models/embeddings -> G:/COMFY/ComfyUI/models/embeddings
+2026-03-11T22:04:52.127702 - [LoRA-Manager] Found embedding roots:
+ - G:/COMFY/ComfyUI/models/embeddings
+2026-03-11T22:04:52.129128 - [LoRA-Manager] Symlink cache loaded with 5 mappings
+2026-03-11T22:04:52.129342 - [LoRA-Manager] Symlink mappings restored from cache in 1.44 ms
+2026-03-11T22:04:52.144913 - [LoRA-Manager] Updated 'comfyui' library with current folder paths
+2026-03-11T22:04:52.318696 - [LoRA-Manager] Detected async ComfyUI execution, installing async metadata hooks
+2026-03-11T22:04:52.318908 - [LoRA-Manager] Metadata collection hooks installed for runtime values
+2026-03-11T22:04:52.319003 - [LoRA-Manager] ComfyUI Metadata Collector initialized
+2026-03-11T22:04:52.319478 - [LoRA-Manager] Example images path: 
+2026-03-11T22:04:52.319826 - [LoRA-Manager] Added static route for locales: /locales -> G:\COMFY\ComfyUI\custom_nodes\comfyui-lora-manager\locales
+2026-03-11T22:04:52.365377 - ### Loading: ComfyUI-Manager (V3.39.2)
+2026-03-11T22:04:52.365846 - [ComfyUI-Manager] network_mode: public
+2026-03-11T22:04:52.365987 - [ComfyUI-Manager] ComfyUI per-queue preview override detected (PR #11261). Manager's preview method feature is disabled. Use ComfyUI's --preview-method CLI option or 'Settings > Execution > Live preview method'.
+2026-03-11T22:04:52.520330 - ### ComfyUI Version: v0.16.4-17-gabc87d36 | Released on '2026-03-11'
+2026-03-11T22:04:52.626031 - [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/alter-list.json
+2026-03-11T22:04:52.631380 - [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/model-list.json
+2026-03-11T22:04:52.664160 - [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/github-stats.json
+2026-03-11T22:04:52.722081 - [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/extension-node-map.json
+2026-03-11T22:04:52.764570 - [ComfyUI-Manager] default cache updated: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/custom-node-list.json
+2026-03-11T22:04:53.176401 - C:\Users\User\AppData\Roaming\Python\Python314\site-packages\timm\models\layers\__init__.py:48: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+
+2026-03-11T22:04:53.198287 - SUPER DUPER routes mounted: /superduper/chat, /superduper/status, /superduper/ws
+2026-03-11T22:04:53.253441 - ComfyUI found: G:\COMFY\ComfyUI2026-03-11T22:04:53.253523 - 
+2026-03-11T22:04:53.253599 - 'G:\COMFY\ComfyUI' added to sys.path2026-03-11T22:04:53.253644 - 
+2026-03-11T22:04:53.480011 - Warning: Could not load sageattention: No module named 'sageattention'
+2026-03-11T22:04:53.480163 - sageattention package is not installed, sageattention will not be available
+2026-03-11T22:04:53.545963 - WanVideoWrapper WARNING: FantasyPortrait nodes not available: No module named 'onnx'
+2026-03-11T22:04:53.563792 - [CONDUIT] v1.1.0 loaded: 13 optimization nodes2026-03-11T22:04:53.563907 - 
+2026-03-11T22:04:53.567985 - [36;20m[G:\COMFY\ComfyUI\custom_nodes\comfyui_controlnet_aux] | INFO -> Using ckpts path: G:\COMFYUI_Database\Custom_Nodes\comfyui_controlnet_aux\ckpts[0m
+2026-03-11T22:04:53.568252 - [36;20m[G:\COMFY\ComfyUI\custom_nodes\comfyui_controlnet_aux] | INFO -> Using symlinks: False[0m
+2026-03-11T22:04:53.568469 - [36;20m[G:\COMFY\ComfyUI\custom_nodes\comfyui_controlnet_aux] | INFO -> Using ort providers: ['CUDAExecutionProvider', 'DirectMLExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'CPUExecutionProvider', 'CoreMLExecutionProvider'][0m
+2026-03-11T22:04:53.718892 - G:\COMFY\ComfyUI\custom_nodes\comfyui_controlnet_aux\node_wrappers\dwpose.py:26: UserWarning: DWPose: Onnxruntime not found or doesn't come with acceleration providers, switch to OpenCV with CPU device. DWPose might run very slowly
+  warnings.warn("DWPose: Onnxruntime not found or doesn't come with acceleration providers, switch to OpenCV with CPU device. DWPose might run very slowly")
+
+2026-03-11T22:04:53.754812 - SCM Registration Status:2026-03-11T22:04:53.754904 -  2026-03-11T22:04:53.754989 - {'scm_in_KSAMPLER_NAMES': True, 'scm_in_SAMPLER_NAMES': True, 'sample_scm_function_exists': True, 'KSAMPLER_NAMES': ['euler', 'euler_cfg_pp', 'euler_ancestral', 'euler_ancestral_cfg_pp', 'heun', 'heunpp2', 'exp_heun_2_x0', 'exp_heun_2_x0_sde', 'dpm_2', 'dpm_2_ancestral', 'lms', 'dpm_fast', 'dpm_adaptive', 'dpmpp_2s_ancestral', 'dpmpp_2s_ancestral_cfg_pp', 'dpmpp_sde', 'dpmpp_sde_gpu', 'dpmpp_2m', 'dpmpp_2m_cfg_pp', 'dpmpp_2m_sde', 'dpmpp_2m_sde_gpu', 'dpmpp_2m_sde_heun', 'dpmpp_2m_sde_heun_gpu', 'dpmpp_3m_sde', 'dpmpp_3m_sde_gpu', 'ddpm', 'lcm', 'ipndm', 'ipndm_v', 'deis', 'res_multistep', 'res_multistep_cfg_pp', 'res_multistep_ancestral', 'res_multistep_ancestral_cfg_pp', 'gradient_estimation', 'gradient_estimation_cfg_pp', 'er_sde', 'seeds_2', 'seeds_3', 'sa_solver', 'sa_solver_pece', 'scm'], 'SAMPLER_NAMES': ['euler', 'euler_cfg_pp', 'euler_ancestral', 'euler_ancestral_cfg_pp', 'heun', 'heunpp2', 'exp_heun_2_x0', 'exp_heun_2_x0_sde', 'dpm_2', 'dpm_2_ancestral', 'lms', 'dpm_fast', 'dpm_adaptive', 'dpmpp_2s_ancestral', 'dpmpp_2s_ancestral_cfg_pp', 'dpmpp_sde', 'dpmpp_sde_gpu', 'dpmpp_2m', 'dpmpp_2m_cfg_pp', 'dpmpp_2m_sde', 'dpmpp_2m_sde_gpu', 'dpmpp_2m_sde_heun', 'dpmpp_2m_sde_heun_gpu', 'dpmpp_3m_sde', 'dpmpp_3m_sde_gpu', 'ddpm', 'lcm', 'ipndm', 'ipndm_v', 'deis', 'res_multistep', 'res_multistep_cfg_pp', 'res_multistep_ancestral', 'res_multistep_ancestral_cfg_pp', 'gradient_estimation', 'gradient_estimation_cfg_pp', 'er_sde', 'seeds_2', 'seeds_3', 'sa_solver', 'sa_solver_pece', 'ddim', 'uni_pc', 'uni_pc_bh2', 'scm']}2026-03-11T22:04:53.755070 - 
+2026-03-11T22:04:53.755129 - SCM sampler registered successfully2026-03-11T22:04:53.755161 - 
+2026-03-11T22:04:53.764093 - [JetNemotron] v1.0.0 loaded: 1 optimization nodes2026-03-11T22:04:53.764154 - 
+2026-03-11T22:04:53.878859 - 
+[36mEfficiency Nodes:[0m Attempting to add Control Net options to the 'HiRes-Fix Script' Node (comfyui_controlnet_aux add-on)...[92mSuccess![0m2026-03-11T22:04:53.879009 - 
+2026-03-11T22:04:53.887963 - Traceback (most recent call last):
+  File "G:\COMFY\ComfyUI\nodes.py", line 2218, in load_custom_node
+    module_spec = importlib.util.spec_from_file_location(sys_module_name, os.path.join(module_path, "__init__.py"))
+                                                         ^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'sys_module_name' where it is not associated with a value
+
+2026-03-11T22:04:53.888154 - Cannot import G:\COMFY\ComfyUI\custom_nodes\nul module for custom nodes: cannot access local variable 'sys_module_name' where it is not associated with a value
+2026-03-11T22:04:54.107010 - PyOpenColorIO 2.5.1 loaded.
+2026-03-11T22:04:54.120852 - Radiance: Successfully loaded 79 nodes (v2.1.0)
+2026-03-11T22:04:54.126820 - PyOpenColorIO 2.5.1 loaded.
+2026-03-11T22:04:54.139634 - Radiance: Successfully loaded 79 nodes (v2.1.0)
+2026-03-11T22:04:54.257638 - Using pytorch attention
+2026-03-11T22:04:54.272042 - (RES4LYF) Init2026-03-11T22:04:54.272175 - 
+2026-03-11T22:04:54.272285 - (RES4LYF debug) Displaying sampler category2026-03-11T22:04:54.272346 - 
+2026-03-11T22:04:54.272594 - (RES4LYF) Importing beta samplers.2026-03-11T22:04:54.272652 - 
+2026-03-11T22:04:54.286305 - (RES4LYF) Importing legacy samplers.2026-03-11T22:04:54.286367 - 
+2026-03-11T22:04:54.305491 - 
+2026-03-11T22:04:54.305578 - [92m[rgthree-comfy] Loaded 48 fantastic nodes. 🎉[0m2026-03-11T22:04:54.305634 - 
+2026-03-11T22:04:54.305669 - 
+2026-03-11T22:04:54.305710 - [33m[rgthree-comfy] ComfyUI's new Node 2.0 rendering may be incompatible with some rgthree-comfy nodes and features, breaking some rendering as well as losing the ability to access a node's properties (a vital part of many nodes). It also appears to run MUCH more slowly spiking CPU usage and causing jankiness and unresponsiveness, especially with large workflows. Personally I am not planning to use the new Nodes 2.0 and, unfortunately, am not able to invest the time to investigate and overhaul rgthree-comfy where needed. If you have issues when Nodes 2.0 is enabled, I'd urge you to switch it off as well and join me in hoping ComfyUI is not planning to deprecate the existing, stable canvas rendering all together.
+[0m2026-03-11T22:04:54.305748 - 
+2026-03-11T22:04:54.309769 - Skip G:\COMFY\ComfyUI\custom_nodes\__init__.py module for custom nodes due to the lack of NODE_CLASS_MAPPINGS or NODES_LIST (need one).
+2026-03-11T22:04:54.309871 - 
+Import times for custom nodes:
+2026-03-11T22:04:54.309944 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\websocket_image_save.py
+2026-03-11T22:04:54.309997 -    0.0 seconds (IMPORT FAILED): G:\COMFY\ComfyUI\custom_nodes\__init__.py
+2026-03-11T22:04:54.310045 -    0.0 seconds (IMPORT FAILED): G:\COMFY\ComfyUI\custom_nodes\nul
+2026-03-11T22:04:54.310090 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-DeterministicLLM
+2026-03-11T22:04:54.310133 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui_jet_nemotron
+2026-03-11T22:04:54.310176 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-VideoITG
+2026-03-11T22:04:54.310217 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\aigodlike-comfyui-translation
+2026-03-11T22:04:54.310258 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-3d-viewport-bridge
+2026-03-11T22:04:54.310298 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui_rtx_remix
+2026-03-11T22:04:54.310337 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-SuperDuper
+2026-03-11T22:04:54.310378 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-Hunyuan-Image-3
+2026-03-11T22:04:54.310417 -    0.0 seconds (IMPORT FAILED): G:\COMFY\ComfyUI\custom_nodes\.disabled_comfyui_tensorrt
+2026-03-11T22:04:54.310457 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui_framework_ecosystem
+2026-03-11T22:04:54.310498 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\RTX4090_nodes
+2026-03-11T22:04:54.310538 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\houdini-comfyui-connection
+2026-03-11T22:04:54.310576 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-DeterministicNodes
+2026-03-11T22:04:54.310613 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-vectorscope-cc
+2026-03-11T22:04:54.310652 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui_ipadapter_plus
+2026-03-11T22:04:54.310691 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui_conduit_optimizer
+2026-03-11T22:04:54.310730 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\flux-prompt-generator
+2026-03-11T22:04:54.310769 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyMath
+2026-03-11T22:04:54.310807 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui_essentials
+2026-03-11T22:04:54.310845 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\diffusionlight-comfyui
+2026-03-11T22:04:54.310884 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-Chord
+2026-03-11T22:04:54.310923 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-JetBlock-Optimizer
+2026-03-11T22:04:54.310963 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-custom-scripts
+2026-03-11T22:04:54.311001 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\rgthree-comfy
+2026-03-11T22:04:54.311039 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-SaveImageWithMetaData
+2026-03-11T22:04:54.311081 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-kjnodes
+2026-03-11T22:04:54.311125 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI_ExtraModels
+2026-03-11T22:04:54.311172 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-LTXVideo
+2026-03-11T22:04:54.311251 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-ic-light
+2026-03-11T22:04:54.311291 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\efficiency-nodes-comfyui
+2026-03-11T22:04:54.311330 -    0.0 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-marigold
+2026-03-11T22:04:54.311369 -    0.1 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-to-Python-Extension
+2026-03-11T22:04:54.311408 -    0.1 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-easy-use
+2026-03-11T22:04:54.311446 -    0.1 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui_sam3
+2026-03-11T22:04:54.311484 -    0.1 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-videohelpersuite
+2026-03-11T22:04:54.311523 -    0.1 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-impact-pack
+2026-03-11T22:04:54.311566 -    0.1 seconds: G:\COMFY\ComfyUI\custom_nodes\RES4LYF
+2026-03-11T22:04:54.311605 -    0.2 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui_controlnet_aux
+2026-03-11T22:04:54.311644 -    0.2 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-Manager
+2026-03-11T22:04:54.311682 -    0.2 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-lora-manager
+2026-03-11T22:04:54.311720 -    0.2 seconds: G:\COMFY\ComfyUI\custom_nodes\ComfyUI-WanVideoWrapper
+2026-03-11T22:04:54.311758 -    0.3 seconds: G:\COMFY\ComfyUI\custom_nodes\radiance
+2026-03-11T22:04:54.311796 -    0.3 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-ollama
+2026-03-11T22:04:54.311834 -    0.3 seconds: G:\COMFY\ComfyUI\custom_nodes\comfyui-sam2
+2026-03-11T22:04:54.311872 -    1.0 seconds (IMPORT FAILED): G:\COMFY\ComfyUI\custom_nodes\.disabled_ComfyUI-IF_AI_tools
+2026-03-11T22:04:54.311914 -    2.0 seconds (IMPORT FAILED): G:\COMFY\ComfyUI\custom_nodes\ComfyUI-3D-Pack
+2026-03-11T22:04:54.311954 - 
+2026-03-11T22:04:54.314133 - Context impl SQLiteImpl.
+2026-03-11T22:04:54.314216 - Will assume non-transactional DDL.
+2026-03-11T22:04:54.387661 - Starting server
+
+2026-03-11T22:04:54.390356 - [LoRA-Manager] Lora cache hydrated from persisted snapshot with 7 models
+2026-03-11T22:04:54.390764 - To see the GUI go to: http://127.0.0.1:8188
+2026-03-11T22:04:54.391612 - [LoRA-Manager] Checkpoint cache hydrated from persisted snapshot with 36 models
+2026-03-11T22:04:54.393503 - [LoRA-Manager] Embedding cache initialized in 0.00 seconds. Found 0 models
+2026-03-11T22:04:54.397789 - [LoRA-Manager] Recipe cache miss: performing full directory scan
+2026-03-11T22:04:54.402906 - [LoRA-Manager] Recipe cache initialized in 0.01 seconds. Found 0 recipes
+2026-03-11T22:04:54.414239 - [LoRA-Manager] FTS index validated, reusing existing index with 0 recipes
+2026-03-11T22:04:55.360313 - FETCH ComfyRegistry Data: 5/1302026-03-11T22:04:55.360460 - 
+2026-03-11T22:04:58.392709 - FETCH ComfyRegistry Data: 10/1302026-03-11T22:04:58.392836 - 
+2026-03-11T22:05:01.428750 - FETCH ComfyRegistry Data: 15/1302026-03-11T22:05:01.428897 - 
+2026-03-11T22:05:04.410773 - [DEPRECATION WARNING] Detected import of deprecated legacy API: /scripts/ui.js. This is likely caused by a custom node extension using outdated APIs. Please update your extensions or contact the extension author for an updated version.
+2026-03-11T22:05:04.414533 - [DEPRECATION WARNING] Detected import of deprecated legacy API: /extensions/core/clipspace.js. This is likely caused by a custom node extension using outdated APIs. Please update your extensions or contact the extension author for an updated version.
+2026-03-11T22:05:04.415274 - [DEPRECATION WARNING] Detected import of deprecated legacy API: /extensions/core/groupNode.js. This is likely caused by a custom node extension using outdated APIs. Please update your extensions or contact the extension author for an updated version.
+2026-03-11T22:05:04.416562 - [DEPRECATION WARNING] Detected import of deprecated legacy API: /extensions/core/widgetInputs.js. This is likely caused by a custom node extension using outdated APIs. Please update your extensions or contact the extension author for an updated version.
+2026-03-11T22:05:04.449018 - FETCH ComfyRegistry Data: 20/1302026-03-11T22:05:04.449178 - 
+2026-03-11T22:05:06.098446 - (RES4LYF debug) Debug logging enabled2026-03-11T22:05:06.098552 - 
+2026-03-11T22:05:06.099700 - (RES4LYF debug) Display Category enabled2026-03-11T22:05:06.099795 - 
+2026-03-11T22:05:06.100426 - (RES4LYF debug) Displaying sampler category2026-03-11T22:05:06.100487 - 
+2026-03-11T22:05:06.101018 - [DEPRECATION WARNING] Detected import of deprecated legacy API: /scripts/ui/components/button.js. This is likely caused by a custom node extension using outdated APIs. Please update your extensions or contact the extension author for an updated version.
+2026-03-11T22:05:06.101867 - [DEPRECATION WARNING] Detected import of deprecated legacy API: /scripts/ui/components/buttonGroup.js. This is likely caused by a custom node extension using outdated APIs. Please update your extensions or contact the extension author for an updated version.
+2026-03-11T22:05:07.472895 - FETCH ComfyRegistry Data: 25/1302026-03-11T22:05:07.473055 - 
+2026-03-11T22:05:10.507853 - FETCH ComfyRegistry Data: 30/1302026-03-11T22:05:10.507944 - 
+2026-03-11T22:05:13.789289 - FETCH ComfyRegistry Data: 35/1302026-03-11T22:05:13.789367 - 
+2026-03-11T22:05:15.997283 - Agent brain loaded, Anthropic client ready
+2026-03-11T22:05:15.997525 - WebSocket connected: a4f90dfd
+2026-03-11T22:05:18.245758 - WebSocket disconnected: a4f90dfd
+2026-03-11T22:05:20.377689 - FETCH ComfyRegistry Data: 40/1302026-03-11T22:05:20.378150 - 
+2026-03-11T22:05:20.747520 - (RES4LYF debug) Debug logging enabled2026-03-11T22:05:20.747607 - 
+2026-03-11T22:05:20.748487 - (RES4LYF debug) Display Category enabled2026-03-11T22:05:20.748553 - 
+2026-03-11T22:05:20.748930 - (RES4LYF debug) Displaying sampler category2026-03-11T22:05:20.748984 - 
+2026-03-11T22:05:23.439459 - FETCH ComfyRegistry Data: 45/1302026-03-11T22:05:23.439541 - 
+2026-03-11T22:05:28.913796 - FETCH ComfyRegistry Data: 50/1302026-03-11T22:05:28.913879 - 
+2026-03-11T22:05:32.022340 - FETCH ComfyRegistry Data: 55/1302026-03-11T22:05:32.022420 - 
+2026-03-11T22:05:35.067891 - FETCH ComfyRegistry Data: 60/1302026-03-11T22:05:35.067973 - 
+2026-03-11T22:05:37.370326 - (RES4LYF debug) Debug logging enabled2026-03-11T22:05:37.370438 - 
+2026-03-11T22:05:37.371655 - (RES4LYF debug) Display Category enabled2026-03-11T22:05:37.371728 - 
+2026-03-11T22:05:37.372144 - (RES4LYF debug) Displaying sampler category2026-03-11T22:05:37.372205 - 
+2026-03-11T22:05:38.298162 - FETCH ComfyRegistry Data: 65/1302026-03-11T22:05:38.298248 - 
+2026-03-11T22:05:41.756649 - FETCH ComfyRegistry Data: 70/1302026-03-11T22:05:41.756757 - 
+2026-03-11T22:05:44.788467 - FETCH ComfyRegistry Data: 75/1302026-03-11T22:05:44.788579 - 
+2026-03-11T22:05:48.239863 - FETCH ComfyRegistry Data: 80/1302026-03-11T22:05:48.240039 - 
+2026-03-11T22:05:51.506724 - FETCH ComfyRegistry Data: 85/1302026-03-11T22:05:51.507007 - 
+2026-03-11T22:05:54.556975 - FETCH ComfyRegistry Data: 90/1302026-03-11T22:05:54.557216 - 
+2026-03-11T22:05:57.646536 - FETCH ComfyRegistry Data: 95/1302026-03-11T22:05:57.646789 - 
+2026-03-11T22:06:00.933451 - FETCH ComfyRegistry Data: 100/1302026-03-11T22:06:00.933658 - 
+2026-03-11T22:06:04.031320 - FETCH ComfyRegistry Data: 105/1302026-03-11T22:06:04.031536 - 
+2026-03-11T22:06:07.115875 - FETCH ComfyRegistry Data: 110/1302026-03-11T22:06:07.116129 - 
+2026-03-11T22:06:10.181532 - FETCH ComfyRegistry Data: 115/1302026-03-11T22:06:10.181800 - 
+2026-03-11T22:06:13.687894 - FETCH ComfyRegistry Data: 120/1302026-03-11T22:06:13.688179 - 
+2026-03-11T22:06:17.359978 - FETCH ComfyRegistry Data: 125/1302026-03-11T22:06:17.360178 - 
+2026-03-11T22:06:20.842876 - FETCH ComfyRegistry Data: 130/1302026-03-11T22:06:20.843205 - 
+2026-03-11T22:06:21.343638 - FETCH ComfyRegistry Data [DONE]2026-03-11T22:06:21.343835 - 
+2026-03-11T22:06:21.482465 - [ComfyUI-Manager] default cache updated: https://api.comfy.org/nodes
+2026-03-11T22:06:21.518848 - FETCH DATA from: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/custom-node-list.json2026-03-11T22:06:21.518955 - 2026-03-11T22:06:21.606087 -  [DONE]2026-03-11T22:06:21.606266 - 
+2026-03-11T22:06:21.670783 - [ComfyUI-Manager] All startup tasks have been completed.
+2026-03-12T08:09:48.411383 - (RES4LYF debug) Debug logging enabled2026-03-12T08:09:48.411591 - 
+2026-03-12T08:09:48.412394 - (RES4LYF debug) Display Category enabled2026-03-12T08:09:48.412499 - 
+2026-03-12T08:09:48.412905 - (RES4LYF debug) Displaying sampler category2026-03-12T08:09:48.412970 - 
+
+```
+## Attached Workflow
+Please make sure that workflow does not contain any sensitive information such as API keys or passwords.
+```
+{"id":"07824bbb-6672-4bb0-ac36-4313a519e35b","revision":0,"last_node_id":168,"last_link_id":420,"nodes":[],"links":[[403,98,0,167,0,"IMAGE"],[404,167,0,75,0,"VIDEO"]],"groups":[],"config":{},"extra":{"frontendVersion":"1.39.19","workflowRendererVersion":"Vue","prompt":{"1":{"inputs":{"ckpt_name":"ltx-av-step-1751000_vocoder_24K.safetensors"},"class_type":"CheckpointLoaderSimple","_meta":{"title":"Load Checkpoint"}},"2":{"inputs":{"gemma_path":"gemma-3-12b-it-qat-q4_0-unquantized_readout_proj/model/model.safetensors","ltxv_path":"ltx-av-step-1751000_vocoder_24K.safetensors","max_length":1024},"class_type":"LTXVGemmaCLIPModelLoader","_meta":{"title":"🅛🅣🅧 Gemma 3 Model Loader"}},"3":{"inputs":{"text":"","clip":["2",0]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP Text Encode (Prompt)"}},"4":{"inputs":{"text":"blurry, low quality, still frame, frames, watermark, overlay, titles, has blurbox, has subtitles","clip":["2",0]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP Text Encode (Prompt)"}},"8":{"inputs":{"sampler_name":"euler"},"class_type":"KSamplerSelect","_meta":{"title":"KSamplerSelect"}},"9":{"inputs":{"steps":20,"max_shift":2.05,"base_shift":0.95,"stretch":true,"terminal":0.1,"latent":["28",0]},"class_type":"LTXVScheduler","_meta":{"title":"LTXVScheduler"}},"11":{"inputs":{"noise_seed":10},"class_type":"RandomNoise","_meta":{"title":"RandomNoise"}},"12":{"inputs":{"samples":["29",0],"vae":["1",2]},"class_type":"VAEDecode","_meta":{"title":"VAE Decode"}},"13":{"inputs":{"ckpt_name":"ltx-av-step-1751000_vocoder_24K.safetensors"},"class_type":"LTXVAudioVAELoader","_meta":{"title":"🅛🅣🅧 LTXV Audio VAE Loader"}},"14":{"inputs":{"samples":["29",1],"audio_vae":["13",0]},"class_type":"LTXVAudioVAEDecode","_meta":{"title":"🅛🅣🅧 LTXV Audio VAE Decode"}},"15":{"inputs":{"frame_rate":["23",0],"loop_count":0,"filename_prefix":"AnimateDiff","format":"video/h264-mp4","pix_fmt":"yuv420p","crf":19,"save_metadata":true,"trim_to_audio":false,"pingpong":false,"save_output":true,"images":["12",0],"audio":["14",0]},"class_type":"VHS_VideoCombine","_meta":{"title":"Video Combine 🎥🅥🅗🅢"}},"17":{"inputs":{"skip_blocks":"29","model":["28",1],"positive":["22",0],"negative":["22",1],"parameters":["18",0]},"class_type":"MultimodalGuider","_meta":{"title":"🅛🅣🅧 Multimodal Guider"}},"18":{"inputs":{"modality":"VIDEO","cfg":3,"stg":0,"rescale":0,"modality_scale":3,"parameters":["19",0]},"class_type":"GuiderParameters","_meta":{"title":"🅛🅣🅧 Guider Parameters"}},"19":{"inputs":{"modality":"AUDIO","cfg":7,"stg":0,"rescale":0,"modality_scale":3},"class_type":"GuiderParameters","_meta":{"title":"🅛🅣🅧 Guider Parameters"}},"21":{"inputs":{"audioUI":"","audio":["14",0]},"class_type":"PreviewAudio","_meta":{"title":"PreviewAudio"}},"22":{"inputs":{"frame_rate":["23",0],"positive":["3",0],"negative":["4",0]},"class_type":"LTXVConditioning","_meta":{"title":"LTXVConditioning"}},"23":{"inputs":{"value":25},"class_type":"FloatConstant","_meta":{"title":"Float Constant"}},"26":{"inputs":{"frames_number":["27",0],"frame_rate":["42",0],"batch_size":1},"class_type":"LTXVEmptyLatentAudio","_meta":{"title":"🅛🅣🅧 LTXV Empty Latent Audio"}},"27":{"inputs":{"value":105},"class_type":"INTConstant","_meta":{"title":"INT Constant"}},"28":{"inputs":{"video_latent":["43",0],"audio_latent":["26",0],"model":["44",0]},"class_type":"LTXVConcatAVLatent","_meta":{"title":"🅛🅣🅧 LTXV Concat AV Latent"}},"29":{"inputs":{"av_latent":["41",0],"model":["28",1]},"class_type":"LTXVSeparateAVLatent","_meta":{"title":"🅛🅣🅧 LTXV Separate AV Latent"}},"41":{"inputs":{"noise":["11",0],"guider":["17",0],"sampler":["8",0],"sigmas":["9",0],"latent_image":["28",0]},"class_type":"SamplerCustomAdvanced","_meta":{"title":"SamplerCustomAdvanced"}},"42":{"inputs":{"a":["23",0]},"class_type":"CM_FloatToInt","_meta":{"title":"FloatToInt"}},"43":{"inputs":{"width":768,"height":512,"length":["27",0],"batch_size":1},"class_type":"EmptyLTXVLatentVideo","_meta":{"title":"EmptyLTXVLatentVideo"}},"44":{"inputs":{"torch_compile":true,"disable_backup":false,"model":["1",0]},"class_type":"LTXVSequenceParallelMultiGPUPatcher","_meta":{"title":"LTXVSequenceParallelMultiGPUPatcher"}},"45":{"inputs":{"frame_idx":0,"strength":1},"class_type":"LTXVAddGuide","_meta":{"title":"LTXVAddGuide"}}},"comfy_fork_version":"feature/av_inference@a6994ed1","VHS_latentpreview":false,"VHS_latentpreviewrate":0,"VHS_MetadataImage":true,"VHS_KeepIntermediate":true,"ds":{"scale":1,"offset":[0,0]}},"version":0.4}
+```
+
+## Additional Context
+(Please add any additional context or steps to reproduce the error here)

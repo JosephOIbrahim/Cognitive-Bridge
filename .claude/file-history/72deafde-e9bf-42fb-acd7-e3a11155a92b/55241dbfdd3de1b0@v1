@@ -1,0 +1,245 @@
+# MCP Polish + TOPS Sprint Phase 1
+
+## Context
+
+SYNAPSE v5.3.0 MCP endpoint is working end-to-end (6/6 E2E tests passed on port 8008), but has three polish items. Then: TOPS/PDG Sprint Phase 1 adds 5 new tools for work item introspection, dependency graphs, cook statistics, cooking, and item generation. The existing `houdini_wedge` tool handles basic PDG cooking; these 5 tools complete the TOPS story.
+
+Two-part plan: **Part A** is quick MCP polish (3 items), **Part B** is TOPS Phase 1 (5 tools across 6 files + tests).
+
+---
+
+## Part A: MCP Polish (3 items)
+
+### A1. Auto-start MCP alongside WebSocket server
+
+**File:** `~/.synapse/houdini/scripts/python/synapse_shelf.py`
+
+In `open_panel()` (the main entry point when clicking the Synapse shelf button), add a call to `start_mcp()` at the end, after the panel opens. This way clicking "Synapse" in the shelf starts both WebSocket (on 9999) and MCP HTTP (on 8008) in one click. Guard with try/except so MCP failure doesn't block the panel.
+
+```python
+# At end of open_panel():
+try:
+    start_mcp()
+except Exception:
+    pass  # MCP is optional — WebSocket still works
+```
+
+### A2. Fix SETUP.md port and dual-transport docs
+
+**File:** `docs/mcp/SETUP.md`
+
+- Change all references from port `9999` to `8008`
+- Update Prerequisites to mention both servers: WebSocket on 9999 (primary for mcp_server.py stdio bridge), HTTP on 8008 (for direct MCP Streamable HTTP)
+- Update Claude Code config example to use port 8008
+- Add note about `SYNAPSE_MCP_PORT` env var
+
+### A3. Version string note
+
+**File:** `docs/mcp/SETUP.md` (Troubleshooting section)
+
+Add troubleshooting entry: if `serverInfo.version` shows stale version, run `pip install -e .` to update package metadata. This is informational, no code change needed.
+
+---
+
+## Part B: TOPS Sprint Phase 1 (5 tools)
+
+### B1. CommandType enums
+
+**File:** `python/synapse/core/protocol.py` (line ~70, after `VALIDATE_FRAME`)
+
+Add 5 new enum values:
+
+```python
+    # TOPS / PDG
+    TOPS_GET_WORK_ITEMS = "tops_get_work_items"
+    TOPS_GET_DEPENDENCY_GRAPH = "tops_get_dependency_graph"
+    TOPS_GET_COOK_STATS = "tops_get_cook_stats"
+    TOPS_COOK_NODE = "tops_cook_node"
+    TOPS_GENERATE_ITEMS = "tops_generate_items"
+```
+
+### B2. Parameter aliases
+
+**File:** `python/synapse/core/aliases.py` (line ~56, after the wedge/TOPs section)
+
+Add new aliases for TOPS parameters:
+
+```python
+    # TOPS / PDG
+    "node_path": ["node_path", "node", "path", "top_path"],
+    "topnet_path": ["topnet_path", "topnet", "network_path"],
+    "state_filter": ["state_filter", "filter_state", "state"],
+    "include_attributes": ["include_attributes", "include_attrs", "attrs"],
+    "generate_only": ["generate_only", "gen_only"],
+    "blocking": ["blocking", "block", "wait"],
+    "top_down": ["top_down", "topdown", "cook_upstream"],
+```
+
+### B3. Handler implementations
+
+**File:** `python/synapse/server/handlers_render.py` (after `_handle_wedge` at line 412)
+
+Add 5 handler methods to `RenderHandlerMixin`. All follow the same pattern as `_handle_wedge`:
+- Check `HOU_AVAILABLE`
+- `import hdefereval`
+- Use `resolve_param()` for required params, `.get()` for optional
+- Define inner function `_run()` for main-thread execution
+- Call via `hdefereval.executeInMainThreadWithResult(_run)`
+- Coaching-tone errors ("Couldn't find...", "Make sure...")
+
+#### `_handle_tops_get_work_items(self, payload)`
+- Resolve: `node_path` (required), `state_filter` (default "all"), `include_attributes` (default True), `limit` (default 100)
+- Get `hou.node(path)` -> `getPDGNode()` -> iterate `workItems`
+- Filter by state, collect id/index/name/state/cook_time/attributes
+- Return: `{node, total_items, returned, filter, items}`
+
+#### `_handle_tops_get_dependency_graph(self, payload)`
+- Resolve: `topnet_path` (required), `depth` (default -1)
+- Get TOP network node -> `children()` -> build adjacency from `inputConnections()`
+- For each TOP node: name, type, state (has work items?), work item counts by state
+- Return: `{topnet, node_count, nodes, edges}`
+
+#### `_handle_tops_get_cook_stats(self, payload)`
+- Resolve: `node_path` (required)
+- Get node -> if TopNet, aggregate over children; if Top, single node stats
+- Per node: `getPDGNode()` -> count work items by state, sum cook times
+- Return: `{node, total_items, by_state: {cooked, failed, ...}, total_cook_time, nodes}`
+
+#### `_handle_tops_cook_node(self, payload)`
+- Resolve: `node_path` (required), `generate_only` (default False), `blocking` (default True), `top_down` (default True)
+- Get node, verify it's a TOP node
+- If `generate_only`: call `pdg_node.generateItems()` or use `node.cook(block=blocking)` with generate flag
+- Else: `node.cook(block=blocking)`
+- Return: `{node, status: "cooked"/"cooking", work_items: count}`
+
+#### `_handle_tops_generate_items(self, payload)`
+- Resolve: `node_path` (required)
+- Get node -> `getPDGNode()` -> call generate
+- Return: `{node, status: "generated", item_count}`
+
+**PDG graceful degradation:** Each handler tries `node.getPDGNode()`. If it returns None, raise a coaching error: "Node isn't a TOP node or hasn't been set up for PDG yet -- make sure it's inside a TOP network."
+
+### B4. Handler registration
+
+**File:** `python/synapse/server/handlers.py`
+
+**`_CMD_CATEGORY` dict** (line ~92): Add 5 entries:
+```python
+    "tops_get_work_items": AuditCategory.PIPELINE,
+    "tops_get_dependency_graph": AuditCategory.PIPELINE,
+    "tops_get_cook_stats": AuditCategory.PIPELINE,
+    "tops_cook_node": AuditCategory.PIPELINE,
+    "tops_generate_items": AuditCategory.PIPELINE,
+```
+
+**`_READ_ONLY_COMMANDS` frozenset** (line ~117): Add 3 read-only commands:
+```python
+    "tops_get_work_items", "tops_get_dependency_graph", "tops_get_cook_stats",
+```
+
+**`_register_handlers()`** (line ~318, after wedge): Add 5 registrations:
+```python
+        # TOPS / PDG
+        reg.register("tops_get_work_items", self._handle_tops_get_work_items)
+        reg.register("tops_get_dependency_graph", self._handle_tops_get_dependency_graph)
+        reg.register("tops_get_cook_stats", self._handle_tops_get_cook_stats)
+        reg.register("tops_cook_node", self._handle_tops_cook_node)
+        reg.register("tops_generate_items", self._handle_tops_generate_items)
+```
+
+### B5. MCP tool definitions (HTTP transport)
+
+**File:** `python/synapse/mcp/tools.py` (line ~297, after `houdini_wedge`)
+
+Add 5 tool definitions to `_TOOL_DEFS` following the existing tuple pattern:
+```python
+(name, command_type, payload_builder, description, inputSchema, read_only, destructive, idempotent)
+```
+
+- `tops_get_work_items` -> `"tops_get_work_items"`, `_identity`, read_only=True
+- `tops_get_dependency_graph` -> `"tops_get_dependency_graph"`, `_identity`, read_only=True
+- `tops_get_cook_stats` -> `"tops_get_cook_stats"`, `_identity`, read_only=True
+- `tops_cook_node` -> `"tops_cook_node"`, `_identity`, read_only=False, destructive=True
+- `tops_generate_items` -> `"tops_generate_items"`, `_identity`, read_only=False, destructive=True
+
+Input schemas match the TOPS_SPRINT.md spec (section 2.1 and 2.2).
+
+### B6. MCP tool definitions (stdio transport)
+
+**File:** `mcp_server.py`
+
+**`list_tools()`** (~line 856, after `houdini_wedge` Tool): Add 5 `Tool(...)` entries with descriptions and inputSchemas.
+
+**`_SLOW_COMMANDS`** (line ~146): Add:
+```python
+    "tops_cook_node": 120.0,
+    "tops_generate_items": 60.0,
+```
+
+**`TOOL_DISPATCH`** (line ~1418, after `houdini_wedge`): Add 5 entries:
+```python
+    "tops_get_work_items":        ("tops_get_work_items",        _identity),
+    "tops_get_dependency_graph":  ("tops_get_dependency_graph",  _identity),
+    "tops_get_cook_stats":        ("tops_get_cook_stats",        _identity),
+    "tops_cook_node":             ("tops_cook_node",             _identity),
+    "tops_generate_items":        ("tops_generate_items",        _identity),
+```
+
+### B7. Tests
+
+**File:** `tests/test_tops.py` (NEW, ~300 lines)
+
+Bootstrap pattern (same as test_render.py / test_frame_validator.py):
+- Inline `hou` stub via `types.ModuleType` + `sys.modules`
+- Add `pdg` stub with `WorkItemState` enum (Cooked, Failed, Scheduled, Cooking, Cancelled, Uncooked)
+- Load handlers via `importlib.util.spec_from_file_location`
+- Capture `_handlers_hou = handlers_mod.hou` for patching
+- Fixture: `handler()` -> `SynapseHandler()` with `_bridge = MagicMock()`
+
+**PDG mock helpers:**
+- `_make_work_item(id, index, name, state, cook_time, attrs)` -> mock pdg.WorkItem
+- `_make_pdg_node(work_items)` -> mock with `.workItems` property
+- `_make_top_node(path, pdg_node, category="Top")` -> mock hou node
+
+**Test classes (~50 tests):**
+
+| Class | Tests | What it covers |
+|-------|-------|---------------|
+| `TestGetWorkItems` | 8 | All items, state filter, include_attributes, limit, no PDG node, empty node |
+| `TestGetDependencyGraph` | 6 | Simple graph, edges, deep traversal, empty network, non-topnet error |
+| `TestGetCookStats` | 6 | Single node stats, network aggregate, by_state counts, cook times |
+| `TestCookNode` | 8 | Blocking cook, generate_only, non-top error, node not found, result shape |
+| `TestGenerateItems` | 5 | Basic generate, no PDG node error, result shape |
+| `TestAliases` | 3 | `node_path` alias resolution, `topnet_path`, `state_filter` |
+| `TestMCPRegistration` | 4 | All 5 tools in `_TOOL_DEFS`, command types in `_READ_ONLY_COMMANDS`, handler registered |
+
+Also update `tests/test_tops_assembly.py` -> rename existing tests if needed to avoid confusion (or keep as-is since they test the wedge handler specifically).
+
+---
+
+## Files Modified (Summary)
+
+| # | File | Change |
+|---|------|--------|
+| 1 | `~/.synapse/houdini/scripts/python/synapse_shelf.py` | Auto-start MCP in `open_panel()` |
+| 2 | `docs/mcp/SETUP.md` | Fix port 9999->8008, dual-transport docs, version troubleshooting |
+| 3 | `python/synapse/core/protocol.py` | 5 new CommandType enums |
+| 4 | `python/synapse/core/aliases.py` | TOPS parameter aliases |
+| 5 | `python/synapse/server/handlers_render.py` | 5 new handler methods |
+| 6 | `python/synapse/server/handlers.py` | Registration, audit categories, read-only set |
+| 7 | `python/synapse/mcp/tools.py` | 5 new tool defs in `_TOOL_DEFS` |
+| 8 | `mcp_server.py` | 5 Tool() entries, 2 slow commands, 5 TOOL_DISPATCH entries |
+| 9 | `tests/test_tops.py` | NEW — ~50 tests with hou/pdg stubs |
+
+## Implementation Order
+
+1. **Part A** (MCP Polish): A2 (SETUP.md) -> A3 (version note) -> A1 (auto-start)
+2. **Part B** (TOPS): B1 (enums) -> B2 (aliases) -> B3 (handlers) -> B4 (registration) -> B5 (HTTP tools) -> B6 (stdio tools) -> B7 (tests)
+
+## Verification
+
+1. `python -m pytest tests/test_tops.py -v` -- new TOPS tests pass
+2. `python -m pytest tests/ -v` -- full suite still passes (~950+ tests, 0 failures)
+3. `python -c "from synapse.core.protocol import CommandType; print(CommandType.TOPS_GET_WORK_ITEMS)"` -- enum exists
+4. If Houdini connected: `tops_get_work_items` with a TOP network path to test E2E
+5. Verify `synapse_shelf.py` auto-starts MCP by clicking Synapse shelf button in Houdini

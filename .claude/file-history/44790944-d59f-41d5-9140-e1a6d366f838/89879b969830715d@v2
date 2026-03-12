@@ -1,0 +1,182 @@
+---
+title: VEX Performance Optimization
+category: vex_reference
+subcategory: performance
+keywords: [vex, performance, optimization, speed, bottleneck, parallel, pcfind, compile, wrangle, memory]
+agent_relevance:
+  VexAuditor: 0.95
+  GraphTracer: 0.7
+  Librarian: 0.5
+related_documents:
+  - path: performance_reference/optimization_strategies.md
+    reason: "General Houdini optimization strategies"
+  - path: vex_reference/functions.md
+    reason: "Function alternatives for performance"
+common_queries:
+  - "How to make VEX faster"
+  - "VEX optimization tips"
+  - "Why is my wrangle slow?"
+  - "pcfind performance"
+  - "VEX vs Python speed"
+---
+
+# VEX Performance Optimization
+
+## Core Principles
+
+1. **VEX is parallel** -- each element processes independently. Avoid patterns that serialize.
+2. **Minimize I/O** -- reading from other inputs or attributes is slower than local variables.
+3. **Reduce function calls** -- cache results, avoid redundant lookups.
+4. **Use squared distances** -- `distance2()` and `length2()` avoid `sqrt()`.
+
+## Fast vs Slow Patterns
+
+### Spatial Queries
+
+```vex
+// SLOW: nearpoints iterates all points O(n)
+int pts[] = nearpoints(0, @P, radius);
+
+// FAST: pcfind uses KD-tree O(log n)
+int pts[] = pcfind(0, "P", @P, radius, maxpts);
+
+// FASTEST: pcopen/pcfilter for aggregation (no array allocation)
+int handle = pcopen(0, "P", @P, radius, maxpts);
+float avg_density = pcfilter(handle, "density");
+pcclose(handle);
+```
+
+### Attribute Access
+
+```vex
+// SLOW: reading attribute by name every iteration
+for (int i = 0; i < npoints(0); i++) {
+    float d = point(0, "density", i);  // String lookup each time
+}
+
+// FAST: use @-binding (compiled direct access)
+float d = @density;  // Direct memory offset, no string lookup
+
+// FAST: cache attribute reads outside loops
+int pts[] = neighbours(0, @ptnum);
+vector my_pos = @P;  // Read once
+foreach (int pt; pts) {
+    float d = distance(my_pos, point(0, "P", pt));
+}
+```
+
+### Distance Comparisons
+
+```vex
+// SLOW: uses sqrt internally
+if (distance(@P, target) < radius) { ... }
+
+// FAST: compare squared values (avoids sqrt)
+float r2 = radius * radius;
+if (distance2(@P, target) < r2) { ... }
+
+// Same for length
+if (length2(v) < threshold * threshold) { ... }
+```
+
+### Branching
+
+```vex
+// SLOW: complex branching kills SIMD
+if (complex_condition_1) {
+    // large code block A
+} else if (complex_condition_2) {
+    // large code block B
+} else {
+    // large code block C
+}
+
+// FAST: use lerp/smooth for gradual transitions
+float mask = smooth(0.3, 0.7, @density);
+@P += dir * mask;  // Branchless blend
+
+// FAST: use select() for simple branches
+float val = select(condition, val_true, val_false);
+```
+
+### Loop Patterns
+
+```vex
+// SLOW: modifying arrays in tight loops (realloc)
+int result[] = {};
+for (int i = 0; i < 10000; i++) {
+    append(result, i);  // May realloc each time
+}
+
+// FAST: pre-size array
+int result[];
+resize(result, 10000);
+for (int i = 0; i < 10000; i++) {
+    result[i] = i;
+}
+```
+
+## Memory-Efficient Patterns
+
+```vex
+// AVOID: storing large temporary arrays per-point
+vector pts[];
+resize(pts, npoints(0));  // N vectors * N points = O(n^2) memory
+
+// PREFER: process in-place or use pcopen handles
+int handle = pcopen(0, "P", @P, radius, maxpts);
+// Process incrementally via pciterate/pcfilter
+```
+
+## Run-Over Mode Selection
+
+| Mode | Best For | Avoid When |
+|------|----------|------------|
+| Points | Per-point operations, attribute modification | Need prim topology |
+| Primitives | Per-face operations, prim attributes | Processing individual points |
+| Detail | Global aggregation, single-pass counts | Per-element processing |
+| Vertices | UV operations, per-corner data | Simple point/prim operations |
+
+**Tip**: Run over Detail + explicit loops is sometimes faster than per-point for small geometry with complex inter-element dependencies (avoids parallel overhead).
+
+## Compilation and JIT
+
+```vex
+// VEX compiles once, runs in parallel
+// First cook is slower (compilation), subsequent cooks are fast
+// Changing wrangle code forces recompilation
+
+// Tip: Use channel references instead of hardcoded values
+// Changing ch() values does NOT trigger recompilation
+float radius = chf("radius");   // Fast to adjust
+// vs
+float radius = 0.5;             // Changing requires recompile
+```
+
+## Profiling
+
+```vex
+// Use the Performance Monitor (Windows > Performance Monitor)
+// Look for:
+// - "VEX" time in cook breakdown
+// - High "Memory" in attribute access patterns
+// - "Compile" time if wrangle code changes every frame
+
+// Debug timing in VEX (rough estimate)
+float start = getcomp(cracktransform(0,0,{0,0,0},optransform(".")), 0);
+// ... expensive code ...
+printf("Elapsed: %g\n", /* use external timing */);
+```
+
+## Common Bottleneck Checklist
+
+| Symptom | Likely Cause | Fix |
+|---------|-------------|-----|
+| Slow with many points | O(n^2) spatial query | Switch to `pcfind` (KD-tree) |
+| Slow first cook | VEX compilation | Cache compiled code, avoid dynamic snippets |
+| Memory spike | Large per-element arrays | Use streaming (pcopen/pcfilter) |
+| Uniform slowdown | String attribute lookups in loops | Cache outside loop, use point() not attrib name |
+| Frame-dependent slowdown | Growing geometry/particle count | Profile per-frame, check for leaks |
+
+---
+*Houdini 21 VEX Reference -- Performance*

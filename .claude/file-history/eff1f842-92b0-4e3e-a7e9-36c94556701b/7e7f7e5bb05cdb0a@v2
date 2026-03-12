@@ -1,0 +1,20 @@
+# Auto Memory
+
+## Context Engineering Integration (2025-02-12)
+- Installed [Context-Engineering](https://github.com/davidkimai/Context-Engineering) v2.0 agents
+- 16 slash-command agents at `~/.claude/commands/` (research, test, security, optimize, deploy, monitor, cli, doc, data, meta, alignment, diligence, legal, lit, marketing, comms)
+- Global `~/.claude/CLAUDE.md` created with curated reasoning protocols (systematic decomposition, self-reflection, knowledge gap, bug diagnosis, TDD, explore-plan-code-commit)
+- Full repo cloned to `~/Context-Engineering/` as reference library (templates, schemas, curriculum)
+- Workspace `~/CLAUDE.md` updated with references to new components
+
+## CUTLASS Kernel Selection — Parked (2026-02-12)
+- Explicit CUTLASS kernel selection explored for FP16/BF16 GEMM on RTX 4090 (52% efficiency via `torch.mm()` vs 330.3 TFLOPS theoretical)
+- `preferred_blas_library("cublaslt")` — **not supported on Windows** (experimental, no-op)
+- `preferred_linalg_library` — cuSOLVER/MAGMA only, not for GEMMs
+- `torch.compile` + Inductor CUTLASS backend — works on Windows but 25s/kernel compile overhead, belongs in ComfyUI/inference layer not the optimizer
+- **Decision:** Optimizer detects the gap and recommends env vars. Actual kernel swaps belong downstream in inference tools (ComfyUI custom nodes, model compile wrappers).
+- CUTLASS v4.3.5 built for SM89 at `C:\Users\User\OneDrive\Desktop\AI_Dev\cutlass\`
+- Revisit if PyTorch enables `preferred_blas_library` on Windows or CUTLASS Inductor compile times improve
+
+## Windows Path Gotcha
+- `gh repo clone` with Windows backslash paths mangles them in bash (e.g., `C:\Users\User\foo` becomes `CUsersUserfoo`). Always use forward slashes in bash commands.

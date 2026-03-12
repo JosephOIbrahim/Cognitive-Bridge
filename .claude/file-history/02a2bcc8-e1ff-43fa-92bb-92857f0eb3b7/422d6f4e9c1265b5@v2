@@ -1,0 +1,54 @@
+"""Quick test: execute Python in UE5 and write results to a file we can read back."""
+import httpx
+import json
+import os
+import time
+
+TEMP_DIR = "C:/Users/User/AppData/Local/Temp/ue_mcp_scripts"
+RESULT_FILE = f"{TEMP_DIR}/test_result.json"
+SCRIPT_FILE = f"{TEMP_DIR}/list_actors.py"
+
+# Remove old result file if it exists
+if os.path.exists(RESULT_FILE):
+    os.remove(RESULT_FILE)
+
+# Write the UE5-side script
+with open(SCRIPT_FILE, "w", encoding="utf-8") as f:
+    f.write(f'''
+import unreal, json
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+results = []
+for a in actors:
+    results.append({{
+        "name": a.get_actor_label(),
+        "class": a.get_class().get_name(),
+    }})
+with open("{RESULT_FILE}", "w", encoding="utf-8") as f:
+    json.dump(results, f, indent=2)
+unreal.log(f"[ClaudeTest] Wrote {{len(results)}} actors to file")
+''')
+
+# Execute via Remote Control
+r = httpx.put("http://localhost:30010/remote/object/call", json={
+    "objectPath": "/Script/Engine.Default__KismetSystemLibrary",
+    "functionName": "ExecuteConsoleCommand",
+    "parameters": {
+        "WorldContextObject": "",
+        "Command": f"py {SCRIPT_FILE}",
+    },
+})
+print(f"Execute: {r.status_code} {r.text.strip()}")
+
+# Wait for file to appear
+for i in range(10):
+    if os.path.exists(RESULT_FILE):
+        with open(RESULT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        print(f"\nFound {len(data)} actors in level:")
+        for actor in data:
+            print(f"  - {actor['name']} ({actor['class']})")
+        break
+    time.sleep(0.5)
+else:
+    print("Result file not created after 5s - check UE5 Output Log for errors")

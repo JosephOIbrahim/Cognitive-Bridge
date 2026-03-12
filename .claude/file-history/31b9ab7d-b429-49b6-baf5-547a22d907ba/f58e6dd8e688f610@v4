@@ -1,0 +1,244 @@
+'use client';
+
+import { useEffect, useRef, useMemo } from 'react';
+import { ProjectCard } from './ProjectCard';
+import { VideoThumbnailManager } from './VideoThumbnailManager';
+import type { Project } from '@/lib/projects';
+import { useIsMobile } from '@/lib/hooks/useIsMobile';
+import { usePrefersReducedMotion } from '@/lib/hooks/usePrefersReducedMotion';
+
+/**
+ * GOLDEN RATIO LADDER GRID - SCROLL-DRIVEN ARCADE
+ *
+ * Animation: Scroll-linked arcade flicker/pulse
+ * - Scroll position = animation progress
+ * - Scroll speed = animation speed
+ * - Reversible - scroll up and cards fade back out
+ * - Like dashboard gauges powering on as you scan across them
+ */
+
+interface LadderGridProps {
+  projects: Project[];
+}
+
+const COLUMN_GAP = 89;
+const ROW_GAP = 89;
+const CARD_GAP = 144;
+
+// Shared scroll state across all card instances
+// This ensures all cards respond consistently to "scroll up from bottom"
+let globalHasReachedBottom = false;
+let globalScrollingUpFromBottom = false;
+let globalLastScrollY = 0;
+
+/**
+ * SIMPLE FADE-UP (Original Style, Scroll-Driven)
+ * ───────────────────────────────────────────────
+ * Mimics the original CSS fadeUp animation:
+ *   opacity: 0 → 1
+ *   translateY: 24px → 0
+ *   ease-out timing
+ *
+ * Clean. Simple. No flicker. Just a reveal.
+ */
+function easeOut(t: number): number {
+  // Cubic ease-out: fast start, gentle arrival
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function getRevealValues(progress: number): { opacity: number; brightness: number; y: number } {
+  const p = Math.max(0, Math.min(1, progress));
+  const eased = easeOut(p);
+
+  return {
+    opacity: eased,           // 0 → 1
+    brightness: 1,            // constant (no brightness manipulation)
+    y: 24 * (1 - eased),      // 24px → 0px
+  };
+}
+
+function ScrollAnimatedCard({ project }: { project: Project }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const rafRef = useRef<number>(0);
+
+  // Per-card: track the maximum progress achieved (for "lock on" behavior)
+  const maxProgressRef = useRef(0);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || prefersReducedMotion) return;
+
+    const updateAnimation = () => {
+      const rect = element.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const scrollY = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight;
+
+      // === GLOBAL SCROLL STATE DETECTION ===
+      // Detect if we've scrolled to the bottom of the page
+      const atBottom = (scrollY + viewportHeight) >= (docHeight - 150);
+      if (atBottom) {
+        globalHasReachedBottom = true;
+      }
+
+      // Detect scroll direction change after reaching bottom
+      // If scrolling UP after hitting bottom, enable reversal
+      if (globalHasReachedBottom && scrollY < globalLastScrollY - 50) {
+        globalScrollingUpFromBottom = true;
+      }
+
+      // If scrolling back DOWN, disable reversal mode
+      if (globalScrollingUpFromBottom && scrollY > globalLastScrollY + 30) {
+        globalScrollingUpFromBottom = false;
+      }
+
+      // Reset "reached bottom" if user scrolls back to top area
+      if (scrollY < viewportHeight) {
+        globalHasReachedBottom = false;
+        globalScrollingUpFromBottom = false;
+      }
+
+      globalLastScrollY = scrollY;
+
+      // === PER-CARD PROGRESS CALCULATION ===
+      // Simple fade-up: enters viewport → settles at 30% from top
+      const startY = viewportHeight;
+      const endY = viewportHeight * 0.3;
+
+      // Calculate raw progress based on scroll position
+      const currentY = rect.top;
+      let rawProgress: number;
+
+      if (currentY >= startY) {
+        rawProgress = 0;
+      } else if (currentY <= endY) {
+        rawProgress = 1;
+      } else {
+        rawProgress = (startY - currentY) / (startY - endY);
+      }
+
+      // === LOCK/UNLOCK LOGIC ===
+      // Normal: cards lock at their max progress (only get MORE visible)
+      // After hitting bottom + scrolling up: cards can reverse
+      let progress: number;
+
+      if (globalScrollingUpFromBottom) {
+        // User is scrolling up from bottom - allow reversal
+        progress = rawProgress;
+        maxProgressRef.current = rawProgress;
+      } else {
+        // Normal scrolling - cards can only become MORE visible
+        maxProgressRef.current = Math.max(maxProgressRef.current, rawProgress);
+        progress = maxProgressRef.current;
+      }
+
+      const values = getRevealValues(progress);
+
+      // Directly update DOM for performance (no React re-render)
+      element.style.opacity = String(values.opacity);
+      element.style.transform = `translateY(${values.y}px)`;
+    };
+
+    const onScroll = () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(updateAnimation);
+    };
+
+    // Initial calculation
+    updateAnimation();
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', updateAnimation, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', updateAnimation);
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, [prefersReducedMotion]);
+
+  // Reduced motion: simple visibility based on viewport
+  if (prefersReducedMotion) {
+    return (
+      <div ref={ref} style={{ opacity: 1 }}>
+        <ProjectCard project={project} />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        opacity: 0,
+        transform: 'translateY(24px)',
+        willChange: 'opacity, transform',
+        contentVisibility: 'auto',
+        containIntrinsicSize: '0 400px',
+      }}
+    >
+      <ProjectCard project={project} />
+    </div>
+  );
+}
+
+export function LadderGrid({ projects }: LadderGridProps) {
+  const { isMobile } = useIsMobile();
+
+  // Reset module-level scroll state on unmount (prevents stale state across navigations/HMR)
+  useEffect(() => {
+    return () => {
+      globalHasReachedBottom = false;
+      globalScrollingUpFromBottom = false;
+      globalLastScrollY = 0;
+    };
+  }, []);
+
+  const { leftColumn, rightColumn } = useMemo(() => {
+    const left: Project[] = [];
+    const right: Project[] = [];
+    for (let i = 0; i < projects.length; i++) {
+      (i % 2 === 0 ? left : right).push(projects[i]);
+    }
+    return { leftColumn: left, rightColumn: right };
+  }, [projects]);
+
+  return (
+    <VideoThumbnailManager>
+      <div className="relative">
+        <div
+          className="grid grid-cols-1 md:grid-cols-2"
+          style={{
+            columnGap: `${COLUMN_GAP}px`,
+            rowGap: `${ROW_GAP}px`
+          }}
+        >
+          <div
+            className="flex flex-col"
+            style={{ gap: `${CARD_GAP}px` }}
+          >
+            {leftColumn.map((project) => (
+              <ScrollAnimatedCard
+                key={project.id}
+                project={project}
+              />
+            ))}
+          </div>
+
+          <div
+            className="flex flex-col md:mt-[38.2%]"
+            style={{ gap: `${CARD_GAP}px` }}
+          >
+            {rightColumn.map((project) => (
+              <ScrollAnimatedCard
+                key={project.id}
+                project={project}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </VideoThumbnailManager>
+  );
+}

@@ -1,0 +1,88 @@
+"""
+Sync Semantic Index from Document Frontmatter
+==============================================
+Reads YAML frontmatter from all mpm_*.md workflow guides and updates
+the semantic_index.json with the richer keywords and common_queries
+from the enriched documents.
+"""
+
+import json
+import re
+import yaml
+from pathlib import Path
+
+DOCS_DIR = Path("G:/HOUDINI21_RAG_SYSTEM/documentation")
+INDEX_PATH = DOCS_DIR / "_metadata" / "semantic_index.json"
+GUIDES_DIR = DOCS_DIR / "tutorials" / "workflow_guides"
+
+
+def parse_frontmatter(filepath):
+    """Extract YAML frontmatter from a markdown file."""
+    text = filepath.read_text(encoding="utf-8")
+    match = re.match(r"^---\n(.*?)\n---", text, re.DOTALL)
+    if not match:
+        return None
+    return yaml.safe_load(match.group(1))
+
+
+def derive_topic_key(filename):
+    """Derive semantic index topic key from filename (e.g. mpm_overview.md -> mpm_overview)."""
+    return filename.stem
+
+
+def main():
+    # Load current index
+    with open(INDEX_PATH, "r", encoding="utf-8") as f:
+        index = json.load(f)
+
+    topics = index["semantic_index"]["topics"]
+
+    updated = 0
+    for md_path in sorted(GUIDES_DIR.glob("mpm_*.md")):
+        key = derive_topic_key(md_path)
+        if key not in topics:
+            print(f"  SKIP {key} -- not in index")
+            continue
+
+        fm = parse_frontmatter(md_path)
+        if not fm:
+            print(f"  SKIP {key} -- no frontmatter")
+            continue
+
+        entry = topics[key]
+        old_kw = entry.get("keywords", [])
+        old_cq = entry.get("common_queries", [])
+
+        # Merge keywords from doc frontmatter (doc wins, preserve order, no duplicates)
+        doc_kw = fm.get("keywords", [])
+        merged_kw = list(doc_kw)
+        for kw in old_kw:
+            if kw not in merged_kw:
+                merged_kw.append(kw)
+
+        # Replace common_queries entirely with doc frontmatter (much richer)
+        doc_cq = fm.get("common_queries", [])
+
+        changes = []
+        if merged_kw != old_kw:
+            entry["keywords"] = merged_kw
+            changes.append(f"keywords: {len(old_kw)} -> {len(merged_kw)}")
+        if doc_cq != old_cq:
+            entry["common_queries"] = doc_cq
+            changes.append(f"queries: {len(old_cq)} -> {len(doc_cq)}")
+
+        if changes:
+            updated += 1
+            print(f"  UPDATED {key}: {', '.join(changes)}")
+        else:
+            print(f"  OK      {key}: already in sync")
+
+    # Write updated index
+    with open(INDEX_PATH, "w", encoding="utf-8") as f:
+        json.dump(index, f, indent=2, sort_keys=False, ensure_ascii=False)
+
+    print(f"\nSynced {updated}/18 entries. Index written to {INDEX_PATH}")
+
+
+if __name__ == "__main__":
+    main()

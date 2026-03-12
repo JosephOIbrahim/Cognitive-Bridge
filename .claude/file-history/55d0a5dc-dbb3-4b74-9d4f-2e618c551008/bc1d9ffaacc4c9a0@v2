@@ -1,0 +1,98 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useTransition } from 'react';
+
+/**
+ * ViewTransitions - Cinematic page transitions using View Transitions API
+ *
+ * Design philosophy:
+ * - Feels like film dissolves, not web animations
+ * - Subtle crossfade with micro-scale for depth
+ * - Duration: 350ms (matches site's --transition-smooth)
+ * - Graceful fallback for unsupported browsers
+ * - Respects prefers-reduced-motion
+ */
+
+interface ViewTransitionsProps {
+  children: React.ReactNode;
+}
+
+export function ViewTransitions({ children }: ViewTransitionsProps) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  const handleNavigation = useCallback((href: string) => {
+    // Check for reduced motion preference
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Check if View Transitions API is supported
+    const supportsViewTransitions = 'startViewTransition' in document;
+
+    if (prefersReducedMotion || !supportsViewTransitions) {
+      // Fallback: instant navigation
+      startTransition(() => {
+        router.push(href);
+      });
+      return;
+    }
+
+    // Use View Transitions API for cinematic crossfade
+    (document as any).startViewTransition(() => {
+      startTransition(() => {
+        router.push(href);
+      });
+    });
+  }, [router, startTransition]);
+
+  useEffect(() => {
+    // Intercept clicks on internal links
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const anchor = target.closest('a');
+
+      if (!anchor) return;
+
+      const href = anchor.getAttribute('href');
+
+      // Skip if:
+      // - No href
+      // - External link (starts with http and not our domain)
+      // - Hash link (starts with #)
+      // - New tab (target="_blank")
+      // - Modified click (ctrl/cmd/shift/alt)
+      // - Download link
+      if (
+        !href ||
+        href.startsWith('http') ||
+        href.startsWith('#') ||
+        href.startsWith('mailto:') ||
+        anchor.target === '_blank' ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.shiftKey ||
+        e.altKey ||
+        anchor.hasAttribute('download')
+      ) {
+        return;
+      }
+
+      // Skip transition when navigating to the current page
+      // Prevents destroying and recreating the hero video unnecessarily
+      if (href === window.location.pathname) {
+        e.preventDefault();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
+      // Prevent default and use our transition
+      e.preventDefault();
+      handleNavigation(href);
+    };
+
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [handleNavigation]);
+
+  return <>{children}</>;
+}

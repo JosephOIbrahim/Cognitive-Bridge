@@ -1,0 +1,23 @@
+"""Expert system: registry, selection, cross-expert bleeding, and execution.
+
+Provides the MoE (Mixture of Experts) system with fixed-priority expert
+registry, hash-based deterministic selection, cross-expert information
+bleeding via the mixing matrix, and orchestrated execution with full
+provenance tracking.
+
+Expert priority order is FIXED and never changes under injection.
+"""
+
+from src.lossless.experts.bleeding import apply_bleeding
+from src.lossless.experts.execution import ExpertResult, execute_expert
+from src.lossless.experts.registry import ExpertSpec, get_expert_registry
+from src.lossless.experts.selector import select_expert
+
+__all__ = [
+    "ExpertResult",
+    "ExpertSpec",
+    "apply_bleeding",
+    "execute_expert",
+    "get_expert_registry",
+    "select_expert",
+]

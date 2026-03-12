@@ -1,0 +1,135 @@
+"""
+SYNAPSE Connect -- One-Click Shot Login
+
+Shelf tool that initializes the Living Memory system for the current scene.
+Creates claude/ directories, loads memory, copies handshake payload to clipboard.
+
+Always safe to click -- idempotent. Never overwrites existing files.
+"""
+
+import hou
+import os
+import json
+import socket
+import time
+
+
+def synapse_connect():
+    """One-click SYNAPSE shot login."""
+    # 1. Check server
+    port = _check_server()
+    if not port:
+        hou.ui.displayMessage(
+            "SYNAPSE server is not running on localhost:9999.\n\n"
+            "Start the server first, then click Connect again.",
+            title="SYNAPSE Connect",
+            severity=hou.severityType.Error,
+        )
+        return
+
+    # 2. Detect context
+    hip_path = hou.hipFile.path()
+    hip_dir = os.path.dirname(hip_path)
+    hip_name = hou.hipFile.basename()
+    job = hou.getenv("JOB", hip_dir)
+
+    context = {
+        "port": port,
+        "hip": hip_path,
+        "hip_dir": hip_dir,
+        "hip_name": hip_name,
+        "job": job,
+        "fps": hou.fps(),
+        "frame_range": [hou.playbar.frameRange()[0], hou.playbar.frameRange()[1]],
+        "current_frame": hou.frame(),
+    }
+
+    # 3. Ensure directory structure (idempotent)
+    try:
+        # Import scene memory from the synapse package
+        import importlib.util
+        sm_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "..", "..", "Synapse", "python", "synapse", "memory", "scene_memory.py"
+        )
+        # Fallback: try from SYNAPSE install path
+        if not os.path.exists(sm_path):
+            synapse_root = os.environ.get("SYNAPSE_ROOT", "")
+            if synapse_root:
+                sm_path = os.path.join(synapse_root, "python", "synapse", "memory", "scene_memory.py")
+
+        if os.path.exists(sm_path):
+            spec = importlib.util.spec_from_file_location("scene_memory", sm_path)
+            sm = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(sm)
+
+            paths = sm.ensure_scene_structure(hip_path, job)
+            full_ctx = sm.load_full_context(hip_dir, job)
+        else:
+            # Minimal fallback -- just create directories
+            paths = _ensure_dirs_fallback(hip_dir, job, context)
+            full_ctx = {"summary": "Scene memory module not found -- basic setup only."}
+    except Exception as e:
+        hou.ui.displayMessage(
+            f"Memory setup encountered an issue: {e}\n\n"
+            "Basic connection info will still be copied.",
+            title="SYNAPSE Connect",
+            severity=hou.severityType.Warning,
+        )
+        paths = _ensure_dirs_fallback(hip_dir, job, context)
+        full_ctx = {"summary": "Error loading memory."}
+
+    # 4. Build handshake payload
+    payload = _build_handshake(context, full_ctx)
+
+    # 5. Copy to clipboard
+    hou.ui.copyTextToClipboard(payload)
+
+    # 6. Status message
+    agent = full_ctx.get("agent", {})
+    msg = "SYNAPSE ready -- context copied to clipboard."
+    if agent.get("has_suspended_tasks"):
+        msg += f"\n\nNote: {agent['suspended_count']} suspended tasks from last session."
+    hou.ui.displayMessage(msg, title="SYNAPSE Connect")
+
+
+def _check_server(port=9999):
+    """Check if SYNAPSE server is running. Returns port or None."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        s.connect(("localhost", port))
+        s.close()
+        return port
+    except (ConnectionRefusedError, socket.timeout, OSError):
+        return None
+
+
+def _ensure_dirs_fallback(hip_dir, job, context):
+    """Minimal directory creation without scene_memory module."""
+    project_dir = os.path.join(job, "claude")
+    scene_dir = os.path.join(hip_dir, "claude")
+    os.makedirs(project_dir, exist_ok=True)
+    os.makedirs(scene_dir, exist_ok=True)
+    return {"project_dir": project_dir, "scene_dir": scene_dir}
+
+
+def _build_handshake(context, full_ctx):
+    """Build clipboard payload."""
+    summary = full_ctx.get("summary", "No memory loaded.")
+    lines = [
+        "SYNAPSE CONNECT",
+        "=" * 50,
+        f"Port: {context['port']}",
+        f"Scene: {context['hip_name']}",
+        f"HIP: {context['hip']}",
+        f"JOB: {context['job']}",
+        f"FPS: {context['fps']} | Range: {context['frame_range']}",
+        f"Frame: {context['current_frame']}",
+        "",
+        "-- MEMORY --",
+        summary[:4000],
+        "",
+        "=" * 50,
+    ]
+    return "\n".join(lines)

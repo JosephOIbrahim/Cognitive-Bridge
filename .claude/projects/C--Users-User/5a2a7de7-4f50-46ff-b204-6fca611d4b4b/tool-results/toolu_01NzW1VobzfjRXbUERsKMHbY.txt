@@ -1,0 +1,389 @@
+C:\Users\User\Synapse\CLAUDE.md-202-
+C:\Users\User\Synapse\CLAUDE.md-203-## Wire Protocol
+C:\Users\User\Synapse\CLAUDE.md-204-
+C:\Users\User\Synapse\CLAUDE.md:205:Default: `ws://localhost:9999/synapse` | Version: `4.0.0`
+C:\Users\User\Synapse\CLAUDE.md-206-
+C:\Users\User\Synapse\CLAUDE.md-207-[Omitted long context line]
+C:\Users\User\Synapse\CLAUDE.md-208-
+--
+C:\Users\User\Synapse\INVENTORY.md-1-# Synapse Project Inventory
+C:\Users\User\Synapse\INVENTORY.md-2-
+C:\Users\User\Synapse\INVENTORY.md:3:**Version:** 4.2.1 | **Protocol:** 4.0.0 | **Generated:** 2026-02-10
+C:\Users\User\Synapse\INVENTORY.md-4-
+C:\Users\User\Synapse\INVENTORY.md-5-## Executive Summary
+C:\Users\User\Synapse\INVENTORY.md-6-
+--
+C:\Users\User\Synapse\INVENTORY.md-38-| File | Purpose | ~LOC |
+C:\Users\User\Synapse\INVENTORY.md-39-|------|---------|------|
+C:\Users\User\Synapse\INVENTORY.md-40-| `__init__.py` | Lazy-load foundation modules | 20 |
+C:\Users\User\Synapse\INVENTORY.md:41:| `protocol.py` | CommandType enum (35 types), SynapseCommand/Response dataclasses, wire format v4.0.0 | 350 |
+C:\Users\User\Synapse\INVENTORY.md-42-| `aliases.py` | Parameter name aliasing (38+ mappings) | 180 |
+C:\Users\User\Synapse\INVENTORY.md-43-| `determinism.py` | round_float, deterministic_uuid, kahan_sum, @deterministic decorator, DeterministicRandom | 420 |
+C:\Users\User\Synapse\INVENTORY.md-44-| `audit.py` | AuditLog (hash-chain JSONL), AuditLevel/AuditCategory enums, daily rotation, tamper detection | 580 |
+--
+C:\Users\User\Synapse\mcp_server.py-142-SYNAPSE_PORT = int(os.environ.get("SYNAPSE_PORT", "9999"))
+C:\Users\User\Synapse\mcp_server.py-143-SYNAPSE_PATH = os.environ.get("SYNAPSE_PATH", "/synapse")
+C:\Users\User\Synapse\mcp_server.py-144-SYNAPSE_URL = f"ws://localhost:{SYNAPSE_PORT}{SYNAPSE_PATH}"
+C:\Users\User\Synapse\mcp_server.py:145:PROTOCOL_VERSION = "4.0.0"
+C:\Users\User\Synapse\mcp_server.py-146-MAX_RETRIES = 2
+C:\Users\User\Synapse\mcp_server.py-147-RETRY_DELAY = 0.3
+C:\Users\User\Synapse\mcp_server.py-148-COMMAND_TIMEOUT = 10.0
+--
+C:\Users\User\Synapse\mcp_server.py-270-        "payload": payload or {},
+C:\Users\User\Synapse\mcp_server.py-271-        "sequence": 0,
+C:\Users\User\Synapse\mcp_server.py-272-        "timestamp": time.time(),
+C:\Users\User\Synapse\mcp_server.py:273:        "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\mcp_server.py-274-    }
+C:\Users\User\Synapse\mcp_server.py-275-
+C:\Users\User\Synapse\mcp_server.py-276-    cmd_timeout = _SLOW_COMMANDS.get(cmd_type, COMMAND_TIMEOUT)
+--
+C:\Users\User\Synapse\README.md-9-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-%3E%3D3.9-blue.svg" alt="Python"></a>
+C:\Users\User\Synapse\README.md-10-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
+C:\Users\User\Synapse\README.md-11-  <a href="tests/"><img src="https://img.shields.io/badge/tests-874%20passing-brightgreen.svg" alt="Tests"></a>
+C:\Users\User\Synapse\README.md:12:  <a href="python/synapse/core/protocol.py"><img src="https://img.shields.io/badge/protocol-v4.0.0-orange.svg" alt="Protocol"></a>
+C:\Users\User\Synapse\README.md-13-</p>
+C:\Users\User\Synapse\README.md-14-
+C:\Users\User\Synapse\README.md-15----
+--
+C:\Users\User\Synapse\README.md-545-
+C:\Users\User\Synapse\README.md-546-## Wire Protocol
+C:\Users\User\Synapse\README.md-547-
+C:\Users\User\Synapse\README.md:548:Default endpoint: `ws://localhost:9999` | Protocol version: `4.0.0`
+C:\Users\User\Synapse\README.md-549-
+C:\Users\User\Synapse\README.md-550-Commands are JSON messages with `type`, `id`, `payload`, `sequence`, and `timestamp` fields.
+C:\Users\User\Synapse\README.md-551-
+--
+C:\Users\User\Synapse\agent\synapse_tools.py-41-        "description": (
+C:\Users\User\Synapse\agent\synapse_tools.py-42-            "Check if Synapse and Houdini are reachable. "
+C:\Users\User\Synapse\agent\synapse_tools.py-43-            "Call this first to verify the connection before doing any scene work. "
+C:\Users\User\Synapse\agent\synapse_tools.py:44:            "Returns protocol version and connection status."
+C:\Users\User\Synapse\agent\synapse_tools.py-45-        ),
+C:\Users\User\Synapse\agent\synapse_tools.py-46-        "input_schema": {
+C:\Users\User\Synapse\agent\synapse_tools.py-47-            "type": "object",
+--
+C:\Users\User\Synapse\agent\synapse_ws.py-33-SYNAPSE_PORT = 9999
+C:\Users\User\Synapse\agent\synapse_ws.py-34-SYNAPSE_PATH = "/synapse"
+C:\Users\User\Synapse\agent\synapse_ws.py-35-SYNAPSE_URI = f"ws://{SYNAPSE_HOST}:{SYNAPSE_PORT}{SYNAPSE_PATH}"
+C:\Users\User\Synapse\agent\synapse_ws.py:36:PROTOCOL_VERSION = "4.0.0"
+C:\Users\User\Synapse\agent\synapse_ws.py-37-CONNECT_TIMEOUT = 10.0
+C:\Users\User\Synapse\agent\synapse_ws.py-38-CALL_TIMEOUT = 30.0
+C:\Users\User\Synapse\agent\synapse_ws.py-39-RENDER_TIMEOUT = 120.0
+--
+C:\Users\User\Synapse\agent\synapse_ws.py-131-        Send a SynapseCommand and wait for the matching SynapseResponse.
+C:\Users\User\Synapse\agent\synapse_ws.py-132-
+C:\Users\User\Synapse\agent\synapse_ws.py-133-        Wire format matches core/protocol.py:
+C:\Users\User\Synapse\agent\synapse_ws.py:134:          Command:  {type, id, payload, sequence, timestamp, protocol_version}
+C:\Users\User\Synapse\agent\synapse_ws.py:135:          Response: {id, success, data, error, sequence, timestamp, protocol_version}
+C:\Users\User\Synapse\agent\synapse_ws.py-136-        """
+C:\Users\User\Synapse\agent\synapse_ws.py-137-        if not self._connected or not self._ws:
+C:\Users\User\Synapse\agent\synapse_ws.py-138-            raise SynapseConnectionError("Not connected to Synapse. Call connect() first.")
+--
+C:\Users\User\Synapse\agent\synapse_ws.py-147-            "payload": payload or {},
+C:\Users\User\Synapse\agent\synapse_ws.py-148-            "sequence": 0,
+C:\Users\User\Synapse\agent\synapse_ws.py-149-            "timestamp": time.time(),
+C:\Users\User\Synapse\agent\synapse_ws.py:150:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\agent\synapse_ws.py-151-        }
+C:\Users\User\Synapse\agent\synapse_ws.py-152-
+C:\Users\User\Synapse\agent\synapse_ws.py-153-        async with self._lock:
+--
+C:\Users\User\Synapse\agent\synapse_ws.py-194-    # --- High-Level API ---
+C:\Users\User\Synapse\agent\synapse_ws.py-195-
+C:\Users\User\Synapse\agent\synapse_ws.py-196-    async def ping(self) -> dict:
+C:\Users\User\Synapse\agent\synapse_ws.py:197:        """Check Synapse connectivity. Returns protocol version info."""
+C:\Users\User\Synapse\agent\synapse_ws.py-198-        return await self._send_command("ping", timeout=5.0)
+C:\Users\User\Synapse\agent\synapse_ws.py-199-
+C:\Users\User\Synapse\agent\synapse_ws.py-200-    async def scene_info(self) -> dict:
+--
+C:\Users\User\Synapse\agent\tests\test_tools.py-78-async def test_execute_ping():
+C:\Users\User\Synapse\agent\tests\test_tools.py-79-    """synapse_ping returns connected status."""
+C:\Users\User\Synapse\agent\tests\test_tools.py-80-    mock_client = AsyncMock(spec=SynapseClient)
+C:\Users\User\Synapse\agent\tests\test_tools.py:81:    mock_client.ping = AsyncMock(return_value={"pong": True, "protocol_version": "4.0.0"})
+C:\Users\User\Synapse\agent\tests\test_tools.py-82-    set_client(mock_client)
+C:\Users\User\Synapse\agent\tests\test_tools.py-83-
+C:\Users\User\Synapse\agent\tests\test_tools.py-84-    result = await execute_tool("synapse_ping", {})
+--
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-30-        "error": error,
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-31-        "sequence": 0,
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-32-        "timestamp": 1234567890.0,
+C:\Users\User\Synapse\agent\tests\test_ws_client.py:33:        "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-34-    })
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-35-
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-36-
+--
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-112-    async def mock_recv():
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-113-        # Return response matching the command ID from the sent message
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-114-        cmd = sent_messages[-1]
+C:\Users\User\Synapse\agent\tests\test_ws_client.py:115:        return _make_response(cmd["id"], data={"pong": True, "protocol_version": "4.0.0"})
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-116-
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-117-    mock_ws.recv = mock_recv
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-118-
+--
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-128-    assert len(cmd["id"]) == 16  # hex UUID prefix
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-129-    assert cmd["payload"] == {}
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-130-    assert cmd["sequence"] == 0
+C:\Users\User\Synapse\agent\tests\test_ws_client.py:131:    assert cmd["protocol_version"] == PROTOCOL_VERSION
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-132-    assert "timestamp" in cmd
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-133-
+C:\Users\User\Synapse\agent\tests\test_ws_client.py-134-    # Verify response
+--
+C:\Users\User\Synapse\docs\plans\2026-02-11-synapse-production-hardening.md-1397-        resp = handler.handle(cmd)
+C:\Users\User\Synapse\docs\plans\2026-02-11-synapse-production-hardening.md-1398-        assert resp.success is True
+C:\Users\User\Synapse\docs\plans\2026-02-11-synapse-production-hardening.md-1399-        assert resp.data["pong"] is True
+C:\Users\User\Synapse\docs\plans\2026-02-11-synapse-production-hardening.md:1400:        assert "protocol_version" in resp.data
+C:\Users\User\Synapse\docs\plans\2026-02-11-synapse-production-hardening.md-1401-
+C:\Users\User\Synapse\docs\plans\2026-02-11-synapse-production-hardening.md-1402-    def test_get_help_roundtrip(self):
+C:\Users\User\Synapse\docs\plans\2026-02-11-synapse-production-hardening.md-1403-        """get_help command -> success response with available commands."""
+--
+C:\Users\User\Synapse\docs\architecture\protocol.md-4-
+C:\Users\User\Synapse\docs\architecture\protocol.md-5-Default: `ws://localhost:9999/synapse`
+C:\Users\User\Synapse\docs\architecture\protocol.md-6-
+C:\Users\User\Synapse\docs\architecture\protocol.md:7:Protocol version: `4.0.0`
+C:\Users\User\Synapse\docs\architecture\protocol.md-8-
+C:\Users\User\Synapse\docs\architecture\protocol.md-9-## Message Format
+C:\Users\User\Synapse\docs\architecture\protocol.md-10-
+--
+C:\Users\User\Synapse\python\synapse\ui\panel.py-42-from .tabs.search import SearchTab
+C:\Users\User\Synapse\python\synapse\ui\panel.py-43-
+C:\Users\User\Synapse\python\synapse\ui\panel.py-44-__title__ = "Synapse"
+C:\Users\User\Synapse\python\synapse\ui\panel.py:45:__version__ = "4.0.0"
+C:\Users\User\Synapse\python\synapse\ui\panel.py-46-__author__ = "Joe Ibrahim"
+C:\Users\User\Synapse\python\synapse\ui\panel.py-47-__license__ = "MIT"
+C:\Users\User\Synapse\python\synapse\ui\panel.py-48-__product__ = "Synapse - AI-Houdini Bridge"
+--
+C:\Users\User\Synapse\python\synapse\ui\tabs\connection.py-71-        self.clients_label.setStyleSheet("color: palette(mid); font-size: 11px;")
+C:\Users\User\Synapse\python\synapse\ui\tabs\connection.py-72-        status_row.addWidget(self.clients_label)
+C:\Users\User\Synapse\python\synapse\ui\tabs\connection.py-73-
+C:\Users\User\Synapse\python\synapse\ui\tabs\connection.py:74:        self.protocol_label = QtWidgets.QLabel("v4.0.0")
+C:\Users\User\Synapse\python\synapse\ui\tabs\connection.py-75-        self.protocol_label.setStyleSheet("color: palette(mid); font-size: 10px;")
+C:\Users\User\Synapse\python\synapse\ui\tabs\connection.py-76-        status_row.addWidget(self.protocol_label)
+C:\Users\User\Synapse\python\synapse\ui\tabs\connection.py-77-
+--
+C:\Users\User\Synapse\python\synapse\core\protocol.py-19-    def _to_json_str(data: dict) -> str:
+C:\Users\User\Synapse\python\synapse\core\protocol.py-20-        return json.dumps(data, sort_keys=True)
+C:\Users\User\Synapse\python\synapse\core\protocol.py-21-
+C:\Users\User\Synapse\python\synapse\core\protocol.py:22:# Protocol version - bumped to 4.0.0 for standalone Synapse
+C:\Users\User\Synapse\python\synapse\core\protocol.py:23:PROTOCOL_VERSION = "4.0.0"
+C:\Users\User\Synapse\python\synapse\core\protocol.py-24-
+C:\Users\User\Synapse\python\synapse\core\protocol.py-25-
+C:\Users\User\Synapse\python\synapse\core\protocol.py-26-class CommandType(Enum):
+--
+C:\Users\User\Synapse\python\synapse\core\protocol.py-119-    payload: Dict[str, Any] = field(default_factory=dict)
+C:\Users\User\Synapse\python\synapse\core\protocol.py-120-    sequence: int = 0
+C:\Users\User\Synapse\python\synapse\core\protocol.py-121-    timestamp: float = field(default_factory=time.time)
+C:\Users\User\Synapse\python\synapse\core\protocol.py:122:    protocol_version: str = PROTOCOL_VERSION
+C:\Users\User\Synapse\python\synapse\core\protocol.py-123-
+C:\Users\User\Synapse\python\synapse\core\protocol.py-124-    def to_json(self) -> str:
+C:\Users\User\Synapse\python\synapse\core\protocol.py-125-        return _to_json_str(asdict(self))
+--
+C:\Users\User\Synapse\python\synapse\core\protocol.py-135-            # He2025: preserve wire timestamp; 0.0 sentinel = "not provided"
+C:\Users\User\Synapse\python\synapse\core\protocol.py-136-            # (avoids injecting nondeterministic time.time() on deserialization)
+C:\Users\User\Synapse\python\synapse\core\protocol.py-137-            timestamp=parsed.get("timestamp", 0.0),
+C:\Users\User\Synapse\python\synapse\core\protocol.py:138:            protocol_version=parsed.get("protocol_version", "1.0.0")
+C:\Users\User\Synapse\python\synapse\core\protocol.py-139-        )
+C:\Users\User\Synapse\python\synapse\core\protocol.py-140-
+C:\Users\User\Synapse\python\synapse\core\protocol.py-141-    def normalized_type(self) -> str:
+--
+C:\Users\User\Synapse\python\synapse\core\protocol.py-156-    error: Optional[str] = None
+C:\Users\User\Synapse\python\synapse\core\protocol.py-157-    sequence: int = 0
+C:\Users\User\Synapse\python\synapse\core\protocol.py-158-    timestamp: float = field(default_factory=time.time)
+C:\Users\User\Synapse\python\synapse\core\protocol.py:159:    protocol_version: str = PROTOCOL_VERSION
+C:\Users\User\Synapse\python\synapse\core\protocol.py-160-
+C:\Users\User\Synapse\python\synapse\core\protocol.py-161-    def to_json(self) -> str:
+C:\Users\User\Synapse\python\synapse\core\protocol.py-162-        return _to_json_str(asdict(self))
+--
+C:\Users\User\Synapse\python\synapse\core\protocol.py-172-            sequence=parsed.get("sequence", 0),
+C:\Users\User\Synapse\python\synapse\core\protocol.py-173-            # He2025: preserve wire timestamp; 0.0 sentinel = "not provided"
+C:\Users\User\Synapse\python\synapse\core\protocol.py-174-            timestamp=parsed.get("timestamp", 0.0),
+C:\Users\User\Synapse\python\synapse\core\protocol.py:175:            protocol_version=parsed.get("protocol_version", "1.0.0")
+C:\Users\User\Synapse\python\synapse\core\protocol.py-176-        )
+C:\Users\User\Synapse\python\synapse\core\protocol.py-177-
+C:\Users\User\Synapse\python\synapse\core\protocol.py-178-
+--
+C:\Users\User\Synapse\python\synapse\server\websocket.py-274-                websocket.send(json.dumps({
+C:\Users\User\Synapse\python\synapse\server\websocket.py-275-                    "type": AUTH_REQUIRED_TYPE,
+C:\Users\User\Synapse\python\synapse\server\websocket.py-276-                    "message": "Authentication required",
+C:\Users\User\Synapse\python\synapse\server\websocket.py:277:                    "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\websocket.py-278-                }, sort_keys=True))
+C:\Users\User\Synapse\python\synapse\server\websocket.py-279-
+C:\Users\User\Synapse\python\synapse\server\websocket.py-280-                # Wait for auth message
+--
+C:\Users\User\Synapse\python\synapse\server\websocket.py-286-                            "type": "auth_failed",
+C:\Users\User\Synapse\python\synapse\server\websocket.py-287-                            "success": False,
+C:\Users\User\Synapse\python\synapse\server\websocket.py-288-                            "error": "Invalid API key",
+C:\Users\User\Synapse\python\synapse\server\websocket.py:289:                            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\websocket.py-290-                        }, sort_keys=True))
+C:\Users\User\Synapse\python\synapse\server\websocket.py-291-                        logger.warning("Auth failed for client %s", client_id)
+C:\Users\User\Synapse\python\synapse\server\websocket.py-292-                        return
+--
+C:\Users\User\Synapse\python\synapse\server\websocket.py-295-                        "type": "auth_failed",
+C:\Users\User\Synapse\python\synapse\server\websocket.py-296-                        "success": False,
+C:\Users\User\Synapse\python\synapse\server\websocket.py-297-                        "error": "Expected authenticate command",
+C:\Users\User\Synapse\python\synapse\server\websocket.py:298:                        "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\websocket.py-299-                    }, sort_keys=True))
+C:\Users\User\Synapse\python\synapse\server\websocket.py-300-                    return
+C:\Users\User\Synapse\python\synapse\server\websocket.py-301-
+C:\Users\User\Synapse\python\synapse\server\websocket.py-302-                websocket.send(json.dumps({
+C:\Users\User\Synapse\python\synapse\server\websocket.py-303-                    "type": "auth_success",
+C:\Users\User\Synapse\python\synapse\server\websocket.py-304-                    "success": True,
+C:\Users\User\Synapse\python\synapse\server\websocket.py:305:                    "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\websocket.py-306-                }, sort_keys=True))
+C:\Users\User\Synapse\python\synapse\server\websocket.py-307-                logger.info("Client authenticated: %s", client_id)
+C:\Users\User\Synapse\python\synapse\server\websocket.py-308-
+--
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-116-        return {
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-117-            "pong": True,
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-118-            "timestamp": time.time(),
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py:119:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-120-        }
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-121-
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-122-    @hwebserver.apiFunction("synapse")
+--
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-125-        return {
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-126-            "healthy": True,
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-127-            "houdini_available": HOU_AVAILABLE,
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py:128:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-129-            "transport": "apiFunction",
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-130-        }
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-131-
+--
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-133-    def get_help(request):
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-134-        """List available commands."""
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-135-        return {
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py:136:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-137-            "transport": "apiFunction",
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-138-            "commands": [
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-139-                "ping", "get_health", "get_help",
+--
+C:\Users\User\Synapse\python\synapse\server\handlers.py-368-        return {
+C:\Users\User\Synapse\python\synapse\server\handlers.py-369-            "pong": True,
+C:\Users\User\Synapse\python\synapse\server\handlers.py-370-            "timestamp": time.time(),
+C:\Users\User\Synapse\python\synapse\server\handlers.py:371:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\handlers.py-372-        }
+C:\Users\User\Synapse\python\synapse\server\handlers.py-373-
+C:\Users\User\Synapse\python\synapse\server\handlers.py-374-    def _handle_get_health(self, payload: Dict) -> Dict:
+--
+C:\Users\User\Synapse\python\synapse\server\handlers.py-376-        return {
+C:\Users\User\Synapse\python\synapse\server\handlers.py-377-            "healthy": True,
+C:\Users\User\Synapse\python\synapse\server\handlers.py-378-            "houdini_available": HOU_AVAILABLE,
+C:\Users\User\Synapse\python\synapse\server\handlers.py:379:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\handlers.py-380-        }
+C:\Users\User\Synapse\python\synapse\server\handlers.py-381-
+C:\Users\User\Synapse\python\synapse\server\handlers.py-382-    def _handle_get_help(self, payload: Dict) -> Dict:
+C:\Users\User\Synapse\python\synapse\server\handlers.py-383-        """Handle help command."""
+C:\Users\User\Synapse\python\synapse\server\handlers.py-384-        return {
+C:\Users\User\Synapse\python\synapse\server\handlers.py:385:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\handlers.py-386-            "commands": self._registry.registered_types,
+C:\Users\User\Synapse\python\synapse\server\handlers.py-387-            "description": "Synapse AI-Houdini Bridge v" + PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\handlers.py-388-        }
+--
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-111-                await self.send(json.dumps({
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-112-                    "type": AUTH_REQUIRED_TYPE,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-113-                    "message": "Authentication required",
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py:114:                    "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-115-                }, sort_keys=True), is_binary=False)
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-116-                self._auth_key = auth_key
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-117-            else:
+--
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-135-                        await self.send(json.dumps({
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-136-                            "type": "auth_success",
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-137-                            "success": True,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py:138:                            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-139-                        }, sort_keys=True), is_binary=False)
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-140-                        logger.info("Client authenticated: %s", self._client_id)
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-141-                        return
+--
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-144-                            "type": "auth_failed",
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-145-                            "success": False,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-146-                            "error": "Invalid API key",
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py:147:                            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-148-                        }, sort_keys=True), is_binary=False)
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-149-                        logger.warning("Auth failed for client %s", self._client_id)
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-150-                        await self.close()
+--
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-163-                        "success": True,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-164-                        "data": {"pong": True},
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-165-                        "sequence": command.sequence,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py:166:                        "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-167-                    }), is_binary=False)
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-168-                    return
+C:\Users\User\Synapse\python\synapse\server\hwebserver_adapter.py-169-
+--
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-109-                "payload": {},
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-110-                "sequence": 1,
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-111-                "timestamp": time.time(),
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py:112:                "protocol_version": "4.0.0",
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-113-            })
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-114-            await ws.send(command)
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-115-            response = json.loads(await ws.recv())
+--
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-126-                "payload": {},
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-127-                "sequence": 2,
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-128-                "timestamp": time.time(),
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py:129:                "protocol_version": "4.0.0",
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-130-            })
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-131-            await ws.send(command)
+C:\Users\User\Synapse\tests\test_hwebserver_integration.py-132-            response = json.loads(await ws.recv())
+--
+C:\Users\User\Synapse\tests\test_load.py-17-
+C:\Users\User\Synapse\tests\test_load.py-18-import websockets
+C:\Users\User\Synapse\tests\test_load.py-19-
+C:\Users\User\Synapse\tests\test_load.py:20:PROTOCOL_VERSION = "4.0.0"
+C:\Users\User\Synapse\tests\test_load.py-21-
+C:\Users\User\Synapse\tests\test_load.py-22-WORKLOADS = [
+C:\Users\User\Synapse\tests\test_load.py-23-    ("ping", {}, 0.70),
+--
+C:\Users\User\Synapse\tests\test_load.py-33-        "payload": payload,
+C:\Users\User\Synapse\tests\test_load.py-34-        "sequence": seq,
+C:\Users\User\Synapse\tests\test_load.py-35-        "timestamp": time.time(),
+C:\Users\User\Synapse\tests\test_load.py:36:        "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\tests\test_load.py-37-    })
+C:\Users\User\Synapse\tests\test_load.py-38-
+C:\Users\User\Synapse\tests\test_load.py-39-
+--
+C:\Users\User\Synapse\tests\test_mcp_roundtrip.py-111-        )
+C:\Users\User\Synapse\tests\test_mcp_roundtrip.py-112-        assert resp.success is True
+C:\Users\User\Synapse\tests\test_mcp_roundtrip.py-113-        assert resp.data["pong"] is True
+C:\Users\User\Synapse\tests\test_mcp_roundtrip.py:114:        assert "protocol_version" in resp.data
+C:\Users\User\Synapse\tests\test_mcp_roundtrip.py-115-
+C:\Users\User\Synapse\tests\test_mcp_roundtrip.py-116-    def test_get_health_roundtrip(self):
+C:\Users\User\Synapse\tests\test_mcp_roundtrip.py-117-        """get_health -> success with healthy=True."""
+--
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-135-        resp = self.handler.handle(cmd)
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-136-        assert resp.success is True
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-137-        assert resp.data["pong"] is True
+C:\Users\User\Synapse\tests\test_integration_pipeline.py:138:        assert resp.data["protocol_version"] == PROTOCOL_VERSION
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-139-
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-140-    def test_get_health_returns_status(self):
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-141-        """Health check returns health data."""
+--
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-143-        resp = self.handler.handle(cmd)
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-144-        assert resp.success is True
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-145-        assert "healthy" in resp.data
+C:\Users\User\Synapse\tests\test_integration_pipeline.py:146:        assert "protocol_version" in resp.data
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-147-
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-148-    def test_unknown_command_returns_error(self):
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-149-        """Unknown command type returns coaching-tone error."""
+--
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-442-            "payload": {},
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-443-            "sequence": 1,
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-444-            "timestamp": 0.0,
+C:\Users\User\Synapse\tests\test_integration_pipeline.py:445:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-446-        }, sort_keys=True)
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-447-
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-448-        # 2. Parse command (as server would)
+--
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-471-            "id": "err-pipeline-001",
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-472-            "payload": {"node": "/obj/nonexistent", "parm": "tx"},
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-473-            "sequence": 2,
+C:\Users\User\Synapse\tests\test_integration_pipeline.py:474:            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-475-        }, sort_keys=True)
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-476-
+C:\Users\User\Synapse\tests\test_integration_pipeline.py-477-        cmd = SynapseCommand.from_json(wire_json)
+--
+C:\Users\User\Synapse\tests\test_auth.py-237-        msg = {
+C:\Users\User\Synapse\tests\test_auth.py-238-            "type": AUTH_REQUIRED_TYPE,
+C:\Users\User\Synapse\tests\test_auth.py-239-            "message": "Authentication required",
+C:\Users\User\Synapse\tests\test_auth.py:240:            "protocol_version": "4.0.0",
+C:\Users\User\Synapse\tests\test_auth.py-241-        }
+C:\Users\User\Synapse\tests\test_auth.py-242-        serialized = json.dumps(msg, sort_keys=True)
+C:\Users\User\Synapse\tests\test_auth.py-243-        parsed = json.loads(serialized)

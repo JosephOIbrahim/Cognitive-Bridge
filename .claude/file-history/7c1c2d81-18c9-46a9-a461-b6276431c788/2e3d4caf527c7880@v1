@@ -1,0 +1,60 @@
+"""Phase definitions with anchor/modulated designation.
+
+Each cascade phase is classified as either ANCHOR (immutable under injection)
+or MODULATED (gain-modulated by injection profiles).
+"""
+
+from dataclasses import dataclass
+
+from src.lossless.constants import (
+    ANCHOR_PHASES,
+    D_MAP,
+    PHASES,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PhaseSpec:
+    """A single cascade phase with its properties."""
+
+    name: str
+    index: int
+    is_anchor: bool
+    receptor_density: float
+
+    @property
+    def is_modulated(self) -> bool:
+        return not self.is_anchor
+
+
+def build_phase_registry() -> dict:
+    """Build the canonical phase registry from constants.
+
+    Returns a dict mapping phase name to Phase object.
+    Order is deterministic (follows PHASES list from constants).
+    """
+    registry = {}
+    for i, name in enumerate(PHASES):
+        registry[name] = PhaseSpec(
+            name=name,
+            index=i,
+            is_anchor=(name in ANCHOR_PHASES),
+            receptor_density=D_MAP[name],
+        )
+    return registry
+
+
+def get_ordered_phases() -> list:
+    """Return Phase objects in canonical order (PHASES from constants)."""
+    registry = build_phase_registry()
+    return [registry[name] for name in PHASES]
+
+
+def get_anchor_phases() -> list:
+    """Return only anchor phases in canonical order."""
+    return [p for p in get_ordered_phases() if p.is_anchor]
+
+
+def get_modulated_phases() -> list:
+    """Return only modulated phases in canonical order."""
+    return [p for p in get_ordered_phases() if p.is_modulated]

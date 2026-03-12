@@ -1,0 +1,91 @@
+"""Fix render settings conflict and render test frame."""
+import asyncio, sys, os
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+# Step 1: Check karma ROP for rendersettings parm
+CHECK_CODE = r'''
+import hou
+rop = hou.node("/out/cinema_karma")
+parms = [(p.name(), p.description(), str(p.eval())) for p in rop.parms()
+    if any(k in p.name().lower() for k in ["rendersetting", "renderproduct", "primpath", "settings"])]
+result = parms
+'''
+
+# Step 2: Fix the setup - remove competing karmarendersettings, use cinema rig's built-in settings
+FIX_CODE = r'''
+import hou
+
+stage = hou.node("/stage")
+
+# The cinema_rig_lop already creates /Render/CinemaRigSettings with the camera.
+# The karmarendersettings LOP creates a competing /Render/rendersettings.
+# Solution: remove karmarendersettings, wire merge directly to display.
+
+rs = hou.node("/stage/karma_settings")
+if rs:
+    rs.destroy()
+
+merge = hou.node("/stage/camera_lights_merge")
+if merge:
+    merge.setDisplayFlag(True)
+
+stage.layoutChildren()
+result = "karma_settings removed, merge is now display node"
+'''
+
+# Step 3: Configure karma ROP and render
+RENDER_CODE = r'''
+import hou
+import os
+
+rop = hou.node("/out/cinema_karma")
+
+# Point at the merge node (which now has display flag)
+# The karma ROP needs to find the LOP network output
+# Check if loppath parm exists
+lp = rop.parm("loppath")
+if lp:
+    lp.set("/stage/camera_lights_merge")
+
+# Override resolution to 320x240
+rop.parm("override_camerares").set(1)
+rop.parm("res_overridex").set(320)
+rop.parm("res_overridey").set(240)
+
+# Low samples for speed
+rop.parm("samplesperpixel").set(4)
+
+# Set output path
+out_dir = os.path.join(os.environ.get("TEMP", "C:/Temp"), "houdini_test_render")
+os.makedirs(out_dir, exist_ok=True)
+frame = int(hou.frame())
+out_file = "cinema_rig_test.{:04d}.exr".format(frame)
+out_path = os.path.join(out_dir, out_file).replace("\\", "/")
+rop.parm("picture").set(out_path)
+
+# Check all render-related parms
+all_p = [(p.name(), str(p.eval())) for p in rop.parms()
+    if any(k in p.name().lower() for k in ["lop", "rendersetting", "camera"])]
+
+result = {"parms": all_p, "output": out_path, "frame": frame}
+'''
+
+async def main():
+    async with SynapseClient() as client:
+        # Step 1: check parms
+        print("Checking karma ROP parms...")
+        r1 = await client.execute_python(CHECK_CODE, timeout=15.0)
+        print(f"  Settings parms: {r1}")
+
+        # Step 2: fix setup
+        print("\nRemoving competing karmarendersettings...")
+        r2 = await client.execute_python(FIX_CODE, timeout=15.0)
+        print(f"  {r2}")
+
+        # Step 3: configure and check
+        print("\nConfiguring karma ROP...")
+        r3 = await client.execute_python(RENDER_CODE, timeout=15.0)
+        print(f"  {r3}")
+
+asyncio.run(main())

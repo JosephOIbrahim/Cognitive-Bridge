@@ -1,0 +1,114 @@
+"""USD prim dataclasses for the Lossless Signal Architecture.
+
+Python representation of USD prims with anchor/modulated classification.
+CognitivePrim is the base; AnchorPrim and ModulatedPrim specialize it.
+"""
+
+from dataclasses import dataclass
+
+from src.lossless.constants import ANCHOR_PHASES, PHASES
+
+
+@dataclass(frozen=True, slots=True)
+class CognitivePrim:
+    """Base representation of a USD cognitive prim.
+
+    Attributes:
+        name: Prim name (e.g., "ReasoningProtocols")
+        phase: Which cascade phase this prim belongs to (e.g., "KNOWLEDGE")
+        prim_type: USD prim type - "def" or "over"
+        markdown_content: The markdown payload
+        priority: Rendering priority (lower = earlier)
+        enabled: Whether this prim is active
+        source_file: Which USDA file defined this prim
+        doc: USD doc string metadata
+        attributes: Additional typed attributes from the prim body
+    """
+
+    name: str
+    phase: str = "DEFAULT"
+    prim_type: str = "def"
+    markdown_content: str = ""
+    priority: int = 50
+    enabled: bool = True
+    source_file: str = ""
+    doc: str = ""
+    attributes: tuple = ()  # tuple of (key, value) pairs for immutability
+
+    @property
+    def is_anchor(self) -> bool:
+        return self.phase in ANCHOR_PHASES
+
+    @property
+    def is_modulated(self) -> bool:
+        return not self.is_anchor
+
+    @property
+    def phase_index(self) -> int:
+        """Return the canonical index of this prim's phase."""
+        if self.phase in PHASES:
+            return PHASES.index(self.phase)
+        return len(PHASES)  # unknown phases sort last
+
+    def with_content(self, new_content: str) -> "CognitivePrim":
+        """Return a copy with updated markdown content."""
+        return CognitivePrim(
+            name=self.name,
+            phase=self.phase,
+            prim_type=self.prim_type,
+            markdown_content=new_content,
+            priority=self.priority,
+            enabled=self.enabled,
+            source_file=self.source_file,
+            doc=self.doc,
+            attributes=self.attributes,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AnchorPrim(CognitivePrim):
+    """A prim belonging to an anchor phase (immutable under injection).
+
+    Anchor prims are NEVER modified by injection profiles.
+    Their content passes through the pipeline unchanged.
+    """
+
+    def __post_init__(self):
+        if self.phase not in ANCHOR_PHASES:
+            raise ValueError(
+                f"AnchorPrim phase must be in ANCHOR_PHASES, "
+                f"got '{self.phase}'"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ModulatedPrim(CognitivePrim):
+    """A prim belonging to a modulated phase (gain-modulated by injection).
+
+    Modulated prims can have their rendering adjusted by injection profiles,
+    but the clean signal is always preserved and recoverable.
+    """
+
+    def __post_init__(self):
+        if self.phase in ANCHOR_PHASES:
+            raise ValueError(
+                f"ModulatedPrim phase must NOT be in ANCHOR_PHASES, "
+                f"got '{self.phase}'"
+            )
+
+
+def classify_prim(prim: CognitivePrim) -> CognitivePrim:
+    """Classify a generic CognitivePrim into Anchor or Modulated."""
+    if prim.phase in ANCHOR_PHASES:
+        return AnchorPrim(
+            name=prim.name, phase=prim.phase, prim_type=prim.prim_type,
+            markdown_content=prim.markdown_content, priority=prim.priority,
+            enabled=prim.enabled, source_file=prim.source_file,
+            doc=prim.doc, attributes=prim.attributes,
+        )
+    return ModulatedPrim(
+        name=prim.name, phase=prim.phase, prim_type=prim.prim_type,
+        markdown_content=prim.markdown_content, priority=prim.priority,
+        enabled=prim.enabled, source_file=prim.source_file,
+        doc=prim.doc, attributes=prim.attributes,
+    )

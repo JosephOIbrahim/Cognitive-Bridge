@@ -1,0 +1,365 @@
+# SYNAPSE Solaris Production Gap — Claude Code Instructions
+
+## Context
+
+SYNAPSE is an MCP server bridging Claude AI ↔ SideFX Houdini 21 via WebSocket (`ws://localhost:9999`). It currently has 43 MCP tools, 1,012 passing tests, zero core dependencies, full mypy compliance.
+
+The Solaris gap analysis (from 3 Forge validation cycles) identified 6 P0 gaps that block production use, 8 P1 gaps for advanced workflows, and several P2 quality-of-life items.
+
+**What works today:** USD stage read/write, prim creation, attribute get/set, reference/sublayer import, basic material creation + assignment + reading, Karma rendering with viewport capture and frame validation, knowledge RAG, memory system.
+
+**What's missing:** Texture wiring, AOV config, payload support, variant sets, collections, light linking, prim traversal, and two open bugs (BL-007 EXR persistence, BL-008 assetreference visibility).
+
+## Existing Conventions (MUST follow)
+
+Before writing any code, read:
+- `CLAUDE.md` in the project root for all project conventions
+- `synapse/mcp/tools.py` for the MCP tool registry pattern (all tools defined in one `list_tools()` function with a single `call_tool()` switch)
+- `synapse/server/handlers.py` for the handler registration pattern (`_handle_<name>` methods registered in `SynapseHandler._register_handlers()`)
+- `synapse/core/protocol.py` for `CommandType` variants
+- `synapse/core/aliases.py` for parameter alias conventions
+
+### Adding a New MCP Tool (mandatory checklist)
+
+1. Add `CommandType` variant in `core/protocol.py`
+2. Add handler method `_handle_<name>` in `server/handlers.py`, register in `_register_handlers()`
+3. Add parameter aliases in `core/aliases.py` if new parameter names
+4. Add `Tool(...)` entry to `list_tools()` and dispatch case to `call_tool()` in `mcp_server.py`
+5. Add MCP tool definition in `mcp/tools.py` — include `inputSchema` (JSON Schema) and `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)
+6. Add timeout override to `_SLOW_COMMANDS` in `mcp_server.py` if >10s expected
+7. Write tests — bootstrap `hou` stub inline via `sys.modules`, import handlers via `importlib`, patch `_handlers_hou` (NOT `sys.modules["hou"]`). Also write a test in `test_mcp_protocol.py` verifying tool appears in `tools/list` and `tools/call` dispatches correctly.
+
+### Safety Conventions
+
+- **Atomic scripts:** one mutation per call
+- **Idempotent guards:** check-before-mutate
+- **Transaction wrappers:** undo-group rollback on errors
+- **Error messages:** coaching tone ("Couldn't find node at..." not "node not found")
+- **Windows encoding:** any file with special chars must use `encoding="utf-8"`
+
+### Test Conventions
+
+- Each test file creates its own minimal `hou` stub inline via `sys.modules["hou"] = mock_hou`
+- Patch the module-level reference inside `handlers.py`, NOT `sys.modules["hou"]`
+- Error assertions use `"Couldn't find"` (not `"not found"`)
+
+### USD Parameter Encoding (Houdini 21 Solaris)
+
+USD light nodes use encoded parameter names:
+- `xn__inputsintensity_i0a` = intensity (always 1.0)
+- `xn__inputsexposure_vya` = exposure (value)
+- `xn__inputsexposure_control_wcb` = `"set"` (enable override)
+
+Intensity is ALWAYS 1.0. Brightness is controlled by exposure (logarithmic, in stops).
+
+---
+
+## Build Order (execute sequentially)
+
+### Phase 1: Investigations (do these FIRST)
+
+#### 1A: BL-007 — EXR Not Written to Disk
+
+**Root cause hypothesis:** When `soho_foreground=0`, Karma spawns husk as a background process. If the ROP's `picture` parm is unset or the Karma LOP's `picture` parm doesn't match, husk writes to nowhere.
+
+**Action:** Add a pre-render validation step to the existing render handler that:
+1. Checks both the Karma LOP `picture` parm AND the ROP `outputimage` parm
+2. Ensures the output directory exists (`os.makedirs`)
+3. Sets `soho_foreground` appropriately (1 for MCP sync renders, 0 for TOPS)
+
+The fix should go in the existing render handler path. Look at how `_handle_houdini_render` currently works and add the validation BEFORE `rop.render()` is called.
+
+#### 1B: BL-008 — assetreference Invisible in Karma
+
+**Most likely causes (check in order):**
+1. `purpose` attribute is `"proxy"` or `"guide"` instead of `"default"` or `"render"`
+2. `visibility` is `"invisible"` somewhere in the ancestor chain
+3. Payload not loaded
+4. Missing extent/bounds on geometry prims
+5. Instance proxy issues
+
+**Action:** Create a diagnostic utility function (not necessarily a full MCP tool) that runs the investigation checks. This could live in a `synapse/utils/usd_diagnostics.py` or similar. If the root cause is identified, fix it in the relevant handler.
+
+---
+
+### Phase 2: Quick Wins (3 small additions)
+
+#### 2A: Payload Mode on `reference_usd`
+
+Add a `mode` parameter to the existing `reference_usd` tool:
+
+```python
+# Schema addition:
+"mode": {
+    "type": "string",
+    "enum": ["reference", "payload"],
+    "default": "reference",
+    "description": "Composition arc type. 'payload' for heavy assets (unloadable), 'reference' for lightweight."
+}
+```
+
+Handler branch:
+```python
+if mode == "payload":
+    prim.GetPayloads().AddPayload(Sdf.Payload(file_path, Sdf.Path.emptyPath))
+else:
+    prim.GetReferences().AddReference(Sdf.Reference(file_path, Sdf.Path.emptyPath))
+```
+
+Update existing tests + add payload-specific test case.
+
+#### 2B: Prim Query/Traversal Tool — `query_prims`
+
+New MCP tool. Follow the full new-tool checklist above.
+
+```python
+# Tool: query_prims
+# readOnlyHint: true, destructiveHint: false, idempotentHint: true
+{
+    "name": "query_prims",
+    "description": "Query and traverse USD stage prims with optional filters. Returns matching prims with type, path, and active status. Use for scene inspection, debugging, and finding specific prim types.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "root_path": {"type": "string", "default": "/", "description": "Root prim path to start traversal"},
+            "type_filter": {"type": "string", "description": "USD type name filter: Mesh, Camera, DomeLight, DistantLight, Material, Xform, Scope, etc."},
+            "purpose_filter": {"type": "string", "enum": ["default", "render", "proxy", "guide"], "description": "Filter by imageable purpose"},
+            "name_pattern": {"type": "string", "description": "Glob pattern for prim names (e.g. '*_geo', 'light_*')"},
+            "max_results": {"type": "integer", "default": 100, "description": "Maximum prims to return"},
+            "include_inactive": {"type": "boolean", "default": false}
+        }
+    }
+}
+```
+
+Handler should use `Usd.PrimRange` with appropriate predicates. Return list of dicts with `path`, `type`, `active`, `purpose`, `has_material`, `child_count`.
+
+#### 2C: UDIM Path Utility
+
+Add a helper function (can be in `synapse/utils/` or alongside the texture tool code):
+
+```python
+def resolve_udim_path(base_path: str) -> str:
+    """Ensure texture path has <UDIM> token for tiled textures."""
+    if "<UDIM>" in base_path:
+        return base_path
+    import re
+    return re.sub(r'\.\d{4}\.', '.<UDIM>.', base_path)
+```
+
+This gets used by the texture material tool in Phase 3.
+
+---
+
+### Phase 3: Material Pipeline — `create_textured_material`
+
+**This is the single highest-impact new tool.** Without texture maps, SYNAPSE can only create solid-color materials.
+
+New MCP tool. Follow the full new-tool checklist.
+
+```python
+# Tool: create_textured_material
+# readOnlyHint: false, destructiveHint: false, idempotentHint: true
+{
+    "name": "create_textured_material",
+    "description": "Create a MaterialX standard_surface material with texture map inputs. Supports albedo, roughness, metalness, normal, displacement, emission, opacity maps. Handles color space tagging and UDIM paths.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "material_path": {"type": "string", "description": "USD path for material, e.g. '/materials/wood_floor'"},
+            "albedo_map": {"type": "string", "description": "File path to albedo/base_color texture"},
+            "roughness_map": {"type": "string", "description": "File path to roughness texture"},
+            "metalness_map": {"type": "string", "description": "File path to metalness texture"},
+            "normal_map": {"type": "string", "description": "File path to normal map"},
+            "displacement_map": {"type": "string", "description": "File path to displacement height map"},
+            "emission_map": {"type": "string", "description": "File path to emission texture"},
+            "opacity_map": {"type": "string", "description": "File path to opacity/alpha texture"},
+            "udim": {"type": "boolean", "default": false, "description": "If true, texture paths use <UDIM> token"},
+            "base_color": {"type": "array", "items": {"type": "number"}, "description": "Fallback base color [R, G, B] if no albedo_map"},
+            "roughness": {"type": "number", "default": 0.5, "description": "Fallback roughness if no roughness_map"},
+            "metalness": {"type": "number", "default": 0.0, "description": "Fallback metalness if no metalness_map"}
+        },
+        "required": ["material_path"]
+    }
+}
+```
+
+**Implementation details:**
+
+1. **Shader network structure:**
+   - Material prim at `material_path`
+   - `standard_surface` shader at `{material_path}/standard_surface` using `ND_standard_surface_surfaceshader`
+   - Each texture gets an `ND_image_color3` (for color) or `ND_image_float` (for scalar) node
+   - Wire material surface output: `material.CreateSurfaceOutput().ConnectToSource(shader, "surface")`
+
+2. **Color space rules (critical for correct rendering):**
+   - Albedo/emission: `colorspace = "srgb_texture"`
+   - Everything else (roughness, metalness, normal, displacement, opacity): `colorspace = "raw"`
+
+3. **Normal map chain:**
+   - `ND_image_vector3` (reads texture) → `ND_normalmap` (converts to normal) → shader `normal` input
+   - Do NOT connect normal texture directly to shader — it needs the normalmap intermediate
+
+4. **Displacement output:**
+   - `ND_image_float` (reads height) → `ND_displacement_float` → `material.CreateDisplacementOutput()`
+   - Displacement is a SEPARATE material output, not a shader input
+
+5. **UDIM handling:**
+   - When `udim=true`, ensure all texture paths contain `<UDIM>` token (uppercase)
+   - Use the `resolve_udim_path()` utility from Phase 2C
+
+6. **Scalar fallbacks:**
+   - When no texture is provided for a channel, set the scalar value directly on the shader input
+   - Always set `base = 1.0` and `specular = 1.0`
+
+7. **Emission special case:**
+   - If `emission_map` is provided, also set `emission = 1.0` (the multiplier) on the shader
+
+---
+
+### Phase 4: Render Pipeline — `configure_render_passes`
+
+New MCP tool. Follow the full new-tool checklist.
+
+```python
+# Tool: configure_render_passes
+# readOnlyHint: false, destructiveHint: false, idempotentHint: true
+{
+    "name": "configure_render_passes",
+    "description": "Configure AOVs (render passes) on a Karma render node. Supports standard beauty passes, utility passes (N, P, Z), cryptomatte, and custom LPE expressions. Includes presets for common configurations.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "node": {"type": "string", "description": "Path to Karma ROP or Karma LOP node"},
+            "passes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "AOV names: diffuse_albedo, direct_diffuse, indirect_diffuse, direct_specular, indirect_specular, emission, sss, N, P, Z, UV, or custom LPE"
+            },
+            "output_path": {"type": "string", "description": "EXR output path (passes stored as layers)"},
+            "preset": {
+                "type": "string",
+                "enum": ["beauty_only", "comp_ready", "debug", "full"],
+                "description": "Preset configs. beauty_only=RGBA, comp_ready=diffuse+spec+emission+crypto, debug=N+P+Z, full=all standard"
+            }
+        },
+        "required": ["node"]
+    }
+}
+```
+
+**Preset definitions:**
+```python
+PASS_PRESETS = {
+    "beauty_only": [],
+    "comp_ready": [
+        "diffuse_albedo", "direct_diffuse", "indirect_diffuse",
+        "direct_specular", "indirect_specular", "emission", "sss",
+        "crypto_material", "crypto_object"
+    ],
+    "debug": ["N", "P", "Z"],
+    "full": [
+        "diffuse_albedo", "direct_diffuse", "indirect_diffuse",
+        "direct_specular", "indirect_specular", "emission", "sss",
+        "N", "P", "Z", "crypto_material", "crypto_asset", "crypto_object"
+    ]
+}
+```
+
+**Important:** The exact Karma AOV multiparm structure may differ from Mantra. Before implementing, use `synapse_knowledge_lookup` or inspect a Karma ROP's parm template to find the correct parm names for extra image planes. Common candidates: `vm_numaux` / `vm_variable_planeN` (Mantra pattern) vs Karma-specific AOV parms. The handler should detect whether the node is a Karma LOP vs ROP and adjust accordingly.
+
+**Cryptomatte** is handled via separate boolean toggles (`vm_cryptomatte`, etc.), not the AOV multiparm.
+
+---
+
+### Phase 5: USD Composition Tools (P1)
+
+#### 5A: `manage_variant_set`
+
+```python
+# readOnlyHint: false (for create/switch), idempotentHint: true
+{
+    "name": "manage_variant_set",
+    "description": "Create, switch, or list USD variant sets on a prim. Use for LOD switching, material variations, or any multi-option configuration.",
+    "inputSchema": {
+        "properties": {
+            "prim_path": {"type": "string"},
+            "variant_set": {"type": "string", "description": "Variant set name (e.g. 'material', 'lod', 'complexity')"},
+            "action": {"type": "string", "enum": ["create", "switch", "list"]},
+            "variant_name": {"type": "string", "description": "Variant to create or switch to"},
+            "make_active": {"type": "boolean", "default": true, "description": "Set as active selection after creation"}
+        },
+        "required": ["prim_path", "variant_set", "action"]
+    }
+}
+```
+
+#### 5B: `manage_collection`
+
+```python
+# Prerequisite for light linking
+{
+    "name": "manage_collection",
+    "description": "Create and manage USD collections on prims. Collections group paths for light linking, render visibility, and material assignment. Required prerequisite for light linking tool.",
+    "inputSchema": {
+        "properties": {
+            "prim_path": {"type": "string", "description": "Prim to own the collection"},
+            "collection_name": {"type": "string"},
+            "action": {"type": "string", "enum": ["create", "add", "remove", "list"]},
+            "include_paths": {"type": "array", "items": {"type": "string"}, "description": "Paths to include"},
+            "exclude_paths": {"type": "array", "items": {"type": "string"}, "description": "Paths to exclude"},
+            "expansion_rule": {"type": "string", "enum": ["explicitOnly", "expandPrims", "expandPrimsAndProperties"], "default": "expandPrims"}
+        },
+        "required": ["prim_path", "collection_name", "action"]
+    }
+}
+```
+
+Uses `Usd.CollectionAPI.Apply()`, `GetIncludesRel().SetTargets()`, `GetExcludesRel().SetTargets()`, `GetExpansionRuleAttr().Set()`.
+
+---
+
+### Phase 6: Lighting (P1, depends on Phase 5)
+
+#### 6A: `configure_light_linking`
+
+Depends on `manage_collection` existing. Uses `UsdLux.LightAPI` collection-based linking.
+
+#### 6B: Extended Material Parameters
+
+Add parameters to the existing material creation tools for:
+- `displacement_scale` (float)
+- `subsurface_weight` / `subsurface_color` / `subsurface_radius`
+- `emission` / `emission_color` (scalar + color)
+- `coat` / `coat_roughness` / `coat_color`
+
+These are all `standard_surface` inputs — just additional `shader.CreateInput()` calls.
+
+---
+
+## Escape Hatch Pattern
+
+Until native tools are built, any gap can be bridged with `execute_python` + knowledge lookup. If you want interim discoverability, use this thin wrapper pattern:
+
+```python
+def _handle_quick_textured_material(self, params):
+    """Temporary bridge until create_textured_material is built."""
+    code = TEMPLATES["textured_material"].format(**params)
+    return self._handle_execute_python({"code": code})
+```
+
+This gives you MCP tool surface (routing, discoverability) while the full implementation is built. Remove the bridge once the native tool ships.
+
+---
+
+## Success Criteria
+
+After all P0 tools ship:
+- [ ] Can create a textured MaterialX material with albedo + roughness + normal maps
+- [ ] Can render to EXR on disk reliably (BL-007 resolved)
+- [ ] Can configure comp-ready AOV passes in one tool call
+- [ ] Can reference heavy assets as payloads
+- [ ] Can see referenced assets in Karma viewport (BL-008 resolved)
+- [ ] UDIM texture paths work correctly
+- [ ] All new tools have tests, annotations, and coaching-tone error messages
+- [ ] All existing tests still pass (1,012+)

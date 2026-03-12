@@ -1,0 +1,990 @@
+     1→"""Recipe Book module for SYNAPSE.
+     2→
+     3→Organized, buildable network patterns that artists can browse, explain,
+     4→or build directly inside Houdini. Each recipe defines nodes, connections,
+     5→key parameters, and explanatory context.
+     6→
+     7→Usage:
+     8→    /recipes                          - List all categories
+     9→    /recipes scatter                  - List recipes in category
+    10→    /recipes scatter uniform_scatter  - Show recipe detail
+    11→    /recipes build scatter uniform_scatter - Build the recipe
+    12→    /recipes search noise             - Search all recipes
+    13→"""
+    14→
+    15→import html
+    16→import re
+    17→
+    18→# -- Design tokens (fallback for standalone use) ------------------------------
+    19→try:
+    20→    from synapse.panel import tokens as _t
+    21→    _SIGNAL = _t.SIGNAL
+    22→    _TEXT = _t.TEXT
+    23→    _TEXT_DIM = _t.TEXT_DIM
+    24→    _SUCCESS = _t.GROW
+    25→    _WARNING = _t.WARN
+    26→    _BODY_PX = _t.SIZE_BODY
+    27→    _SMALL_PX = _t.SIZE_SMALL
+    28→    _FONT_SANS = _t.FONT_SANS
+    29→except ImportError:
+    30→    _SIGNAL = "#00D4FF"
+    31→    _TEXT = "#E0E0E0"
+    32→    _TEXT_DIM = "#999999"
+    33→    _SUCCESS = "#00E676"
+    34→    _WARNING = "#FFAB00"
+    35→    _BODY_PX = 26
+    36→    _SMALL_PX = 22
+    37→    _FONT_SANS = "DM Sans"
+    38→
+    39→
+    40→# =============================================================================
+    41→# RECIPES -- The canonical recipe database
+    42→# =============================================================================
+    43→
+    44→RECIPES = {
+    45→    # -------------------------------------------------------------------------
+    46→    # SCATTER
+    47→    # -------------------------------------------------------------------------
+    48→    "scatter": {
+    49→        "uniform_scatter": {
+    50→            "title": "Uniform Scatter",
+    51→            "description": "Basic point scatter on a grid surface",
+    52→            "context": "SOP",
+    53→            "difficulty": "beginner",
+    54→            "nodes": [
+    55→                {"type": "grid", "name": "grid1", "parms": {"rows": 50, "cols": 50, "sizex": 10, "sizey": 10}},
+    56→                {"type": "scatter", "name": "scatter1", "parms": {"npts": 1000}},
+    57→            ],
+    58→            "connections": [["grid1", "scatter1", 0]],
+    59→            "key_parms": ["npts", "rows", "cols"],
+    60→            "explanation": (
+    61→                "Creates a grid and scatters points uniformly across its surface. "
+    62→                "The scatter SOP distributes points based on primitive area by default, "
+    63→                "giving even coverage across the mesh."
+    64→            ),
+    65→            "tips": [
+    66→                "Increase grid rows/cols for smoother scatter distribution",
+    67→                "Use the 'Relax Iterations' parm on scatter to reduce clumping",
+    68→                "Pipe the output into a Copy to Points for instancing",
+    69→            ],
+    70→        },
+    71→        "density_scatter": {
+    72→            "title": "Density-Painted Scatter",
+    73→            "description": "Scatter driven by a painted density attribute",
+    74→            "context": "SOP",
+    75→            "difficulty": "intermediate",
+    76→            "nodes": [
+    77→                {"type": "grid", "name": "grid1", "parms": {"rows": 50, "cols": 50, "sizex": 10, "sizey": 10}},
+    78→                {"type": "attribpaint", "name": "paint_density", "parms": {"attribname": "density", "attribtype": 2}},
+    79→                {"type": "scatter", "name": "scatter1", "parms": {"npts": 5000, "densityattrib": "density", "usedensityattrib": 1}},
+    80→            ],
+    81→            "connections": [
+    82→                ["grid1", "paint_density", 0],
+    83→                ["paint_density", "scatter1", 0],
+    84→            ],
+    85→            "key_parms": ["npts", "densityattrib", "attribname"],
+    86→            "explanation": (
+    87→                "Paints a density attribute onto a grid, then uses it to control "
+    88→                "scatter distribution. Areas with higher density values receive more "
+    89→                "points, allowing artistic control over point placement."
+    90→            ),
+    91→            "tips": [
+    92→                "Paint density values between 0 and 1 for predictable results",
+    93→                "Use a Volume VOP or Attribute VOP for procedural density instead of painting",
+    94→                "Combine with Copy to Points and vary instance scale by density",
+    95→            ],
+    96→        },
+    97→        "poisson_scatter": {
+    98→            "title": "Poisson Disk Scatter",
+    99→            "description": "Relaxed scatter with minimum distance between points",
+   100→            "context": "SOP",
+   101→            "difficulty": "intermediate",
+   102→            "nodes": [
+   103→                {"type": "grid", "name": "grid1", "parms": {"rows": 50, "cols": 50, "sizex": 10, "sizey": 10}},
+   104→                {"type": "scatter", "name": "scatter1", "parms": {"npts": 500, "relaxiterations": 50}},
+   105→            ],
+   106→            "connections": [["grid1", "scatter1", 0]],
+   107→            "key_parms": ["npts", "relaxiterations"],
+   108→            "explanation": (
+   109→                "Produces a blue-noise distribution by using high relax iterations "
+   110→                "on the scatter SOP. Points maintain a minimum distance from each "
+   111→                "other, avoiding both clumping and regular grid artifacts."
+   112→            ),
+   113→            "tips": [
+   114→                "Higher relax iterations give better Poisson distribution but cook slower",
+   115→                "50+ iterations is a good starting point for quality",
+   116→                "Useful for foliage placement where natural spacing matters",
+   117→            ],
+   118→        },
+   119→        "weighted_scatter": {
+   120→            "title": "Texture-Weighted Scatter",
+   121→            "description": "Scatter distribution controlled by a texture map",
+   122→            "context": "SOP",
+   123→            "difficulty": "intermediate",
+   124→            "nodes": [
+   125→                {"type": "grid", "name": "grid1", "parms": {"rows": 50, "cols": 50, "sizex": 10, "sizey": 10}},
+   126→                {"type": "uvtexture", "name": "uvtexture1", "parms": {}},
+   127→                {"type": "attribfrommap", "name": "attribfrommap1", "parms": {"attribname": "density"}},
+   128→                {"type": "scatter", "name": "scatter1", "parms": {"npts": 5000, "densityattrib": "density", "usedensityattrib": 1}},
+   129→            ],
+   130→            "connections": [
+   131→                ["grid1", "uvtexture1", 0],
+   132→                ["uvtexture1", "attribfrommap1", 0],
+   133→                ["attribfrommap1", "scatter1", 0],
+   134→            ],
+   135→            "key_parms": ["npts", "densityattrib", "attribname"],
+   136→            "explanation": (
+   137→                "Applies UV coordinates, samples a texture map into a density "
+   138→                "attribute, then scatters points weighted by that density. White "
+   139→                "areas of the texture get more points, black areas get fewer."
+   140→            ),
+   141→            "tips": [
+   142→                "Use a grayscale texture for clearest control",
+   143→                "The texture path is set on the Attribute from Map SOP",
+   144→                "Combine with COP networks for procedural density textures",
+   145→            ],
+   146→        },
+   147→    },
+   148→
+   149→    # -------------------------------------------------------------------------
+   150→    # VOLUMES
+   151→    # -------------------------------------------------------------------------
+   152→    "volumes": {
+   153→        "pyro_basic": {
+   154→            "title": "Basic Pyro Simulation",
+   155→            "description": "Simple pyro source with smoke/fire solver",
+   156→            "context": "SOP",
+   157→            "difficulty": "intermediate",
+   158→            "nodes": [
+   159→                {"type": "sphere", "name": "sphere1", "parms": {"rad": [0.5, 0.5, 0.5]}},
+   160→                {"type": "pyrosource", "name": "pyrosource1", "parms": {"mode": 0}},
+   161→                {"type": "pyrosolver", "name": "pyrosolver1", "parms": {"timescale": 1.0}},
+   162→                {"type": "output", "name": "OUT_pyro", "parms": {}},
+   163→            ],
+   164→            "connections": [
+   165→                ["sphere1", "pyrosource1", 0],
+   166→                ["pyrosource1", "pyrosolver1", 0],
+   167→                ["pyrosolver1", "OUT_pyro", 0],
+   168→            ],
+   169→            "key_parms": ["timescale", "mode", "rad"],
+   170→            "explanation": (
+   171→                "Creates a sphere as the emission source, converts it to a pyro "
+   172→                "source volume, then feeds it into a pyro solver. The solver simulates "
+   173→                "buoyancy, turbulence, and dissipation to produce smoke and fire."
+   174→            ),
+   175→            "tips": [
+   176→                "Set the timeline to at least 100 frames for visible simulation",
+   177→                "Increase 'Disturbance' on the solver for more turbulent smoke",
+   178→                "Use a Volume Visualization SOP after the solver to preview density",
+   179→            ],
+   180→        },
+   181→        "vdb_from_mesh": {
+   182→            "title": "VDB from Mesh",
+   183→            "description": "Convert polygon mesh to VDB signed distance field",
+   184→            "context": "SOP",
+   185→            "difficulty": "beginner",
+   186→            "nodes": [
+   187→                {"type": "testgeometry_rubbertoy", "name": "rubbertoy1", "parms": {}},
+   188→                {"type": "vdbfrompolygons", "name": "vdbfrompolygons1", "parms": {"voxelsize": 0.02}},
+   189→            ],
+   190→            "connections": [["rubbertoy1", "vdbfrompolygons1", 0]],
+   191→            "key_parms": ["voxelsize"],
+   192→            "explanation": (
+   193→                "Converts a polygon mesh into a VDB signed distance field. The voxel "
+   194→                "size controls resolution -- smaller values capture finer detail but "
+   195→                "use more memory. Essential for volume-based operations and collisions."
+   196→            ),
+   197→            "tips": [
+   198→                "Voxel size of 0.02 is high-res; start at 0.05 for faster iteration",
+   199→                "Enable 'Fog Volume' output for rendering volumetric effects",
+   200→                "Chain with VDB Smooth SDF to clean up noisy conversions",
+   201→            ],
+   202→        },
+   203→        "cloud_model": {
+   204→            "title": "Simple Cloud Model",
+   205→            "description": "Procedural cloud from sphere with volume noise",
+   206→            "context": "SOP",
+   207→            "difficulty": "intermediate",
+   208→            "nodes": [
+   209→                {"type": "sphere", "name": "sphere1", "parms": {"rad": [2, 1, 2], "type": 2}},
+   210→                {"type": "vdbfrompolygons", "name": "vdbfrompolygons1", "parms": {"voxelsize": 0.05, "fog": 1}},
+   211→                {"type": "cloudnoise", "name": "cloudnoise1", "parms": {}},
+   212→            ],
+   213→            "connections": [
+   214→                ["sphere1", "vdbfrompolygons1", 0],
+   215→                ["vdbfrompolygons1", "cloudnoise1", 0],
+   216→            ],
+   217→            "key_parms": ["voxelsize", "rad"],
+   218→            "explanation": (
+   219→                "Starts with a flattened sphere, converts to fog VDB, then applies "
+   220→                "cloud noise to break up the shape into a natural-looking cumulus "
+   221→                "form. Adjusting the sphere radii controls the overall cloud shape."
+   222→            ),
+   223→            "tips": [
+   224→                "Flatten the sphere on Y (e.g., radii 2, 1, 2) for cumulus shapes",
+   225→                "Layer multiple cloud noise SOPs with different frequencies",
+   226→                "Render with volume shader for realistic cloud lighting",
+   227→            ],
+   228→        },
+   229→    },
+   230→
+   231→    # -------------------------------------------------------------------------
+   232→    # MATERIALS
+   233→    # -------------------------------------------------------------------------
+   234→    "materials": {
+   235→        "principled_basic": {
+   236→            "title": "Principled Shader Setup",
+   237→            "description": "Basic PBR material with principled shader in Solaris",
+   238→            "context": "LOP",
+   239→            "difficulty": "beginner",
+   240→            "nodes": [
+   241→                {"type": "materiallibrary", "name": "matlib1", "parms": {}},
+   242→                {"type": "assignmaterial", "name": "assign1", "parms": {}},
+   243→            ],
+   244→            "connections": [["matlib1", "assign1", 0]],
+   245→            "key_parms": ["basecolor", "rough", "metallic"],
+   246→            "explanation": (
+   247→                "Creates a material library with a Principled Shader inside, then "
+   248→                "assigns it to geometry. The principled shader is Houdini's standard "
+   249→                "PBR material supporting metallic/roughness workflow."
+   250→            ),
+   251→            "tips": [
+   252→                "Set basecolor to a texture path for texture-mapped materials",
+   253→                "Roughness of 0.3-0.5 gives a nice semi-glossy look",
+   254→                "Use Metallic = 1.0 only for actual metals (gold, chrome, etc.)",
+   255→            ],
+   256→        },
+   257→        "layered_material": {
+   258→            "title": "Layered Material",
+   259→            "description": "Multi-layer material with blend mask between layers",
+   260→            "context": "LOP",
+   261→            "difficulty": "advanced",
+   262→            "nodes": [
+   263→                {"type": "materiallibrary", "name": "matlib1", "parms": {}},
+   264→                {"type": "assignmaterial", "name": "assign1", "parms": {}},
+   265→            ],
+   266→            "connections": [["matlib1", "assign1", 0]],
+   267→            "key_parms": ["basecolor", "rough", "metallic", "coat_enable", "coat_rough"],
+   268→            "explanation": (
+   269→                "Builds a material with a base layer and a clearcoat overlay. The "
+   270→                "clearcoat simulates a glossy protective coating over the base "
+   271→                "material, commonly used for car paint and lacquered surfaces."
+   272→            ),
+   273→            "tips": [
+   274→                "Use coat_rough near 0 for a mirror-like clear coat",
+   275→                "Combine with a noise mask to reveal the base layer selectively",
+   276→                "For car paint: metallic base + low-roughness coat = classic look",
+   277→            ],
+   278→        },
+   279→        "procedural_texture": {
+   280→            "title": "Procedural Noise Material",
+   281→            "description": "Noise-driven procedural material without texture files",
+   282→            "context": "LOP",
+   283→            "difficulty": "intermediate",
+   284→            "nodes": [
+   285→                {"type": "materiallibrary", "name": "matlib1", "parms": {}},
+   286→                {"type": "assignmaterial", "name": "assign1", "parms": {}},
+   287→            ],
+   288→            "connections": [["matlib1", "assign1", 0]],
+   289→            "key_parms": ["basecolor", "rough", "displace_enable", "displace_scale"],
+   290→            "explanation": (
+   291→                "Creates a material using procedural noise for color variation and "
+   292→                "optional displacement. No texture files needed -- everything is "
+   293→                "generated mathematically, making it resolution-independent."
+   294→            ),
+   295→            "tips": [
+   296→                "Use Unified Noise VOP inside the material for consistent noise across channels",
+   297→                "Pipe noise into roughness for natural surface variation",
+   298→                "Add displacement with small scale (0.01-0.05) for subtle surface detail",
+   299→            ],
+   300→        },
+   301→    },
+   302→
+   303→    # -------------------------------------------------------------------------
+   304→    # DEFORMATION
+   305→    # -------------------------------------------------------------------------
+   306→    "deformation": {
+   307→        "mountain_displace": {
+   308→            "title": "Mountain Displacement",
+   309→            "description": "Terrain-like displacement using Mountain SOP",
+   310→            "context": "SOP",
+   311→            "difficulty": "beginner",
+   312→            "nodes": [
+   313→                {"type": "grid", "name": "grid1", "parms": {"rows": 100, "cols": 100, "sizex": 10, "sizey": 10}},
+   314→                {"type": "mountain", "name": "mountain1", "parms": {"height": 1.5, "elementsize": 2.0}},
+   315→            ],
+   316→            "connections": [["grid1", "mountain1", 0]],
+   317→            "key_parms": ["height", "elementsize"],
+   318→            "explanation": (
+   319→                "Applies fractal noise displacement to a high-resolution grid, "
+   320→                "creating terrain-like surface variation. The Mountain SOP adds "
+   321→                "positional noise along surface normals."
+   322→            ),
+   323→            "tips": [
+   324→                "Use 100x100 grid minimum for smooth-looking terrain",
+   325→                "Layer multiple Mountain SOPs with different element sizes for realism",
+   326→                "Add an Attribute Noise afterward to break up the regularity",
+   327→            ],
+   328→        },
+   329→        "vex_deform": {
+   330→            "title": "Custom VEX Deformation",
+   331→            "description": "Point wrangle with custom deformation code",
+   332→            "context": "SOP",
+   333→            "difficulty": "intermediate",
+   334→            "nodes": [
+   335→                {"type": "testgeometry_rubbertoy", "name": "rubbertoy1", "parms": {}},
+   336→                {
+   337→                    "type": "attribwrangle",
+   338→                    "name": "deform_wrangle",
+   339→                    "parms": {
+   340→                        "snippet": (
+   341→                            "float amp = chf('amplitude');\n"
+   342→                            "float freq = chf('frequency');\n"
+   343→                            "@P.y += amp * sin(@P.x * freq + @Time * 2);\n"
+   344→                        ),
+   345→                    },
+   346→                },
+   347→            ],
+   348→            "connections": [["rubbertoy1", "deform_wrangle", 0]],
+   349→            "key_parms": ["snippet", "amplitude", "frequency"],
+   350→            "explanation": (
+   351→                "Uses an Attribute Wrangle to apply a custom VEX deformation. This "
+   352→                "example creates a sine-wave displacement along Y based on X position "
+   353→                "and time, producing an animated wave effect."
+   354→            ),
+   355→            "tips": [
+   356→                "Use chf() to create spare parameters for interactive control",
+   357→                "Access @Time for animation; @Frame for frame-based effects",
+   358→                "Combine sin/cos at different frequencies for organic deformation",
+   359→            ],
+   360→        },
+   361→        "bend_twist": {
+   362→            "title": "Bend + Twist Chain",
+   363→            "description": "Chained bend and twist deformers for organic shapes",
+   364→            "context": "SOP",
+   365→            "difficulty": "beginner",
+   366→            "nodes": [
+   367→                {"type": "tube", "name": "tube1", "parms": {"rows": 30, "cols": 20, "height": 5}},
+   368→                {"type": "bend", "name": "bend1", "parms": {"bendangle": 45}},
+   369→                {"type": "twist", "name": "twist1", "parms": {"twist": 180}},
+   370→            ],
+   371→            "connections": [
+   372→                ["tube1", "bend1", 0],
+   373→                ["bend1", "twist1", 0],
+   374→            ],
+   375→            "key_parms": ["bendangle", "twist"],
+   376→            "explanation": (
+   377→                "Chains a bend and twist deformer on a tube. The bend curves the "
+   378→                "geometry along one axis, then the twist rotates points progressively "
+   379→                "along the length, creating spiral-like organic forms."
+   380→            ),
+   381→            "tips": [
+   382→                "Increase tube rows for smoother deformation (30+ recommended)",
+   383→                "Try negative bend angles for opposite curvature",
+   384→                "Add a Smooth SOP after twist to reduce faceting artifacts",
+   385→            ],
+   386→        },
+   387→    },
+   388→
+   389→    # -------------------------------------------------------------------------
+   390→    # USD
+   391→    # -------------------------------------------------------------------------
+   392→    "usd": {
+   393→        "asset_structure": {
+   394→            "title": "Proper USD Asset Structure",
+   395→            "description": "USD asset with geometry, material, and variant sets",
+   396→            "context": "LOP",
+   397→            "difficulty": "advanced",
+   398→            "nodes": [
+   399→                {"type": "sopimport", "name": "import_geo", "parms": {}},
+   400→                {"type": "materiallibrary", "name": "matlib1", "parms": {}},
+   401→                {"type": "assignmaterial", "name": "assign1", "parms": {}},
+   402→                {"type": "configureprimitive", "name": "configure1", "parms": {"setkind": 1}},
+   403→                {"type": "usdrop", "name": "usdrop1", "parms": {}},
+   404→            ],
+   405→            "connections": [
+   406→                ["import_geo", "assign1", 0],
+   407→                ["matlib1", "assign1", 1],
+   408→                ["assign1", "configure1", 0],
+   409→                ["configure1", "usdrop1", 0],
+   410→            ],
+   411→            "key_parms": ["setkind"],
+   412→            "explanation": (
+   413→                "Builds a properly structured USD asset with geometry import, "
+   414→                "material assignment, and primitive configuration. The Configure "
+   415→                "Primitive sets the kind metadata required for correct asset resolution "
+   416→                "in production pipelines."
+   417→            ),
+   418→            "tips": [
+   419→                "Set kind to 'component' for leaf assets, 'assembly' for groups",
+   420→                "Add a Variant Block before export to create switchable variants",
+   421→                "Use Add Variant after Configure for LOD or look-dev variants",
+   422→            ],
+   423→        },
+   424→        "light_rig": {
+   425→            "title": "3-Point Light Rig",
+   426→            "description": "Classic key/fill/rim lighting setup in Solaris",
+   427→            "context": "LOP",
+   428→            "difficulty": "intermediate",
+   429→            "nodes": [
+   430→                {"type": "light", "name": "key_light", "parms": {"lighttype": "distantlight", "xn__inputsexposure_vya": 1.0, "xn__inputsenableColorTemperature_k5b": 1, "xn__inputscolorTemperature_oib": 5500}},
+   431→                {"type": "light", "name": "fill_light", "parms": {"lighttype": "distantlight", "xn__inputsexposure_vya": -0.585}},
+   432→                {"type": "light", "name": "rim_light", "parms": {"lighttype": "distantlight", "xn__inputsexposure_vya": 0.5}},
+   433→                {"type": "merge", "name": "merge_lights", "parms": {}},
+   434→            ],
+   435→            "connections": [
+   436→                ["key_light", "merge_lights", 0],
+   437→                ["fill_light", "merge_lights", 1],
+   438→                ["rim_light", "merge_lights", 2],
+   439→            ],
+   440→            "key_parms": ["xn__inputsexposure_vya", "xn__inputscolorTemperature_oib", "lighttype"],
+   441→            "explanation": (
+   442→                "Creates a classic 3-point lighting setup: key light (main illumination "
+   443→                "with warm color temperature), fill light (softer, 3:1 ratio below key), "
+   444→                "and rim light (edge separation). Intensity is always 1.0 -- brightness "
+   445→                "is controlled by exposure only (Lighting Law)."
+   446→            ),
+   447→            "tips": [
+   448→                "Key:fill ratio of 3:1 = 1.585 stops difference in exposure",
+   449→                "Enable color temperature on key for natural warmth (5000-6500K)",
+   450→                "Rotate rim light 135-180 degrees from key for best edge definition",
+   451→            ],
+   452→        },
+   453→        "material_assign": {
+   454→            "title": "Material Library + Assignment",
+   455→            "description": "Material library with multiple materials and geo assignment",
+   456→            "context": "LOP",
+   457→            "difficulty": "intermediate",
+   458→            "nodes": [
+   459→                {"type": "materiallibrary", "name": "matlib1", "parms": {}},
+   460→                {"type": "assignmaterial", "name": "assign1", "parms": {}},
+   461→            ],
+   462→            "connections": [["matlib1", "assign1", 0]],
+   463→            "key_parms": ["basecolor", "rough", "metallic"],
+   464→            "explanation": (
+   465→                "Creates a material library containing multiple material subnets, "
+   466→                "then assigns them to geometry prims. The material library approach "
+   467→                "keeps all materials in one node for clean organization."
+   468→            ),
+   469→            "tips": [
+   470→                "Add multiple material subnets inside the matlib for different surfaces",
+   471→                "Assign geo paths using exact USD prim paths (/asset/geo/shape)",
+   472→                "Use material overrides on the assign node for per-prim variation",
+   473→            ],
+   474→        },
+   475→    },
+   476→
+   477→    # -------------------------------------------------------------------------
+   478→    # MOTION
+   479→    # -------------------------------------------------------------------------
+   480→    "motion": {
+   481→        "trail_effect": {
+   482→            "title": "Point Trail with Fade",
+   483→            "description": "Animated trail lines from moving points with opacity fade",
+   484→            "context": "SOP",
+   485→            "difficulty": "intermediate",
+   486→            "nodes": [
+   487→                {"type": "sphere", "name": "sphere1", "parms": {"rad": [0.1, 0.1, 0.1]}},
+   488→                {"type": "scatter", "name": "scatter1", "parms": {"npts": 50}},
+   489→                {
+   490→                    "type": "attribwrangle",
+   491→                    "name": "animate_pts",
+   492→                    "parms": {
+   493→                        "snippet": (
+   494→                            "@P += set(sin(@ptnum * 0.5 + @Time), "
+   495→                            "cos(@ptnum * 0.3 + @Time), 0) * 0.05;\n"
+   496→                        ),
+   497→                    },
+   498→                },
+   499→                {"type": "trail", "name": "trail1", "parms": {"traillength": 10, "result": 1}},
+   500→                {
+   501→                    "type": "attribwrangle",
+   502→                    "name": "fade_alpha",
+   503→                    "parms": {
+   504→                        "snippet": (
+   505→                            "float u = float(vertexprimindex(0, @vtxnum)) "
+   506→                            "/ max(primvertexcount(0, @primnum) - 1, 1);\n"
+   507→                            "@Alpha = u;\n"
+   508→                        ),
+   509→                    },
+   510→                },
+   511→            ],
+   512→            "connections": [
+   513→                ["sphere1", "scatter1", 0],
+   514→                ["scatter1", "animate_pts", 0],
+   515→                ["animate_pts", "trail1", 0],
+   516→                ["trail1", "fade_alpha", 0],
+   517→            ],
+   518→            "key_parms": ["traillength", "result", "npts"],
+   519→            "explanation": (
+   520→                "Scatters points on a sphere, animates them with VEX, then creates "
+   521→                "trail lines from their motion. A second wrangle fades the alpha "
+   522→                "along each trail so the tail disappears smoothly."
+   523→            ),
+   524→            "tips": [
+   525→                "Set Trail result to 'Connect as Trails' (1) for line output",
+   526→                "Increase trail length for longer motion streaks",
+   527→                "Use the Alpha attribute in a material for transparency rendering",
+   528→            ],
+   529→        },
+   530→        "velocity_blur": {
+   531→            "title": "Velocity Motion Blur",
+   532→            "description": "Proper velocity attribute setup for motion blur rendering",
+   533→            "context": "SOP",
+   534→            "difficulty": "intermediate",
+   535→            "nodes": [
+   536→                {"type": "testgeometry_rubbertoy", "name": "rubbertoy1", "parms": {}},
+   537→                {"type": "timeshift", "name": "timeshift_prev", "parms": {"frame": {"expression": "$FF - 1"}}},
+   538→                {"type": "trail", "name": "trail1", "parms": {"result": 3}},
+   539→            ],
+   540→            "connections": [
+   541→                ["rubbertoy1", "trail1", 0],
+   542→            ],
+   543→            "key_parms": ["result"],
+   544→            "explanation": (
+   545→                "Computes per-point velocity (v) attribute from frame-to-frame motion. "
+   546→                "The Trail SOP in 'Compute Velocity' mode calculates the velocity "
+   547→                "vector that renderers use for motion blur without extra render samples."
+   548→            ),
+   549→            "tips": [
+   550→                "Trail result mode 3 = 'Compute Velocity' (the v attribute)",
+   551→                "Ensure your render settings have motion blur enabled",
+   552→                "For Karma: set motion samples to 2 on the Karma render settings",
+   553→            ],
+   554→        },
+   555→    },
+   556→
+   557→    # -------------------------------------------------------------------------
+   558→    # UTILITY
+   559→    # -------------------------------------------------------------------------
+   560→    "utility": {
+   561→        "uv_layout": {
+   562→            "title": "UV Flatten + Layout Pipeline",
+   563→            "description": "Automatic UV unwrap and packing for clean UVs",
+   564→            "context": "SOP",
+   565→            "difficulty": "intermediate",
+   566→            "nodes": [
+   567→                {"type": "testgeometry_rubbertoy", "name": "rubbertoy1", "parms": {}},
+   568→                {"type": "uvflatten", "name": "uvflatten1", "parms": {}},
+   569→                {"type": "uvlayout", "name": "uvlayout1", "parms": {"padding": 4}},
+   570→            ],
+   571→            "connections": [
+   572→                ["rubbertoy1", "uvflatten1", 0],
+   573→                ["uvflatten1", "uvlayout1", 0],
+   574→            ],
+   575→            "key_parms": ["padding"],
+   576→            "explanation": (
+   577→                "Automatically flattens UVs using ABF (Angle-Based Flattening), "
+   578→                "then packs UV islands efficiently into 0-1 space. The padding "
+   579→                "parameter prevents texture bleeding between islands at render time."
+   580→            ),
+   581→            "tips": [
+   582→                "Add edge selections before UV Flatten for manual seam placement",
+   583→                "Padding of 4-8 pixels prevents bleeding at common texture resolutions",
+   584→                "Use UV Visualize SOP to inspect the result in the viewport",
+   585→            ],
+   586→        },
+   587→        "lod_setup": {
+   588→            "title": "Level of Detail Setup",
+   589→            "description": "LOD chain with switch node for distance-based selection",
+   590→            "context": "SOP",
+   591→            "difficulty": "intermediate",
+   592→            "nodes": [
+   593→                {"type": "testgeometry_rubbertoy", "name": "rubbertoy1", "parms": {}},
+   594→                {"type": "polyreduce", "name": "lod_medium", "parms": {"percentage": 50}},
+   595→                {"type": "polyreduce", "name": "lod_low", "parms": {"percentage": 10}},
+   596→                {"type": "switch", "name": "lod_switch", "parms": {"input": 0}},
+   597→            ],
+   598→            "connections": [
+   599→                ["rubbertoy1", "lod_medium", 0],
+   600→                ["rubbertoy1", "lod_low", 0],
+   601→                ["rubbertoy1", "lod_switch", 0],
+   602→                ["lod_medium", "lod_switch", 1],
+   603→                ["lod_low", "lod_switch", 2],
+   604→            ],
+   605→            "key_parms": ["percentage", "input"],
+   606→            "explanation": (
+   607→                "Creates three LOD levels: full-resolution original, 50% reduced "
+   608→                "medium, and 10% reduced low. The switch node selects between them. "
+   609→                "In production, the switch input is driven by camera distance."
+   610→            ),
+   611→            "tips": [
+   612→                "Use expressions on switch input: lod based on $OBJDIST or bbox size",
+   613→                "PolyReduce 'Keep Quads' option preserves subdivision-friendly topology",
+   614→                "For USD: export each LOD as a variant instead of using switch",
+   615→            ],
+   616→        },
+   617→        "group_workflow": {
+   618→            "title": "Group Create + Transfer",
+   619→            "description": "Group-based workflow with creation and transfer between geos",
+   620→            "context": "SOP",
+   621→            "difficulty": "beginner",
+   622→            "nodes": [
+   623→                {"type": "testgeometry_rubbertoy", "name": "rubbertoy1", "parms": {}},
+   624→                {"type": "groupcreate", "name": "groupcreate1", "parms": {"groupname": "top_half", "grouptype": 0, "groupbounding": 1, "boundtype": 0}},
+   625→                {"type": "color", "name": "color1", "parms": {"colorr": 1, "colorg": 0, "colorb": 0, "group": "top_half"}},
+   626→            ],
+   627→            "connections": [
+   628→                ["rubbertoy1", "groupcreate1", 0],
+   629→                ["groupcreate1", "color1", 0],
+   630→            ],
+   631→            "key_parms": ["groupname", "grouptype", "groupbounding", "group"],
+   632→            "explanation": (
+   633→                "Creates a point group using a bounding region, then applies an "
+   634→                "operation (color) only to that group. Groups are fundamental to "
+   635→                "selective operations in Houdini -- almost every SOP has a group field."
+   636→            ),
+   637→            "tips": [
+   638→                "Use bounding box or bounding sphere for quick spatial groups",
+   639→                "VEX expression groups: @P.y > 0 for everything above origin",
+   640→                "Group Transfer SOP moves groups between different geometries by proximity",
+   641→            ],
+   642→        },
+   643→    },
+   644→}
+   645→
+   646→
+   647→# =============================================================================
+   648→# Command Parsing
+   649→# =============================================================================
+   650→
+   651→def parse_recipe_command(text: str) -> dict:
+   652→    """Parse a /recipes command into an action dict.
+   653→
+   654→    Returns:
+   655→        dict with keys: action, category, recipe, query (depending on action)
+   656→
+   657→    Examples:
+   658→        "/recipes"                              -> {"action": "list", ...}
+   659→        "/recipes scatter"                      -> {"action": "category", "category": "scatter", ...}
+   660→        "/recipes scatter uniform_scatter"      -> {"action": "detail", ...}
+   661→        "/recipes build scatter uniform_scatter" -> {"action": "build", ...}
+   662→        "/recipes search noise"                 -> {"action": "search", "query": "noise"}
+   663→    """
+   664→    # Strip the command prefix
+   665→    stripped = text.strip()
+   666→    if stripped.lower().startswith("/recipes"):
+   667→        stripped = stripped[len("/recipes"):].strip()
+   668→    elif stripped.lower().startswith("/recipe"):
+   669→        stripped = stripped[len("/recipe"):].strip()
+   670→
+   671→    if not stripped:
+   672→        return {"action": "list", "category": "", "recipe": ""}
+   673→
+   674→    parts = stripped.split()
+   675→
+   676→    # /recipes search <query>
+   677→    if parts[0].lower() == "search" and len(parts) >= 2:
+   678→        return {"action": "search", "query": " ".join(parts[1:]), "category": "", "recipe": ""}
+   679→
+   680→    # /recipes build <category> <recipe>
+   681→    if parts[0].lower() == "build" and len(parts) >= 3:
+   682→        return {"action": "build", "category": parts[1].lower(), "recipe": parts[2].lower()}
+   683→
+   684→    # /recipes <category> <recipe>
+   685→    if len(parts) >= 2:
+   686→        return {"action": "detail", "category": parts[0].lower(), "recipe": parts[1].lower()}
+   687→
+   688→    # /recipes <category>
+   689→    return {"action": "category", "category": parts[0].lower(), "recipe": ""}
+   690→
+   691→
+   692→# =============================================================================
+   693→# Lookup Helpers
+   694→# =============================================================================
+   695→
+   696→def get_recipe(category: str, recipe_name: str):
+   697→    """Look up a recipe by category and name. Returns the recipe dict or None."""
+   698→    cat = RECIPES.get(category)
+   699→    if cat is None:
+   700→        return None
+   701→    return cat.get(recipe_name)
+   702→
+   703→
+   704→def list_categories() -> list:
+   705→    """Return a sorted list of category names."""
+   706→    return sorted(RECIPES.keys())
+   707→
+   708→
+   709→# =============================================================================
+   710→# Search
+   711→# =============================================================================
+   712→
+   713→def search_recipes(query: str) -> list:
+   714→    """Search all recipes by title, description, explanation, and tips.
+   715→
+   716→    Args:
+   717→        query: Search string (case-insensitive).
+   718→
+   719→    Returns:
+   720→        List of (category, recipe_name, title, match_context) tuples.
+   721→    """
+   722→    results = []
+   723→    q = query.lower()
+   724→
+   725→    for cat_name in sorted(RECIPES.keys()):
+   726→        cat = RECIPES[cat_name]
+   727→        for recipe_name in sorted(cat.keys()):
+   728→            recipe = cat[recipe_name]
+   729→            matches = []
+   730→
+   731→            if q in recipe["title"].lower():
+   732→                matches.append(("title", recipe["title"]))
+   733→            if q in recipe["description"].lower():
+   734→                matches.append(("description", recipe["description"]))
+   735→            if q in recipe["explanation"].lower():
+   736→                matches.append(("explanation", recipe["explanation"]))
+   737→            for tip in recipe.get("tips", []):
+   738→                if q in tip.lower():
+   739→                    matches.append(("tip", tip))
+   740→                    break  # one tip match is enough
+   741→
+   742→            if matches:
+   743→                # Use the first match as context
+   744→                match_type, match_text = matches[0]
+   745→                results.append((cat_name, recipe_name, recipe["title"], match_text))
+   746→
+   747→    return results
+   748→
+   749→
+   750→# =============================================================================
+   751→# HTML Formatting
+   752→# =============================================================================
+   753→
+   754→_DIFFICULTY_COLORS = {
+   755→    "beginner": _SUCCESS,
+   756→    "intermediate": _WARNING,
+   757→    "advanced": "#FF6B6B",
+   758→}
+   759→
+   760→
+   761→def format_categories_html() -> str:
+   762→    """Format all categories with recipe counts as HTML."""
+   763→    lines = []
+   764→    lines.append(
+   765→        f'<div style="font-family: {_FONT_SANS}; color: {_TEXT}; '
+   766→        f'font-size: {_BODY_PX}px; line-height: 1.6;">'
+   767→    )
+   768→    lines.append(
+   769→        f'<b style="color: {_SIGNAL};">Recipe Book</b> '
+   770→        f'<span style="color: {_TEXT_DIM};">({sum(len(v) for v in RECIPES.values())} recipes)</span>'
+   771→    )
+   772→    lines.append("<br><br>")
+   773→
+   774→    for cat_name in sorted(RECIPES.keys()):
+   775→        count = len(RECIPES[cat_name])
+   776→        cat_display = cat_name.replace("_", " ").title()
+   777→        lines.append(
+   778→            f'<b>{html.escape(cat_display)}</b> '
+   779→            f'<span style="color: {_TEXT_DIM};">({count} recipe{"s" if count != 1 else ""})</span><br>'
+   780→        )
+   781→
+   782→    lines.append("<br>")
+   783→    lines.append(
+   784→        f'<span style="color: {_TEXT_DIM}; font-size: {_SMALL_PX}px;">'
+   785→        "Type <b>/recipes &lt;category&gt;</b> to browse a category.</span>"
+   786→    )
+   787→    lines.append("</div>")
+   788→    return "\n".join(lines)
+   789→
+   790→
+   791→def format_category_html(category: str) -> str:
+   792→    """Format all recipes in a category as HTML.
+   793→
+   794→    Args:
+   795→        category: Category name (must exist in RECIPES).
+   796→
+   797→    Returns:
+   798→        HTML string listing recipes with difficulty badges and context tags.
+   799→    """
+   800→    cat = RECIPES.get(category)
+   801→    if cat is None:
+   802→        return (
+   803→            f'<span style="color: {_WARNING};">Category "{html.escape(category)}" '
+   804→            f"not found. Try /recipes to see all categories.</span>"
+   805→        )
+   806→
+   807→    cat_display = category.replace("_", " ").title()
+   808→    lines = []
+   809→    lines.append(
+   810→        f'<div style="font-family: {_FONT_SANS}; color: {_TEXT}; '
+   811→        f'font-size: {_BODY_PX}px; line-height: 1.8;">'
+   812→    )
+   813→    lines.append(f'<b style="color: {_SIGNAL};">{html.escape(cat_display)}</b><br><br>')
+   814→
+   815→    for recipe_name in sorted(cat.keys()):
+   816→        recipe = cat[recipe_name]
+   817→        diff_color = _DIFFICULTY_COLORS.get(recipe["difficulty"], _TEXT_DIM)
+   818→        lines.append(
+   819→            f'<b>{html.escape(recipe_name)}</b> '
+   820→            f'<span style="color: {_TEXT_DIM};">-</span> '
+   821→            f'{html.escape(recipe["description"])} '
+   822→            f'<span style="color: {diff_color}; font-size: {_SMALL_PX}px;">'
+   823→            f'[{html.escape(recipe["difficulty"])}]</span> '
+   824→            f'<span style="color: {_TEXT_DIM}; font-size: {_SMALL_PX}px;">'
+   825→            f'{html.escape(recipe["context"])}</span>'
+   826→            "<br>"
+   827→        )
+   828→
+   829→    lines.append("<br>")
+   830→    lines.append(
+   831→        f'<span style="color: {_TEXT_DIM}; font-size: {_SMALL_PX}px;">'
+   832→        f"Type <b>/recipes {html.escape(category)} &lt;recipe&gt;</b> for details, "
+   833→        f"or <b>/recipes build {html.escape(category)} &lt;recipe&gt;</b> to create it.</span>"
+   834→    )
+   835→    lines.append("</div>")
+   836→    return "\n".join(lines)
+   837→
+   838→
+   839→def format_recipe_html(category: str, recipe_name: str) -> str:
+   840→    """Format full recipe detail as HTML.
+   841→
+   842→    Args:
+   843→        category: Category name.
+   844→        recipe_name: Recipe name within the category.
+   845→
+   846→    Returns:
+   847→        HTML string with complete recipe information.
+   848→    """
+   849→    recipe = get_recipe(category, recipe_name)
+   850→    if recipe is None:
+   851→        return (
+   852→            f'<span style="color: {_WARNING};">Recipe "{html.escape(recipe_name)}" '
+   853→            f'not found in category "{html.escape(category)}".</span>'
+   854→        )
+   855→
+   856→    diff_color = _DIFFICULTY_COLORS.get(recipe["difficulty"], _TEXT_DIM)
+   857→
+   858→    lines = []
+   859→    lines.append(
+   860→        f'<div style="font-family: {_FONT_SANS}; color: {_TEXT}; '
+   861→        f'font-size: {_BODY_PX}px; line-height: 1.6;">'
+   862→    )
+   863→
+   864→    # Header
+   865→    lines.append(
+   866→        f'<b style="color: {_SIGNAL}; font-size: {_BODY_PX + 2}px;">'
+   867→        f'{html.escape(recipe["title"])}</b><br>'
+   868→    )
+   869→    lines.append(
+   870→        f'<span style="color: {_TEXT_DIM};">{html.escape(recipe["description"])}</span><br>'
+   871→    )
+   872→    lines.append(
+   873→        f'<span style="color: {diff_color}; font-size: {_SMALL_PX}px;">'
+   874→        f'{html.escape(recipe["difficulty"])}</span> '
+   875→        f'<span style="color: {_TEXT_DIM}; font-size: {_SMALL_PX}px;">'
+   876→        f'| {html.escape(recipe["context"])}</span>'
+   877→    )
+   878→    lines.append("<br><br>")
+   879→
+   880→    # Nodes
+   881→    lines.append(f'<b style="color: {_SIGNAL};">Nodes</b><br>')
+   882→    for node in recipe["nodes"]:
+   883→        parm_summary = ""
+   884→        if node.get("parms"):
+   885→            parm_strs = []
+   886→            for k, v in sorted(node["parms"].items()):
+   887→                if k == "snippet":
+   888→                    parm_strs.append("snippet=...")
+   889→                else:
+   890→                    parm_strs.append(f"{k}={v}")
+   891→            parm_summary = f' <span style="color: {_TEXT_DIM};">({", ".join(parm_strs)})</span>'
+   892→        lines.append(
+   893→            f'&bull; <b>{html.escape(node["name"])}</b> '
+   894→            f'<span style="color: {_TEXT_DIM};">[{html.escape(node["type"])}]</span>'
+   895→            f'{parm_summary}<br>'
+   896→        )
+   897→    lines.append("<br>")
+   898→
+   899→    # Key parameters
+   900→    if recipe.get("key_parms"):
+   901→        lines.append(f'<b style="color: {_SIGNAL};">Key Parameters</b><br>')
+   902→        lines.append(
+   903→            f'<span style="color: {_TEXT_DIM};">'
+   904→            + ", ".join(html.escape(p) for p in recipe["key_parms"])
+   905→            + "</span><br><br>"
+   906→        )
+   907→
+   908→    # Explanation
+   909→    lines.append(f'<b style="color: {_SIGNAL};">How It Works</b><br>')
+   910→    lines.append(f'{html.escape(recipe["explanation"])}<br><br>')
+   911→
+   912→    # Tips
+   913→    if recipe.get("tips"):
+   914→        lines.append(f'<b style="color: {_SIGNAL};">Tips</b><br>')
+   915→        for tip in recipe["tips"]:
+   916→            lines.append(f'&bull; {html.escape(tip)}<br>')
+   917→        lines.append("<br>")
+   918→
+   919→    # Build prompt
+   920→    lines.append(
+   921→        f'<span style="color: {_SUCCESS}; font-size: {_SMALL_PX}px;">'
+   922→        f"Type <b>/recipes build {html.escape(category)} {html.escape(recipe_name)}</b> "
+   923→        f"to create this network.</span>"
+   924→    )
+   925→    lines.append("</div>")
+   926→    return "\n".join(lines)
+   927→
+   928→
+   929→# =============================================================================
+   930→# Build Messages
+   931→# =============================================================================
+   932→
+   933→def build_recipe_messages(category: str, recipe_name: str, context: dict) -> list:
+   934→    """Build Claude API messages that instruct Claude to construct the recipe.
+   935→
+   936→    Args:
+   937→        category: Category name.
+   938→        recipe_name: Recipe name.
+   939→        context: Current network context dict (e.g., {"parent_path": "/obj/geo1"}).
+   940→
+   941→    Returns:
+   942→        List of message dicts for the Claude API, or empty list if recipe not found.
+   943→    """
+   944→    recipe = get_recipe(category, recipe_name)
+   945→    if recipe is None:
+   946→        return []
+   947→
+   948→    parent_path = context.get("parent_path", "/obj/geo1")
+   949→
+   950→    # Build node descriptions
+   951→    node_lines = []
+   952→    for i, node in enumerate(recipe["nodes"]):
+   953→        parm_desc = ""
+   954→        if node.get("parms"):
+   955→            parm_items = []
+   956→            for k, v in sorted(node["parms"].items()):
+   957→                parm_items.append(f"  {k} = {repr(v)}")
+   958→            parm_desc = "\n" + "\n".join(parm_items)
+   959→        node_lines.append(
+   960→            f"  {i + 1}. Create node type='{node['type']}' name='{node['name']}'"
+   961→            f"{parm_desc}"
+   962→        )
+   963→
+   964→    # Build connection descriptions
+   965→    conn_lines = []
+   966→    for conn in recipe["connections"]:
+   967→        src, dst, idx = conn[0], conn[1], conn[2]
+   968→        conn_lines.append(f"  - Connect {src} output 0 -> {dst} input {idx}")
+   969→
+   970→    instruction = (
+   971→        f"Build the '{recipe['title']}' recipe in {parent_path}.\n\n"
+   972→        f"Context: {recipe['context']} network\n\n"
+   973→        f"Create these nodes:\n"
+   974→        + "\n".join(node_lines)
+   975→        + "\n\n"
+   976→        f"Make these connections:\n"
+   977→        + "\n".join(conn_lines)
+   978→        + "\n\n"
+   979→        f"Use houdini_create_node, houdini_set_parm, and houdini_connect_nodes tools. "
+   980→        f"Set the display flag on the last node.\n\n"
+   981→        f"Key parameters to set: {', '.join(recipe['key_parms'])}"
+   982→    )
+   983→
+   984→    return [
+   985→        {
+   986→            "role": "user",
+   987→            "content": instruction,
+   988→        }
+   989→    ]
+   990→

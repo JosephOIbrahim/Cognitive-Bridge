@@ -1,0 +1,507 @@
+@import "tailwindcss";
+
+/**
+ * GOLDEN RATIO DESIGN SYSTEM
+ *
+ * Spacing follows Fibonacci sequence (approximates φ = 1.618):
+ * - 21, 34, 55, 89, 144, 233px
+ * - Each value × 1.618 ≈ next value
+ *
+ * Blends production warmth with Pentagram refinement:
+ * - Dark theme with warm amber accent
+ * - Golden ratio spacing throughout
+ * - Editorial typography with warmth
+ * - Refined interactions
+ */
+
+:root {
+  /* Golden Ratio: φ = 1.618, 1/φ = 0.618 */
+  --phi: 1.618;
+  --phi-inverse: 0.618;
+
+  /* Fibonacci spacing scale (each × φ ≈ next) */
+  --space-xs: 21px;    /* Fibonacci */
+  --space-sm: 34px;    /* 21 × 1.618 ≈ 34 */
+  --space-md: 55px;    /* 34 × 1.618 ≈ 55 */
+  --space-lg: 89px;    /* 55 × 1.618 ≈ 89 */
+  --space-xl: 144px;   /* 89 × 1.618 ≈ 144 */
+  --space-2xl: 233px;  /* 144 × 1.618 ≈ 233 */
+  --space-section: 120px; /* Editorial section gap */
+
+  /* Typography - Helvetica Neue alternative */
+  /* Inter: neo-grotesque sans-serif, clean, neutral, screen-optimized */
+  --font-display: var(--font-inter), 'Inter', sans-serif;
+  --font-body: var(--font-inter), 'Inter', sans-serif;
+
+  /* Color palette - Dark with warm accent */
+  --background: #141414;
+  --foreground: #b8b8b8;
+  --text-primary: #e8e8e8;
+  --text-secondary: #8a8a8a;  /* Consolidated from #888888, #8a8a8a */
+  --text-muted: #6a6a6a;      /* Consolidated from #666666, #6a6a6a */
+  --text-dim: #5a5a5a;        /* NEW: For subtle labels, tags */
+  --border: #2a2a2a;
+  --border-subtle: #222222;   /* NEW: For subtle dividers */
+  --surface: #1a1a1a;         /* NEW: Elevated surface (cards, tags) */
+  --accent: #d4a853;          /* Warm gold - refined amber */
+  --accent-subtle: rgba(212, 168, 83, 0.15);
+
+  /* ═══════════════════════════════════════════════════════════════
+     COLOR HIERARCHY MANTRA
+     Information hierarchy = Color hierarchy
+
+     PRIMARY:   --text-primary (#e8e8e8) — Titles, headings, anchors
+     SECONDARY: --grey-500 (#7a7a7a)     — Descriptions, body content
+     TERTIARY:  --text-dim (#5a5a5a)     — Metadata, labels, footnotes
+
+     Rule: Brighter = more important. Dimmer = supporting context.
+     ═══════════════════════════════════════════════════════════════ */
+
+  /* Grey scale - Deterministic (use these, not hex values) */
+  --grey-50: #f0f0f0;   /* Brightest text */
+  --grey-100: #e8e8e8;  /* Primary text (= --text-primary) — TITLES */
+  --grey-200: #c0c0c0;  /* Emphasis text */
+  --grey-300: #a0a0a0;  /* Light secondary */
+  --grey-400: #8a8a8a;  /* Secondary text (= --text-secondary) */
+  --grey-500: #7a7a7a;  /* Medium grey — DESCRIPTIONS */
+  --grey-600: #6a6a6a;  /* Muted text (= --text-muted) */
+  --grey-700: #5a5a5a;  /* Dim text (= --text-dim) — METADATA */
+  --grey-800: #3a3a3a;  /* Separator dots */
+  --grey-900: #2a2a2a;  /* Borders (= --border) */
+
+  /* Micro spacing - for elements smaller than Fibonacci scale */
+  --space-micro: 4px;   /* Padding inside small elements */
+  --space-tiny: 8px;    /* Small gaps */
+  --space-small: 13px;  /* 21 / phi ≈ 13 */
+
+  /* Border radius scale - 3 values only */
+  --radius-sm: 4px;     /* Tags, buttons, code blocks */
+  --radius-md: 6px;     /* Thumbnails, cards */
+  --radius-full: 50%;   /* Circles, avatars */
+
+  /* Standardized transitions */
+  --transition-fast: 200ms ease-out;
+  --transition-base: 300ms ease-out;
+  --transition-smooth: 400ms cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* Standardized hover opacity */
+  --hover-dim: 0.6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+
+  /* Golden ratio spacing */
+  --spacing-section: var(--space-lg);  /* 89px */
+  --spacing-gutter: var(--space-md);   /* 55px */
+
+  /* Layout - balanced width */
+  --max-content-width: 1600px;
+  --side-padding: clamp(24px, 3vw, 80px);     /* Fluid: scales with viewport */
+  --side-padding-md: clamp(34px, 4vw, 100px);  /* Fluid: scales with viewport */
+}
+
+/* Typography */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6, p {
+  margin: 0;
+  font-weight: 400;
+}
+
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+button {
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: var(--background);
+}
+
+/* ===========================================
+   PROJECT CARD INTERACTIONS
+   =========================================== */
+
+/* Hover overlay and transitions handled inline in ProjectCard.tsx and VideoThumbnail.tsx */
+/* This keeps all visual logic colocated with the component for easier maintenance */
+
+/* ===========================================
+   NAVIGATION INTERACTIONS
+   =========================================== */
+
+.nav-link {
+  position: relative;
+  display: inline-block;
+  text-decoration: none;
+  /* Reversed hover: full opacity by default, dims on hover */
+  opacity: 1;
+  transition: opacity var(--transition-smooth);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nav-link:hover {
+    opacity: var(--hover-dim);
+  }
+}
+
+/* Section headers - Light table effect */
+.section-header-highlight {
+  position: relative;
+  display: inline-block;
+  /* Light table: dimmed by default, reveals on hover */
+  opacity: 0.5;
+  transition: opacity var(--transition-smooth);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .section-header-highlight:hover {
+    opacity: 1;
+  }
+}
+
+.nav-item-shift {
+  transition: opacity var(--transition-smooth);
+}
+
+/* Button arrow */
+.button-arrow-shift {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-tiny);
+}
+
+.button-arrow {
+  transition: transform var(--transition-smooth), opacity var(--transition-smooth);
+  opacity: 0.5;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .button-arrow-shift:hover .button-arrow {
+    transform: translateX(4px);
+    opacity: 1;
+  }
+}
+
+.gpu-accelerated {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Vimeo iframe: force dark background before video loads (prevents white flash) */
+iframe[src*="vimeo"],
+iframe[src*="player.vimeo"] {
+  background-color: #141414;
+  border: none;
+  display: block;
+}
+
+/* ===========================================
+   RELATED WORK THUMBNAILS
+   =========================================== */
+
+.related-thumbnail img {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.group:hover .related-thumbnail img {
+  opacity: 1 !important;
+  transform: scale(1.02);
+}
+
+/* ===========================================
+   ENTRANCE ANIMATIONS
+   =========================================== */
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(21px);  /* Fibonacci */
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.project-card {
+  opacity: 0;
+  animation: fadeUp 0.7s ease-out forwards;
+}
+
+.project-card:nth-child(1) { animation-delay: 0ms; }
+.project-card:nth-child(2) { animation-delay: 80ms; }
+.project-card:nth-child(3) { animation-delay: 160ms; }
+.project-card:nth-child(4) { animation-delay: 240ms; }
+.project-card:nth-child(5) { animation-delay: 320ms; }
+.project-card:nth-child(6) { animation-delay: 400ms; }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.client-strip {
+  animation: fadeIn 0.8s ease-out forwards;
+  animation-delay: 200ms;
+  opacity: 0;
+}
+
+/* Scroll indicator */
+@keyframes scrollFloat {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(6px);
+    opacity: 0.8;
+  }
+}
+
+.scroll-chevron {
+  animation: scrollFloat 2.8s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Availability indicator */
+@keyframes availabilityPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.availability-dot {
+  animation: availabilityPulse 2.5s ease-in-out infinite;
+}
+
+/* Chat typing indicator */
+@keyframes typingPulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.typing-dot {
+  will-change: transform, opacity;
+}
+
+/* Chat message entrance */
+@keyframes chatMessageIn {
+  from {
+    opacity: 0;
+    transform: translateY(13px);  /* --space-small: 21 / phi */
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-message-enter {
+  animation: chatMessageIn 0.3s ease-out forwards;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  [aria-live="polite"] {
+    transition: none !important;
+  }
+
+  .nav-link,
+  .project-title h3,
+  .section-header-highlight,
+  .project-card,
+  .nav-item-shift,
+  .button-arrow,
+  .scroll-chevron,
+  .typing-dot,
+  .chat-message-enter {
+    transition: none !important;
+    transform: none !important;
+    animation: none !important;
+  }
+}
+
+/* ===========================================
+   FOCUS INDICATORS FOR ACCESSIBILITY
+   =========================================== */
+
+/* Focus-visible indicators for keyboard navigation */
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
+}
+
+/* Remove focus ring on mouse click, keep for keyboard */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ===========================================
+   VIEW TRANSITIONS - Cinematic Page Crossfades
+   =========================================== */
+
+/*
+ * Design philosophy:
+ * - Film dissolve feel, not flashy web animation
+ * - Content: subtle crossfade with micro-scale for depth
+ * - Navigation: fade only (no scale/position change - stays anchored)
+ * - Duration: 500ms content, 400ms nav (slow enough to feel intentional)
+ * - Easing: ease-in-out for cinematic linear-ish blend
+ */
+
+/* Dark canvas behind all transition layers — prevents white bleed-through */
+::view-transition {
+  background-color: #141414;
+}
+
+::view-transition-group(root),
+::view-transition-group(navigation),
+::view-transition-group(footer) {
+  background-color: #141414;
+}
+
+/* Root (main content) transition */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 500ms;
+  animation-timing-function: ease-in-out;
+}
+
+/* Old page: fade out with slight scale down */
+::view-transition-old(root) {
+  animation-name: fade-and-scale-out;
+}
+
+/* New page: fade in with slight scale up */
+::view-transition-new(root) {
+  animation-name: fade-and-scale-in;
+}
+
+@keyframes fade-and-scale-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@keyframes fade-and-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Navigation: fade only, no scale (stays anchored) */
+::view-transition-old(navigation),
+::view-transition-new(navigation) {
+  animation-duration: 400ms;
+  animation-timing-function: ease-in-out;
+}
+
+::view-transition-old(navigation) {
+  animation-name: fade-out-only;
+}
+
+::view-transition-new(navigation) {
+  animation-name: fade-in-only;
+}
+
+/* Hero reel: fade only, no scale (prevents white flash from iframe reinit) */
+/* Dark background on the transition group prevents white bleed-through during crossfade */
+::view-transition-group(hero-reel) {
+  background-color: #141414;
+}
+
+::view-transition-old(hero-reel),
+::view-transition-new(hero-reel) {
+  animation-duration: 400ms;
+  animation-timing-function: ease-in-out;
+}
+
+::view-transition-old(hero-reel) {
+  animation-name: fade-out-only;
+}
+
+::view-transition-new(hero-reel) {
+  animation-name: fade-in-only;
+}
+
+/* Footer: fade only, no scale (stays anchored) */
+::view-transition-old(footer),
+::view-transition-new(footer) {
+  animation-duration: 400ms;
+  animation-timing-function: ease-in-out;
+}
+
+::view-transition-old(footer) {
+  animation-name: fade-out-only;
+}
+
+::view-transition-new(footer) {
+  animation-name: fade-in-only;
+}
+
+@keyframes fade-out-only {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes fade-in-only {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-old(navigation),
+  ::view-transition-new(navigation),
+  ::view-transition-old(hero-reel),
+  ::view-transition-new(hero-reel),
+  ::view-transition-old(footer),
+  ::view-transition-new(footer) {
+    animation: none !important;
+  }
+}

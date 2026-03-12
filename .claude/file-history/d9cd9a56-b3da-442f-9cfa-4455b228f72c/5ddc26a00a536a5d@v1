@@ -1,0 +1,58 @@
+"""SessionStart hook: check for running processes that might conflict.
+
+Scans for running Houdini, Python pipeline, and Node.js processes
+that could indicate a previous session's work is still active.
+Outputs a reminder to Claude if any are found.
+"""
+import json
+import subprocess
+import sys
+
+
+# Process names to check for (case-insensitive match on process name)
+WATCH_PROCESSES = {
+    "houdini.exe": "Houdini is running",
+    "houdinifx.exe": "HoudiniFX is running",
+    "hbatch.exe": "Houdini batch renderer is running",
+    "karma.exe": "Karma renderer is running",
+}
+
+
+def main():
+    try:
+        # Get running processes via tasklist
+        result = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, timeout=5,
+            encoding="utf-8", errors="replace"
+        )
+        if result.returncode != 0:
+            sys.exit(0)
+
+        running = []
+        for line in result.stdout.strip().split("\n"):
+            line = line.strip().strip('"')
+            if not line:
+                continue
+            proc_name = line.split('","')[0].strip('"').lower()
+            if proc_name in WATCH_PROCESSES:
+                running.append(WATCH_PROCESSES[proc_name])
+
+        if running:
+            msg = (
+                "PROCESS CHECK: The following are already running: "
+                + ", ".join(running)
+                + ". Check if these are from a previous session before "
+                "starting new pipelines or renders."
+            )
+            print(msg)
+
+    except Exception:
+        # Don't block session start if check fails
+        pass
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

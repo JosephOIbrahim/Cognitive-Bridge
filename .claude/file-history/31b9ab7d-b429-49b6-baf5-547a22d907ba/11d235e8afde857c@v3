@@ -1,0 +1,249 @@
+'use client';
+
+import { useEffect, useRef, useState, useCallback } from 'react';
+import type Player from '@vimeo/player';
+import { useIsMobile } from '@/lib/hooks/useIsMobile';
+import { usePrefersReducedMotion } from '@/lib/hooks/usePrefersReducedMotion';
+
+/**
+ * HERO REEL - Homepage Autoplay Video
+ *
+ * Consistency guarantees:
+ * 1. Deterministic initialization with timeout (12s max)
+ * 2. Clean error handling with fallback to static state
+ * 3. Proper cleanup on unmount
+ * 4. Scroll-based pause/resume with ref tracking
+ * 5. Mobile optimization: static thumbnail only (no video player)
+ * 6. Error event listeners for runtime failures
+ */
+
+// Timeout for player initialization (12 seconds - supports slow connections)
+const INIT_TIMEOUT_MS = 12000;
+
+interface HeroReelProps {
+  videoId: string;
+  videoHash?: string;
+  startTime?: number;
+  thumbnail?: string;
+}
+
+export function HeroReel({ videoId, videoHash, startTime = 0, thumbnail }: HeroReelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<Player | null>(null);
+  const isReadyRef = useRef(false);
+  const scrolledDownRef = useRef(false);
+
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [heroRevealed, setHeroRevealed] = useState(false);
+
+  const { isMobile, isReady: isMobileReady } = useIsMobile();
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  // Thumbnail URL - use provided thumbnail or fallback to Vimeo vumbnail
+  const thumbnailUrl = thumbnail || `https://vumbnail.com/${videoId}.jpg`;
+
+  // Hero height based on device
+  const heroHeight = isMobile ? '50vh' : '70vh';
+
+  // Clean destroy of player instance
+  const destroyPlayer = useCallback(() => {
+    if (playerRef.current) {
+      try {
+        playerRef.current.destroy();
+      } catch {
+        // Player may already be destroyed
+      }
+      playerRef.current = null;
+    }
+    isReadyRef.current = false;
+  }, []);
+
+  // Reveal hero after navigation settles (creates cinematic entrance sequence)
+  useEffect(() => {
+    const revealTimer = setTimeout(() => setHeroRevealed(true), 400);
+    return () => clearTimeout(revealTimer);
+  }, []);
+
+  // Initialize Vimeo player with autoplay (desktop only)
+  useEffect(() => {
+    // Wait for mobile detection to complete before deciding
+    if (!isMobileReady) return;
+
+    // Skip player initialization on mobile - use static thumbnail instead
+    if (isMobile) return;
+
+    if (!containerRef.current) return;
+
+    const baseConfig = {
+      muted: true,
+      loop: true,
+      autoplay: true,
+      controls: false,
+      background: true,
+      responsive: true,
+      title: false,
+      byline: false,
+      portrait: false,
+      dnt: true,
+      playsinline: true,
+      quality: 'auto',
+      speed: true,
+    };
+
+    const baseUrl = videoHash
+      ? `https://vimeo.com/${videoId}/${videoHash}`
+      : `https://vimeo.com/${videoId}`;
+    const urlWithTime = startTime > 0 ? `${baseUrl}#t=${startTime}s` : baseUrl;
+
+    let isMounted = true;
+
+    const initPlayer = async () => {
+      try {
+        const { default: VimeoPlayer } = await import('@vimeo/player');
+        if (!isMounted || !containerRef.current) return;
+
+        playerRef.current = new VimeoPlayer(containerRef.current!, {
+          url: urlWithTime as `https://vimeo.com/${string}`,
+          ...baseConfig
+        });
+
+        // Race between ready() and timeout
+        const readyPromise = playerRef.current.ready();
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('HeroReel initialization timeout')), INIT_TIMEOUT_MS);
+        });
+
+        await Promise.race([readyPromise, timeoutPromise]);
+
+        if (!isMounted) {
+          destroyPlayer();
+          return;
+        }
+
+        isReadyRef.current = true;
+
+        // Add error event listener for runtime failures
+        playerRef.current.on('error', (error) => {
+          console.error('HeroReel: Player error', videoId, error);
+          // Don't destroy - let video degrade gracefully to thumbnail
+        });
+
+        // Start playback
+        await playerRef.current.play().catch(() => {
+          // Autoplay blocked - video will show loading state
+        });
+      } catch (err) {
+        console.error('HeroReel: Player init failed', videoId, err);
+        destroyPlayer();
+      }
+    };
+
+    initPlayer();
+
+    return () => {
+      isMounted = false;
+      destroyPlayer();
+    };
+  }, [videoId, videoHash, startTime, destroyPlayer, isMobile, isMobileReady]);
+
+  // Track scroll for fade and pause/resume
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      const viewportHeight = window.innerHeight;
+      // Use appropriate hero height multiplier based on device
+      const heroHeightValue = viewportHeight * (isMobile ? 0.5 : 0.7);
+      const introPadding = 160;
+      const textStartPosition = heroHeightValue + introPadding;
+      const oneThirdViewport = viewportHeight / 3;
+      const fadeStartScroll = textStartPosition - oneThirdViewport;
+
+      const fadeRange = 200;
+      const progress = Math.max(0, Math.min((scrollY - fadeStartScroll) / fadeRange, 1));
+      setScrollProgress(progress);
+
+      // Pause/resume with ref tracking for consistency (desktop only)
+      if (!isMobile) {
+        const hasScrolledDown = scrollY > 10;
+
+        if (hasScrolledDown && !scrolledDownRef.current) {
+          scrolledDownRef.current = true;
+          if (playerRef.current && isReadyRef.current) {
+            playerRef.current.pause().catch(() => {});
+          }
+        } else if (!hasScrolledDown && scrolledDownRef.current) {
+          scrolledDownRef.current = false;
+          if (playerRef.current && isReadyRef.current) {
+            playerRef.current.play().catch(() => {});
+          }
+        }
+      }
+    };
+
+    // Run immediately to sync initial state
+    handleScroll();
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isMobile]);
+
+  const scrollOpacity = 1 - scrollProgress;
+  const heroOpacity = heroRevealed ? scrollOpacity : 0;
+  const heroScale = heroRevealed ? 1 : 1.02;
+  const transitionDuration = prefersReducedMotion ? '0ms' : '1.2s';
+  const transitionEasing = 'cubic-bezier(0.16, 1, 0.3, 1)';
+
+  // Transition strategy: opacity only animates during initial reveal, then becomes instant for scroll
+  // This ensures scroll-driven fade is perfectly synchronized with navigation
+  const heroTransition = heroRevealed
+    ? `transform ${transitionDuration} ${transitionEasing}, filter ${transitionDuration} ${transitionEasing}`
+    : `opacity ${transitionDuration} ${transitionEasing}, transform ${transitionDuration} ${transitionEasing}, filter ${transitionDuration} ${transitionEasing}`;
+
+  return (
+    <div
+      className="fixed top-0 left-0 right-0 w-full overflow-hidden"
+      style={{
+        height: heroHeight,
+        zIndex: 0,
+        backgroundColor: '#141414'
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          opacity: heroOpacity,
+          transform: `scale(${heroScale})`,
+          filter: heroRevealed ? 'saturate(1) brightness(1)' : 'saturate(0.3) brightness(0.6)',
+          transition: heroTransition,
+          transformOrigin: 'center center',
+          willChange: heroRevealed ? 'auto' : 'opacity, transform, filter'
+        }}
+      >
+        {isMobile ? (
+          // Mobile: Static thumbnail only (no video player)
+          <div
+            className="absolute inset-0 w-full h-full"
+            style={{
+              backgroundImage: `url(${thumbnailUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundColor: '#141414',
+              zIndex: 0
+            }}
+          />
+        ) : (
+          // Desktop: Vimeo player container
+          <div
+            ref={containerRef}
+            className="absolute inset-0 w-full h-full"
+            style={{
+              backgroundColor: '#141414',
+              zIndex: 0
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

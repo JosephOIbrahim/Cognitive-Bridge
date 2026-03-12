@@ -1,0 +1,203 @@
+"""
+Stage 5: Process VTT subtitle files into clean transcript segments.
+
+Operations:
+1. Parse VTT files
+2. Merge fragmented subtitle entries into coherent sentences
+3. Strip filler words and stream chat artifacts
+4. Output timestamped segments
+
+If user provides a separate transcript file (e.g., The_Joy_of_VEX.txt),
+this script can also process that as a fallback.
+
+Usage: python scripts/05_process_transcripts.py [--transcript path/to/transcript.txt]
+
+Output: data/transcripts/{episode}.json
+"""
+
+import re
+import json
+import sys
+from pathlib import Path
+
+DATA_DIR = Path("data")
+SUB_DIR = DATA_DIR / "subs"
+TRANSCRIPT_DIR = DATA_DIR / "transcripts"
+TRANSCRIPT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Filler patterns to strip
+FILLER_PATTERNS = [
+    r"\b(um+|uh+|ah+|er+|hm+|hmm+)\b",
+    r"\b(you know|like I said|basically|sort of|kind of)\b",
+    r"\b(right|okay so|so basically|and uh)\b",
+    r"\[.*?\]",  # [Music], [Laughter], etc.
+    r"\(.*?\)",  # (inaudible), etc.
+]
+
+# Stream/chat artifacts
+STREAM_ARTIFACTS = [
+    r"(thanks for (the )?(sub|follow|donation|bits))",
+    r"(welcome to the stream)",
+    r"(let me check (the )?chat)",
+    r"(someone in chat (said|asked|mentioned))",
+    r"(hello everyone)",
+    r"(can you guys hear me)",
+]
+
+
+def clean_text(text):
+    """Remove filler words and stream artifacts."""
+    cleaned = text
+
+    # Remove stream artifacts first (case insensitive)
+    for pattern in STREAM_ARTIFACTS:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+
+    # Apply filler removal
+    for pattern in FILLER_PATTERNS:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+
+    # Clean up whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    return cleaned
+
+
+def time_to_seconds(time_str):
+    """Convert VTT timestamp to seconds."""
+    parts = time_str.replace(",", ".").split(":")
+    if len(parts) == 3:
+        h, m, s = parts
+        return int(h) * 3600 + int(m) * 60 + float(s)
+    elif len(parts) == 2:
+        m, s = parts
+        return int(m) * 60 + float(s)
+    return 0
+
+
+def parse_vtt(vtt_path):
+    """Parse VTT subtitle file into segments."""
+    try:
+        import webvtt
+
+        segments = []
+        for caption in webvtt.read(str(vtt_path)):
+            text = clean_text(caption.text)
+            if text and len(text) > 5:  # Skip very short fragments
+                segments.append({
+                    "start": caption.start,
+                    "end": caption.end,
+                    "start_sec": time_to_seconds(caption.start),
+                    "end_sec": time_to_seconds(caption.end),
+                    "text": text,
+                })
+        return segments
+    except Exception as e:
+        print(f"  Error parsing {vtt_path}: {e}")
+        return []
+
+
+def merge_segments(segments, gap_threshold=2.0):
+    """
+    Merge subtitle fragments that are close in time into coherent blocks.
+    Auto-subs often split mid-sentence; this reconstitutes them.
+    """
+    if not segments:
+        return []
+
+    merged = [segments[0].copy()]
+
+    for seg in segments[1:]:
+        last = merged[-1]
+        gap = seg["start_sec"] - last["end_sec"]
+
+        # Merge if gap is small and combined text is not too long
+        if gap < gap_threshold and len(last["text"]) + len(seg["text"]) < 500:
+            last["end"] = seg["end"]
+            last["end_sec"] = seg["end_sec"]
+            last["text"] = last["text"] + " " + seg["text"]
+        else:
+            merged.append(seg.copy())
+
+    return merged
+
+
+def parse_bulk_transcript(transcript_path):
+    """
+    Parse a single large transcript file (fallback if VTT not available).
+    Attempts to split by episode markers.
+    """
+    with open(transcript_path, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    # Try to find episode boundaries
+    episode_splits = re.split(
+        r"(?:^|\n)(?:Episode|Part|Session|Chapter)\s*[\d#:]+",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    if len(episode_splits) <= 1:
+        # No clear episode markers -- return as single block
+        return {"full_transcript": clean_text(text)}
+
+    episodes = {}
+    for i, chunk in enumerate(episode_splits):
+        if chunk.strip():
+            episodes[f"episode_{i:02d}"] = clean_text(chunk)
+
+    return episodes
+
+
+def main():
+    # Check for bulk transcript argument
+    bulk_transcript = None
+    if "--transcript" in sys.argv:
+        idx = sys.argv.index("--transcript")
+        if idx + 1 < len(sys.argv):
+            bulk_transcript = Path(sys.argv[idx + 1])
+
+    # Process VTT files
+    vtt_files = sorted(SUB_DIR.glob("*.vtt"))
+
+    if vtt_files:
+        for vtt_path in vtt_files:
+            episode_name = vtt_path.stem.replace(".en", "")
+            segments = parse_vtt(vtt_path)
+            merged = merge_segments(segments)
+
+            output_file = TRANSCRIPT_DIR / f"{episode_name}.json"
+            with open(output_file, "w") as f:
+                json.dump(merged, f, indent=2, sort_keys=False)
+
+            print(f"  {episode_name}: {len(merged)} segments")
+
+    elif bulk_transcript and bulk_transcript.exists():
+        print(f"No VTT files found. Processing bulk transcript: {bulk_transcript}")
+        episodes = parse_bulk_transcript(bulk_transcript)
+
+        if "full_transcript" in episodes:
+            output_file = TRANSCRIPT_DIR / "full_transcript.json"
+            with open(output_file, "w") as f:
+                json.dump(
+                    [{"text": episodes["full_transcript"], "start_sec": 0}],
+                    f,
+                    indent=2,
+                )
+            print("  Saved as single file (no episode markers found)")
+        else:
+            for name, text in episodes.items():
+                output_file = TRANSCRIPT_DIR / f"{name}.json"
+                with open(output_file, "w") as f:
+                    json.dump([{"text": text, "start_sec": 0}], f, indent=2)
+            print(f"  Split into {len(episodes)} episodes")
+    else:
+        print(
+            "ERROR: No VTT files in data/subs/ and no --transcript provided.\n"
+            "Run Stage 1 first, or provide:\n"
+            "  python scripts/05_process_transcripts.py --transcript /path/to/transcript.txt"
+        )
+
+
+if __name__ == "__main__":
+    main()

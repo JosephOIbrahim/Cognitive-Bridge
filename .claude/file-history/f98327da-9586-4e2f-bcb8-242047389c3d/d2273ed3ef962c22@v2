@@ -1,0 +1,34 @@
+"""Debug: get exact traceback from chops_biomechanics builder."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        # Set env
+        await client.execute_python(r"""
+import os
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+result = "ok"
+""")
+        # Run builder with traceback
+        code = r"""
+import sys, traceback
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+try:
+    from cinema_camera.builders import build_chops_biomechanics_hda
+    path = build_chops_biomechanics_hda(save_dir=r"C:\Users\User\OneDrive\Documents\houdini21.0\otls")
+    result = {"success": True, "path": path}
+except Exception as e:
+    result = {"success": False, "error": str(e), "traceback": traceback.format_exc()}
+"""
+        r = await client.execute_python(code, timeout=30)
+        if isinstance(r, dict) and not r.get("success"):
+            print("ERROR:", r["error"])
+            print("TRACEBACK:")
+            print(r["traceback"])
+        else:
+            print("OK:", r)
+
+asyncio.run(main())

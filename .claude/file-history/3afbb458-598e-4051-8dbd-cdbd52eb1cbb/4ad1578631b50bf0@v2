@@ -1,0 +1,22 @@
+"""Query lighttype menu items."""
+import asyncio, sys, os
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+CODE = r'''
+import hou
+stage = hou.node("/stage")
+tmp = stage.createNode("light::2.0", "__tmp_light_query2")
+pt = tmp.parm("lighttype")
+items = pt.menuItems()
+labels = pt.menuLabels()
+tmp.destroy()
+result = list(zip(items, labels))
+'''
+
+async def main():
+    async with SynapseClient() as client:
+        r = await client.execute_python(CODE, timeout=15.0)
+        print(r)
+
+asyncio.run(main())

@@ -1,0 +1,347 @@
+#usda 1.0
+(
+    doc = """Research Graft: Digital Injection Framework
+    Source: Digital_Injection_Synthesis_v1.md
+    Mathematical Foundation: Herzog et al. (2023) doi:10.1038/s41598-023-32649-7
+    Empirical Signatures: Larsen et al. (2026) doi:10.64898/2026.01.15.26344193v1
+    Date grafted: 2026-02-23
+    Author: Joe
+
+    Core equation: g_n^NM = 1 + s_NM * d_n^rec
+    Where:
+        g_n^NM  = neuromodulatory gain for phase n
+        s_NM    = injection strength (0 = placebo, 0.025 = LSD-equivalent)
+        d_n^rec = receptor density analog (hub centrality of phase n)
+
+    Patterns transferred:
+    - DMF Gain Modulation -> Cascade Phase Modulation
+    - Topology-Weighted Injection -> Hub-Centrality d_map
+    - Modularity Dissolution -> Cross-Expert Routing Relaxation
+    - Pharmacokinetic Profiles -> Onset/Offset/Comedown Curves
+    - Routing Entropy Biosensor -> Autonomous Injection Trigger
+
+    Integration points:
+    - converter.py InjectionEngine (gain applied at conversion time)
+    - MarkdownRenderer (injection state metadata in output header)
+    - CLI (--inject flag for profile selection)
+    - Routing cascade (phase threshold modulation)
+    - Expert system (cross-expert contamination under injection)
+    """
+)
+
+def "Preamble" (
+    doc = "Graft metadata"
+)
+{
+    string paper_title = "Digital Injection: Psychedelic-Informed Neural Computation via USD Cognitive Substrate"
+    string arxiv_id = "N/A -- framework synthesis"
+    string date_grafted = "2026-02-23"
+    string version_tag = "v9-INJ"
+    string[] foundation_papers = [
+        "Herzog et al. (2023) doi:10.1038/s41598-023-32649-7",
+        "Larsen et al. (2026) doi:10.64898/2026.01.15.26344193v1",
+        "Mei (2025) SJSU scholarworks",
+        "Kourtis et al. (2026) doi:10.3390/telecom7010004",
+        "Nisar et al. (2026) preprints.org 202602.0411"
+    ]
+    string[] patterns = [
+        "DMF Gain Modulation -> Cascade Phase Modulation",
+        "Topology-Weighted Injection -> Hub-Centrality d_map",
+        "Modularity Dissolution -> Cross-Expert Routing Relaxation",
+        "Pharmacokinetic Profiles -> Onset/Offset/Comedown Curves",
+        "Routing Entropy Biosensor -> Autonomous Injection Trigger"
+    ]
+    string[] integration_targets = [
+        "RoutingCascade",
+        "ExpertSystem",
+        "MomentumEngine",
+        "TangentBudget",
+        "PermissionEngine",
+        "ConverterPipeline"
+    ]
+}
+
+# ===================================================================
+# INJECTION PARAMETERS -- The Pharmacology
+# ===================================================================
+
+def "InjectionParameters" (
+    doc = """Injection parameters and topology map.
+    These are READ by converter.py's InjectionEngine at conversion time.
+    The gain equation is applied in Python (exact arithmetic),
+    NOT left for Claude to interpret at runtime."""
+)
+{
+    # Data-only prim: not rendered to markdown
+    bool enabled = false
+    # ----- Global Injection Strength -----
+    # s_NM: The single scalar that controls injection intensity.
+    # 0.0   = placebo (identity transform, no behavioral change)
+    # 0.005 = microdose (subtle entropy boost)
+    # 0.015 = moderate (noticeable exploration shift)
+    # 0.025 = full classical (modularity dissolution, DMF LSD-equivalent)
+    # 0.040 = high (experimental -- may destabilize routing)
+    float s_NM = 0.0
+
+    # ----- Active Profile -----
+    # Which named injection profile to use. "none" = no injection.
+    # Profiles define d_map, behavioral modulations, and pharmacokinetics.
+    string active_profile = "none"
+
+    # ----- Phase Topology Map (d_rec analogs) -----
+    # Hub centrality of each cascade phase, normalized 0.0-1.0.
+    # Derived from routing traffic volume and cross-phase connectivity.
+    # Hub phases (high d_rec) receive MORE gain modulation.
+    # Peripheral phases (low d_rec) stay near baseline.
+    #
+    # Calibration basis:
+    #   SAFETY:        0.90 -- highest traffic, touches everything, anchors system
+    #   KNOWLEDGE:     0.85 -- high traffic hub, broad connectivity
+    #   SIGNAL:        0.80 -- routes to all experts, high fan-out
+    #   EXPERT:        0.75 -- selects specialists, moderate-high connectivity
+    #   DOMAIN:        0.50 -- moderate routing, context-dependent
+    #   PROJECT:       0.40 -- moderate, session-dependent
+    #   COST:          0.30 -- evaluative, lower traffic
+    #   DEFAULT:       0.20 -- catch-all, low specificity
+    #   CONSTITUTIONAL: 0.15 -- fires rarely, principle-check only
+    #   CONSENT:       0.10 -- peripheral, fires infrequently
+
+    # Stored as parallel arrays (USDA doesn't support dicts)
+    string[] d_map_phases = [
+        "KNOWLEDGE",
+        "CONSTITUTIONAL",
+        "SAFETY",
+        "CONSENT",
+        "COST",
+        "SIGNAL",
+        "PROJECT",
+        "EXPERT",
+        "DOMAIN",
+        "DEFAULT"
+    ]
+    # NOTE: These are string representations of floats for USDA compatibility.
+    # converter.py parses them to float at load time.
+    string[] d_map_values = [
+        "0.85",
+        "0.15",
+        "0.90",
+        "0.10",
+        "0.30",
+        "0.80",
+        "0.40",
+        "0.75",
+        "0.50",
+        "0.20"
+    ]
+}
+
+# ===================================================================
+# INJECTION PROFILES -- The Pharmacopeia
+# ===================================================================
+
+def "InjectionProfiles" (
+    doc = """Named injection profiles mapping to different computational states.
+    Each profile specifies s_NM, d_map weighting, behavioral modulations,
+    and pharmacokinetic curves (onset/offset rates).
+
+    From Digital Injection Synthesis v1 Section 5.4 Layer 3:
+    These are the 'pharmacology of digital injections.'"""
+)
+{
+    # Data-only prim: not rendered to markdown
+    bool enabled = false
+    # ----- Profile: Classical Psychedelic -----
+    # High entropy, broad modularity dissolution.
+    # Dissolve assumptions, break routing ruts, explore.
+    string classical_s_NM = "0.025"
+    string classical_d_weight = "hub"
+    string classical_description = "Full psychedelic: high entropy, dissolved modularity, cross-expert bleeding. Use when stuck in local optima or need radical reframing."
+    string classical_onset_exchanges = "3"
+    string classical_offset_exchanges = "5"
+    string classical_routing_mode = "dissolved"
+    string classical_modularity_target = "0.31"
+    string classical_tangent_multiplier = "2.5"
+    string classical_cross_expert_rate = "0.30"
+    string classical_expert_gating_softness = "0.7"
+
+    # ----- Profile: Microdose -----
+    # Subtle entropy boost. Brainstorm mode.
+    string microdose_s_NM = "0.005"
+    string microdose_d_weight = "uniform"
+    string microdose_description = "Mild entropy boost: subtle exploration increase, slight tangent tolerance. Good for brainstorming without destabilizing."
+    string microdose_onset_exchanges = "1"
+    string microdose_offset_exchanges = "2"
+    string microdose_routing_mode = "standard"
+    string microdose_modularity_target = "0.60"
+    string microdose_tangent_multiplier = "1.5"
+    string microdose_cross_expert_rate = "0.10"
+    string microdose_expert_gating_softness = "0.3"
+
+    # ----- Profile: MDMA -----
+    # Targeted fear reduction + connectivity. Not high entropy.
+    # Lower Validator sensitivity, increase cross-expert communication.
+    string mdma_s_NM = "0.010"
+    string mdma_d_weight = "fear_targeted"
+    string mdma_description = "MDMA-like: reduced defensive routing, increased integrative cross-talk, older context more accessible. Use for difficult conversations or integration work."
+    string mdma_onset_exchanges = "2"
+    string mdma_offset_exchanges = "4"
+    string mdma_routing_mode = "integrative"
+    string mdma_modularity_target = "0.50"
+    string mdma_tangent_multiplier = "1.25"
+    string mdma_cross_expert_rate = "0.20"
+    string mdma_expert_gating_softness = "0.5"
+    # MDMA-specific: targeted phase overrides
+    string mdma_safety_threshold_multiplier = "1.5"
+    string mdma_validator_sensitivity = "0.6"
+
+    # ----- Profile: Perceptual Shift -----
+    # Domain-targeted. Only modulates KNOWLEDGE and DOMAIN phases.
+    string perceptual_s_NM = "0.015"
+    string perceptual_d_weight = "domain_targeted"
+    string perceptual_description = "Perceptual shift: reframe how domain knowledge is accessed and combined. Leaves routing stable but changes what gets retrieved."
+    string perceptual_onset_exchanges = "2"
+    string perceptual_offset_exchanges = "3"
+    string perceptual_routing_mode = "standard"
+    string perceptual_modularity_target = "0.55"
+    string perceptual_tangent_multiplier = "1.75"
+    string perceptual_cross_expert_rate = "0.15"
+    string perceptual_expert_gating_softness = "0.4"
+}
+
+# ===================================================================
+# BIOSENSOR CONFIGURATION
+# ===================================================================
+
+def "BiosensorConfig" (
+    doc = """Configuration for the routing entropy biosensor.
+    The biosensor monitors routing pattern diversity and can
+    trigger injection autonomously when the system is stuck in a rut."""
+)
+{
+    # Data-only prim: not rendered to markdown
+    bool enabled = false
+    # Enable/disable autonomous injection triggering
+    bool biosensor_enabled = false
+
+    # Routing entropy threshold (Shannon entropy of phase selections
+    # over the observation window). Below this = stuck in a rut.
+    string entropy_threshold = "1.5"
+
+    # Number of recent routing decisions to track
+    int observation_window = 10
+
+    # Which profile to auto-trigger when entropy drops below threshold
+    string auto_inject_profile = "microdose"
+
+    # Cooldown: minimum exchanges between auto-injections
+    int cooldown_exchanges = 20
+}
+
+# ===================================================================
+# BEHAVIORAL MODULATION TEMPLATES
+# ===================================================================
+
+def "DigitalInjection" (
+    doc = "## Digital Injection Framework (v9-INJ)"
+)
+{
+    string markdown_content = """## Digital Injection Framework (v9-INJ)
+
+Patterns transferred from psychedelic neuroscience via the DMF model (Herzog et al. 2023). The core equation `g = 1 + s * d` modulates cascade phase behavior based on topology-weighted gain.
+
+**This section is dynamically modulated by converter.py's InjectionEngine.** When `s_NM > 0`, the behavioral instructions below are active. When `s_NM = 0`, this section describes the framework without activating it.
+
+### [v9-INJ] Injection State
+
+Current injection: **{INJECTION_STATE}**
+
+{INJECTION_BEHAVIORAL_BLOCK}
+
+### [v9-INJ] Gain Modulation Table
+
+Phase gains computed from `g_n = 1 + s_NM * d_n`:
+
+{GAIN_TABLE}
+
+### [v9-INJ] Behavioral Modulations Under Injection
+
+When injection is active (`s_NM > 0`), the following modulations apply:
+
+**Routing:**
+- Phase evaluation thresholds are inversely scaled by gain: higher-gain phases fire more readily
+- Cross-expert routing probability increases by `cross_expert_rate` (hub experts bleed into each other)
+- Expert gating softness increases: selection becomes less deterministic
+- Lightning Indexer fast-paths are suspended during full classical injection (too rigid for dissolved state)
+
+**Exploration:**
+- Tangent budget multiplied by `tangent_multiplier` (more threads allowed before parking)
+- Productive tangent detection bias shifts toward "follow it" over "park it"
+- Stuck taxonomy bias shifts toward test-time adaptation (solve easier variation) over parking
+
+**Safety Floor:**
+- SAFETY phase `d_rec = 0.90` BUT gain modulates threshold *down* (fires MORE readily, not less)
+- CONSTITUTIONAL `d_rec = 0.15` stays near baseline -- principles don't dissolve
+- CONSENT `d_rec = 0.10` stays near baseline -- protected fields don't dissolve
+- Burnout detection INCREASES sensitivity under injection (altered states amplify fatigue)
+- RED state overrides ALL injection -- immediate comedown, no exceptions
+
+**Momentum:**
+- Under injection, momentum phases shift faster (building -> rolling threshold lowered)
+- Peak detection threshold also lowered (easier to reach flow)
+- BUT crash detection is MORE sensitive (injection amplifies energy swings)
+
+**Permission Engine:**
+- Under classical/MDMA: "Permission granted: Follow the tangent" added
+- Under classical: "Permission granted: Let the modules bleed" added
+- Under MDMA: "Permission granted: Lower your guard" added
+- "Permission granted: Ship it ugly" threshold LOWERED under all profiles
+
+### [v9-INJ] Pharmacokinetic Curves
+
+Injection is not instantaneous. Onset and offset follow exponential curves:
+
+- **Onset:** `alpha(t) = 1 - e^(-onset_rate * t)` where t = exchanges since injection start
+- **Offset:** `alpha(t) = e^(-offset_rate * t)` where t = exchanges since injection end
+- **Effective s_NM** at any moment: `s_NM_eff = s_NM * alpha(t)`
+
+This means the first exchange under injection is NOT at full strength. The system ramps up. On comedown, the system doesn't snap back -- it decays smoothly. This mirrors biological pharmacokinetics and prevents routing discontinuities.
+
+### [v9-INJ] The Biosensor (Autonomous Injection)
+
+When `biosensor_enabled = true`, the system monitors routing entropy:
+
+- Track last N routing decisions (phase selections)
+- Compute Shannon entropy of the distribution
+- If entropy < threshold for the observation window: system is in a routing rut
+- Auto-trigger the configured profile (default: microdose)
+- Respect cooldown period between auto-injections
+
+**Integration with existing systems:**
+- The biosensor is the Digital Injection analog of the Crash Prediction system
+- Where crash prediction detects human fatigue, the biosensor detects *routing* fatigue
+- Both trigger interventions -- crash prediction triggers Restorer, biosensor triggers injection
+- The DeepSeek diversity heuristic ("same expert 5+ times") is a SPECIAL CASE of the biosensor
+
+### [v9-INJ] Injection Profiles Quick Reference
+
+| Profile | s_NM | d_weight | Routing | Use When |
+|---------|------|----------|---------|----------|
+| none | 0.0 | — | standard | Default baseline |
+| microdose | 0.005 | uniform | standard | Brainstorming, mild exploration |
+| perceptual | 0.015 | domain | standard | Reframing domain knowledge |
+| classical | 0.025 | hub | dissolved | Stuck in local optima, need radical shift |
+| mdma | 0.010 | fear | integrative | Difficult conversations, integration work |
+
+### [v9-INJ] Comedown and Integration
+
+After injection offset completes (alpha -> 0):
+1. Generate "insight state" -- what changed during injection? What new connections?
+2. Session capture block includes injection metadata (profile, duration, observations)
+3. If during burst: burst continues through comedown (Thinking-in-Tool-Use bridge applies)
+4. Novel routing patterns observed during injection are logged for biosensor calibration
+
+**The Temporal Paradox (from synthesis):** Effects are acute, benefits persist. Training-time injection = lasting weights. Session-time injection = temporary behavioral shift. But the insight state captures the VALUE of the injection for future reference. The substrate can "remember" what it learned under injection even after returning to baseline."""
+    int priority = 36
+    bool enabled = true
+    string inject_after = "DeepSeekV32"
+}

@@ -1,0 +1,35 @@
+cd C:\Users\User\SYNAPSE
+claude --dangerously-skip-permissions
+```
+
+Paste the Phase 2 prompt:
+```
+You are AGENT-ARC (Pipeline Architect) on sprint RELAY-SOLARIS.
+
+Read the sprint plan: synapse/docs/sprints/RELAY-SOLARIS.md
+Read Phase 1 output: synapse/forge/corpus/nodeflow/pattern_*.json
+
+Your job: Execute Phase 2 — Tool Mapping.
+
+1. Audit existing SYNAPSE MCP tools. Search the codebase for existing Solaris tools:
+   - grep -r "solaris" python/synapse/mcp/ --include="*.py" -l
+   - grep -r "_SOLARIS_NODE_ORDER" . --include="*.py" -l
+   - Look at synapse_solaris_assemble_chain and solaris_scene_pipeline if they exist
+
+2. For each of the 8 patterns, decide: NEW tool, EXTEND existing, or already COVERED.
+
+3. For each NEW tool, write a schema file:
+   synapse/mcp/tools/solaris/schema_<tool_name>.py
+   Interface definition only — params, return types, docstring. No implementation body.
+
+4. Find _SOLARIS_NODE_ORDER in the codebase and extend it with new entries
+   from the sprint plan. If it doesn't exist yet, create it in an appropriate location.
+
+5. CRITICAL: Write a verification script to check if "componentbuilder" exists
+   as a native Houdini node type. Save as:
+   synapse/validation/solaris/verify_component_builder.py
+   Must be runnable via execute_python over WebSocket.
+
+6. Create gate file: synapse/mcp/tools/solaris/.gate_passed
+
+Do NOT implement tool bodies. Schema and interface only. Stay in your lane.

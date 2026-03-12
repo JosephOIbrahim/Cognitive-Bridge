@@ -1,0 +1,96 @@
+import Image from "next/image";
+import { AnimatedText } from "@/components/AnimatedText";
+import { CLIENTS } from "@/lib/projects";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "About",
+  description: "Brand Design Director with 25+ years across Bloomberg, GLG, TIAA, Mastercard, JPMorgan Chase.",
+};
+
+const BIO_ITEMS = [
+  { label: "Based", value: "New York City" },
+  { label: "Experience", value: "25+ Years" },
+  { label: "Expertise", value: "Brand Identity, Systems Design, Event Design, Motion Graphics" },
+  { label: "Currently", value: "Fractional Creative Director" },
+];
+
+export default function AboutPage() {
+  return (
+    <div style={{ paddingTop: "var(--nav-h)" }}>
+      {/* Hero statement */}
+      <div style={{ maxWidth: "var(--max-w)", margin: "0 auto", padding: "clamp(48px, 10vh, 120px) var(--pad) 0" }}>
+        <AnimatedText
+          text="I'm Jaime Ibrahim -- a Brand Design Director with 25+ years of experience telling visual stories for brands that want to communicate with clarity and purpose."
+          as="h1"
+          delay={200}
+          style={{
+            fontSize: "clamp(22px, 2.4vw, 34px)", fontWeight: 400, lineHeight: 1.45,
+            letterSpacing: "-0.01em", color: "var(--text)", maxWidth: 780, margin: 0,
+          }}
+        />
+      </div>
+
+      {/* Portrait + Bio */}
+      <div style={{ maxWidth: "var(--max-w)", margin: "0 auto", padding: "clamp(48px, 6vh, 80px) var(--pad)" }}>
+        <div style={{ display: "flex", gap: "clamp(40px, 6vw, 100px)", flexWrap: "wrap", alignItems: "flex-start" }}>
+          {/* Portrait */}
+          <div style={{ flex: "0 0 clamp(260px, 30vw, 400px)" }}>
+            <div style={{
+              width: "100%", aspectRatio: "3/4",
+              borderRadius: "var(--img-radius)", position: "relative", overflow: "hidden",
+            }}>
+              <Image
+                src="/images/about/portrait.jpg"
+                alt="Jaime Ibrahim"
+                fill
+                style={{ objectFit: "cover" }}
+                sizes="(max-width: 768px) 100vw, 30vw"
+                priority
+              />
+            </div>
+          </div>
+
+          {/* Bio */}
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <p style={{
+              fontSize: "clamp(16px, 1.3vw, 18px)", lineHeight: 1.7, color: "var(--muted)",
+              maxWidth: 480, margin: "0 0 40px",
+            }}>
+              My work spans brand identity, systems design, event design, and motion --
+              always anchored in strategic thinking and a deep understanding of how
+              visual language shapes perception. I&apos;ve led creative teams at agencies and in-house,
+              and now work as a fractional creative director.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              {BIO_ITEMS.map((item) => (
+                <div key={item.label}>
+                  <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
+                    {item.label}
+                  </div>
+                  <div style={{ fontSize: 15, color: "var(--text)", fontWeight: 400, lineHeight: 1.4 }}>
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Brands */}
+      <div style={{ maxWidth: "var(--max-w)", margin: "0 auto", padding: "clamp(32px, 4vh, 56px) var(--pad) clamp(48px, 6vh, 80px)" }}>
+        <h2 style={{ fontSize: 13, color: "var(--muted)", fontWeight: 400, margin: "0 0 20px", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Brands I&apos;ve Worked With
+        </h2>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0 32px" }}>
+          {CLIENTS.map((c) => (
+            <span key={c} style={{ fontSize: "clamp(15px, 1.2vw, 18px)", fontWeight: 400, color: "var(--muted)", lineHeight: 2.2 }}>
+              {c}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

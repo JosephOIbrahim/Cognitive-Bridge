@@ -1,0 +1,58 @@
+#usda 1.0
+(
+    doc = "Core Cognitive Substrate v7 -- base layer for Claude Code CLAUDE.md"
+)
+
+def Scope "Header"
+{
+    string markdown_content = ""
+    int priority = 0
+    bool enabled = true
+}
+
+def Scope "ReasoningProtocols"
+{
+    # Systematic Decomposition
+    string markdown_content = ""
+    int priority = 10
+    bool enabled = true
+}
+
+def Scope "WorkflowProtocols"
+{
+    # Pre-Execution Checks (Multi-Step Tasks)
+    string markdown_content = ""
+    int priority = 20
+    bool enabled = true
+}
+
+def Scope "CodeProtocols"
+{
+    # Before Modifying Code
+    string markdown_content = ""
+    int priority = 30
+    bool enabled = true
+}
+
+def Scope "SlashCommandAgents"
+{
+    # Domain Agents (16)
+    string markdown_content = ""
+    int priority = 40
+    bool enabled = true
+}
+
+def Scope "ClaudeCodeConfiguration"
+{
+    # Slash Command / Skill File Naming
+    string markdown_content = ""
+    int priority = 50
+    bool enabled = true
+}
+
+def Scope "CrashPredictionTuning"
+{
+    custom string markdown_content = "Crash prediction: 'stopped' signal (user disengaging/ceasing work) is a pre-crash indicator. Route to SAFETY -> SIGNAL -> EXPERT (Restorer). Intervene at 'stopped' signal, do not wait for full crash state. If energy is low, offer permission to stop entirely."
+    custom int priority = 36
+    custom bool enabled = true
+}

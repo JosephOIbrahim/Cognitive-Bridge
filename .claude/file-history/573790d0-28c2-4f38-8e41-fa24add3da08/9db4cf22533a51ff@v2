@@ -1,0 +1,122 @@
+"""
+Stage 1: Download videos and auto-generated subtitles from YouTube playlist.
+
+Usage: python scripts/01_download.py [playlist_url]
+
+Output:
+  data/videos/{episode_number}_{sanitized_title}.mp4
+  data/subs/{episode_number}_{sanitized_title}.en.vtt
+  data/metadata/playlist_index.json
+"""
+
+import subprocess
+import json
+import sys
+import re
+from pathlib import Path
+
+PLAYLIST_URL = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else "https://www.youtube.com/playlist?list=PLTXmnikJEYnBtSfn4LwKx5vpopwrInp18"
+)
+
+DATA_DIR = Path("data")
+VIDEO_DIR = DATA_DIR / "videos"
+SUB_DIR = DATA_DIR / "subs"
+META_DIR = DATA_DIR / "metadata"
+
+for d in [VIDEO_DIR, SUB_DIR, META_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
+
+
+def get_playlist_info():
+    """Extract playlist metadata without downloading."""
+    result = subprocess.run(
+        ["yt-dlp", "--flat-playlist", "--dump-json", PLAYLIST_URL],
+        capture_output=True,
+        text=True,
+    )
+
+    entries = []
+    for line in result.stdout.strip().split("\n"):
+        if line.strip():
+            entries.append(json.loads(line))
+    return entries
+
+
+def download_episode(entry, index):
+    """Download a single episode's video and subtitles."""
+    video_id = entry.get("id", entry.get("url", ""))
+    title = entry.get("title", f"episode_{index}")
+    safe_title = re.sub(r"[^\w\s-]", "", title).strip().replace(" ", "_")[:60]
+    filename_base = f"{index:02d}_{safe_title}"
+
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    # Download video (720p max -- we only need readable code frames)
+    # Subtitles are written alongside the video
+    subprocess.run(
+        [
+            "yt-dlp",
+            "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]",
+            "--merge-output-format", "mp4",
+            "-o", str(VIDEO_DIR / f"{filename_base}.mp4"),
+            "--write-auto-sub",
+            "--sub-lang", "en",
+            "--sub-format", "vtt",
+            "--convert-subs", "vtt",
+            video_url,
+        ],
+        check=True,
+    )
+
+    # yt-dlp writes subs next to the video by default; move them to subs dir
+    # The subtitle file will be named like: {filename_base}.en.vtt
+    for vtt in VIDEO_DIR.glob(f"{filename_base}*.vtt"):
+        dest = SUB_DIR / vtt.name
+        vtt.rename(dest)
+
+    return {
+        "index": index,
+        "video_id": video_id,
+        "title": title,
+        "filename_base": filename_base,
+        "url": video_url,
+    }
+
+
+def main():
+    print("Fetching playlist info...")
+    entries = get_playlist_info()
+    print(f"Found {len(entries)} episodes.")
+
+    index_data = []
+    for i, entry in enumerate(entries, 1):
+        print(
+            f"\n--- Downloading episode {i}/{len(entries)}: "
+            f"{entry.get('title', 'unknown')} ---"
+        )
+        try:
+            meta = download_episode(entry, i)
+            index_data.append(meta)
+        except Exception as e:
+            print(f"ERROR downloading episode {i}: {e}")
+            index_data.append(
+                {
+                    "index": i,
+                    "title": entry.get("title", "unknown"),
+                    "error": str(e),
+                }
+            )
+
+    # Save playlist index
+    with open(META_DIR / "playlist_index.json", "w") as f:
+        json.dump(index_data, f, indent=2, sort_keys=False)
+
+    successful = len([x for x in index_data if "error" not in x])
+    print(f"\nDone. Downloaded {successful}/{len(entries)} episodes.")
+
+
+if __name__ == "__main__":
+    main()

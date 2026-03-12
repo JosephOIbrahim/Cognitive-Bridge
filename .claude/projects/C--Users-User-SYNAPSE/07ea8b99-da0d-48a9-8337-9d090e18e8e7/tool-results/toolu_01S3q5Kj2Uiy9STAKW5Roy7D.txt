@@ -1,0 +1,395 @@
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-123-        if scope == "all" and HOU_AVAILABLE and sp["job_path"]:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-124-            import glob as glob_mod
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:125:            current_scene_md = os.path.join(sp["hip_dir"], "claude", "memory.md")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-126-            for scene_md in sorted(glob_mod.glob(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:127:                os.path.join(sp["job_path"], "**", "claude", "memory.md"),
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-128-                recursive=True,
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-129-            )):
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-168-        dry_run = resolve_param_with_default(payload, "dry_run", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-169-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:170:        claude_dir = os.path.join(sp["hip_dir"], "claude")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-171-        status = check_evolution(claude_dir)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-172-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-175-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-176-        if status["should_evolve"] and status["target"] == "charmeleon":
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:177:            md_path = os.path.join(claude_dir, "memory.md")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:178:            usd_path = os.path.join(claude_dir, "memory.usd")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-179-            result = evolve_to_charmeleon(md_path, usd_path)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-180-            return {"dry_run": False, "evolved": True, **result}
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-63-            raise ValueError(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-64-                f"'{category}' isn't a valid HDA category -- "
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py:65:                f"use one of: {', '.join(sorted(_VALID_CATEGORIES))}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-66-            )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-67-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-321-                help_lines.append("")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-322-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py:323:            help_content = "\n".join(help_lines)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-324-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-325-            # Set help via the DialogScript section
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-366-            raise ValueError(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-367-                f"'{category}' isn't a valid HDA category -- "
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py:368:                f"use one of: {', '.join(sorted(_VALID_CATEGORIES))}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-369-            )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-370-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-543-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-544-                        definition.addSection(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py:545:                            "HelpText", "\n".join(help_lines)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-546-                        )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_hda.py-547-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-925-                    node_errors = list(wrangle.errors())
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-926-                    if not diagnosis_text and node_errors:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:927:                        all_errors = " | ".join(node_errors)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-928-                        diagnoses = diagnose_vex_error(all_errors, snippet, wrangle.path())
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-929-                        if diagnoses:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-1211-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-1212-            loop.create_task(_run())
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:1213:            report = future.result(timeout=600)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-1214-        else:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-1215-            report = asyncio.run(driver.execute(intent))
+--
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-125-        self._start_time = time.monotonic()
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-126-
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py:127:        self._stop_event = threading.Event()
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-128-        self._thread: Optional[threading.Thread] = None
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-129-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-146-        self._stop_event.set()
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-147-        if self._thread and self._thread.is_alive():
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py:148:            self._thread.join(timeout=self._interval + 1.0)
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-149-        logger.info("Metrics aggregator stopped")
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-150-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-178-            except Exception:
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-179-                logger.debug("Metrics collection error", exc_info=True)
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py:180:            self._stop_event.wait(self._interval)
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-181-
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-182-    def _collect(self) -> MetricSnapshot:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-159-                raise ValueError(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-160-                    f"That attribute name didn't match ('{attr_name}') on {prim_path}. "
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:161:                    f"Available attributes: {', '.join(attrs)}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-162-                )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-163-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-291-                lines.append(f"    prim.SetActive({active})")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-292-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:293:            code = "\n".join(lines)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-294-            py_lop.parm("python").set(code)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-295-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-586-                    lines.append(f"    vset.SetVariantSelection({repr(variants[0])})")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-587-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:588:                code = "\n".join(lines)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-589-                py_lop.parm("python").set(code)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-590-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-609-                py_lop.moveToGoodPosition()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-610-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:611:                code = "\n".join([
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-612-                    "from pxr import Usd",
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-613-                    "stage = hou.pwd().editableStage()",
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-708-                py_lop.moveToGoodPosition()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-709-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:710:                path_reprs = ", ".join(repr(p) for p in paths)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-711-                lines = [
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-712-                    "from pxr import Usd, Sdf",
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-722-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-723-                if exclude_paths and isinstance(exclude_paths, list):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:724:                    excl_reprs = ", ".join(repr(p) for p in exclude_paths)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-725-                    lines.append(f"    excludes = coll.GetExcludesRel()")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-726-                    lines.append(f"    for p in [{excl_reprs}]:")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-727-                    lines.append(f"        excludes.AddTarget(Sdf.Path(p))")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-728-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:729:                code = "\n".join(lines)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-730-                py_lop.parm("python").set(code)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-731-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-754-                py_lop.moveToGoodPosition()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-755-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:756:                path_reprs = ", ".join(repr(p) for p in paths)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-757-                op = "AddTarget" if action == "add" else "RemoveTarget"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-758-                lines = [
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-767-                ]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-768-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:769:                code = "\n".join(lines)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-770-                py_lop.parm("python").set(code)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-771-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-806-            raise ValueError(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-807-                f"'{action}' isn't a recognized light linking action -- "
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:808:                f"use one of: {', '.join(valid_actions)}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-809-            )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-810-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-845-                coll_method = "GetLightLinkCollectionAPI"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-846-                if action == "include":
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:847:                    path_reprs = ", ".join(repr(p) for p in geo_paths)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-848-                    lines.extend([
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-849-                        "    ll = UsdLux.LightAPI(light)",
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-855-                    ])
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-856-                else:  # exclude
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:857:                    path_reprs = ", ".join(repr(p) for p in geo_paths)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-858-                    lines.extend([
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-859-                        "    ll = UsdLux.LightAPI(light)",
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-866-                coll_method = "GetShadowLinkCollectionAPI"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-867-                if action == "shadow_include":
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:868:                    path_reprs = ", ".join(repr(p) for p in geo_paths)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-869-                    lines.extend([
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-870-                        "    ll = UsdLux.LightAPI(light)",
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-876-                    ])
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-877-                else:  # shadow_exclude
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:878:                    path_reprs = ", ".join(repr(p) for p in geo_paths)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-879-                    lines.extend([
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-880-                        "    ll = UsdLux.LightAPI(light)",
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-885-                    ])
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-886-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:887:            code = "\n".join(lines)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-888-            py_lop.parm("python").set(code)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-889-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py-290-                        if self._port_manager:
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py-291-                            self._port_manager.mark_unhealthy(port_to_try, str(e))
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py:292:                        time.sleep(PORT_RETRY_DELAY)
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py-293-                    else:
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py-294-                        raise
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-268-                result.retries = attempt
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-269-                result.success = False
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py:270:                result.error = f"Validation failed: {', '.join(failed_checks)}"
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-271-                # Record failure for learning
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-272-                if self._memory is not None:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-297-                result.retries = attempt
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-298-                result.success = False
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py:299:                result.error = f"No remedy available for: {', '.join(failed_checks)}"
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-300-                return result
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-301-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-470-        if not report_dir:
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-471-            # Default: use a temporary directory
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py:472:            report_dir = os.path.join(os.path.expanduser("~"), ".synapse", "render_reports")
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-473-
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-474-        notify_results = notify_batch_complete(report, report_dir)
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-489-                        f"**Result:** {report.successful_frames}/{report.total_frames} OK\n"
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-490-                        f"**Time:** {report.total_wall_time:.1f}s\n"
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py:491:                        f"**Scene Tags:** {', '.join(self._scene_tags)}\n"
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-492-                        f"**ROP:** {rop}"
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-493-                    ),
+--
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py-120-
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py-121-    lines.append("")
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py:122:    return "\n".join(lines)
+--
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-3-
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-4-Wraps any callable to run on Houdini's main thread with a timeout.
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py:5:Uses hdefereval.executeDeferred() (non-blocking) + threading.Event
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-6-instead of executeInMainThreadWithResult() (blocking, no timeout).
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-7-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-44-    result_holder = [None]
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-45-    error_holder = [None]
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py:46:    done = threading.Event()
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-47-
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-48-    def _on_main():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-58-    hdefereval.executeDeferred(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-59-
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py:60:    if not done.wait(timeout=timeout):
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-61-        raise RuntimeError(
+C:\Users\User\SYNAPSE\python\synapse\server\main_thread.py-62-            "Houdini's main thread didn't respond in time -- "
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-946-            raise ValueError(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-947-                f"Unknown filter operator '{filter_op}'. "
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:948:                f"Available: {', '.join(valid_ops)}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-949-            )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-950-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\introspection.py-337-            # containingFolders() lives on the parm, not the template
+C:\Users\User\SYNAPSE\python\synapse\server\introspection.py-338-            folder = parm.containingFolders()
+C:\Users\User\SYNAPSE\python\synapse\server\introspection.py:339:            folder_name = " > ".join(folder) if folder else "Root"
+C:\Users\User\SYNAPSE\python\synapse\server\introspection.py-340-
+C:\Users\User\SYNAPSE\python\synapse\server\introspection.py-341-            parm_info: Dict[str, Any] = {
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-174-            light_count += 1
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-175-
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py:176:    joined = " ".join(all_text)
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-177-
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-178-    # Keyword-based tags
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-339-        f"**Parameter:** {remedy.parm_name} = {settings_applied.get(remedy.parm_name, '?')}\n"
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-340-        f"**Frame:** {frame}\n"
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py:341:        f"**Scene Tags:** {', '.join(scene_tags)}"
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-342-    )
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-343-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-557-        self._running = False
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-558-        if self._thread:
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py:559:            self._thread.join(timeout=2.0)
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-560-            self._thread = None
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-561-        if was_running:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-607-        """Background thread that checks for freezes."""
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-608-        while self._running:
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py:609:            time.sleep(self.heartbeat_interval)
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-610-
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-611-            with self._lock:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-822-            health_level = "critical"
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-823-            healthy = False
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py:824:            message = "; ".join(issues)
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-825-        elif len(issues) > 2:
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-826-            health_level = "unhealthy"
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-827-            healthy = False
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py:828:            message = "; ".join(issues)
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-829-        else:
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-830-            health_level = "degraded"
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-831-            healthy = True
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py:832:            message = "; ".join(issues)
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-833-
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-834-        return HealthStatus(
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-27-        if parent and parent.children():
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-28-            names = [c.name() for c in parent.children()[:10]]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:29:            return " Children at that path: " + ", ".join(names)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-30-    except Exception:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-31-        pass
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-459-                descs.append(info["description"].lower())
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-460-        if descs:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:461:            parts.append("Detected patterns: " + ", ".join(descs) + ".")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-462-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-463-    # Describe data flow briefly
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-466-        sinks = [e["node"] for e in data_flow if not e.get("outputs_to")]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-467-        if sources:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:468:            parts.append("Sources: " + ", ".join(sources) + ".")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-469-        if sinks:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:470:            parts.append("Outputs: " + ", ".join(sinks) + ".")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-471-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:472:    return " ".join(parts)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-473-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-474-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-480-        line = f"{entry['node']} ({entry['type_label']})"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-481-        if entry.get("inputs_from"):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:482:            line += f" takes input from {', '.join(entry['inputs_from'])}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-483-        if entry.get("outputs_to"):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:484:            line += f" and feeds into {', '.join(entry['outputs_to'])}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-485-        line += "."
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-486-        if entry.get("key_params"):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:487:            params_str = ", ".join(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-488-                f"{k}={v}" for k, v in sorted(entry["key_params"].items())
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-489-            )
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-495-        lines.append(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-496-            "This network uses: "
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:497:            + ", ".join(result["patterns_detected"])
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-498-            + "."
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-499-        )
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-502-        "status": "ok",
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-503-        "format": "prose",
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:504:        "text": "\n".join(lines),
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-505-        "node_count": result["node_count"],
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-506-        "patterns_detected": result["patterns_detected"],
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-524-        lines.append(f"    Type: {entry['type_label']} (`{entry['type']}`)")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-525-        if entry.get("inputs_from"):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:526:            lines.append(f"    Inputs: {', '.join(entry['inputs_from'])}")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-527-        if entry.get("outputs_to"):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:528:            lines.append(f"    Outputs: {', '.join(entry['outputs_to'])}")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-529-        if entry.get("key_params"):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-530-            for k, v in sorted(entry["key_params"].items()):
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-550-        "status": "ok",
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-551-        "format": "help_card",
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:552:        "text": "\n".join(lines),
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-553-        "node_count": result["node_count"],
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-554-        "patterns_detected": result["patterns_detected"],
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handler_helpers.py-37-        parts.append(usd_hint)
+C:\Users\User\SYNAPSE\python\synapse\server\handler_helpers.py-38-    if matches:
+C:\Users\User\SYNAPSE\python\synapse\server\handler_helpers.py:39:        parts.append(" Similar parameters: " + ", ".join(matches[:limit]))
+C:\Users\User\SYNAPSE\python\synapse\server\handler_helpers.py:40:    return "".join(parts)
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-315-                    render_ok = True
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-316-                    break
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:317:                time.sleep(0.25)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-318-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-319-            # If render wrote to artist's EXR/non-JPEG, convert to JPEG for preview
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-516-            if invalid:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-517-                raise ValueError(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:518:                    f"Unknown check(s): {', '.join(invalid)}. "
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:519:                    f"Available checks: {', '.join(_VALIDATE_CHECKS)}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-520-                )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-521-            check_set = set(requested_checks)
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-706-            summary = "Frame looks good"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-707-        else:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:708:            summary = f"Frame has {len(issues)} issue(s): {', '.join(sorted(issues))}"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-709-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-710-        return {
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-794-                hip = hou.text.expandString("$HIP")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-795-                if hip and hip != "$HIP":
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:796:                    report_dir = os.path.join(hip, ".synapse", "render_reports")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-797-            except Exception:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-798-                pass
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-799-        if not report_dir:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:800:            report_dir = os.path.join(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-801-                os.path.expanduser("~"), ".synapse", "render_reports"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-802-            )
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-959-                })
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-960-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:961:            code = "\n".join(lines)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-962-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-963-            # Create Python LOP to author the render vars
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-169-    timestamp = time.strftime("%Y%m%d_%H%M%S")
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-170-    filename = f"render_report_{report.start_frame}-{report.end_frame}_{timestamp}.md"
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py:171:    filepath = os.path.join(output_dir, filename)
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-172-
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-173-    lines = [
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-179-        f"**Render Time:** {report.total_render_time:.1f}s "
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-180-        f"(wall: {report.total_wall_time:.1f}s)",
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py:181:        f"**Scene Tags:** {', '.join(report.scene_tags) or 'none'}",
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-182-        "",
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-183-        "## Settings Used",
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-197-    for fr in report.frame_results:
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-198-        status = "OK" if fr.success else "FAIL"
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py:199:        issues = ", ".join(fr.issues) if fr.issues else "-"
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py:200:        fixes = ", ".join(fr.fixes_applied) if fr.fixes_applied else "-"
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-201-        lines.append(
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-202-            f"| {fr.frame} | {status} | {fr.render_time:.1f}s | "
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-211-            lines.append(f"### Frame {fr.frame}")
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-212-            lines.append(f"- **Error:** {fr.error or 'Validation failed after max retries'}")
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py:213:            lines.append(f"- **Issues:** {', '.join(fr.issues)}")
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-214-            lines.append(f"- **Retries:** {fr.retries}")
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-215-            lines.append("")
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-223-
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-224-    with open(filepath, "w", encoding="utf-8") as f:
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py:225:        f.write("\n".join(lines))
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-226-
+C:\Users\User\SYNAPSE\python\synapse\server\render_notify.py-227-    return filepath

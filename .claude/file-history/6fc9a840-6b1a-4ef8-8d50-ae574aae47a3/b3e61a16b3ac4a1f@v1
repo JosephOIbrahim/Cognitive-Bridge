@@ -1,0 +1,165 @@
+# Plan: Wire Bridge Consent to HumanGate System
+
+## Context
+
+`shared/bridge.py:530` has a `_check_consent()` stub that auto-approves all gate levels (REVIEW, APPROVE). The real gate infrastructure already exists at `python/synapse/core/gates.py` with full proposal lifecycle, batch approval, audit logging, and callback hooks. We need to connect them so destructive operations actually pause for artist consent.
+
+## Key Design Decisions
+
+**REVIEW vs APPROVE semantics match the existing gate system exactly:**
+- **INFORM** — auto-approve, log only (already works)
+- **REVIEW** — submit proposal to batch, **allow execution to proceed** (batch reviewed later)
+- **APPROVE** — submit proposal, **block until artist decides** (poll with timeout)
+
+This matches `gates.py` docstring: "REVIEW: Collect for batch review, continue work" / "APPROVE: Pause and require explicit approval before continuing."
+
+**Import strategy:** The bridge currently imports from `shared.types`. We'll add a soft import of `synapse.core.gates` (try/except, like the `hou` guard) so the bridge still works standalone in tests.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `shared/bridge.py` | Wire `_check_consent()` to `HumanGate`, add consent callback injection |
+| `shared/types.py` | Add `CRITICAL` to the bridge's `GateLevel` re-export (align with core) |
+
+## Implementation
+
+### Step 1: Add soft import for synapse.core.gates in `shared/bridge.py`
+
+After the existing `hou` import guard block (~line 44), add:
+
+```python
+_GATES_AVAILABLE = False
+try:
+    from synapse.core.gates import (
+        HumanGate,
+        GateDecision,
+        GateLevel as CoreGateLevel,
+    )
+    from synapse.core.audit import AuditCategory
+    _GATES_AVAILABLE = True
+except ImportError:
+    HumanGate = None
+    GateDecision = None
+    CoreGateLevel = None
+    AuditCategory = None
+```
+
+### Step 2: Add consent_callback injection to `LosslessExecutionBridge.__init__`
+
+Add an optional `consent_callback` parameter so callers (like the MCP server) can inject approval logic without the bridge depending on the full synapse package:
+
+```python
+def __init__(self, consent_callback=None):
+    ...existing init...
+    self._consent_callback = consent_callback
+    self._gate = HumanGate.get_instance() if _GATES_AVAILABLE and HumanGate else None
+    self._session_id = datetime.now().strftime("bridge_%Y%m%d_%H%M%S")
+```
+
+### Step 3: Rewrite `_check_consent()`
+
+```python
+def _check_consent(self, operation: Operation) -> bool:
+    gate = operation.gate_level
+    if gate == GateLevel.INFORM:
+        return True
+
+    # Path 1: Full gate system available (production inside Synapse)
+    if self._gate is not None:
+        return self._check_consent_gate(operation)
+
+    # Path 2: Injected callback (MCP server or custom integration)
+    if self._consent_callback is not None:
+        return self._consent_callback(operation)
+
+    # Path 3: Standalone/test — auto-approve with warning
+    return True
+```
+
+### Step 4: Implement `_check_consent_gate()`
+
+```python
+def _check_consent_gate(self, operation: Operation) -> bool:
+    """Route consent through synapse.core.gates.HumanGate."""
+    proposal = self._gate.propose(
+        operation=operation.operation_type,
+        description=operation.summary,
+        sequence_id=self._session_id,
+        category=AuditCategory.SCENE if not AuditCategory else AuditCategory.SCENE,
+        level=CoreGateLevel(operation.gate_level.value),
+        proposed_changes=operation.kwargs,
+        agent_id=operation.agent_id.value if operation.agent_id else "",
+        reasoning=f"Bridge gate: {operation.operation_type}",
+    )
+
+    # REVIEW: proposal logged to batch, allow execution to continue
+    if operation.gate_level == GateLevel.REVIEW:
+        return proposal.decision != GateDecision.REJECTED
+
+    # APPROVE: must wait for explicit artist decision
+    if operation.gate_level == GateLevel.APPROVE:
+        return self._wait_for_decision(proposal, timeout=120.0)
+
+    return True
+
+
+def _wait_for_decision(self, proposal, timeout: float = 120.0) -> bool:
+    """Poll for artist decision on APPROVE-level proposals."""
+    import time as _time
+    deadline = _time.monotonic() + timeout
+    while _time.monotonic() < deadline:
+        if proposal.decision != GateDecision.PENDING:
+            return proposal.decision in (
+                GateDecision.APPROVED,
+                GateDecision.MODIFIED,
+            )
+        _time.sleep(0.25)
+    # Timeout — treat as rejection (safe default)
+    return False
+```
+
+### Step 5: Align GateLevel enum in `shared/bridge.py`
+
+Add `CRITICAL` to the bridge's local `GateLevel` (line ~108) to match `synapse.core.gates`:
+
+```python
+class GateLevel(str, Enum):
+    INFORM = "inform"
+    REVIEW = "review"
+    APPROVE = "approve"
+    CRITICAL = "critical"
+```
+
+Add CRITICAL operations to `OPERATION_GATES`:
+```python
+"execute_python": GateLevel.CRITICAL,
+"execute_vex": GateLevel.CRITICAL,
+```
+
+### Step 6: Handle CRITICAL in `_check_consent_gate()`
+
+CRITICAL follows the same path as APPROVE but with a longer timeout and explicit logging:
+
+```python
+    # CRITICAL: same as APPROVE but longer timeout
+    if operation.gate_level == GateLevel.CRITICAL:
+        return self._wait_for_decision(proposal, timeout=300.0)
+```
+
+## What We're NOT Changing
+
+- **No panel UI changes** — the gate system already has callback hooks (`on_proposal`, `on_decision`). The panel wiring is a separate task.
+- **No changes to `python/synapse/core/gates.py`** — it's complete as-is.
+- **No changes to `python/synapse/agent/executor.py`** — it has its own gate integration.
+- **The bridge's local `GateLevel` enum stays** — it's used by `OPERATION_GATES` and `Operation.gate_level`. We just align it with core.
+
+## Verification
+
+1. **Import test**: `python -c "from shared.bridge import LosslessExecutionBridge"` — must still work standalone (no synapse.core)
+2. **No-op test**: Create bridge, run INFORM operation — fidelity 1.0, auto-approved
+3. **REVIEW test**: Create bridge with gate, run `delete_node` operation — proposal created in batch, execution proceeds
+4. **APPROVE test**: Create bridge with gate, run `submit_render` — blocks until `gate.decide()` called
+5. **Callback test**: Create bridge with `consent_callback`, verify it's called for REVIEW/APPROVE ops
+6. **Standalone test**: Create bridge without synapse.core available — falls back to auto-approve (existing behavior)
+7. **Run existing test suite**: `python -m pytest tests/ -v -k bridge` — no regressions

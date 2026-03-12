@@ -1,0 +1,79 @@
+"""Expert definitions and priority registry.
+
+Expert priority is FIXED:
+Validator > Scaffolder > Restorer > Refocuser > Celebrator > Socratic > Direct
+
+This order NEVER changes under injection. What changes is how MUCH
+each expert contributes (bleeding coefficient).
+"""
+
+from dataclasses import dataclass
+
+from src.lossless.constants import EXPERTS
+
+
+@dataclass(frozen=True, slots=True)
+class ExpertSpec:
+    """Definition of a single expert in the MoE system.
+
+    Attributes:
+        name: Expert name string (e.g. 'Validator').
+        priority: Priority index; lower is higher priority.
+        description: Human-readable description of expert behavior.
+    """
+
+    name: str
+    priority: int  # lower = higher priority
+    description: str
+
+    @property
+    def is_primary(self) -> bool:
+        """Whether this expert is primary (priority <= 2)."""
+        return self.priority <= 2
+
+
+_EXPERT_DESCRIPTIONS = {
+    "Validator": "Validates emotional state and redirects negative spirals",
+    "Scaffolder": "Breaks down complex tasks into manageable steps",
+    "Restorer": "Helps user recover from burnout or depletion",
+    "Refocuser": "Redirects wandering attention to current goals",
+    "Celebrator": "Acknowledges progress and maintains motivation",
+    "Socratic": "Guides exploration through questioning",
+    "Direct": "Provides direct expert assistance with minimal intervention",
+}
+
+
+def get_expert_registry() -> dict:
+    """Build the expert registry with fixed priority ordering.
+
+    Returns:
+        Dict mapping expert name to Expert object.
+        Iteration order follows EXPERTS list from constants.
+    """
+    registry = {}
+    for i, name in enumerate(EXPERTS):
+        registry[name] = ExpertSpec(
+            name=name,
+            priority=i,
+            description=_EXPERT_DESCRIPTIONS.get(name, ""),
+        )
+    return registry
+
+
+def get_experts_by_priority() -> list:
+    """Return ExpertSpec objects sorted by priority (highest priority first).
+
+    Returns:
+        List of ExpertSpec in fixed EXPERTS order.
+    """
+    registry = get_expert_registry()
+    return [registry[name] for name in EXPERTS]
+
+
+def get_expert_names() -> list:
+    """Return expert names in priority order.
+
+    Returns:
+        List of expert name strings.
+    """
+    return list(EXPERTS)

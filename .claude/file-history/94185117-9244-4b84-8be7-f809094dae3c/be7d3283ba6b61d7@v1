@@ -1,0 +1,181 @@
+'use client';
+
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { ProjectCard } from './ProjectCard';
+import { ProjectAdapter } from '@/lib/perception/adapter';
+import { VisitorArchetype } from '@/lib/perception/types';
+import type { Project } from '@/lib/projects';
+import type { PerceptionState } from '@/lib/perception/types';
+
+interface ProjectGridProps {
+  projects: Project[];
+  allDisciplines: string[];
+  perceptionState?: PerceptionState | null;
+}
+
+export function ProjectGrid({ projects, allDisciplines, perceptionState }: ProjectGridProps) {
+  const [activeDiscipline, setActiveDiscipline] = useState<string | null>(null);
+
+  // State to hold the displayed project order (frozen during browsing)
+  const [displayedProjects, setDisplayedProjects] = useState<Project[]>(projects);
+
+  // Track whether we've applied adaptation this session
+  const hasAppliedAdaptation = useRef(false);
+
+  /**
+   * INVISIBLE SHUFFLE STRATEGY:
+   * - Perception learns silently while user browses
+   * - Projects remain in same order (no live reordering)
+   * - When component mounts (user returns from project page), apply the adaptation
+   * - User experiences: "The grid shuffled while I was away!"
+   */
+  useEffect(() => {
+    // Only apply adaptation once per component mount
+    if (
+      !hasAppliedAdaptation.current &&
+      perceptionState &&
+      perceptionState.profile.archetype !== VisitorArchetype.UNKNOWN
+    ) {
+      const adapted = ProjectAdapter.adaptProjectOrder(projects, perceptionState.profile.archetype);
+      setDisplayedProjects(adapted);
+      hasAppliedAdaptation.current = true;
+    }
+  }, [perceptionState, projects]);
+
+  // Filter projects based on active discipline (single-select)
+  const filteredProjects = useMemo(() => {
+    if (!activeDiscipline) return displayedProjects;
+
+    return displayedProjects.filter(project => {
+      return project.disciplines.includes(activeDiscipline);
+    });
+  }, [displayedProjects, activeDiscipline]);
+
+  const handleDisciplineClick = (discipline: string) => {
+    // Toggle: click same discipline to deselect
+    setActiveDiscipline(prev => prev === discipline ? null : discipline);
+  };
+
+  const clearFilters = () => {
+    setActiveDiscipline(null);
+  };
+
+  return (
+    <div className="space-y-8">
+      {/* Filter bar temporarily hidden */}
+      {false && (
+        <div className="pb-6">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            {/* Discipline filters - Two rows */}
+            <div>
+              <div className="flex flex-col gap-3">
+                {/* First row: EVERYTHING, LIGHTING, COMMISSIONS */}
+                <div className="flex flex-wrap gap-4 md:gap-6">
+                  {allDisciplines.slice(0, 3).map(discipline => (
+                    <button
+                      key={discipline}
+                      onClick={() => handleDisciplineClick(discipline)}
+                      className="text-xs md:text-sm transition-all duration-200"
+                      style={{
+                        color: activeDiscipline === discipline ? '#000000' : '#6a6a6a',
+                        fontFamily: 'var(--font-lora)',
+                        fontWeight: activeDiscipline === discipline ? 700 : 600,
+                        letterSpacing: '0.06em'
+                      }}
+                    >
+                      {discipline}
+                    </button>
+                  ))}
+                </div>
+                {/* Second row: DIRECTION, EXPERIMENTAL, R&D */}
+                <div className="flex flex-wrap gap-4 md:gap-6">
+                  {allDisciplines.slice(3).map(discipline => (
+                    <button
+                      key={discipline}
+                      onClick={() => handleDisciplineClick(discipline)}
+                      className="text-xs md:text-sm transition-all duration-200"
+                      style={{
+                        color: activeDiscipline === discipline ? '#000000' : '#6a6a6a',
+                        fontFamily: 'var(--font-lora)',
+                        fontWeight: activeDiscipline === discipline ? 700 : 600,
+                        letterSpacing: '0.06em'
+                      }}
+                    >
+                      {discipline}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Clear filters */}
+            {activeDiscipline && (
+              <button
+                onClick={clearFilters}
+                className="text-sm text-neutral-500 hover:text-black transition-colors whitespace-nowrap md:ml-auto"
+              >
+                clear ×
+              </button>
+            )}
+          </div>
+
+          {/* Active filter count */}
+          {activeDiscipline && (
+            <p className="text-sm text-neutral-500 mt-4">
+              {filteredProjects.length} {filteredProjects.length === 1 ? 'project' : 'projects'} found
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Grid Pattern: 1 hero → all remaining in 2-column grid */}
+      <div className="space-y-12">
+        {filteredProjects.map((project, index) => {
+          // Only first project is hero, all others are grid items
+          const isHero = index === 0;
+
+          if (isHero) {
+            // Full-width hero (first project only)
+            return (
+              <ProjectCard
+                key={project.id}
+                project={project}
+              />
+            );
+          }
+
+          if (index === 1) {
+            // Start of grid - collect all remaining projects
+            const gridProjects = filteredProjects.slice(1);
+            return (
+              <div key="grid-all" className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                {gridProjects.map(gridProject => (
+                  <ProjectCard
+                    key={gridProject.id}
+                    project={gridProject}
+                  />
+                ))}
+              </div>
+            );
+          }
+
+          // Skip - already rendered as part of grid
+          return null;
+        })}
+      </div>
+
+      {/* No results */}
+      {filteredProjects.length === 0 && (
+        <div className="text-center py-16">
+          <p className="text-neutral-500">No projects found with selected filters.</p>
+          <button
+            onClick={clearFilters}
+            className="mt-4 text-sm text-black hover:opacity-70 transition-opacity"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

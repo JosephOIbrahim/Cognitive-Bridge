@@ -1,0 +1,36 @@
+# CRT-CINE Resume Prompt
+
+Paste this into a fresh Claude Code session:
+
+---
+
+## Context: UE_Bridge CRT-CINE Project — Resume from completed build
+
+The CRT-CINE interactive quiz experience is **fully built and saved** in the MainLevel. All 17/17 tasks across 3 phases completed successfully. The level has been saved.
+
+### What exists in the level (do NOT rebuild):
+- **PHOSPHOR** — CRT dot grid (phosphor pattern mesh cloned across screen)
+- **SHADER** — CRT scanline/curvature post-process material applied
+- **INTERACT** — 3D question UI system: 8 questions with text actors, option buttons, progress counter, question cycling script (all tested, Q1-Q8 cycle works)
+- **COMPOSE** — CineCameraActor (`CRT_Camera`), CRT ambient bounce lighting, post-process stack (bloom, vignette, grain, chromatic aberration)
+- **Level saved** via `ue_save_level`
+
+### CRT actors in scene (57 total actors):
+- CRT_Camera, CRT_PostProcess, CRT_Screen, Phosphor dots, question text actors, option button actors, progress counter
+
+### One remaining task: Beauty Capture
+The previous session crashed trying to read a PNG beauty capture back into the conversation (the exported file was raw pixel data mislabeled as PNG, which poisoned the message history).
+
+**To get a clean beauty capture, use one of these approaches:**
+1. `ue_viewport_percept` with `format: "jpeg"` — this worked in the previous session
+2. `HighResShot 1920x1080` console command via `execute_console_command` — writes to project's `Saved/Screenshots/WindowsEditor/`
+3. Movie Render Queue if higher quality is needed
+
+**IMPORTANT: Do NOT attempt to read .png files back into the conversation via the Read file tool. If you need to verify an image, use `ue_viewport_percept` with JPEG format instead.**
+
+### First actions:
+1. Verify the level loads correctly: `ue_list_actors` filtered for CRT actors
+2. Take a JPEG viewport beauty capture via `ue_viewport_percept`
+3. Ask me what's next
+
+---

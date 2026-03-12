@@ -1,0 +1,62 @@
+"""Batch invariance verification: clean signal invariant to injection profile.
+
+Verifies the core lossless guarantee: the clean channel output is
+BIT-IDENTICAL regardless of which injection profile is active. Also
+verifies that anchor hashes are identical across all profiles.
+"""
+
+from pathlib import Path
+
+from src.lossless.constants import PROFILES
+from src.lossless.injection.state import InjectionState
+from src.lossless.integration.pipeline import LosslessPipeline
+
+
+def check_clean_signal_invariance(root_path: Path) -> dict:
+    """Verify clean signal is BIT-IDENTICAL across all injection profiles.
+
+    Args:
+        root_path: Path to the root USDA file.
+
+    Returns:
+        Dict with 'passed' (bool) and 'hashes' (profile -> hash mapping).
+    """
+    hashes = {}
+    for name in sorted(PROFILES.keys()):
+        state = InjectionState()
+        if name != "none":
+            state.activate(name)
+            for _ in range(5):
+                state.advance_exchange()
+        pipeline = LosslessPipeline(root_path, state)
+        result = pipeline.convert()
+        hashes[name] = result.clean.clean_hash
+
+    baseline = hashes["none"]
+    passed = all(h == baseline for h in hashes.values())
+    return {"passed": passed, "hashes": hashes}
+
+
+def check_anchor_hash_invariance(root_path: Path) -> dict:
+    """Verify anchor hash is identical across all injection profiles.
+
+    Args:
+        root_path: Path to the root USDA file.
+
+    Returns:
+        Dict with 'passed' (bool) and 'hashes' (profile -> hash mapping).
+    """
+    hashes = {}
+    for name in sorted(PROFILES.keys()):
+        state = InjectionState()
+        if name != "none":
+            state.activate(name)
+            for _ in range(5):
+                state.advance_exchange()
+        pipeline = LosslessPipeline(root_path, state)
+        result = pipeline.convert()
+        hashes[name] = result.clean.anchor_hash
+
+    baseline = hashes["none"]
+    passed = all(h == baseline for h in hashes.values())
+    return {"passed": passed, "hashes": hashes}

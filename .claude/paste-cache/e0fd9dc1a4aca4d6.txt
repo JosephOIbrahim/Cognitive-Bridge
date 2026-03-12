@@ -1,0 +1,659 @@
+# SYNAPSE Sprint: HDA-from-Prompt + In-Houdini Panel
+
+> **Sprint Goal:** Ship two competitive-parity features that lower the barrier to SYNAPSE adoption — HDA generation from natural language and a native Houdini chat panel.
+>
+> **Agent Team Strategy:** Three parallel workstreams (HDA Tools, Panel UI, Network Explainer) with a final integration pass. Each workstream is an independent sub-agent task with clean interfaces.
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  Houdini 21                          │
+│                                                      │
+│  ┌──────────────┐   ┌─────────────────────────────┐ │
+│  │ Python Panel  │   │       Node Graph             │ │
+│  │ (Chat UI)     │◄──┤  ┌─────┐  ┌─────┐  ┌─────┐ │ │
+│  │               │   │  │ SOP  │──│ SOP  │──│ OUT  │ │ │
+│  │  WebSocket    │   │  └─────┘  └─────┘  └─────┘ │ │
+│  │  Client       │   └─────────────────────────────┘ │
+│  └──────┬───────┘                                    │
+│         │ ws://localhost:9999                         │
+│  ┌──────▼───────────────────────────────────────────┐│
+│  │           SYNAPSE MCP Server                      ││
+│  │                                                   ││
+│  │  Existing 43 tools + NEW:                         ││
+│  │  ┌──────────────┐ ┌───────────────┐              ││
+│  │  │ hda_create   │ │ hda_promote   │              ││
+│  │  │ hda_package  │ │ hda_help      │              ││
+│  │  │ network_explain │               │              ││
+│  │  └──────────────┘ └───────────────┘              ││
+│  └──────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Agent Team Assignments
+
+### Agent 1: HDA Tools (P0)
+### Agent 2: Python Panel UI (P1)
+### Agent 3: Network Explainer (P2)
+### Agent 4: Integration & Testing (after 1-3 complete)
+
+All agents share:
+- SYNAPSE conventions (atomic scripts, idempotent guards, undo groups)
+- Test patterns (pytest, SHA-256 manifest)
+- MCP tool registration patterns (existing 43 tools as reference)
+- `hou` module API via WebSocket at `ws://localhost:9999`
+
+---
+
+## Agent 1: HDA-from-Prompt Tools
+
+**Objective:** Add MCP tools that let Claude package any generated node network into a reusable HDA with proper interface, help card, and installation.
+
+### New MCP Tools
+
+#### `hda_create`
+Create an HDA definition from an existing subnet or selection.
+
+```python
+# Tool signature
+{
+    "name": "hda_create",
+    "description": "Create a Houdini Digital Asset from a subnet node. Wraps the subnet into an HDA with a proper operator type name, label, and version.",
+    "parameters": {
+        "subnet_path": "str  # Path to the subnet to convert, e.g. /obj/geo1/my_subnet",
+        "operator_name": "str  # Internal name, e.g. 'sop_scatter_on_terrain'",
+        "operator_label": "str  # Display name, e.g. 'Scatter on Terrain'",
+        "category": "str  # Node category: Sop, Object, Driver, Lop, Top, etc.",
+        "version": "str  # Semver string, default '1.0.0'",
+        "save_path": "str  # Where to save the .hda file, e.g. '$HIP/hda/scatter_on_terrain.hda'",
+        "min_inputs": "int  # Minimum connected inputs (default 0)",
+        "max_inputs": "int  # Maximum connected inputs (default 1)",
+        "icon": "str  # Optional icon name from Houdini icon set"
+    }
+}
+```
+
+**Implementation notes:**
+- Use `node.createDigitalAsset()` which handles the subnet → HDA conversion
+- Set `hou.HDADefinition` metadata (author, version, timestamp)
+- Register with `hou.hda.installFile()` after creation
+- **Safety:** Undo group wrapping. Validate subnet exists before conversion. Check save_path is writable.
+
+#### `hda_promote_parm`
+Promote internal parameters to the HDA interface.
+
+```python
+{
+    "name": "hda_promote_parm",
+    "description": "Promote an internal node parameter to the HDA's top-level interface. This makes the parameter visible and editable on the HDA itself.",
+    "parameters": {
+        "hda_path": "str  # Path to the HDA instance",
+        "internal_node": "str  # Relative path to internal node, e.g. 'scatter1'",
+        "parm_name": "str  # Parameter name on the internal node",
+        "label": "str  # Optional display label override",
+        "folder": "str  # Optional folder/tab to organize into",
+        "callback": "str  # Optional Python callback script",
+        "conditions": "dict  # Optional visibility conditions"
+    }
+}
+```
+
+**Implementation notes:**
+- Use `hou.HDADefinition.setParmTemplateGroup()` to modify the interface
+- Build `hou.ParmTemplate` objects that reference internal parameters via channel references
+- Support grouping promoted parms into folders/tabs for clean UX
+- **Safety:** Validate the internal node and parm exist. Idempotent — re-promoting same parm updates rather than duplicates.
+
+#### `hda_set_help`
+Set the HDA's help card / documentation.
+
+```python
+{
+    "name": "hda_set_help",
+    "description": "Set the help text and documentation for an HDA. Generates a help card visible in Houdini's help browser.",
+    "parameters": {
+        "hda_path": "str  # Path to the HDA instance",
+        "summary": "str  # One-line description",
+        "description": "str  # Full description (supports Houdini wiki markup)",
+        "parameters_help": "dict  # {parm_name: help_text} for each promoted parameter",
+        "tips": "list[str]  # Optional usage tips",
+        "author": "str  # Optional author name"
+    }
+}
+```
+
+**Implementation notes:**
+- Use `hou.HDADefinition.setComment()` for summary
+- Use `hou.HDADefinition.addSection()` with `DialogScript` help format
+- Houdini help uses a wiki-like markup — generate it from the structured input
+- **Safety:** Read-only operation on the scene graph. Low risk.
+
+#### `hda_package` (Compound Tool)
+High-level orchestrator that creates an HDA from a description in one shot.
+
+```python
+{
+    "name": "hda_package",
+    "description": "Full HDA creation pipeline: builds internal network, promotes key parameters, generates help card, saves and installs. This is the 'HDA from prompt' entry point.",
+    "parameters": {
+        "description": "str  # Natural language description of what the HDA should do",
+        "name": "str  # Desired HDA name",
+        "category": "str  # Sop, Object, Driver, Lop, Top",
+        "save_path": "str  # Where to save, e.g. '$HIP/hda/'",
+        "complexity_hint": "str  # 'simple' | 'moderate' | 'complex' — guides network generation"
+    }
+}
+```
+
+**Implementation notes:**
+- This is an agent-orchestrated multi-step tool, NOT a single atomic operation
+- Step flow:
+  1. Create a subnet at a temp location
+  2. Generate internal network using existing node creation tools
+  3. Identify key parameters to promote (Claude reasoning step)
+  4. Call `hda_create` to package
+  5. Call `hda_promote_parm` for each key parameter
+  6. Call `hda_set_help` with auto-generated documentation
+  7. Clean up temp nodes
+- **Safety:** The entire flow runs inside a single undo group. If any step fails, everything rolls back.
+- **Memory integration:** Log the created HDA to scene memory (what was built, why, parameter choices)
+
+### Test Requirements (Agent 1)
+
+```
+tests/test_hda_create.py
+  - test_create_from_valid_subnet
+  - test_create_fails_on_missing_subnet (idempotent guard)
+  - test_create_fails_on_invalid_category
+  - test_create_overwrites_existing_version (with backup)
+  - test_undo_group_rollback_on_error
+
+tests/test_hda_promote.py
+  - test_promote_single_parm
+  - test_promote_to_folder
+  - test_promote_idempotent (re-promote same parm)
+  - test_promote_fails_on_missing_internal_node
+
+tests/test_hda_help.py
+  - test_set_summary
+  - test_set_full_help_with_parm_docs
+  - test_help_wiki_markup_generation
+
+tests/test_hda_package.py
+  - test_package_simple_hda_from_description
+  - test_package_rollback_on_network_failure
+  - test_package_memory_logging
+```
+
+---
+
+## Agent 2: Python Panel UI
+
+**Objective:** Build a native Houdini Python Panel that provides a chat interface connected to SYNAPSE's WebSocket server. Zero context switching for artists.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────┐
+│  Houdini Python Panel: "SYNAPSE"        │
+│                                          │
+│  ┌─────────────────────────────────────┐ │
+│  │  Chat History (QTextEdit, readonly) │ │
+│  │                                     │ │
+│  │  [SYNAPSE] Ready. What are you      │ │
+│  │  working on?                        │ │
+│  │                                     │ │
+│  │  [You] Scatter rocks on this        │ │
+│  │  terrain with size variation         │ │
+│  │                                     │ │
+│  │  [SYNAPSE] Done. Created scatter    │ │
+│  │  network at /obj/geo1/rock_scatter. │ │
+│  │  3 parameters promoted...           │ │
+│  │                                     │ │
+│  └─────────────────────────────────────┘ │
+│  ┌───────────────────────────┐ ┌──────┐ │
+│  │  Type a message...        │ │ Send │ │
+│  └───────────────────────────┘ └──────┘ │
+│                                          │
+│  [Context: /obj/geo1] [Status: ●]       │
+│  [Quick: Explain | HDA | Fix Error]     │
+└─────────────────────────────────────────┘
+```
+
+### File Structure
+
+```
+synapse/
+  panel/
+    __init__.py
+    synapse_panel.py        # Main PythonPanel implementation
+    ws_client.py            # Async WebSocket client (QThread-based)
+    chat_widget.py          # Chat display widget
+    message_formatter.py    # Render markdown/code in chat
+    context_bar.py          # Shows current selection/node context
+    quick_actions.py        # Shelf-like buttons for common tasks
+    panel_config.py         # Settings (server URL, appearance)
+    resources/
+      style.qss             # Qt stylesheet
+      icons/                # Panel icons
+```
+
+### Core Components
+
+#### `synapse_panel.py` — Main Panel
+
+```python
+# Registers as a Houdini Python Panel type
+# Key class: SynapsePanel(object) with createInterface(self)
+# Houdini calls createInterface() when the panel is opened
+
+class SynapsePanel:
+    def createInterface(self):
+        """Called by Houdini to build the panel UI."""
+        # Build Qt layout:
+        #   - Chat history (top, expanding)
+        #   - Context bar (selection info, connection status)
+        #   - Quick action buttons row
+        #   - Input field + send button (bottom)
+
+    def onActivateInterface(self):
+        """Called when panel becomes visible. Connect WebSocket."""
+
+    def onDeactivateInterface(self):
+        """Called when panel hidden. Keep WS alive but pause updates."""
+```
+
+**Registration:** The panel registers via a `PythonPanel` definition XML placed in `$HOUDINI_USER_PREF_DIR/python_panels/`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<pythonPanelDocument>
+  <interface name="synapse_panel"
+             label="SYNAPSE"
+             icon="MISC_ai"
+             help_url="">
+    <script><![CDATA[
+from synapse.panel.synapse_panel import SynapsePanel
+def createInterface():
+    return SynapsePanel()
+    ]]></script>
+  </interface>
+</pythonPanelDocument>
+```
+
+#### `ws_client.py` — WebSocket Client
+
+```python
+# QThread-based WebSocket client that:
+# - Connects to ws://localhost:9999
+# - Sends JSON messages (same protocol as existing MCP)
+# - Emits Qt signals on message received
+# - Auto-reconnects with backoff
+# - Shows connection status in context bar
+
+class SynapseWSClient(QThread):
+    message_received = Signal(dict)   # Emitted when server responds
+    connection_changed = Signal(bool) # Emitted on connect/disconnect
+
+    def send_message(self, text: str, context: dict = None):
+        """Send a user message with optional scene context."""
+        payload = {
+            "type": "chat",
+            "message": text,
+            "context": context or self._gather_context()
+        }
+        self.ws.send(json.dumps(payload))
+
+    def _gather_context(self) -> dict:
+        """Auto-gather current selection, node path, etc."""
+        return {
+            "selected_nodes": [n.path() for n in hou.selectedNodes()],
+            "current_network": hou.ui.paneTabOfType(hou.paneTabType.NetworkEditor).pwd().path(),
+            "scene_file": hou.hipFile.path()
+        }
+```
+
+**Key design decisions:**
+- Use `QThread` not `asyncio` — Houdini's Qt event loop doesn't play well with asyncio
+- Context auto-gathering happens on every message send, so Claude always knows what the artist is looking at
+- The WS protocol mirrors existing MCP message format for zero server-side changes
+
+#### `quick_actions.py` — One-Click Actions
+
+```python
+# Pre-built prompts attached to buttons:
+QUICK_ACTIONS = [
+    {
+        "label": "Explain",
+        "icon": "BUTTONS_help",
+        "prompt": "Explain the selected node network in plain English. What does it do, and what are the key parameters?",
+        "requires_selection": True
+    },
+    {
+        "label": "Make HDA",
+        "icon": "COMMON_subnet",
+        "prompt": "Package the selected subnet into an HDA with a clean interface and help card.",
+        "requires_selection": True
+    },
+    {
+        "label": "Fix Error",
+        "icon": "BUTTONS_cook_error",
+        "prompt": "The selected node has a cook error. Diagnose and fix it.",
+        "requires_selection": True
+    },
+    {
+        "label": "Optimize",
+        "icon": "BUTTONS_performance",
+        "prompt": "Analyze the selected network for performance issues and suggest optimizations.",
+        "requires_selection": True
+    },
+    {
+        "label": "VEX Help",
+        "icon": "SOP_attribwrangle",
+        "prompt": "I need help writing VEX code for the selected wrangle node.",
+        "requires_selection": True
+    }
+]
+```
+
+#### `message_formatter.py` — Chat Rendering
+
+```python
+# Converts SYNAPSE responses to styled HTML for QTextEdit
+# Handles:
+#   - Code blocks with syntax highlighting (VEX, Python)
+#   - Node path links (clickable, navigates to node)
+#   - Parameter references
+#   - Status indicators (success/warning/error)
+#   - Collapsible sections for verbose output
+
+def format_message(msg: dict) -> str:
+    """Convert a SYNAPSE response dict to styled HTML."""
+    # Use the voice guide system — messages arrive already
+    # in the supportive senior artist tone from server-side rewrites
+```
+
+### Style Guidelines
+
+- **Colors:** Match Houdini's dark theme. Use SYNAPSE brand accent (signal state colors from design system) sparingly.
+- **Typography:** Houdini's default Qt font. Don't fight the environment.
+- **Density:** Compact. Artists have limited screen real estate. Chat messages should be tight.
+- **Animations:** None. Houdini panels don't animate.
+
+### Test Requirements (Agent 2)
+
+```
+tests/test_panel_ws_client.py
+  - test_connect_to_server
+  - test_reconnect_on_disconnect
+  - test_send_message_format
+  - test_context_gathering
+  - test_connection_status_signal
+
+tests/test_panel_formatter.py
+  - test_code_block_rendering
+  - test_node_path_linkification
+  - test_error_message_styling
+  - test_collapsible_sections
+
+tests/test_panel_quick_actions.py
+  - test_all_actions_have_required_fields
+  - test_selection_required_disables_without_selection
+```
+
+### Installation
+
+```bash
+# Panel registration
+cp synapse_panel.xml $HOUDINI_USER_PREF_DIR/python_panels/
+
+# Add to Houdini shelf for easy access
+# Shelf button script:
+# hou.ui.curDesktop().createFloatingPaneTab(hou.paneTabType.PythonPanel, (0,0), (400, 600)).setActiveInterface(hou.pypanel.interfaceByName("synapse_panel"))
+```
+
+---
+
+## Agent 3: Network Explainer Tool
+
+**Objective:** An MCP tool that walks a node network and produces a structured, plain-English explanation. Feeds into both the chat panel and HDA documentation generation.
+
+### MCP Tool
+
+#### `network_explain`
+
+```python
+{
+    "name": "network_explain",
+    "description": "Walk a Houdini node network and produce a structured explanation. Describes what each node does, how data flows, and what the overall network achieves. Output can feed into HDA help generation or be displayed directly to the artist.",
+    "parameters": {
+        "root_path": "str  # Path to the network root, e.g. '/obj/geo1'",
+        "depth": "int  # How deep to traverse (default 2, max 5)",
+        "detail_level": "str  # 'summary' | 'standard' | 'detailed'",
+        "include_parameters": "bool  # Include key parameter values (default true)",
+        "include_expressions": "bool  # Include channel expressions (default false)",
+        "format": "str  # 'prose' | 'structured' | 'help_card'"
+    }
+}
+```
+
+**Implementation approach:**
+
+```python
+def network_explain(root_path, depth=2, detail_level="standard", ...):
+    """
+    Walk strategy:
+    1. Get all child nodes of root_path
+    2. Build a dependency graph (input/output connections)
+    3. Topological sort to get data flow order
+    4. For each node in flow order:
+       - Identify node type and look up from VEX CORPUS / node database
+       - Read key parameters (non-default values only for 'summary')
+       - Note any expressions or references
+    5. Identify the overall pattern:
+       - Is this a scatter workflow?
+       - Is this a simulation setup?
+       - Is this a material assignment chain?
+    6. Generate explanation in requested format
+    """
+
+    # Output structure:
+    return {
+        "overview": "This network creates a procedural rock scatter...",
+        "data_flow": [
+            {
+                "node": "grid1",
+                "type": "SOP Grid",
+                "role": "Creates the base terrain surface",
+                "key_params": {"rows": 50, "cols": 50, "size": [10, 10]},
+                "outputs_to": ["mountain1"]
+            },
+            # ...
+        ],
+        "patterns_detected": ["scatter_workflow", "copy_to_points"],
+        "complexity": "moderate",
+        "suggested_hda_interface": [
+            # Parameters worth promoting if this becomes an HDA
+            {"node": "scatter1", "parm": "npts", "reason": "Controls density"},
+            {"node": "mountain1", "parm": "height", "reason": "Controls terrain roughness"}
+        ]
+    }
+```
+
+**Key insight:** The `suggested_hda_interface` field directly feeds `hda_package`. When an artist says "make this an HDA," the explainer has already identified which parameters matter. This closes the loop between P0 and P2.
+
+### Pattern Recognition Library
+
+Build a lightweight pattern matcher for common Houdini workflows:
+
+```python
+NETWORK_PATTERNS = {
+    "scatter_workflow": {
+        "signature": ["scatter", "copytopoints"],
+        "description": "Distributes copies of geometry across a surface"
+    },
+    "simulation_setup": {
+        "signature": ["dopnet", "solver"],
+        "description": "Dynamic simulation network"
+    },
+    "material_chain": {
+        "signature": ["materiallinker", "principledshader"],
+        "description": "Material assignment and shading setup"
+    },
+    "terrain_generation": {
+        "signature": ["heightfield", "erode"],
+        "description": "Procedural terrain with erosion"
+    },
+    "usd_stage": {
+        "signature": ["lopnet", "configure"],
+        "description": "USD/Solaris stage construction"
+    }
+    # Expand over time from VEX CORPUS patterns
+}
+```
+
+### Test Requirements (Agent 3)
+
+```
+tests/test_network_explain.py
+  - test_explain_simple_chain
+  - test_explain_branching_network
+  - test_explain_nested_subnets (depth parameter)
+  - test_explain_empty_network
+  - test_pattern_detection_scatter
+  - test_pattern_detection_simulation
+  - test_suggested_hda_interface_generation
+  - test_output_format_prose
+  - test_output_format_help_card
+```
+
+---
+
+## Agent 4: Integration & Wiring
+
+**Runs after Agents 1-3 complete.** Wires everything together and validates end-to-end flows.
+
+### Integration Points
+
+#### Panel → HDA Pipeline
+```
+Artist selects subnet
+  → Clicks "Make HDA" quick action
+  → Panel sends to SYNAPSE with selection context
+  → Claude calls network_explain (gets structure + suggested interface)
+  → Claude calls hda_package (builds the HDA)
+  → Panel shows result with link to new HDA
+  → HDA appears in artist's tab menu
+```
+
+#### Panel → Explain Pipeline
+```
+Artist selects nodes
+  → Clicks "Explain" quick action
+  → Panel sends to SYNAPSE with selection context
+  → Claude calls network_explain
+  → Panel renders explanation with clickable node paths
+  → Artist clicks a node path → Houdini navigates to that node
+```
+
+#### Explain → HDA Help Pipeline
+```
+network_explain output (format='help_card')
+  → Fed directly into hda_set_help
+  → HDA ships with auto-generated documentation
+```
+
+### End-to-End Test Scenarios
+
+```
+tests/test_e2e_hda_from_prompt.py
+  - test_full_pipeline_simple_sop
+    # "Create an HDA that scatters points on a surface with density and seed controls"
+    # Verify: HDA created, 2+ params promoted, help card present, installs correctly
+
+  - test_full_pipeline_with_explain
+    # Build a network manually, select it, trigger explain → make HDA
+    # Verify: explanation matches network, suggested params become promoted params
+
+  - test_full_pipeline_rollback
+    # Trigger HDA creation with intentional failure mid-pipeline
+    # Verify: scene graph unchanged, no orphaned nodes
+
+tests/test_e2e_panel.py
+  - test_panel_connect_and_chat
+  - test_panel_quick_action_explain
+  - test_panel_quick_action_hda
+  - test_panel_context_auto_gather
+  - test_panel_node_link_navigation
+```
+
+---
+
+## Execution Order & Dependencies
+
+```
+Phase 1 (Parallel):
+  Agent 1: HDA Tools ──────────┐
+  Agent 2: Panel UI ───────────┤──→ Phase 2
+  Agent 3: Network Explainer ──┘
+
+Phase 2 (Sequential):
+  Agent 4: Integration & E2E Testing
+
+Phase 3 (Polish):
+  - Shelf tool installation script
+  - Panel QSS styling pass
+  - Memory system integration (log HDA creation decisions)
+  - README / artist-facing documentation
+```
+
+### Agent Boundaries (No Cross-Contamination)
+
+| Agent | Owns | Reads (no modify) |
+|-------|------|--------------------|
+| 1: HDA | `synapse/tools/hda_*.py`, `tests/test_hda_*.py` | Existing tool patterns |
+| 2: Panel | `synapse/panel/**`, `tests/test_panel_*.py` | WS protocol spec |
+| 3: Explainer | `synapse/tools/network_explain.py`, `tests/test_network_*.py` | VEX CORPUS, node DB |
+| 4: Integration | `tests/test_e2e_*.py`, install scripts | Everything (read-only) |
+
+### Definition of Done
+
+- [ ] All new MCP tools registered and discoverable
+- [ ] All tests passing (target: 30+ new tests)
+- [ ] Panel installs with single shelf button click
+- [ ] HDA-from-prompt works end-to-end for at least 3 SOP categories
+- [ ] Network explain produces accurate descriptions for test scenes
+- [ ] Zero regressions on existing 1,012 tests
+- [ ] Memory system logs HDA creation events
+- [ ] SYNAPSE voice guide tone maintained in all panel messages
+
+---
+
+## Notes for Claude Code Agents
+
+**Conventions to follow:**
+- Atomic scripts (one mutation per call)
+- Idempotent guards (check-before-mutate)
+- Undo group wrapping on all scene-mutating operations
+- SHA-256 manifest tracking for new files
+- Collision-safe prefixing for any generated content
+- Type hints + mypy compliance on all new code
+- Server-side message rewrites maintain supportive tone
+
+**Do NOT:**
+- Break any existing tests
+- Modify existing MCP tool signatures
+- Change the WebSocket protocol (panel adapts to existing protocol)
+- Add external dependencies (zero-dependency principle)
+
+**Reference:**
+- Existing tool patterns: `synapse/tools/` (43 tools as template)
+- Test patterns: `tests/` (1,012 existing tests as reference)
+- WS protocol: `synapse/server/ws_handler.py`
+- Memory system: `synapse/memory/`
+- Voice guide: `synapse/voice/`

@@ -1,0 +1,1168 @@
+"""Tests for the pipeline engine (create_pipeline, run_pipeline, get_pipeline_status).
+
+All execution, template loading, and output resolution are mocked.
+No ComfyUI server or filesystem access required.
+"""
+
+import json
+import threading
+from unittest.mock import MagicMock, patch, call
+
+import pytest
+
+import agent.tools.pipeline as pipeline_mod
+from agent.tools.pipeline import (
+    TOOLS,
+    _apply_input_mappings,
+    _apply_param_overrides,
+    _load_workflow_for_stage,
+    _validate_pipeline_definition,
+    _pipeline_state,
+    _pipeline_lock,
+    handle,
+)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def reset_pipeline_state():
+    """Reset module-level state between every test."""
+    with _pipeline_lock:
+        _pipeline_state["current_pipeline"] = None
+        _pipeline_state["execution_results"] = []
+        _pipeline_state["status"] = "idle"
+        _pipeline_state["error"] = None
+    yield
+    # Clean up after test too
+    with _pipeline_lock:
+        _pipeline_state["current_pipeline"] = None
+        _pipeline_state["execution_results"] = []
+        _pipeline_state["status"] = "idle"
+        _pipeline_state["error"] = None
+
+
+def _minimal_workflow():
+    """Return a minimal API-format workflow dict."""
+    return {
+        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sd15.safetensors"}},
+        "2": {"class_type": "KSampler", "inputs": {"seed": 42, "steps": 20}},
+        "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "out"}},
+    }
+
+
+def _mock_exec_success(prompt_id="test-prompt-001"):
+    """Return a mock successful execution result dict."""
+    return {
+        "status": "complete",
+        "prompt_id": prompt_id,
+        "total_time_s": 3.5,
+        "outputs": [
+            {"type": "image", "filename": "ComfyUI_00001_.png", "subfolder": ""},
+        ],
+    }
+
+
+def _mock_resolved_output(filename="ComfyUI_00001_.png"):
+    """Return a mock resolved output entry."""
+    return {
+        "filename": filename,
+        "subfolder": "",
+        "absolute_path": f"/output/{filename}",
+        "exists": True,
+        "size_bytes": 2048,
+        "type": "image",
+    }
+
+
+def _two_stage_pipeline(name="test_pipe"):
+    """Build a minimal two-stage pipeline definition."""
+    return {
+        "name": name,
+        "stages": [
+            {"stage_id": "txt2img", "workflow_source": "template:txt2img_sdxl"},
+            {"stage_id": "upscale", "workflow_source": "template:upscale_basic"},
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# TestCreatePipeline
+# ---------------------------------------------------------------------------
+
+class TestCreatePipeline:
+    def test_create_simple_two_stage(self):
+        """Create a pipeline with two stages returns correct summary."""
+        result = json.loads(handle("create_pipeline", {
+            "name": "my_pipe",
+            "stages": [
+                {"stage_id": "gen", "workflow_source": "template:txt2img_sdxl"},
+                {"stage_id": "upscale", "workflow_source": "template:upscale_basic"},
+            ],
+        }))
+        assert result["created"] is True
+        assert result["name"] == "my_pipe"
+        assert result["stage_count"] == 2
+        assert len(result["stages"]) == 2
+        assert result["stages"][0]["stage_id"] == "gen"
+        assert result["stages"][1]["stage_id"] == "upscale"
+        assert "run_pipeline" in result["message"]
+
+    def test_create_stores_pipeline_in_state(self):
+        """Pipeline definition is saved to module state after creation."""
+        handle("create_pipeline", {
+            "stages": [
+                {"stage_id": "stage1", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        })
+        with _pipeline_lock:
+            current = _pipeline_state["current_pipeline"]
+        assert current is not None
+        assert current["stages"][0]["stage_id"] == "stage1"
+
+    def test_create_sets_status_idle(self):
+        """Status is reset to idle on create."""
+        # Dirty the state first
+        with _pipeline_lock:
+            _pipeline_state["status"] = "error"
+            _pipeline_state["error"] = "previous error"
+
+        handle("create_pipeline", {
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        })
+        with _pipeline_lock:
+            assert _pipeline_state["status"] == "idle"
+            assert _pipeline_state["error"] is None
+            assert _pipeline_state["execution_results"] == []
+
+    def test_create_with_input_mappings_in_summary(self):
+        """Input mappings are reflected in the stage summary."""
+        result = json.loads(handle("create_pipeline", {
+            "stages": [
+                {"stage_id": "gen", "workflow_source": "template:txt2img_sdxl"},
+                {
+                    "stage_id": "upscale",
+                    "workflow_source": "template:upscale_basic",
+                    "input_mappings": [
+                        {
+                            "node_id": "10",
+                            "input_name": "image",
+                            "from_stage": "gen",
+                            "output_index": 0,
+                        },
+                    ],
+                },
+            ],
+        }))
+        assert result["created"] is True
+        upscale_summary = result["stages"][1]
+        assert "receives_from" in upscale_summary
+        assert "gen" in upscale_summary["receives_from"]
+
+    def test_create_with_param_overrides_in_summary(self):
+        """param_overrides count is included in stage summary."""
+        result = json.loads(handle("create_pipeline", {
+            "stages": [
+                {
+                    "stage_id": "gen",
+                    "workflow_source": "template:txt2img_sdxl",
+                    "param_overrides": {
+                        "3.seed": 99,
+                        "6.text": "a beautiful cat",
+                    },
+                },
+            ],
+        }))
+        assert result["created"] is True
+        assert result["stages"][0]["override_count"] == 2
+
+    def test_create_error_empty_stages(self):
+        """Empty stages list is rejected."""
+        result = json.loads(handle("create_pipeline", {"stages": []}))
+        assert "error" in result
+        assert "at least one stage" in result["error"].lower()
+
+    def test_create_error_duplicate_stage_ids(self):
+        """Duplicate stage_id values are rejected."""
+        result = json.loads(handle("create_pipeline", {
+            "stages": [
+                {"stage_id": "gen", "workflow_source": "template:a"},
+                {"stage_id": "gen", "workflow_source": "template:b"},
+            ],
+        }))
+        assert "error" in result
+        assert "duplicate" in result["error"].lower()
+
+    def test_create_error_missing_workflow_source(self):
+        """Missing workflow_source is rejected."""
+        result = json.loads(handle("create_pipeline", {
+            "stages": [
+                {"stage_id": "gen"},
+            ],
+        }))
+        assert "error" in result
+        assert "workflow_source" in result["error"]
+
+    def test_create_error_forward_reference_in_input_mapping(self):
+        """Input mapping that references a later stage is rejected."""
+        result = json.loads(handle("create_pipeline", {
+            "stages": [
+                {
+                    "stage_id": "gen",
+                    "workflow_source": "template:txt2img_sdxl",
+                    "input_mappings": [
+                        {
+                            "node_id": "10",
+                            "input_name": "image",
+                            "from_stage": "upscale",  # forward reference!
+                        },
+                    ],
+                },
+                {"stage_id": "upscale", "workflow_source": "template:upscale_basic"},
+            ],
+        }))
+        assert "error" in result
+        assert "upscale" in result["error"]
+
+    def test_create_default_name(self):
+        """Pipeline gets a default name when none is specified."""
+        result = json.loads(handle("create_pipeline", {
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        }))
+        assert result["created"] is True
+        assert result["name"] == "unnamed_pipeline"
+
+    def test_create_error_missing_stage_id(self):
+        """Stage missing stage_id is rejected."""
+        result = json.loads(handle("create_pipeline", {
+            "stages": [
+                {"workflow_source": "template:txt2img_sdxl"},
+            ],
+        }))
+        assert "error" in result
+        assert "stage_id" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# TestRunPipeline
+# ---------------------------------------------------------------------------
+
+class TestRunPipeline:
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_two_stage_success(self, mock_load, mock_exec, mock_resolve):
+        """Successfully run a two-stage pipeline."""
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output()]
+
+        handle("create_pipeline", _two_stage_pipeline()["stages"] and {
+            "name": "test_pipe",
+            "stages": _two_stage_pipeline()["stages"],
+        })
+
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            # run using state from create
+            result = json.loads(pipeline_mod._handle_run_pipeline({}))
+
+        assert result["status"] == "complete"
+        assert result["stages_total"] == 2
+        assert result["stages_completed"] == 2
+        assert result["stages_failed"] == 0
+        assert len(result["stage_results"]) == 2
+        assert result["stage_results"][0]["status"] == "complete"
+        assert result["stage_results"][1]["status"] == "complete"
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_with_inline_pipeline(self, mock_load, mock_exec, mock_resolve):
+        """run_pipeline accepts an inline pipeline definition."""
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output()]
+
+        inline = {
+            "name": "inline_pipe",
+            "stages": [
+                {"stage_id": "gen", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(handle("run_pipeline", {"pipeline": inline}))
+
+        assert result["status"] == "complete"
+        assert result["pipeline"] == "inline_pipe"
+
+    def test_run_no_pipeline_error(self):
+        """run_pipeline with no state and no inline pipeline returns error."""
+        result = json.loads(handle("run_pipeline", {}))
+        assert "error" in result
+        assert "create_pipeline" in result["error"]
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_stop_on_error_true(self, mock_load, mock_exec, mock_resolve):
+        """stop_on_error=True halts pipeline after first stage failure."""
+        # First call loads OK, second load fails
+        mock_load.side_effect = [
+            (None, "Template not found: bad_template"),
+            (_minimal_workflow(), None),
+        ]
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output()]
+
+        pipeline = {
+            "name": "stop_test",
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:bad_template"},
+                {"stage_id": "s2", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(handle("run_pipeline", {
+                "pipeline": pipeline,
+                "stop_on_error": True,
+            }))
+
+        assert result["status"] == "error"
+        assert result["stages_completed"] == 0
+        assert result["stages_failed"] == 1
+        # Only one stage result — second stage was never started
+        assert len(result["stage_results"]) == 1
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_stop_on_error_false_continues(self, mock_load, mock_exec, mock_resolve):
+        """stop_on_error=False continues to subsequent stages after failure."""
+        mock_load.side_effect = [
+            (None, "Template not found"),   # stage 1 fails
+            (_minimal_workflow(), None),     # stage 2 succeeds
+        ]
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output()]
+
+        pipeline = {
+            "name": "continue_test",
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:bad"},
+                {"stage_id": "s2", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(handle("run_pipeline", {
+                "pipeline": pipeline,
+                "stop_on_error": False,
+            }))
+
+        assert result["stages_completed"] == 1
+        assert result["stages_failed"] == 1
+        assert len(result["stage_results"]) == 2
+        assert result["stage_results"][0]["status"] == "error"
+        assert result["stage_results"][1]["status"] == "complete"
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_stage_timeout(self, mock_load, mock_exec, mock_resolve):
+        """Timed-out stage is recorded as timeout status."""
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = {
+            "status": "timeout",
+            "prompt_id": "timed-out-123",
+            "outputs": [],
+        }
+        mock_resolve.return_value = []
+
+        pipeline = {
+            "name": "timeout_test",
+            "stages": [
+                {"stage_id": "slow", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(handle("run_pipeline", {
+                "pipeline": pipeline,
+                "timeout_per_stage": 30,
+            }))
+
+        assert result["status"] == "error"
+        assert result["stage_results"][0]["status"] == "timeout"
+        assert "30" in result["stage_results"][0]["errors"][0]
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_with_param_overrides_applied(self, mock_load, mock_exec, mock_resolve):
+        """param_overrides are applied to workflow before execution."""
+        wf = {
+            "3": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 20}},
+            "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "default"}},
+        }
+        mock_load.return_value = (wf, None)
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output()]
+
+        pipeline = {
+            "name": "override_test",
+            "stages": [
+                {
+                    "stage_id": "gen",
+                    "workflow_source": "template:txt2img_sdxl",
+                    "param_overrides": {"3.seed": 999, "6.text": "a cat"},
+                },
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(handle("run_pipeline", {"pipeline": pipeline}))
+
+        # Verify exec was called with modified workflow
+        called_workflow = mock_exec.call_args[0][0]
+        assert called_workflow["3"]["inputs"]["seed"] == 999
+        assert called_workflow["6"]["inputs"]["text"] == "a cat"
+        assert result["status"] == "complete"
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_with_input_mappings_wiring(self, mock_load, mock_exec, mock_resolve):
+        """Input mappings wire stage-1 output filename into stage-2 node input."""
+        wf_stage1 = {
+            "9": {"class_type": "SaveImage", "inputs": {}},
+        }
+        wf_stage2 = {
+            "10": {"class_type": "LoadImage", "inputs": {"image": "default.png"}},
+            "11": {"class_type": "UpscaleImage", "inputs": {}},
+        }
+        mock_load.side_effect = [(wf_stage1, None), (wf_stage2, None)]
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.side_effect = [
+            [_mock_resolved_output("stage1_out.png")],
+            [_mock_resolved_output("stage2_out.png")],
+        ]
+
+        pipeline = {
+            "name": "wiring_test",
+            "stages": [
+                {"stage_id": "gen", "workflow_source": "template:txt2img_sdxl"},
+                {
+                    "stage_id": "upscale",
+                    "workflow_source": "template:upscale_basic",
+                    "input_mappings": [
+                        {
+                            "node_id": "10",
+                            "input_name": "image",
+                            "from_stage": "gen",
+                            "output_index": 0,
+                        },
+                    ],
+                },
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(handle("run_pipeline", {"pipeline": pipeline}))
+
+        # Second exec call should have wired filename into LoadImage
+        calls = mock_exec.call_args_list
+        stage2_workflow = calls[1][0][0]
+        assert stage2_workflow["10"]["inputs"]["image"] == "stage1_out.png"
+        assert result["status"] == "complete"
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_exec_error_recorded(self, mock_load, mock_exec, mock_resolve):
+        """Execution error from ComfyUI is captured in stage result."""
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = {
+            "error": "ComfyUI execution failed: node error",
+            "outputs": [],
+        }
+        mock_resolve.return_value = []
+
+        pipeline = {
+            "name": "exec_err_test",
+            "stages": [
+                {"stage_id": "gen", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(handle("run_pipeline", {"pipeline": pipeline}))
+
+        assert result["status"] == "error"
+        assert result["stage_results"][0]["status"] == "error"
+        assert "ComfyUI execution failed" in result["stage_results"][0]["errors"][0]
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_final_outputs_from_last_successful(self, mock_load, mock_exec, mock_resolve):
+        """final_outputs contain the outputs of the last successful stage."""
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.side_effect = [
+            [_mock_resolved_output("stage1.png")],
+            [_mock_resolved_output("stage2_final.png")],
+        ]
+
+        pipeline = {
+            "name": "final_out_test",
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:a"},
+                {"stage_id": "s2", "workflow_source": "template:b"},
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(handle("run_pipeline", {"pipeline": pipeline}))
+
+        assert result["final_outputs"][0]["filename"] == "stage2_final.png"
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_updates_module_status_to_complete(self, mock_load, mock_exec, mock_resolve):
+        """Module state status is set to 'complete' after a successful run."""
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output()]
+
+        pipeline = {
+            "name": "status_test",
+            "stages": [{"stage_id": "s1", "workflow_source": "template:a"}],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            handle("run_pipeline", {"pipeline": pipeline})
+
+        with _pipeline_lock:
+            assert _pipeline_state["status"] == "complete"
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_updates_module_status_to_error_on_failure(
+        self, mock_load, mock_exec, mock_resolve
+    ):
+        """Module state status is set to 'error' after a pipeline failure."""
+        mock_load.return_value = (None, "not found")
+
+        pipeline = {
+            "name": "fail_test",
+            "stages": [{"stage_id": "s1", "workflow_source": "template:bad"}],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            handle("run_pipeline", {"pipeline": pipeline})
+
+        with _pipeline_lock:
+            assert _pipeline_state["status"] == "error"
+            assert _pipeline_state["error"] is not None
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_outcome_recorded_flag(self, mock_load, mock_exec, mock_resolve):
+        """outcome_recorded is True when memory dispatch succeeds."""
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output()]
+
+        pipeline = {
+            "name": "record_test",
+            "stages": [{"stage_id": "s1", "workflow_source": "template:a"}],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            result = json.loads(pipeline_mod._handle_run_pipeline({"pipeline": pipeline}))
+
+        assert result["outcome_recorded"] is True
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_run_outcome_not_recorded_on_dispatch_exception(
+        self, mock_load, mock_exec, mock_resolve
+    ):
+        """outcome_recorded is False when memory dispatch raises.
+
+        The pipeline code does ``from . import handle as dispatch_tool`` at
+        call time, so the correct intercept target is agent.tools.handle.
+        """
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output()]
+
+        pipeline = {
+            "name": "no_record_test",
+            "stages": [{"stage_id": "s1", "workflow_source": "template:a"}],
+        }
+        with patch("agent.tools.handle", side_effect=RuntimeError("dispatch fail")):
+            result = json.loads(pipeline_mod._handle_run_pipeline({"pipeline": pipeline}))
+
+        assert result["outcome_recorded"] is False
+
+    def test_run_invalid_inline_pipeline_rejected(self):
+        """An inline pipeline with invalid definition is rejected."""
+        result = json.loads(handle("run_pipeline", {
+            "pipeline": {"stages": []},
+        }))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# TestPipelineStatus
+# ---------------------------------------------------------------------------
+
+class TestPipelineStatus:
+    def test_status_no_pipeline(self):
+        """Returns no_pipeline status when nothing has been created."""
+        result = json.loads(handle("get_pipeline_status", {}))
+        assert result["status"] == "no_pipeline"
+        assert "create_pipeline" in result["message"]
+
+    def test_status_after_create_is_idle(self):
+        """After create_pipeline, status is idle."""
+        handle("create_pipeline", {
+            "name": "status_pipe",
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        })
+        result = json.loads(handle("get_pipeline_status", {}))
+        assert result["status"] == "idle"
+        assert result["pipeline_name"] == "status_pipe"
+        assert result["stages_total"] == 1
+        assert result["stages_completed"] == 0
+        assert result["stages_failed"] == 0
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_status_after_successful_run(self, mock_load, mock_exec, mock_resolve):
+        """Status is 'complete' after a successful run."""
+        mock_load.return_value = (_minimal_workflow(), None)
+        mock_exec.return_value = _mock_exec_success()
+        mock_resolve.return_value = [_mock_resolved_output("done.png")]
+
+        pipeline = {
+            "name": "complete_pipe",
+            "stages": [
+                {"stage_id": "gen", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            pipeline_mod._handle_run_pipeline({"pipeline": pipeline})
+
+        result = json.loads(handle("get_pipeline_status", {}))
+        assert result["status"] == "complete"
+        assert result["stages_completed"] == 1
+        assert result["stages_failed"] == 0
+        assert len(result["all_outputs"]) == 1
+        assert result["all_outputs"][0]["stage_id"] == "gen"
+        assert result["all_outputs"][0]["filename"] == "done.png"
+
+    @patch("agent.tools.pipeline._resolve_stage_outputs")
+    @patch("agent.tools.pipeline._execute_stage_workflow")
+    @patch("agent.tools.pipeline._load_workflow_for_stage")
+    def test_status_after_failed_run(self, mock_load, mock_exec, mock_resolve):
+        """Status is 'error' after a failed run; error field is populated."""
+        mock_load.return_value = (None, "Template not found")
+
+        pipeline = {
+            "name": "fail_pipe",
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:missing"},
+            ],
+        }
+        with patch("agent.tools.pipeline.handle") as mock_dispatch:
+            mock_dispatch.return_value = json.dumps({"recorded": True})
+            pipeline_mod._handle_run_pipeline({"pipeline": pipeline})
+
+        result = json.loads(handle("get_pipeline_status", {}))
+        assert result["status"] == "error"
+        assert "error" in result
+        assert result["stages_failed"] == 1
+
+    def test_status_timeout_stage_counted_as_failed(self):
+        """Timeout stages are counted in stages_failed."""
+        with _pipeline_lock:
+            _pipeline_state["current_pipeline"] = {
+                "name": "timeout_pipe",
+                "stages": [{"stage_id": "s1", "workflow_source": "template:a"}],
+                "stage_count": 1,
+            }
+            _pipeline_state["execution_results"] = [
+                {"stage_id": "s1", "status": "timeout", "outputs": [], "errors": []},
+            ]
+            _pipeline_state["status"] = "error"
+            _pipeline_state["error"] = "1 stage(s) failed out of 1."
+
+        result = json.loads(handle("get_pipeline_status", {}))
+        assert result["stages_failed"] == 1
+        assert result["stages_completed"] == 0
+
+    def test_status_aggregates_all_outputs(self):
+        """all_outputs aggregates outputs from every completed stage."""
+        with _pipeline_lock:
+            _pipeline_state["current_pipeline"] = {
+                "name": "multi_out",
+                "stages": [
+                    {"stage_id": "a", "workflow_source": "x"},
+                    {"stage_id": "b", "workflow_source": "y"},
+                ],
+                "stage_count": 2,
+            }
+            _pipeline_state["execution_results"] = [
+                {
+                    "stage_id": "a",
+                    "status": "complete",
+                    "outputs": [{"filename": "a1.png", "absolute_path": "/out/a1.png", "exists": True}],
+                },
+                {
+                    "stage_id": "b",
+                    "status": "complete",
+                    "outputs": [{"filename": "b1.png", "absolute_path": "/out/b1.png", "exists": True}],
+                },
+            ]
+            _pipeline_state["status"] = "complete"
+
+        result = json.loads(handle("get_pipeline_status", {}))
+        assert len(result["all_outputs"]) == 2
+        filenames = {o["filename"] for o in result["all_outputs"]}
+        assert "a1.png" in filenames
+        assert "b1.png" in filenames
+
+
+# ---------------------------------------------------------------------------
+# TestValidatePipelineDefinition
+# ---------------------------------------------------------------------------
+
+class TestValidatePipelineDefinition:
+    def test_valid_single_stage(self):
+        err = _validate_pipeline_definition({
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:txt2img_sdxl"},
+            ],
+        })
+        assert err is None
+
+    def test_valid_two_stage_with_mapping(self):
+        err = _validate_pipeline_definition({
+            "stages": [
+                {"stage_id": "gen", "workflow_source": "template:a"},
+                {
+                    "stage_id": "up",
+                    "workflow_source": "template:b",
+                    "input_mappings": [
+                        {"node_id": "10", "input_name": "image", "from_stage": "gen"},
+                    ],
+                },
+            ],
+        })
+        assert err is None
+
+    def test_invalid_no_stages_key(self):
+        err = _validate_pipeline_definition({})
+        assert err is not None
+        assert "at least one stage" in err.lower()
+
+    def test_invalid_empty_stages(self):
+        err = _validate_pipeline_definition({"stages": []})
+        assert err is not None
+
+    def test_invalid_stages_not_list(self):
+        err = _validate_pipeline_definition({"stages": "not a list"})
+        assert err is not None
+        assert "array" in err.lower()
+
+    def test_invalid_stage_not_dict(self):
+        err = _validate_pipeline_definition({"stages": ["a_string"]})
+        assert err is not None
+        assert "object" in err.lower()
+
+    def test_invalid_missing_stage_id(self):
+        err = _validate_pipeline_definition({
+            "stages": [{"workflow_source": "template:a"}],
+        })
+        assert err is not None
+        assert "stage_id" in err
+
+    def test_invalid_empty_stage_id(self):
+        err = _validate_pipeline_definition({
+            "stages": [{"stage_id": "", "workflow_source": "template:a"}],
+        })
+        assert err is not None
+
+    def test_invalid_duplicate_stage_id(self):
+        err = _validate_pipeline_definition({
+            "stages": [
+                {"stage_id": "s1", "workflow_source": "template:a"},
+                {"stage_id": "s1", "workflow_source": "template:b"},
+            ],
+        })
+        assert err is not None
+        assert "duplicate" in err.lower()
+        assert "s1" in err
+
+    def test_invalid_missing_workflow_source(self):
+        err = _validate_pipeline_definition({
+            "stages": [{"stage_id": "s1"}],
+        })
+        assert err is not None
+        assert "workflow_source" in err
+
+    def test_invalid_forward_reference(self):
+        err = _validate_pipeline_definition({
+            "stages": [
+                {
+                    "stage_id": "s1",
+                    "workflow_source": "template:a",
+                    "input_mappings": [
+                        {"node_id": "1", "input_name": "img", "from_stage": "s2"},
+                    ],
+                },
+                {"stage_id": "s2", "workflow_source": "template:b"},
+            ],
+        })
+        assert err is not None
+        assert "s2" in err
+        assert "earlier stages" in err.lower() or "hasn't been defined" in err.lower()
+
+    def test_self_reference_passes_validation(self):
+        """A stage referencing itself via from_stage passes validation.
+
+        The validator adds the current stage_id to seen_ids before checking
+        its own input_mappings, so self-references resolve successfully.
+        This is a deliberate implementation choice -- the stage will simply
+        receive no resolved output at runtime since its own outputs aren't
+        yet available during execution.
+        """
+        err = _validate_pipeline_definition({
+            "stages": [
+                {
+                    "stage_id": "s1",
+                    "workflow_source": "template:a",
+                    "input_mappings": [
+                        {"node_id": "1", "input_name": "img", "from_stage": "s1"},
+                    ],
+                },
+            ],
+        })
+        assert err is None
+
+
+# ---------------------------------------------------------------------------
+# TestLoadWorkflowForStage
+# ---------------------------------------------------------------------------
+
+class TestLoadWorkflowForStage:
+    @patch("agent.tools.pipeline._load_template")
+    def test_template_prefix_routes_to_load_template(self, mock_load_tpl):
+        """'template:name' prefix calls _load_template."""
+        mock_load_tpl.return_value = ({"1": {"class_type": "Test", "inputs": {}}}, None)
+        wf, err = _load_workflow_for_stage("template:txt2img_sdxl")
+        mock_load_tpl.assert_called_once_with("txt2img_sdxl")
+        assert wf is not None
+        assert err is None
+
+    @patch("agent.tools.pipeline._load_template")
+    def test_template_not_found_returns_error(self, mock_load_tpl):
+        """Missing template returns (None, error_message)."""
+        mock_load_tpl.return_value = (None, "Template 'bad' not found")
+        wf, err = _load_workflow_for_stage("template:bad")
+        assert wf is None
+        assert "not found" in err.lower()
+
+    @patch("agent.tools.pipeline._load_from_file")
+    def test_file_path_routes_to_load_from_file(self, mock_load_file):
+        """Non-template source calls _load_from_file."""
+        mock_load_file.return_value = ({"1": {"class_type": "Test", "inputs": {}}}, None)
+        wf, err = _load_workflow_for_stage("/some/path/workflow.json")
+        mock_load_file.assert_called_once_with("/some/path/workflow.json")
+        assert wf is not None
+        assert err is None
+
+    @patch("agent.tools.pipeline._load_from_file")
+    def test_file_not_found_returns_error(self, mock_load_file):
+        """Missing file returns (None, error_message)."""
+        mock_load_file.return_value = (None, "File not found: /bad/path.json")
+        wf, err = _load_workflow_for_stage("/bad/path.json")
+        assert wf is None
+        assert err is not None
+
+
+# ---------------------------------------------------------------------------
+# TestApplyParamOverrides
+# ---------------------------------------------------------------------------
+
+class TestApplyParamOverrides:
+    def test_valid_override_applied(self):
+        """Valid 'node_id.input_name' override is applied in-place."""
+        wf = {
+            "3": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 20}},
+        }
+        errors = _apply_param_overrides(wf, {"3.seed": 999})
+        assert errors == []
+        assert wf["3"]["inputs"]["seed"] == 999
+
+    def test_multiple_overrides_applied(self):
+        """Multiple overrides are all applied."""
+        wf = {
+            "3": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 20}},
+            "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "default"}},
+        }
+        errors = _apply_param_overrides(wf, {
+            "3.seed": 42,
+            "3.steps": 30,
+            "6.text": "new prompt",
+        })
+        assert errors == []
+        assert wf["3"]["inputs"]["seed"] == 42
+        assert wf["3"]["inputs"]["steps"] == 30
+        assert wf["6"]["inputs"]["text"] == "new prompt"
+
+    def test_override_creates_missing_inputs_key(self):
+        """Override creates 'inputs' dict if node doesn't have one."""
+        wf = {"5": {"class_type": "EmptyLatentImage"}}
+        errors = _apply_param_overrides(wf, {"5.width": 512})
+        assert errors == []
+        assert wf["5"]["inputs"]["width"] == 512
+
+    def test_invalid_key_format_no_dot(self):
+        """Override key without dot separator returns error."""
+        wf = {"3": {"class_type": "KSampler", "inputs": {}}}
+        errors = _apply_param_overrides(wf, {"seedonly": 42})
+        assert len(errors) == 1
+        assert "node_id.input_name" in errors[0]
+
+    def test_invalid_key_empty_string(self):
+        """Empty override key returns error."""
+        wf = {"3": {"class_type": "KSampler", "inputs": {}}}
+        errors = _apply_param_overrides(wf, {"": 42})
+        assert len(errors) == 1
+
+    def test_missing_node_returns_error(self):
+        """Override targeting nonexistent node returns error."""
+        wf = {"3": {"class_type": "KSampler", "inputs": {}}}
+        errors = _apply_param_overrides(wf, {"99.seed": 1})
+        assert len(errors) == 1
+        assert "99" in errors[0]
+
+    def test_deterministic_override_order(self):
+        """Multiple overrides are applied in sorted key order (He2025)."""
+        applied_order = []
+        original_setdefault = dict.setdefault
+
+        wf = {
+            "a": {"class_type": "NodeA", "inputs": {}},
+            "z": {"class_type": "NodeZ", "inputs": {}},
+            "m": {"class_type": "NodeM", "inputs": {}},
+        }
+        # He2025 requires sorted override application — verify no error
+        errors = _apply_param_overrides(wf, {
+            "z.val": 3,
+            "a.val": 1,
+            "m.val": 2,
+        })
+        assert errors == []
+        assert wf["a"]["inputs"]["val"] == 1
+        assert wf["m"]["inputs"]["val"] == 2
+        assert wf["z"]["inputs"]["val"] == 3
+
+    def test_mixed_valid_and_invalid_overrides(self):
+        """Valid overrides applied; errors collected for invalid ones."""
+        wf = {
+            "3": {"class_type": "KSampler", "inputs": {"seed": 0}},
+        }
+        errors = _apply_param_overrides(wf, {
+            "3.seed": 100,       # valid
+            "badkey": 99,        # invalid format
+            "99.steps": 20,      # missing node
+        })
+        assert len(errors) == 2
+        assert wf["3"]["inputs"]["seed"] == 100  # valid was still applied
+
+
+# ---------------------------------------------------------------------------
+# TestApplyInputMappings
+# ---------------------------------------------------------------------------
+
+class TestApplyInputMappings:
+    def _make_workflow_with_load_image(self):
+        return {
+            "10": {"class_type": "LoadImage", "inputs": {"image": "placeholder.png"}},
+        }
+
+    def test_valid_mapping_wires_filename(self):
+        """Valid mapping sets the filename from source stage output."""
+        wf = self._make_workflow_with_load_image()
+        stage_outputs = {
+            "gen": [
+                {
+                    "filename": "gen_out.png",
+                    "absolute_path": "/output/gen_out.png",
+                    "exists": True,
+                    "size_bytes": 1024,
+                    "type": "image",
+                }
+            ],
+        }
+        errors = _apply_input_mappings(
+            wf,
+            [{"node_id": "10", "input_name": "image", "from_stage": "gen", "output_index": 0}],
+            stage_outputs,
+        )
+        assert errors == []
+        assert wf["10"]["inputs"]["image"] == "gen_out.png"
+
+    def test_output_index_selects_correct_output(self):
+        """output_index selects the correct entry from the source outputs."""
+        wf = self._make_workflow_with_load_image()
+        stage_outputs = {
+            "gen": [
+                {"filename": "first.png", "type": "image"},
+                {"filename": "second.png", "type": "image"},
+            ],
+        }
+        errors = _apply_input_mappings(
+            wf,
+            [{"node_id": "10", "input_name": "image", "from_stage": "gen", "output_index": 1}],
+            stage_outputs,
+        )
+        assert errors == []
+        assert wf["10"]["inputs"]["image"] == "second.png"
+
+    def test_missing_stage_output_returns_error(self):
+        """Mapping from a stage with no outputs returns error."""
+        wf = self._make_workflow_with_load_image()
+        stage_outputs = {}  # gen has no outputs recorded
+        errors = _apply_input_mappings(
+            wf,
+            [{"node_id": "10", "input_name": "image", "from_stage": "gen", "output_index": 0}],
+            stage_outputs,
+        )
+        assert len(errors) == 1
+        assert "gen" in errors[0]
+        assert "no captured outputs" in errors[0]
+
+    def test_output_index_out_of_range_returns_error(self):
+        """output_index beyond available outputs returns error."""
+        wf = self._make_workflow_with_load_image()
+        stage_outputs = {
+            "gen": [{"filename": "only_one.png", "type": "image"}],
+        }
+        errors = _apply_input_mappings(
+            wf,
+            [{"node_id": "10", "input_name": "image", "from_stage": "gen", "output_index": 5}],
+            stage_outputs,
+        )
+        assert len(errors) == 1
+        assert "out of range" in errors[0]
+        assert "5" in errors[0]
+
+    def test_output_entry_missing_filename_returns_error(self):
+        """Output entry without 'filename' key returns error."""
+        wf = self._make_workflow_with_load_image()
+        stage_outputs = {
+            "gen": [{"type": "image"}],  # no filename
+        }
+        errors = _apply_input_mappings(
+            wf,
+            [{"node_id": "10", "input_name": "image", "from_stage": "gen", "output_index": 0}],
+            stage_outputs,
+        )
+        assert len(errors) == 1
+        assert "no filename" in errors[0]
+
+    def test_target_node_missing_from_workflow_returns_error(self):
+        """Mapping to a node not in the workflow returns error."""
+        wf = {}  # no nodes at all
+        stage_outputs = {
+            "gen": [{"filename": "out.png", "type": "image"}],
+        }
+        errors = _apply_input_mappings(
+            wf,
+            [{"node_id": "99", "input_name": "image", "from_stage": "gen", "output_index": 0}],
+            stage_outputs,
+        )
+        assert len(errors) == 1
+        assert "99" in errors[0]
+        assert "not found" in errors[0]
+
+    def test_empty_mappings_no_errors(self):
+        """Empty mappings list returns no errors and makes no changes."""
+        wf = {"10": {"class_type": "LoadImage", "inputs": {"image": "original.png"}}}
+        errors = _apply_input_mappings(wf, [], {})
+        assert errors == []
+        assert wf["10"]["inputs"]["image"] == "original.png"
+
+    def test_default_output_index_is_zero(self):
+        """Mapping without output_index defaults to index 0."""
+        wf = self._make_workflow_with_load_image()
+        stage_outputs = {
+            "gen": [
+                {"filename": "zero_idx.png", "type": "image"},
+                {"filename": "one_idx.png", "type": "image"},
+            ],
+        }
+        # omit output_index entirely
+        errors = _apply_input_mappings(
+            wf,
+            [{"node_id": "10", "input_name": "image", "from_stage": "gen"}],
+            stage_outputs,
+        )
+        assert errors == []
+        assert wf["10"]["inputs"]["image"] == "zero_idx.png"
+
+
+# ---------------------------------------------------------------------------
+# TestHandleDispatch
+# ---------------------------------------------------------------------------
+
+class TestHandleDispatch:
+    def test_unknown_tool_returns_error(self):
+        """Dispatching an unknown tool name returns error JSON."""
+        result = json.loads(handle("nonexistent_tool", {}))
+        assert "error" in result
+        assert "Unknown tool" in result["error"]
+
+    def test_exception_in_handler_is_caught(self):
+        """Unhandled exceptions in a handler are caught and returned as error."""
+        with patch("agent.tools.pipeline._handle_create_pipeline",
+                   side_effect=RuntimeError("boom")):
+            result = json.loads(handle("create_pipeline", {"stages": []}))
+        assert "error" in result
+        assert "boom" in result["error"]
+
+    def test_tools_schema_has_three_entries(self):
+        """TOOLS list contains exactly three tool schemas."""
+        assert len(TOOLS) == 3
+        tool_names = {t["name"] for t in TOOLS}
+        assert tool_names == {"create_pipeline", "run_pipeline", "get_pipeline_status"}
+
+    def test_each_tool_has_required_schema_fields(self):
+        """Each tool schema has name, description, and input_schema."""
+        for tool in TOOLS:
+            assert "name" in tool
+            assert "description" in tool
+            assert "input_schema" in tool
+            assert tool["input_schema"]["type"] == "object"

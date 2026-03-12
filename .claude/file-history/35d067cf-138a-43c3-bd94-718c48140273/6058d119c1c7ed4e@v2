@@ -1,0 +1,244 @@
+"""Tests for Agent 4: Routing Rebuild.
+
+Covers cascade, indexer, dual-path, and provenance.
+"""
+
+from src.lossless.constants import FLOAT_TOLERANCE, PHASES, PHASE_COUNT
+from src.lossless.injection.state import InjectionState
+from src.lossless.routing.cascade import (
+    CascadeResult,
+    SignalFingerprint,
+    evaluate_cascade,
+)
+from src.lossless.routing.indexer import LightningIndexer
+from src.lossless.routing.dual_path import evaluate_dual_path
+from src.lossless.routing.provenance import ProvenanceTracker
+
+
+# ── Determinism Tests ────────────────────────────────────────────────
+
+
+class TestDeterminism:
+    def test_same_signal_same_route_100x(self):
+        """Same signal -> same route, 100 times."""
+        signal = SignalFingerprint(
+            emotional_valence="calm",
+            domain_signal="vfx",
+            energy_level="high",
+            urgency="normal",
+        )
+        baseline = evaluate_cascade(signal)
+        baseline_selected = baseline.selected_phases
+
+        for _ in range(100):
+            result = evaluate_cascade(signal)
+            assert result.selected_phases == baseline_selected
+            assert result.signal_hash == baseline.signal_hash
+
+    def test_different_signals_different_hashes(self):
+        s1 = SignalFingerprint(emotional_valence="calm")
+        s2 = SignalFingerprint(emotional_valence="frustrated")
+        assert s1.to_hash() != s2.to_hash()
+
+
+# ── Cascade Tests ────────────────────────────────────────────────────
+
+
+class TestCascade:
+    def test_cascade_returns_all_phases(self):
+        signal = SignalFingerprint()
+        result = evaluate_cascade(signal)
+        assert len(result.phase_scores) == PHASE_COUNT
+
+    def test_cascade_scores_in_order(self):
+        """Phase scores follow canonical PHASES order."""
+        signal = SignalFingerprint()
+        result = evaluate_cascade(signal)
+        for i, ps in enumerate(result.phase_scores):
+            assert ps.phase == PHASES[i]
+
+    def test_cascade_dense_all_evaluated(self):
+        signal = SignalFingerprint()
+        result = evaluate_cascade(signal)
+        assert result.routing_mode == "dense"
+        for ps in result.phase_scores:
+            assert ps.evaluated
+
+    def test_cascade_sparse_partial_evaluation(self):
+        signal = SignalFingerprint()
+        active = ["KNOWLEDGE", "SAFETY", "EXPERT"]
+        result = evaluate_cascade(signal, active_phases=active)
+        assert result.routing_mode == "sparse"
+        for ps in result.phase_scores:
+            if ps.phase in active:
+                assert ps.evaluated
+            else:
+                assert not ps.evaluated
+
+    def test_cascade_selects_top_3(self):
+        signal = SignalFingerprint()
+        result = evaluate_cascade(signal)
+        assert len(result.selected_phases) <= 3
+
+
+# ── Indexer Tests ────────────────────────────────────────────────────
+
+
+class TestIndexer:
+    def test_calibration_period_uses_dense(self):
+        """First 10 exchanges always use dense."""
+        indexer = LightningIndexer()
+        signal = SignalFingerprint()
+        for _ in range(10):
+            phases = indexer.select_phases(signal)
+            assert phases is None  # None = dense
+
+    def test_dissolved_always_dense(self):
+        """Dissolved routing always uses dense."""
+        indexer = LightningIndexer()
+        signal = SignalFingerprint()
+        # Burn through calibration
+        for _ in range(11):
+            indexer.select_phases(signal)
+        phases = indexer.select_phases(signal, routing_mode="dissolved")
+        assert phases is None
+
+    def test_known_fingerprint_returns_sparse(self):
+        """Known fingerprint returns sparse phases after calibration."""
+        indexer = LightningIndexer()
+        signal = SignalFingerprint(
+            emotional_valence="calm",
+            domain_signal="general",
+            energy_level="high",
+            urgency="normal",
+        )
+        # Burn through calibration
+        for _ in range(11):
+            indexer.select_phases(signal)
+        phases = indexer.select_phases(signal)
+        assert phases is not None
+        assert len(phases) == 3
+
+    def test_novel_fingerprint_promoted_after_3(self):
+        """Novel fingerprint becomes sparse after 3 appearances."""
+        indexer = LightningIndexer()
+        # Use a known fingerprint for calibration burn
+        burn_signal = SignalFingerprint(
+            emotional_valence="calm",
+            domain_signal="general",
+            energy_level="high",
+            urgency="normal",
+        )
+        for _ in range(11):
+            indexer.select_phases(burn_signal)
+
+        # Now use a truly novel fingerprint
+        novel_signal = SignalFingerprint(
+            emotional_valence="energized",
+            domain_signal="web",
+            energy_level="low",
+            urgency="exploratory",
+        )
+        # First 3 uses: dense (novel, not yet promoted)
+        for _ in range(3):
+            phases = indexer.select_phases(novel_signal)
+            assert phases is None
+        # After 3: promoted to sparse
+        phases = indexer.select_phases(novel_signal)
+        assert phases is not None
+
+    def test_reset_clears_state(self):
+        indexer = LightningIndexer()
+        signal = SignalFingerprint()
+        for _ in range(15):
+            indexer.select_phases(signal)
+        indexer.reset()
+        # After reset, back to calibration
+        phases = indexer.select_phases(signal)
+        assert phases is None  # dense during calibration
+
+
+# ── Dual Path Tests ──────────────────────────────────────────────────
+
+
+class TestDualPath:
+    def test_clean_route_always_present(self):
+        """Clean route exists at all profiles."""
+        signal = SignalFingerprint()
+        for profile in ["none", "microdose", "perceptual", "classical", "mdma"]:
+            state = InjectionState()
+            if profile != "none":
+                state.activate(profile)
+                # Advance a few exchanges to build alpha
+                for _ in range(5):
+                    state.advance_exchange()
+            result = evaluate_dual_path(signal, state)
+            assert result.clean_route is not None
+            assert result.clean_route.selected_phases
+
+    def test_provenance_recorded(self):
+        """Every routing decision has provenance."""
+        signal = SignalFingerprint()
+        state = InjectionState()
+        tracker = ProvenanceTracker()
+        result = evaluate_dual_path(signal, state, provenance_tracker=tracker)
+        assert len(result.provenance) >= 1
+        rec = result.provenance[0]
+        assert rec.clean_selected
+        assert rec.dominant_path in ("clean", "dissolved")
+
+    def test_dissolved_evaluates_all_phases(self):
+        """Dissolved routing evaluates all 10 phases."""
+        signal = SignalFingerprint()
+        state = InjectionState()
+        state.activate("classical")
+        for _ in range(5):
+            state.advance_exchange()
+        result = evaluate_dual_path(signal, state)
+        # Dissolved route should have all phases evaluated
+        for ps in result.dissolved_route.phase_scores:
+            assert ps.evaluated
+
+    def test_clean_route_recoverable(self):
+        """Clean route can be recovered from dual-path result."""
+        signal = SignalFingerprint()
+        state = InjectionState()
+        state.activate("classical")
+        for _ in range(5):
+            state.advance_exchange()
+        result = evaluate_dual_path(signal, state)
+        # Clean route is always accessible
+        clean_selected = result.clean_route.selected_phases
+        assert len(clean_selected) > 0
+
+
+# ── Provenance Tests ─────────────────────────────────────────────────
+
+
+class TestProvenance:
+    def test_tracker_accumulates_records(self):
+        tracker = ProvenanceTracker()
+        signal = SignalFingerprint()
+        state = InjectionState()
+        for _ in range(5):
+            evaluate_dual_path(signal, state, provenance_tracker=tracker)
+        records = tracker.get_records()
+        assert len(records) == 5
+
+    def test_summary_counts(self):
+        tracker = ProvenanceTracker()
+        signal = SignalFingerprint()
+        state = InjectionState()
+        evaluate_dual_path(signal, state, provenance_tracker=tracker)
+        summary = tracker.summary()
+        assert summary["total_decisions"] == 1
+        assert summary["clean_dominant_count"] == 1
+
+    def test_clean_routes_always_available(self):
+        tracker = ProvenanceTracker()
+        signal = SignalFingerprint()
+        state = InjectionState()
+        evaluate_dual_path(signal, state, provenance_tracker=tracker)
+        clean_routes = tracker.get_clean_routes()
+        assert len(clean_routes) == 1
+        assert len(clean_routes[0]) > 0

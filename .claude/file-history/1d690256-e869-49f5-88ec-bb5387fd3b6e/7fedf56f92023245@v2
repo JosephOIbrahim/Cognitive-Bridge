@@ -1,0 +1,84 @@
+"""Cook TOPS with per-frame work items using a wedge upstream."""
+
+def run():
+    import hou
+    import os
+    import time
+    import tempfile
+
+    # Save HIP
+    hip_path = os.path.join(tempfile.gettempdir(), "synapse_farm_test.hip")
+
+    # Clean TOPS
+    topnet = hou.node("/obj/renderfarm")
+    for c in topnet.children():
+        if c.type().name() != "localscheduler":
+            c.destroy()
+
+    # Configure ROP for single frame (we drive frames from TOPS)
+    rop = hou.node("/out/test_render")
+    rop.parm("trange").set(0)  # Render current frame
+    rop.parm("soho_foreground").set(0)
+
+    outdir = os.path.join(tempfile.gettempdir(), "synapse_farm_tops2")
+    os.makedirs(outdir, exist_ok=True)
+    outdir_fwd = outdir.replace("\\", "/")
+    # Clear old files
+    for f in os.listdir(outdir):
+        os.remove(os.path.join(outdir, f))
+    rop.parm("outputimage").set(outdir_fwd + "/frame_$F4.jpg")
+
+    # Create a Python Processor to generate 3 frame work items
+    gen = topnet.createNode("pythonprocessor", "gen_frames")
+    gen.parm("pdg_workitemgeneration").set(2)
+    # Set the generate callback to create 3 work items
+    gen_code = '''
+# onGenerate callback
+for frame_num in range(1, 4):
+    new_item = item_holder.addWorkItem()
+    new_item.setFrame(frame_num)
+    new_item.setIntAttrib("frame", frame_num)
+'''
+    gen.parm("generate").set(gen_code)
+
+    # ROP Fetch downstream
+    ropfetch = topnet.createNode("ropfetch", "render_frames")
+    ropfetch.parm("roppath").set("/out/test_render")
+    ropfetch.setInput(0, gen)
+    # Set to use upstream frame
+    ropfetch.parm("pdg_workitemgeneration").set(1)  # Dynamic (from upstream)
+
+    topnet.layoutChildren()
+
+    # Save
+    hou.hipFile.save(hip_path)
+
+    # Cook
+    ropfetch.dirtyAllTasks(True)
+    t0 = time.time()
+    try:
+        ropfetch.cookWorkItems(block=True)
+        dt = time.time() - t0
+
+        pdg_node = ropfetch.getPDGNode()
+        items = pdg_node.workItems if pdg_node else []
+        parts = ["TOPS per-frame cook: {:.1f}s, {} work items".format(dt, len(items))]
+        for wi in items:
+            parts.append("  frame={} state={}".format(wi.frame, wi.state))
+
+        # Check files
+        files = sorted(os.listdir(outdir))
+        parts.append("{} files: {}".format(len(files), files))
+        total_bytes = 0
+        for f in files:
+            sz = os.path.getsize(os.path.join(outdir, f))
+            total_bytes += sz
+            parts.append("  {} = {} bytes".format(f, sz))
+
+        parts.append("Total output: {} bytes".format(total_bytes))
+        return "\n".join(parts)
+    except Exception as e:
+        dt = time.time() - t0
+        return "Error after {:.1f}s: {}".format(dt, str(e))
+
+result = run()

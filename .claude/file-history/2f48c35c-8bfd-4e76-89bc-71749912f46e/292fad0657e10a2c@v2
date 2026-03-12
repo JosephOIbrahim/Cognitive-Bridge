@@ -1,0 +1,138 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import styles from "./IntroAnimation.module.css";
+
+const GRID_POSITIONS = [0, 1 / 6, 1 / 3, 1 / 2, 2 / 3, 5 / 6, 1];
+const SESSION_KEY = "jaime-intro-played";
+
+// Timeline (ms)
+const T_GRID_START = 100;
+const T_GRID_STAGGER = 60;
+const T_NAME = 800;
+const T_SUBTITLE = 1400;
+const T_DATE = 1600;
+const T_FADE = 2800;
+const T_CLEANUP = 3500;
+
+export function IntroAnimation() {
+  const [phase, setPhase] = useState<
+    "check" | "playing" | "fadeOut" | "done"
+  >("check");
+  const [gridVisible, setGridVisible] = useState(false);
+  const [nameVisible, setNameVisible] = useState(false);
+  const [subtitleVisible, setSubtitleVisible] = useState(false);
+  const [dateVisible, setDateVisible] = useState(false);
+
+  const skipIntro = useCallback(() => {
+    setPhase("done");
+    try {
+      sessionStorage.setItem(SESSION_KEY, "1");
+    } catch {
+      // sessionStorage unavailable
+    }
+  }, []);
+
+  useEffect(() => {
+    // Check if already played this session
+    try {
+      if (sessionStorage.getItem(SESSION_KEY)) {
+        setPhase("done");
+        return;
+      }
+    } catch {
+      // sessionStorage unavailable, play anyway
+    }
+
+    // Check reduced motion preference
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      skipIntro();
+      return;
+    }
+
+    setPhase("playing");
+
+    // Grid lines draw
+    const t1 = setTimeout(() => setGridVisible(true), T_GRID_START);
+    // Name reveals
+    const t2 = setTimeout(() => setNameVisible(true), T_NAME);
+    // Subtitle reveals
+    const t3 = setTimeout(() => setSubtitleVisible(true), T_SUBTITLE);
+    // Date fades in
+    const t4 = setTimeout(() => setDateVisible(true), T_DATE);
+    // Fade out overlay
+    const t5 = setTimeout(() => setPhase("fadeOut"), T_FADE);
+    // Remove from DOM
+    const t6 = setTimeout(() => {
+      setPhase("done");
+      try {
+        sessionStorage.setItem(SESSION_KEY, "1");
+      } catch {
+        // sessionStorage unavailable
+      }
+    }, T_CLEANUP);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+      clearTimeout(t5);
+      clearTimeout(t6);
+    };
+  }, [skipIntro]);
+
+  if (phase === "done") return null;
+
+  return (
+    <div
+      className={`${styles.overlay} ${phase === "fadeOut" ? styles.fadeOut : ""}`}
+      aria-hidden="true"
+    >
+      {/* Grid lines */}
+      <div className={styles.gridContainer}>
+        <div className={styles.gridInner}>
+          <div className={styles.gridTrack}>
+            {GRID_POSITIONS.map((pos, i) => (
+              <div
+                key={i}
+                className={`${styles.gridLine} ${gridVisible ? styles.lineVisible : ""}`}
+                style={{
+                  left: `${pos * 100}%`,
+                  animationDelay: gridVisible
+                    ? `${i * T_GRID_STAGGER}ms`
+                    : undefined,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Center text */}
+      <div className={styles.content}>
+        <div className={styles.nameMask}>
+          <span
+            className={`${styles.name} ${nameVisible ? styles.nameVisible : ""}`}
+          >
+            Jaime Ibrahim
+          </span>
+        </div>
+        <div className={styles.subtitleMask}>
+          <span
+            className={`${styles.subtitle} ${subtitleVisible ? styles.subtitleVisible : ""}`}
+          >
+            Brand Design Director
+          </span>
+        </div>
+      </div>
+
+      {/* Bottom date */}
+      <span
+        className={`${styles.portfolioDate} ${dateVisible ? styles.dateVisible : ""}`}
+      >
+        Portfolio_26
+      </span>
+    </div>
+  );
+}

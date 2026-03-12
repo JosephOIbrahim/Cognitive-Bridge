@@ -1,0 +1,210 @@
+"""Custom nodes for the 3D Viewport Bridge.
+
+ViewportCamera: Reads camera_state.json written by the CarWash-2 viewport
+and outputs a LOAD3D_CAMERA dict for downstream nodes (ControlNet, etc).
+"""
+
+import json
+import os
+import time
+
+
+# Default camera state file path (written by viewport bridge server)
+_DEFAULT_STATE_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "..",
+    "camera_state.json",
+)
+
+# Also check the viewport working directory
+_VIEWPORT_STATE_FILE = os.path.join(
+    os.path.expanduser("~"), "comfyui_3D_viewport", "camera_state.json"
+)
+
+
+def _find_camera_state_file(custom_path: str = "") -> str | None:
+    """Find the camera_state.json file from the viewport."""
+    candidates = []
+    if custom_path:
+        candidates.append(custom_path)
+    candidates.extend([
+        _VIEWPORT_STATE_FILE,
+        os.path.join(os.getcwd(), "camera_state.json"),
+        _DEFAULT_STATE_FILE,
+    ])
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _read_camera_state(path: str, max_age: float = 30.0) -> dict | None:
+    """Read and validate camera state JSON.
+
+    Returns None if file doesn't exist, is too old, or is invalid.
+    """
+    if not os.path.isfile(path):
+        return None
+
+    # Check staleness
+    age = time.time() - os.path.getmtime(path)
+    if age > max_age:
+        return None
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    # Validate required fields
+    required = ("position", "target", "up", "fov")
+    if not all(k in data for k in required):
+        return None
+
+    return data
+
+
+class ViewportCamera:
+    """Read camera state from the CarWash-2 3D Viewport.
+
+    Outputs a structured camera dict (LOAD3D_CAMERA) that downstream nodes
+    can use for camera-controlled ControlNet passes, depth rendering, etc.
+
+    The viewport writes camera_state.json on every camera change. This node
+    reads that file. No network connection required.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {},
+            "optional": {
+                "camera_file": ("STRING", {
+                    "default": "",
+                    "tooltip": (
+                        "Path to camera_state.json. Leave empty for auto-detect."
+                    ),
+                }),
+                "max_age_seconds": ("FLOAT", {
+                    "default": 30.0,
+                    "min": 1.0,
+                    "max": 3600.0,
+                    "step": 1.0,
+                    "tooltip": (
+                        "Maximum age of camera data in seconds. "
+                        "Returns default camera if data is stale."
+                    ),
+                }),
+            },
+        }
+
+    RETURN_TYPES = ("LOAD3D_CAMERA",)
+    RETURN_NAMES = ("camera",)
+    FUNCTION = "read_camera"
+    CATEGORY = "3D/Viewport"
+    DESCRIPTION = (
+        "Reads camera state from the CarWash-2 3D Viewport. "
+        "Connect to ControlNet depth/normal nodes for camera-controlled generation."
+    )
+
+    def read_camera(
+        self,
+        camera_file: str = "",
+        max_age_seconds: float = 30.0,
+    ) -> tuple[dict]:
+        path = _find_camera_state_file(camera_file)
+
+        if path is None:
+            print("[ViewportCamera] No camera_state.json found. Using default camera.")
+            return (self._default_camera(),)
+
+        data = _read_camera_state(path, max_age=max_age_seconds)
+        if data is None:
+            print(f"[ViewportCamera] Camera data stale or invalid at {path}. Using default.")
+            return (self._default_camera(),)
+
+        print(f"[ViewportCamera] Loaded camera from {path}")
+        return (data,)
+
+    @staticmethod
+    def _default_camera() -> dict:
+        return {
+            "position": [0.0, 1.0, 5.0],
+            "target": [0.0, 0.3, 0.0],
+            "up": [0.0, 1.0, 0.0],
+            "fov": 45.0,
+            "focal_length": 50.0,
+            "near": 0.1,
+            "far": 100.0,
+        }
+
+
+class ViewportCameraInfo:
+    """Display viewport camera information as text.
+
+    Reads the LOAD3D_CAMERA dict and formats it as a human-readable string
+    showing position, target, FOV, and any cinematographic extensions.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "camera": ("LOAD3D_CAMERA",),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("info",)
+    FUNCTION = "format_info"
+    CATEGORY = "3D/Viewport"
+    DESCRIPTION = "Format LOAD3D_CAMERA data as a human-readable string."
+
+    def format_info(self, camera: dict) -> tuple[str]:
+        lines = []
+
+        pos = camera.get("position", [0, 0, 0])
+        tgt = camera.get("target", [0, 0, 0])
+        fov = camera.get("fov", 45.0)
+        focal = camera.get("focal_length", 0)
+
+        lines.append(f"Position: ({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f})")
+        lines.append(f"Target:   ({tgt[0]:.2f}, {tgt[1]:.2f}, {tgt[2]:.2f})")
+        lines.append(f"FOV:      {fov:.1f} deg")
+        if focal:
+            lines.append(f"Focal:    {focal:.1f} mm")
+
+        # Cinematographic extensions
+        cam_model = camera.get("carwash_camera_model")
+        lens_model = camera.get("carwash_lens_model")
+        if cam_model:
+            lines.append(f"Camera:   {cam_model}")
+        if lens_model:
+            lines.append(f"Lens:     {lens_model}")
+
+        sensor_w = camera.get("carwash_sensor_width")
+        sensor_h = camera.get("carwash_sensor_height")
+        if sensor_w and sensor_h:
+            lines.append(f"Sensor:   {sensor_w:.2f} x {sensor_h:.2f} mm")
+
+        squeeze = camera.get("carwash_squeeze")
+        if squeeze and squeeze != 1.0:
+            lines.append(f"Squeeze:  {squeeze:.1f}x (anamorphic)")
+
+        return ("\n".join(lines),)
+
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+
+NODE_CLASS_MAPPINGS = {
+    "ViewportCamera": ViewportCamera,
+    "ViewportCameraInfo": ViewportCameraInfo,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "ViewportCamera": "Viewport Camera (3D Bridge)",
+    "ViewportCameraInfo": "Viewport Camera Info",
+}

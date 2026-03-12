@@ -1,0 +1,188 @@
+"""Tests for CUTLASS benchmark caching and benchmark-driven GPU Specialist recs."""
+
+import json
+import time
+from unittest.mock import patch
+
+import pytest
+
+from acceleration.cutlass_integration import (
+    CUTLASSBenchmarkCache,
+    CUTLASSBenchmarkResult,
+    load_cached_benchmarks,
+    save_benchmark_cache,
+)
+from optimizer.experts.gpu_specialist import GPUSpecialist
+from optimizer.models import OptimizationAction, SystemContext, WorkflowMode
+
+
+# --- Benchmark Cache ---
+
+class TestCUTLASSBenchmarkCache:
+    def test_valid_cache(self):
+        cache = CUTLASSBenchmarkCache(
+            gpu_name="NVIDIA GeForce RTX 4090",
+            driver_version="591.74",
+            cuda_version="12.8",
+            timestamp=time.time(),
+        )
+        assert cache.is_valid("NVIDIA GeForce RTX 4090", "591.74")
+
+    def test_invalid_hardware_mismatch(self):
+        cache = CUTLASSBenchmarkCache(
+            gpu_name="NVIDIA GeForce RTX 4090",
+            driver_version="591.74",
+            cuda_version="12.8",
+            timestamp=time.time(),
+        )
+        assert not cache.is_valid("NVIDIA GeForce RTX 3090", "591.74")
+
+    def test_invalid_driver_mismatch(self):
+        cache = CUTLASSBenchmarkCache(
+            gpu_name="NVIDIA GeForce RTX 4090",
+            driver_version="591.74",
+            cuda_version="12.8",
+            timestamp=time.time(),
+        )
+        assert not cache.is_valid("NVIDIA GeForce RTX 4090", "560.00")
+
+    def test_invalid_expired(self):
+        cache = CUTLASSBenchmarkCache(
+            gpu_name="NVIDIA GeForce RTX 4090",
+            driver_version="591.74",
+            cuda_version="12.8",
+            timestamp=time.time() - 8 * 24 * 3600,  # 8 days ago
+        )
+        assert not cache.is_valid("NVIDIA GeForce RTX 4090", "591.74")
+
+    def test_save_load_roundtrip(self, tmp_path):
+        cache_file = tmp_path / "cache.json"
+        results = [
+            CUTLASSBenchmarkResult(
+                precision="fp32", matrix_size=4096,
+                tflops=72.5, theoretical_peak=82.6,
+                efficiency_pct=87.8, time_ms=1.89,
+            ),
+            CUTLASSBenchmarkResult(
+                precision="fp16", matrix_size=4096,
+                tflops=280.1, theoretical_peak=330.3,
+                efficiency_pct=84.8, time_ms=0.98,
+            ),
+        ]
+        cache = CUTLASSBenchmarkCache(
+            gpu_name="NVIDIA GeForce RTX 4090",
+            driver_version="591.74",
+            cuda_version="12.8",
+            timestamp=time.time(),
+            results=results,
+        )
+
+        with patch("acceleration.cutlass_integration._CACHE_PATH", cache_file):
+            save_benchmark_cache(cache)
+            loaded = load_cached_benchmarks()
+
+        assert loaded is not None
+        assert loaded.gpu_name == cache.gpu_name
+        assert len(loaded.results) == 2
+        assert loaded.results[0].precision == "fp32"
+        assert loaded.results[0].tflops == 72.5
+
+    def test_load_missing_file(self, tmp_path):
+        cache_file = tmp_path / "nonexistent.json"
+        with patch("acceleration.cutlass_integration._CACHE_PATH", cache_file):
+            assert load_cached_benchmarks() is None
+
+    def test_load_corrupt_file(self, tmp_path):
+        cache_file = tmp_path / "bad.json"
+        cache_file.write_text("not json at all", encoding="utf-8")
+        with patch("acceleration.cutlass_integration._CACHE_PATH", cache_file):
+            assert load_cached_benchmarks() is None
+
+    def test_sort_keys_determinism(self, tmp_path):
+        """He2025: JSON output must use sort_keys=True."""
+        cache_file = tmp_path / "cache.json"
+        cache = CUTLASSBenchmarkCache(
+            gpu_name="RTX 4090",
+            driver_version="591.74",
+            cuda_version="12.8",
+            timestamp=1000000.0,
+            results=[],
+        )
+        with patch("acceleration.cutlass_integration._CACHE_PATH", cache_file):
+            save_benchmark_cache(cache)
+
+        data = json.loads(cache_file.read_text(encoding="utf-8"))
+        keys = list(data.keys())
+        assert keys == sorted(keys), "JSON keys must be sorted (He2025)"
+
+
+# --- GPU Specialist with Benchmark Data ---
+
+class TestGPUSpecialistWithBenchmarks:
+    def _make_ctx(self, peak_efficiency=None, mem_bw=0.0, env_vars=None, active_apps=None):
+        bd = {}
+        if peak_efficiency is not None:
+            bd["peak_efficiency"] = peak_efficiency
+            bd["memory_bandwidth_gbs"] = mem_bw
+        return SystemContext(
+            env_vars=env_vars or {},
+            benchmark_data=bd,
+            active_apps=active_apps or [],
+        )
+
+    def test_low_tf32_recommends_override(self):
+        ctx = self._make_ctx(peak_efficiency={"tf32": 30.0, "fp32": 80.0, "fp16": 75.0})
+        recs = GPUSpecialist().analyze(ctx)
+        benchmark_recs = [r for r in recs if "Benchmark" in r.description]
+        tf32_recs = [r for r in benchmark_recs if "TF32" in r.description and r.action == OptimizationAction.ENV_VAR]
+        assert len(tf32_recs) == 1
+        assert tf32_recs[0].parameters["name"] == "NVIDIA_TF32_OVERRIDE"
+
+    def test_no_benchmark_data_no_benchmark_recs(self):
+        ctx = self._make_ctx()  # no peak_efficiency
+        recs = GPUSpecialist().analyze(ctx)
+        benchmark_recs = [r for r in recs if "Benchmark" in r.description]
+        assert len(benchmark_recs) == 0
+
+    def test_high_fp32_disabled_tf32_info_rec(self):
+        ctx = self._make_ctx(
+            peak_efficiency={"fp32": 85.0, "tf32": 5.0, "fp16": 70.0},
+            env_vars={"NVIDIA_TF32_OVERRIDE": "1"},  # already set, so ENV_VAR won't fire
+        )
+        recs = GPUSpecialist().analyze(ctx)
+        info_recs = [
+            r for r in recs
+            if "Benchmark" in r.description
+            and r.action == OptimizationAction.INFO
+            and "2x" in r.description
+        ]
+        assert len(info_recs) == 1
+
+    def test_comfyui_fp16_cutlass_path(self):
+        ctx = self._make_ctx(
+            peak_efficiency={"fp16": 85.0, "fp32": 70.0, "tf32": 75.0},
+            active_apps=["comfyui"],
+        )
+        with patch.dict("os.environ", {}, clear=True):
+            recs = GPUSpecialist().analyze(ctx)
+        cutlass_recs = [
+            r for r in recs
+            if "CUTLASS_PATH" in r.description
+        ]
+        assert len(cutlass_recs) == 1
+        assert cutlass_recs[0].parameters["name"] == "CUTLASS_PATH"
+
+    def test_good_perf_no_benchmark_recs(self):
+        """High efficiency across the board should not produce benchmark recs."""
+        ctx = self._make_ctx(
+            peak_efficiency={"fp32": 90.0, "tf32": 85.0, "fp16": 88.0, "bf16": 86.0},
+            mem_bw=900.0,
+            env_vars={
+                "NVIDIA_TF32_OVERRIDE": "1",
+                "CUDNN_BENCHMARK": "1",
+                "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+            },
+        )
+        recs = GPUSpecialist().analyze(ctx)
+        benchmark_recs = [r for r in recs if "Benchmark" in r.description]
+        assert len(benchmark_recs) == 0

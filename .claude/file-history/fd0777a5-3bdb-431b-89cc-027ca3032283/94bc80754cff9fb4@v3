@@ -1,0 +1,54 @@
+# Session Handover
+**Date:** 2026-02-26 18:30
+**Project:** Synapse v5.8.0
+**Working directory:** C:\Users\User\SYNAPSE
+
+## What Was Done
+- Fixed gate card Approve/Reject buttons not responding to clicks (TOP PRIORITY from last session)
+- Root cause: `_ProposalCard` inherited from `QFrame` — Houdini's global QFrame styles intercepted mouse events in PySide6
+- Fix: changed base class to `QWidget`, removed QScrollArea (also eating clicks), used `functools.partial` instead of lambdas, stored buttons as instance vars
+- Added triple approval feedback: green/red flash (600ms), APPROVED/REJECTED status text replacing countdown, chat system message `[+] APPROVED: op (LEVEL)`
+- Moved HALT button next to Disconnect, restyled from red to light orange (FIRE token)
+- Bumped version to 5.8.0 everywhere: pyproject.toml, MCP server.py (was using hardcoded fallback), README badge, CLAUDE.md (project + workspace)
+- Reinstalled editable package (`pip install -e .`) to update pip metadata
+- 2108 tests passing, 3 commits pushed to master
+
+## Decisions Made
+| Decision | Why | Alternatives Considered |
+|----------|-----|------------------------|
+| QWidget instead of QFrame for _ProposalCard | Houdini's global QFrame styles intercept mouse events in PySide6 | setAttribute WA_TransparentForMouseEvents (didn't work), QScrollArea removal alone (insufficient) |
+| Remove QScrollArea for proposals | Also consumed mouse click events on Windows 11 PySide6 | Keep scroll area with event filter (fragile) |
+| functools.partial over lambdas | More reliable signal connections in PySide6/Houdini | Lambda with checked=False default (was already tried, insufficient) |
+| MCP server version from synapse.__version__ | Hardcoded fallback was stale; importlib.metadata lookup was using wrong package name | Keep hardcoded (fragile) |
+| HALT button light orange (FIRE) next to Disconnect | Red looked like an error; next to Disconnect for quick access | Keep red, separate position |
+
+## Blockers / Issues
+- **HumanGate singleton split across module flushes (OPEN)** — pypanel flush creates new HumanGate class; execute_python imports may get a different singleton. Direct card injection works as workaround. Fix: store instance on `hou.session` instead of class variable.
+- **Legacy synapse_panel shows stale version** — panel must be closed/reopened after module flush to pick up new version. Not a code bug, just Houdini's caching.
+- **`get_session_report` server handler doesn't exist** — polling is silent (errors suppressed) but no integrity data flows
+
+## Open Threads
+- [ ] **FIX: HumanGate singleton survival across module flushes** — Store on `hou.session` so both panel and execute_python see same instance. This is why proposals fired via MCP don't show in the gate widget (callbacks=0).
+- [ ] Add `get_session_report` handler to Synapse server for real integrity data
+- [ ] Verify CRITICAL gate level with pulsing border and confirmation dialog
+- [ ] Chat routing latency from previous sessions
+
+## Key Files
+- `python/synapse/panel/gate_widget.py` — _ProposalCard now QWidget (was QFrame), triple feedback in mark_decided(), decision_announced signal
+- `python/synapse/panel/chat_panel.py` — HALT moved next to Disconnect, _on_gate_decision handler for chat messages
+- `python/synapse/panel/styles.py` — HALT button color changed to FIRE orange
+- `python/synapse/mcp/server.py` — Version now imports from synapse.__version__
+- `pyproject.toml` — Version 5.8.0
+- `CLAUDE.md` + `~/CLAUDE.md` — Version references updated
+
+## Session Notes
+- Programmatic `btn.click()` always worked — the issue was purely mouse event delivery
+- `gc.get_objects()` finds zombie GateWidget instances from previous panel opens — always check which one is active
+- Multiple HumanGate singletons coexist after module flush because each flush creates a new class object with its own `_instance`
+- Direct card injection via `obj._add_proposal_card(data)` is the reliable way to test UI until singleton issue is fixed
+- The user wants visible confirmation when approving — subtle state changes (disable/dim) aren't enough
+
+## Commits This Session
+- `2f483d4` fix: gate card buttons unclickable — QFrame to QWidget, version 5.8.0 everywhere
+- `58e2b46` feat: triple feedback on gate approval — flash, status text, chat message
+- `5f7cac5` fix: move HALT button next to Disconnect, restyle light orange

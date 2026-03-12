@@ -1,0 +1,675 @@
+"""
+Stage 9: Export Joy of VEX dataset to Synapse RAG knowledge format.
+
+Reads the final JSONL, deduplicates, routes records into 15 thematic
+markdown reference files, and updates Synapse metadata (semantic_index.json,
+agent_relevance_map.json) via merge -- never overwriting existing entries.
+
+Usage:
+    python scripts/09_synapse_export.py [--synapse-rag PATH] [--dry-run]
+
+Output:
+    Synapse/rag/skills/houdini21-reference/joy_of_vex_*.md   (15 files)
+    Synapse/rag/documentation/_metadata/semantic_index.json   (15 new topics merged)
+    Synapse/rag/documentation/_metadata/agent_relevance_map.json  (15 new entries merged)
+"""
+
+import argparse
+import json
+import re
+from collections import defaultdict
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+PIPELINE_ROOT = Path(__file__).resolve().parent.parent
+INPUT_JSONL = PIPELINE_ROOT / "output" / "joy_of_vex_rag.jsonl"
+
+DEFAULT_SYNAPSE_RAG = Path(__file__).resolve().parent.parent.parent / "Synapse" / "rag"
+SKILLS_DIR = "skills" / Path("houdini21-reference")
+METADATA_DIR = Path("documentation") / "_metadata"
+
+# ---------------------------------------------------------------------------
+# Quality thresholds
+# ---------------------------------------------------------------------------
+MIN_EXPLANATION_LEN = 30
+MIN_CODE_LEN = 10
+MAX_ENTRIES_PER_FILE = 80
+
+# ---------------------------------------------------------------------------
+# File routing configuration
+# ---------------------------------------------------------------------------
+# Each target file defines: key, title, match function, keywords for semantic_index
+FILE_ROUTES = [
+    {
+        "key": "joy_of_vex_quaternions",
+        "title": "Joy of VEX: Quaternions",
+        "desc": "Tutorial examples covering quaternion creation, slerp, qrotate, and orient from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_trigonometry",
+        "title": "Joy of VEX: Trigonometry & Oscillation",
+        "desc": "Tutorial examples covering sine waves, circular motion, and oscillation from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_vector_math",
+        "title": "Joy of VEX: Vector Math",
+        "desc": "Tutorial examples covering dot, cross, fit, clamp, and matrix operations from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_deformation",
+        "title": "Joy of VEX: Deformation",
+        "desc": "Tutorial examples covering wave displacement and ramp-driven deformation from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_geometry",
+        "title": "Joy of VEX: Geometry Operations",
+        "desc": "Tutorial examples covering intrinsics, bounding boxes, and prim operations from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_surface_sampling",
+        "title": "Joy of VEX: Surface Sampling",
+        "desc": "Tutorial examples covering primuv, xyzdist, minpos, and UV sampling from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_nearpoints",
+        "title": "Joy of VEX: Nearpoints & Proximity",
+        "desc": "Tutorial examples covering nearpoints, pcfind, neighbor lookups, and proximity blending from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_pcopen",
+        "title": "Joy of VEX: Point Clouds (pcopen)",
+        "desc": "Tutorial examples covering pcopen, pcfilter, and point cloud iteration from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_color",
+        "title": "Joy of VEX: Color",
+        "desc": "Tutorial examples covering color from attributes, ramps, and gradients from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_ramps",
+        "title": "Joy of VEX: Ramps & Parameters",
+        "desc": "Tutorial examples covering chramp, channel references, and slider controls from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_attributes_tutorial",
+        "title": "Joy of VEX: Attributes",
+        "desc": "Tutorial examples covering attribute creation, types, and binding from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_geometry_creation",
+        "title": "Joy of VEX: Geometry Creation",
+        "desc": "Tutorial examples covering addpoint, addprim, and procedural geometry from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_flow_control",
+        "title": "Joy of VEX: Flow Control",
+        "desc": "Tutorial examples covering loops, conditionals, and foreach from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_noise",
+        "title": "Joy of VEX: Noise & Randomness",
+        "desc": "Tutorial examples covering snoise, curlnoise, and random patterns from The Joy of VEX.",
+    },
+    {
+        "key": "joy_of_vex_tips",
+        "title": "Joy of VEX: Tips & Misc",
+        "desc": "Tutorial tips covering debugging, optimization, groups, and miscellaneous VEX from The Joy of VEX.",
+    },
+]
+
+# Keywords for each topic in semantic_index.json
+TOPIC_KEYWORDS = {
+    "joy_of_vex_quaternions": [
+        "joy_of_vex", "quaternion_tutorial", "orient_tutorial",
+        "slerp_example", "qrotate_example", "quaternion_vex", "orient_vex",
+    ],
+    "joy_of_vex_trigonometry": [
+        "joy_of_vex", "sine_wave_vex", "trigonometry_tutorial",
+        "circular_motion_vex", "oscillation_vex", "cos_sin_example",
+    ],
+    "joy_of_vex_vector_math": [
+        "joy_of_vex", "vector_math_tutorial", "dot_product_example",
+        "cross_product_example", "fit_clamp_vex", "matrix_vex",
+    ],
+    "joy_of_vex_deformation": [
+        "joy_of_vex", "deformation_tutorial", "wave_displacement_vex",
+        "ramp_deformation_vex", "point_deformation_example",
+    ],
+    "joy_of_vex_geometry": [
+        "joy_of_vex", "geometry_operations_tutorial", "intrinsics_vex",
+        "bbox_vex", "prim_operations_tutorial",
+    ],
+    "joy_of_vex_surface_sampling": [
+        "joy_of_vex", "primuv_tutorial", "xyzdist_example",
+        "minpos_example", "uv_sampling_vex", "surface_sampling_tutorial",
+    ],
+    "joy_of_vex_nearpoints": [
+        "joy_of_vex", "nearpoints_example", "pcfind_tutorial",
+        "neighbor_lookup_vex", "proximity_blend_vex",
+    ],
+    "joy_of_vex_pcopen": [
+        "joy_of_vex", "pcopen_tutorial", "pcfilter_example",
+        "point_cloud_iteration_vex", "point_cloud_tutorial",
+    ],
+    "joy_of_vex_color": [
+        "joy_of_vex", "color_tutorial_vex", "color_from_attribute",
+        "color_gradient_vex", "cd_attribute_example",
+    ],
+    "joy_of_vex_ramps": [
+        "joy_of_vex", "chramp_tutorial", "channel_reference_vex",
+        "slider_control_vex", "parameter_tutorial_vex",
+    ],
+    "joy_of_vex_attributes_tutorial": [
+        "joy_of_vex", "attribute_tutorial_vex", "attribute_creation_vex",
+        "attribute_binding_example", "type_prefix_tutorial",
+    ],
+    "joy_of_vex_geometry_creation": [
+        "joy_of_vex", "addpoint_tutorial", "addprim_example",
+        "procedural_geometry_vex", "geometry_creation_tutorial",
+    ],
+    "joy_of_vex_flow_control": [
+        "joy_of_vex", "loop_tutorial_vex", "foreach_example_vex",
+        "conditional_vex", "flow_control_tutorial",
+    ],
+    "joy_of_vex_noise": [
+        "joy_of_vex", "noise_tutorial_vex", "snoise_example",
+        "curlnoise_tutorial", "random_pattern_vex",
+    ],
+    "joy_of_vex_tips": [
+        "joy_of_vex", "vex_debugging_tips", "vex_optimization_tips",
+        "group_vex_tutorial", "vex_tips_misc",
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# Routing functions -- assign each record to a target file key
+# ---------------------------------------------------------------------------
+
+# Sets used for routing decisions
+_QUAT_FUNCS = {"quaternion", "qrotate", "slerp", "qmultiply", "qinvert",
+               "eulertoquaternion", "dihedral", "@orient", "maketransform"}
+_TRIG_FUNCS = {"sin", "cos", "tan", "asin", "acos", "atan", "atan2", "radians", "degrees"}
+_SURFACE_FUNCS = {"primuv", "xyzdist", "minpos", "uvsample", "primduv"}
+_PCOPEN_FUNCS = {"pcopen", "pcfilter", "pciterate", "pcimport", "pcclose",
+                 "pcnumfound", "pcfarthest"}
+_NEARPOINT_FUNCS = {"nearpoint", "nearpoints", "pcfind", "pcfind_radius",
+                    "neighbours", "neighbor"}
+_CREATION_FUNCS = {"addpoint", "addprim", "addvertex", "removepoint", "removeprim"}
+_NOISE_FUNCS = {"noise", "snoise", "xnoise", "curlnoise", "onoise",
+                "flownoise", "vnoise", "random", "rand", "nrandom"}
+_SMALL_CATS = {"simulation", "arrays", "debugging", "optimization",
+               "groups_and_selection", "animation", "other", "strings", "volumes"}
+
+
+def route_record(record):
+    """Return the target file key for a record. He2025 deterministic."""
+    cat = record.get("category", "other")
+    funcs = set(record.get("vex_functions", []))
+    funcs_lower = {f.lower() for f in funcs}
+    code = record.get("code", "")
+
+    # Small categories -> tips
+    if cat in _SMALL_CATS:
+        return "joy_of_vex_tips"
+
+    if cat == "math_operations":
+        if funcs & _QUAT_FUNCS or "@orient" in code:
+            return "joy_of_vex_quaternions"
+        if funcs & _TRIG_FUNCS:
+            return "joy_of_vex_trigonometry"
+        return "joy_of_vex_vector_math"
+
+    if cat == "geometry_manipulation":
+        if funcs & _SURFACE_FUNCS:
+            return "joy_of_vex_surface_sampling"
+        # Animated deformation: uses sin/cos AND modifies @P
+        if (funcs & _TRIG_FUNCS) and ("@P" in code):
+            return "joy_of_vex_deformation"
+        # Ramp-driven deformation
+        if "chramp" in code and ("@P" in code):
+            return "joy_of_vex_deformation"
+        return "joy_of_vex_geometry"
+
+    if cat == "point_clouds":
+        if funcs & _PCOPEN_FUNCS:
+            return "joy_of_vex_pcopen"
+        return "joy_of_vex_nearpoints"
+
+    if cat == "color":
+        return "joy_of_vex_color"
+
+    if cat == "ui_and_parameters":
+        return "joy_of_vex_ramps"
+
+    if cat == "attributes":
+        return "joy_of_vex_attributes_tutorial"
+
+    if cat == "geometry_creation":
+        return "joy_of_vex_geometry_creation"
+
+    if cat == "flow_control":
+        return "joy_of_vex_flow_control"
+
+    if cat == "noise_and_randomness":
+        return "joy_of_vex_noise"
+
+    # Fallback
+    return "joy_of_vex_tips"
+
+
+# ---------------------------------------------------------------------------
+# Deduplication (He2025 deterministic)
+# ---------------------------------------------------------------------------
+
+def normalize_code(code):
+    """Normalize VEX code for dedup: strip whitespace, collapse to single line."""
+    lines = code.strip().splitlines()
+    # Remove blank lines, strip each line, rejoin
+    cleaned = " ".join(line.strip() for line in lines if line.strip())
+    # Collapse multiple spaces
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned
+
+
+def deduplicate(records):
+    """Group by normalized code, keep the record with longest explanation.
+    Ties broken by lowest episode, then lowest ID (He2025 deterministic)."""
+    groups = defaultdict(list)
+    for r in records:
+        key = normalize_code(r.get("code", ""))
+        groups[key].append(r)
+
+    deduped = []
+    for key, group in sorted(groups.items()):
+        # Sort: longest explanation first, then lowest episode, then lowest ID
+        group.sort(key=lambda r: (
+            -len(r.get("explanation", "")),
+            r.get("episode", 999),
+            r.get("id", "zzz"),
+        ))
+        deduped.append(group[0])
+
+    # Sort final output deterministically by ID
+    deduped.sort(key=lambda r: r.get("id", ""))
+    return deduped
+
+
+# ---------------------------------------------------------------------------
+# Quality filter
+# ---------------------------------------------------------------------------
+
+def passes_quality(record):
+    """Check minimum quality thresholds."""
+    explanation = record.get("explanation", "")
+    code = record.get("code", "").strip()
+    if len(explanation) < MIN_EXPLANATION_LEN:
+        return False
+    if len(code) < MIN_CODE_LEN:
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Markdown generation
+# ---------------------------------------------------------------------------
+
+def format_timestamp_link(record):
+    """Format a YouTube timestamp link."""
+    url = record.get("youtube_url", "")
+    ts = record.get("timestamp", "")
+    ep = record.get("episode", "?")
+    if url:
+        return f"[Ep{ep}, {ts}]({url})"
+    return f"Ep{ep}, {ts}"
+
+
+def format_entry(record):
+    """Format a single record as a markdown section."""
+    topic = record.get("topic", "Untitled")
+    code = record.get("code", "").strip()
+    explanation = record.get("explanation", "")
+    needs_review = record.get("needs_review", False)
+    ts_link = format_timestamp_link(record)
+
+    badge = " [Needs Review]" if needs_review else ""
+    lines = []
+    lines.append(f"### {topic}{badge} [{ts_link}]")
+    lines.append("```vex")
+    lines.append(code)
+    lines.append("```")
+    lines.append(explanation)
+    lines.append("")
+    return "\n".join(lines)
+
+
+def generate_markdown(file_key, entries):
+    """Generate a complete markdown file for a topic."""
+    # Find the route config
+    config = next(r for r in FILE_ROUTES if r["key"] == file_key)
+    title = config["title"]
+
+    lines = []
+    lines.append(f"# {title}")
+    lines.append("")
+    lines.append("> Tutorial examples from The Joy of VEX video series by Matt Estela.")
+    lines.append("> Source: https://www.youtube.com/@MattEstela")
+    lines.append("")
+
+    # Group entries by subcategory for readability
+    # Use a simple grouping by the first function or a broad topic
+    current_section = None
+    for entry in entries:
+        section = _infer_section(entry, file_key)
+        if section != current_section:
+            lines.append(f"## {section}")
+            lines.append("")
+            current_section = section
+        lines.append(format_entry(entry))
+
+    return "\n".join(lines)
+
+
+def _infer_section(record, file_key):
+    """Infer a section heading from the record's topic or functions."""
+    topic = record.get("topic", "").lower()
+    funcs = record.get("vex_functions", [])
+    cat = record.get("category", "")
+
+    # For some files, use broad section names
+    if file_key == "joy_of_vex_quaternions":
+        if any(f in ["slerp"] for f in funcs):
+            return "Interpolation (slerp)"
+        if any(f in ["qrotate"] for f in funcs):
+            return "Rotation with qrotate"
+        if any(f in ["@orient"] for f in funcs):
+            return "Orient Attribute"
+        if any(f in ["maketransform"] for f in funcs):
+            return "Transform Matrices"
+        return "Quaternion Basics"
+
+    if file_key == "joy_of_vex_trigonometry":
+        if "circular" in topic or "orbit" in topic:
+            return "Circular Motion"
+        if "wave" in topic or "oscillat" in topic:
+            return "Waves & Oscillation"
+        return "Trigonometric Functions"
+
+    if file_key == "joy_of_vex_vector_math":
+        if any(f in ["dot"] for f in funcs):
+            return "Dot Product"
+        if any(f in ["cross"] for f in funcs):
+            return "Cross Product"
+        if any(f in ["fit", "clamp"] for f in funcs):
+            return "Remapping (fit, clamp)"
+        if any(f in ["length", "normalize", "distance"] for f in funcs):
+            return "Length & Distance"
+        return "Vector Operations"
+
+    if file_key == "joy_of_vex_pcopen":
+        if any(f in ["pcfilter"] for f in funcs):
+            return "Point Cloud Filtering"
+        return "Point Cloud Iteration"
+
+    if file_key == "joy_of_vex_nearpoints":
+        if any(f in ["nearpoints", "nearpoint"] for f in funcs):
+            return "Nearpoints Lookup"
+        if any(f in ["pcfind", "pcfind_radius"] for f in funcs):
+            return "pcfind Queries"
+        if any(f in ["neighbours", "neighbor"] for f in funcs):
+            return "Neighbour Queries"
+        return "Proximity Operations"
+
+    if file_key == "joy_of_vex_color":
+        if "ramp" in topic or "chramp" in " ".join(funcs):
+            return "Color from Ramps"
+        if "normal" in topic or "@N" in " ".join(funcs):
+            return "Color from Normals"
+        if "position" in topic or "height" in topic:
+            return "Color from Position"
+        return "Color Operations"
+
+    if file_key == "joy_of_vex_noise":
+        if any(f in ["curlnoise"] for f in funcs):
+            return "Curl Noise"
+        if any(f in ["snoise", "xnoise"] for f in funcs):
+            return "Simplex Noise"
+        return "Noise Patterns"
+
+    if file_key == "joy_of_vex_surface_sampling":
+        if any(f in ["primuv"] for f in funcs):
+            return "primuv Sampling"
+        if any(f in ["xyzdist", "minpos"] for f in funcs):
+            return "Distance Queries"
+        return "Surface Sampling"
+
+    if file_key == "joy_of_vex_deformation":
+        if "wave" in topic or "sin" in " ".join(funcs).lower():
+            return "Wave Deformation"
+        if "ramp" in topic or "chramp" in " ".join(funcs):
+            return "Ramp-Driven Deformation"
+        return "Displacement"
+
+    if file_key == "joy_of_vex_geometry":
+        return "Geometry Operations"
+
+    if file_key == "joy_of_vex_ramps":
+        if "chramp" in " ".join(funcs):
+            return "chramp Usage"
+        return "Parameter Controls"
+
+    if file_key == "joy_of_vex_attributes_tutorial":
+        return "Attribute Basics"
+
+    if file_key == "joy_of_vex_geometry_creation":
+        if any(f in ["addprim"] for f in funcs):
+            return "Creating Primitives"
+        return "Adding Points & Geometry"
+
+    if file_key == "joy_of_vex_flow_control":
+        if "for" in topic.lower() or "loop" in topic.lower():
+            return "Loops"
+        return "Conditionals & Control Flow"
+
+    if file_key == "joy_of_vex_tips":
+        if cat == "debugging":
+            return "Debugging"
+        if cat == "optimization":
+            return "Optimization"
+        if cat == "groups_and_selection":
+            return "Groups"
+        return "Miscellaneous Tips"
+
+    return "Examples"
+
+
+# ---------------------------------------------------------------------------
+# Metadata generation
+# ---------------------------------------------------------------------------
+
+def build_semantic_entry(file_key, entries):
+    """Build a semantic_index.json entry for one topic."""
+    config = next(r for r in FILE_ROUTES if r["key"] == file_key)
+
+    # Collect all unique functions across entries for the description
+    all_funcs = set()
+    for e in entries:
+        all_funcs.update(e.get("vex_functions", []))
+    func_list = ", ".join(sorted(all_funcs)[:20])
+
+    return {
+        "summary": config["title"],
+        "description": f"{config['desc']} Covers functions: {func_list}.",
+        "keywords": TOPIC_KEYWORDS.get(file_key, ["joy_of_vex"]),
+        "reference_file": file_key,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Export Joy of VEX dataset to Synapse RAG format."
+    )
+    parser.add_argument(
+        "--synapse-rag",
+        type=Path,
+        default=DEFAULT_SYNAPSE_RAG,
+        help="Path to Synapse/rag/ directory",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be written without writing files",
+    )
+    args = parser.parse_args()
+
+    synapse_rag = args.synapse_rag
+    skills_dir = synapse_rag / SKILLS_DIR
+    metadata_dir = synapse_rag / METADATA_DIR
+    semantic_path = metadata_dir / "semantic_index.json"
+    relevance_path = metadata_dir / "agent_relevance_map.json"
+
+    # -- Load JSONL ----------------------------------------------------------
+    print(f"Reading {INPUT_JSONL} ...")
+    records = []
+    with open(INPUT_JSONL, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+    print(f"  Loaded {len(records)} records")
+
+    # -- Quality filter ------------------------------------------------------
+    quality_records = [r for r in records if passes_quality(r)]
+    print(f"  After quality filter: {len(quality_records)} records")
+
+    # -- Deduplicate ---------------------------------------------------------
+    deduped = deduplicate(quality_records)
+    print(f"  After dedup: {len(deduped)} unique records")
+
+    # -- Route to files ------------------------------------------------------
+    file_buckets = defaultdict(list)
+    for r in deduped:
+        target = route_record(r)
+        file_buckets[target].append(r)
+
+    # Sort entries within each bucket by episode, then timestamp, then ID
+    for key in file_buckets:
+        file_buckets[key].sort(key=lambda r: (
+            r.get("episode", 999),
+            r.get("timestamp", "99:99"),
+            r.get("id", ""),
+        ))
+
+    # -- Per-file cap --------------------------------------------------------
+    for key in file_buckets:
+        bucket = file_buckets[key]
+        if len(bucket) > MAX_ENTRIES_PER_FILE:
+            # Keep entries with longest explanations (He2025: stable sort)
+            bucket.sort(key=lambda r: -len(r.get("explanation", "")))
+            file_buckets[key] = sorted(
+                bucket[:MAX_ENTRIES_PER_FILE],
+                key=lambda r: (
+                    r.get("episode", 999),
+                    r.get("timestamp", "99:99"),
+                    r.get("id", ""),
+                ),
+            )
+
+    # -- Summary -------------------------------------------------------------
+    total_entries = sum(len(v) for v in file_buckets.values())
+    print(f"\nRouting summary ({total_entries} total entries across {len(file_buckets)} files):")
+    for route in FILE_ROUTES:
+        key = route["key"]
+        count = len(file_buckets.get(key, []))
+        print(f"  {key}: {count} entries")
+
+    # -- Generate markdown files ---------------------------------------------
+    print(f"\nWriting markdown files to {skills_dir}/ ...")
+    for route in FILE_ROUTES:
+        key = route["key"]
+        entries = file_buckets.get(key, [])
+        if not entries:
+            print(f"  SKIP {key}.md (0 entries)")
+            continue
+
+        md_content = generate_markdown(key, entries)
+        md_path = skills_dir / f"{key}.md"
+        line_count = md_content.count("\n") + 1
+
+        if args.dry_run:
+            print(f"  [DRY RUN] Would write {md_path.name} ({line_count} lines, {len(entries)} entries)")
+        else:
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(md_content)
+            print(f"  Wrote {md_path.name} ({line_count} lines, {len(entries)} entries)")
+
+    # -- Merge semantic_index.json -------------------------------------------
+    print(f"\nUpdating {semantic_path} ...")
+    if semantic_path.exists():
+        with open(semantic_path, encoding="utf-8") as f:
+            semantic_index = json.loads(f.read())
+    else:
+        semantic_index = {}
+
+    existing_count = len(semantic_index)
+    new_topics = 0
+    for route in FILE_ROUTES:
+        key = route["key"]
+        entries = file_buckets.get(key, [])
+        if not entries:
+            continue
+        if key not in semantic_index:
+            new_topics += 1
+        semantic_index[key] = build_semantic_entry(key, entries)
+
+    if args.dry_run:
+        print(f"  [DRY RUN] Would add {new_topics} new topics ({existing_count} -> {len(semantic_index)})")
+    else:
+        with open(semantic_path, "w", encoding="utf-8") as f:
+            json.dump(semantic_index, f, indent=2, sort_keys=False, ensure_ascii=False)
+            f.write("\n")
+        print(f"  Added {new_topics} new topics ({existing_count} -> {len(semantic_index)})")
+
+    # -- Merge agent_relevance_map.json --------------------------------------
+    print(f"\nUpdating {relevance_path} ...")
+    if relevance_path.exists():
+        with open(relevance_path, encoding="utf-8") as f:
+            relevance_map = json.loads(f.read())
+    else:
+        relevance_map = {}
+
+    existing_count = len(relevance_map)
+    new_entries = 0
+    for route in FILE_ROUTES:
+        key = route["key"]
+        entries = file_buckets.get(key, [])
+        if not entries:
+            continue
+        if key not in relevance_map:
+            new_entries += 1
+        relevance_map[key] = "sop_agent"
+
+    if args.dry_run:
+        print(f"  [DRY RUN] Would add {new_entries} new entries ({existing_count} -> {len(relevance_map)})")
+    else:
+        with open(relevance_path, "w", encoding="utf-8") as f:
+            json.dump(relevance_map, f, indent=2, sort_keys=False, ensure_ascii=False)
+            f.write("\n")
+        print(f"  Added {new_entries} new entries ({existing_count} -> {len(relevance_map)})")
+
+    # -- Done ----------------------------------------------------------------
+    if args.dry_run:
+        print("\n[DRY RUN] No files written. Re-run without --dry-run to apply.")
+    else:
+        print(f"\nDone. {total_entries} entries exported to {len(file_buckets)} files.")
+        print("Run 'python -m pytest Synapse/tests/test_knowledge.py -v' to verify.")
+
+
+if __name__ == "__main__":
+    main()

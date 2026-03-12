@@ -1,0 +1,337 @@
+'use client';
+
+import { useRef, useState, useCallback, useEffect } from 'react';
+import Player from '@vimeo/player';
+import { useOptionalVideoThumbnailManager } from './VideoThumbnailManager';
+
+/**
+ * VIDEO THUMBNAIL - Robust Hover-to-Play System
+ *
+ * Consistency guarantees:
+ * 1. Deterministic initialization with timeout (12s max)
+ * 2. Retry mechanism if initialization fails
+ * 3. Abort pending operations on mouse leave
+ * 4. Clean state reset on failures
+ * 5. Single active video enforcement via manager
+ * 6. AbortController is source of truth for cancellation
+ * 7. Manager stops ALL other videos on activation
+ */
+
+// Detect if device supports hover (desktop) vs touch-only (mobile)
+function useIsTouchDevice() {
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
+    setIsTouchDevice(mediaQuery.matches);
+
+    const handler = (e: MediaQueryListEvent) => setIsTouchDevice(e.matches);
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+
+  return isTouchDevice;
+}
+
+interface VideoThumbnailProps {
+  videoId: string;
+  videoHash?: string;
+  aspectRatio: string;
+  startTime?: number;
+  isCinematic?: boolean;
+  thumbnail?: string;
+}
+
+// Timeout for player initialization (12 seconds - supports slow connections)
+const INIT_TIMEOUT_MS = 12000;
+
+export function VideoThumbnail({
+  videoId,
+  videoHash,
+  startTime,
+  isCinematic = false,
+  thumbnail
+}: VideoThumbnailProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<Player | null>(null);
+  const [isHovering, setIsHovering] = useState(false);
+  const [videoVisible, setVideoVisible] = useState(false);
+
+  // State tracking refs
+  const isInitializingRef = useRef(false);
+  const isReadyRef = useRef(false);
+  const hoveringRef = useRef(false);
+  const initFailedRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const instanceId = useRef(`${videoId}-${Math.random().toString(36).slice(2)}`);
+
+  // Detect touch device - show full opacity on mobile (no hover)
+  const isTouchDevice = useIsTouchDevice();
+
+  // Get manager if available (works with or without provider)
+  const manager = useOptionalVideoThumbnailManager();
+
+  // Clean destroy of player instance
+  const destroyPlayer = useCallback(() => {
+    if (playerRef.current) {
+      try {
+        playerRef.current.destroy();
+      } catch {
+        // Player may already be destroyed
+      }
+      playerRef.current = null;
+    }
+    isReadyRef.current = false;
+    isInitializingRef.current = false;
+  }, []);
+
+  // Stop this video - reset to initial state
+  // Called by manager when another video becomes active
+  const stopVideo = useCallback(() => {
+    // Abort any pending operations FIRST (critical for race condition prevention)
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    // Reset all state immediately
+    hoveringRef.current = false;
+    setVideoVisible(false);
+    setIsHovering(false);
+
+    // Try to pause player regardless of ready state
+    // The player might be in an intermediate state during initialization
+    if (playerRef.current) {
+      try {
+        playerRef.current.pause().catch(() => {});
+        if (isReadyRef.current) {
+          playerRef.current.setCurrentTime(startTime ?? 0).catch(() => {});
+        }
+      } catch {
+        // Player in bad state - destroy and allow re-init
+        destroyPlayer();
+        initFailedRef.current = false; // Allow retry
+      }
+    }
+  }, [startTime, destroyPlayer]);
+
+  // Register with manager on mount
+  useEffect(() => {
+    const id = instanceId.current;
+    if (manager) {
+      manager.registerVideo(id, stopVideo);
+      return () => manager.unregisterVideo(id);
+    }
+  }, [manager, stopVideo]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      destroyPlayer();
+    };
+  }, [destroyPlayer]);
+
+  const initializePlayer = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    // Already have a ready player
+    if (playerRef.current && isReadyRef.current) return true;
+
+    // Currently initializing or container missing
+    if (isInitializingRef.current || !containerRef.current) return false;
+
+    // Previous init failed - reset to allow retry
+    if (initFailedRef.current) {
+      destroyPlayer();
+      initFailedRef.current = false;
+    }
+
+    isInitializingRef.current = true;
+
+    const baseConfig = {
+      muted: true,
+      loop: true,
+      autoplay: false,
+      controls: false,
+      background: true,
+      responsive: true,
+      title: false,
+      byline: false,
+      portrait: false,
+      dnt: true,
+      playsinline: true
+    };
+
+    try {
+      // Check if aborted before heavy work
+      if (signal.aborted) {
+        isInitializingRef.current = false;
+        return false;
+      }
+
+      // Construct URL with privacy hash and start time
+      const baseUrl = videoHash
+        ? `https://vimeo.com/${videoId}/${videoHash}`
+        : `https://vimeo.com/${videoId}`;
+      const urlWithTime = startTime ? `${baseUrl}#t=${startTime}s` : baseUrl;
+
+      playerRef.current = new Player(containerRef.current, {
+        url: urlWithTime as `https://vimeo.com/${string}`,
+        ...baseConfig
+      });
+
+      // Race between ready() and timeout
+      const readyPromise = playerRef.current.ready();
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Initialization timeout')), INIT_TIMEOUT_MS);
+      });
+
+      await Promise.race([readyPromise, timeoutPromise]);
+
+      // Check if aborted during ready
+      if (signal.aborted) {
+        destroyPlayer();
+        return false;
+      }
+
+      isReadyRef.current = true;
+      isInitializingRef.current = false;
+
+      // Add error event listener for runtime failures
+      playerRef.current.on('error', (error) => {
+        console.error('VideoThumbnail: Player error', videoId, error);
+        // Don't destroy - thumbnail remains visible as fallback
+      });
+
+      return true;
+
+    } catch (err) {
+      console.error('VideoThumbnail: Player init failed', videoId, err);
+      destroyPlayer();
+      initFailedRef.current = true;
+      return false;
+    }
+  }, [videoId, videoHash, startTime, destroyPlayer]);
+
+  const handleMouseEnter = useCallback(async () => {
+    const id = instanceId.current;
+    hoveringRef.current = true;
+
+    // Abort any previous pending operations
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
+    // Tell manager to stop any other active video
+    if (manager) {
+      manager.activateVideo(id);
+    }
+
+    setIsHovering(true);
+
+    // Initialize and play
+    const initialized = await initializePlayer(signal);
+
+    // Check if we should still play (hover state + abort signal are the source of truth)
+    if (!hoveringRef.current || signal.aborted) return;
+
+    if (initialized && playerRef.current && isReadyRef.current) {
+      try {
+        // Final abort check before play
+        if (signal.aborted) return;
+
+        await playerRef.current.play();
+
+        // Verify still hovering before showing video layer
+        if (hoveringRef.current && !signal.aborted) {
+          setVideoVisible(true);
+        } else {
+          // Lost hover during play - pause immediately
+          playerRef.current.pause().catch(() => {});
+        }
+      } catch (err) {
+        // Play failed - log but don't break, thumbnail is visible
+        console.warn('VideoThumbnail: Play failed', videoId, err);
+      }
+    }
+  }, [manager, initializePlayer, videoId]);
+
+  const handleMouseLeave = useCallback(() => {
+    hoveringRef.current = false;
+
+    if (manager) {
+      manager.deactivateVideo(instanceId.current);
+    } else {
+      stopVideo();
+    }
+  }, [manager, stopVideo]);
+
+  // Use custom thumbnail if provided, otherwise Vimeo vumbnail
+  const thumbnailUrl = thumbnail || `https://vumbnail.com/${videoId}.jpg`;
+
+  // Mobile: Static thumbnail only (no video player, no autoplay)
+  if (isTouchDevice) {
+    return (
+      <div
+        className="relative w-full overflow-hidden"
+        style={{ aspectRatio: '16/9', borderRadius: '6px' }}
+      >
+        <div
+          className="absolute inset-0 w-full h-full"
+          style={{
+            backgroundImage: `url(${thumbnailUrl})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundColor: '#141414',
+            borderRadius: '6px'
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Desktop: Full hover-to-play video functionality
+  return (
+    <div
+      className="relative w-full overflow-hidden"
+      style={{ aspectRatio: '16/9', borderRadius: '6px' }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Static thumbnail - always visible */}
+      <div
+        className="absolute inset-0 w-full h-full"
+        style={{
+          backgroundImage: `url(${thumbnailUrl})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundColor: '#141414',
+          borderRadius: '6px',
+          // Light table effect: visible but muted → bright reveal
+          // Base state: 60% opacity, subtle desaturation - readable but clearly "inactive"
+          opacity: isHovering ? 1.0 : 0.60,
+          filter: isHovering ? 'saturate(1) brightness(1)' : 'saturate(0.6) brightness(0.85)',
+          transition: 'opacity 0.5s cubic-bezier(0.25, 0.1, 0.25, 1), filter 0.5s cubic-bezier(0.25, 0.1, 0.25, 1)'
+        }}
+      />
+
+      {/* Video layer - fades in when playing */}
+      <div
+        className="absolute left-1/2 top-0 h-full transition-opacity duration-300"
+        style={{
+          aspectRatio: isCinematic ? '2.39/1' : '16/9',
+          transform: 'translateX(-50%)',
+          opacity: videoVisible ? 1 : 0,
+          pointerEvents: 'none',
+          borderRadius: '6px',
+          overflow: 'hidden'
+        }}
+      >
+        <div
+          ref={containerRef}
+          className="absolute inset-0 w-full h-full"
+        />
+      </div>
+    </div>
+  );
+}

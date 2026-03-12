@@ -1,0 +1,54 @@
+Create a new file: ui/web/js/progress.js
+
+Export one function: createProgressPanel() that returns a DOM element, and updateProgress(panel, data) to update it.
+
+The panel has THREE levels stacked vertically:
+
+LEVEL 1 — Agent pipeline indicator (top):
+A horizontal row showing: ROUTER → INTENT → EXECUTION → VERIFY
+Each stage is a dot + label. States:
+- waiting: dim dot (border only, color #555), dim label
+- active: filled dot in agent color + gentle CSS pulse animation, bright label
+- complete: green checkmark ✓, dimmed label
+- error: red ✗
+Use var(--agent-router), var(--agent-intent), etc. for colors.
+Arrows between stages: → in #ffffff15
+
+LEVEL 2 — Execution progress bar (middle):
+A thin bar (4px height), jade fill on dark track.
+Class: sd-progress-bar (track) and sd-progress-bar__fill (fill)
+Width transitions smoothly using transition: width 0.4s var(--ease-out-expo)
+When no percentage is available, show an indeterminate shimmer animation.
+
+LEVEL 3 — Node detail line (bottom):
+"Node 3/7: KSampler  ~12s remaining"
+JetBrains Mono, 11px, #888. Node name in #e0e0e0.
+
+updateProgress(panel, data) accepts:
+{
+  pipeline: { router: "complete", intent: "active", execution: "waiting", verify: "waiting" },
+  progress: 0.42,          // 0-1, null for indeterminate
+  currentNode: "KSampler",
+  nodeIndex: 3,
+  nodeTotal: 7,
+  etaSeconds: 12           // null if unknown
+}
+
+It updates all three levels in-place (no DOM rebuild — just change textContent, className, style.width).
+
+Add CSS classes to superduper.css:
+- sd-progress-panel: background #16162a, rounded, padding var(--space-md)
+- sd-progress-pipeline: flex row with gap 6px
+- sd-progress-bar: 4px height, #00BB8120 track
+- sd-progress-bar__fill: #00BB81, smooth width transition
+- sd-progress-detail: mono 11px, flex justify-between
+- sd-progress-shimmer: indeterminate animation (gradient sliding left to right)
+
+All spacing uses the --space-* tokens. Build with createElement only, no innerHTML.
+
+THEN wire it into sidebar.js:
+- Import createProgressPanel and updateProgress
+- On "agent_dispatch" event: create the progress panel, insert it below the dispatch card
+- On "agent_status" event: update the pipeline level (match agent_key to pipeline slot)
+- On existing "progress" events from ComfyUI execution: update the bar and node detail levels
+- On "done" event: remove the progress panel

@@ -1,0 +1,48 @@
+# Session Handover
+**Date:** 2026-02-16 20:50
+**Project:** ue-bridge (ViewportPerception)
+**Working directory:** C:\Users\User\Translators-Game\TranslatorsGame\ue-bridge
+
+## What Was Done
+- Built a complete C++ UE5.7 editor plugin (ViewportPerception) from scratch -- 17 source files, compiled to UnrealEditor-ViewportPerception.dll
+- Plugin hooks the editor backbuffer via OnBackBufferReadyToPresent, captures real viewport output (not re-rendered SceneCapture2D)
+- HTTP endpoint on port 30011 serves perception packets: base64 JPEG + camera/selection/scene metadata
+- Created 3 Python MCP tools: `ue_viewport_percept`, `ue_viewport_watch`, `ue_viewport_config` with SceneCapture2D fallback
+- Verified end-to-end: 96KB JPEG viewport capture showing the CRT question display, camera at (0, -3500, 1500), 3621 actors in MainLevel
+- Closes the "perception gap" -- Synapse has houdini_capture_viewport, UE bridge now has ue_viewport_percept
+
+## Decisions Made
+| Decision | Why | Alternatives Considered |
+|----------|-----|------------------------|
+| UEditorSubsystem (not actor) | Survives map changes, no level dependency, auto-creates with editor | SceneCapture2D actor (re-renders scene, doubles GPU cost) |
+| Separate HTTP server on 30011 | RemoteControl route registration API poorly documented; FHttpServerModule works cleanly | Piggyback on RemoteControl port 30010 (couldn't find route registration API) |
+| Full includes in subsystem header (not forward decls) | UHT-generated .gen.cpp needs complete types for TUniquePtr destructor | Forward declarations (caused C4150 incomplete type errors) |
+| FTextureRHIRef not FTexture2DRHIRef | UE5.7 unified texture RHI refs | FTexture2DRHIRef (removed in 5.7) |
+| FTSTicker::FDelegateHandle (not FDelegateHandle) | Different types in UE5.7 ticker system | FDelegateHandle (type mismatch) |
+| JPEG default, 85 quality | Good balance of size (~96KB) and quality for AI perception | PNG (larger, lossless -- overkill for AI consumption) |
+
+## Blockers / Issues
+- Live Coding blocks external UBT builds -- must close editor first (resolved: close editor, build, relaunch)
+- Python urllib from inside editor times out hitting localhost:30011 (main thread blocking) -- works fine from curl/external clients (resolved: not an issue, MCP tools call from Python process, not editor)
+- UE5 PUT endpoints require Content-Length header even for empty bodies (resolved: added header)
+- 3 build iterations needed: FTexture2DRHIRef->FTextureRHIRef, FDelegateHandle->FTSTicker::FDelegateHandle, forward decls->full includes
+
+## Open Threads
+- [ ] Phase 3: Auto-perception (post-mutation auto-capture after spawn/transform/delete)
+- [ ] Phase 3c: Motion gating (ramp FPS when camera moves, decay when idle)
+- [ ] The `ue_viewport_percept` MCP tool hasn't been tested through the actual MCP server path yet (tested via curl + ue_execute_python)
+- [ ] Consider adding the ViewportPerception plugin to the MCP tool descriptions in claude mcp config
+
+## Key Files
+- `Plugins/ViewportPerception/` -- entire plugin (17 files)
+- `Plugins/ViewportPerception/Source/ViewportPerception/Private/FrameProducer.cpp` -- backbuffer hook, the critical capture path
+- `Plugins/ViewportPerception/Source/ViewportPerception/Private/PerceptionEndpoint.cpp` -- HTTP routes on port 30011
+- `mcp/tools/perception.py` -- 3 MCP tools with fallback to SceneCapture2D
+- `mcp/tools/__init__.py` -- updated to register perception tools
+- `TranslatorsCard.uproject` -- added ViewportPerception plugin entry
+
+## Session Notes
+- Build time on Threadripper PRO 7965WX: ~5 seconds for the plugin (7 compilation units)
+- The plugin captures the ENTIRE editor window (including UI chrome like Outliner, menus) not just the 3D viewport. This is because OnBackBufferReadyToPresent hooks the Slate backbuffer. For viewport-only capture, would need to hook the specific viewport widget's render target instead.
+- Viewport native resolution was 2122x2741, resized to 1280x720 by PerceptionAdapter
+- The Translators Card CRT aesthetic with phosphor glow renders beautifully even at reduced resolution

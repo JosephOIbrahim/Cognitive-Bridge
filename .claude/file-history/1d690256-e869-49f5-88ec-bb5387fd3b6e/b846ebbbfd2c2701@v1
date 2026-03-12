@@ -1,0 +1,235 @@
+# Synapse Render Farm with Recursive Self-Improvement
+
+## Context
+
+**Problem:** Rendering lighting sequences in Houdini is slow, manual, and error-prone. An artist renders a sequence, walks away, comes back to find frame 23 had fireflies, frame 56 was black, and the whole batch needs re-rendering with adjusted settings. There's no feedback loop — every failure requires human diagnosis.
+
+**Solution:** A local render farm orchestration layer inside Synapse that renders sequences, validates each frame automatically, diagnoses issues, adjusts settings, and re-renders — learning from every outcome so future renders start with better defaults. The artist says "render sequence" and walks away. Synapse handles the rest.
+
+**Recursive Self-Improvement:** PDG is acyclic (no loops), so the feedback loop is driven by a Python orchestrator that wraps the existing TOPs/render/validate tools. Over time, the system literally gets better: it remembers that "cave interiors need 128 samples" or "this asset always causes fireflies at bounce depth > 6." Each session starts smarter than the last.
+
+---
+
+## Architecture Overview
+
+```
+Artist: "render sequence 1001-1100"
+           |
+    [Recipe Match] ──── Tier 0, no LLM
+           |
+    [RenderFarmOrchestrator]
+           |
+    ┌──────┴──────┐
+    │  Per Frame:  │
+    │  1. Render   │──── GPU (Karma XPU, 1 at a time)
+    │  2. Validate │──── CPU (OIIO, overlapped with next render)
+    │  3. Diagnose │──── If validation fails
+    │  4. Adjust   │──── Memory-assisted parameter fixes
+    │  5. Re-render│──── Up to 3 retries
+    │  6. Record   │──── Memory: what worked/failed
+    └──────┬──────┘
+           |
+    [Report + Toast Notification]
+```
+
+---
+
+## New Files (3 core + 3 tests + 1 RAG)
+
+| File | Purpose |
+|------|---------|
+| `python/synapse/server/render_farm.py` | Core orchestrator: render loop, frame queue, GPU/CPU overlap |
+| `python/synapse/server/render_diagnostics.py` | Issue-to-remedy mapping, memory-assisted fixing, scene classification |
+| `python/synapse/server/render_notify.py` | Windows toast (PowerShell), report files, WebSocket push |
+| `tests/test_render_farm.py` | Orchestrator tests with mocked handlers |
+| `tests/test_render_diagnostics.py` | Diagnosis + remedy + memory lookup tests |
+| `tests/test_render_notify.py` | Notification tests |
+| `rag/skills/houdini21-reference/render_farm.md` | RAG knowledge for render farm workflows |
+
+## Modified Files
+
+| File | Changes |
+|------|---------|
+| `python/synapse/routing/recipes.py` | Add 3 recipes to `_register_builtins()` |
+| `python/synapse/mcp/tools.py` | Register 2 new MCP tools |
+| `mcp_server.py` | Add tool entries for WebSocket transport |
+| `~/.synapse/agent/synapse_tools.py` | Add render_sequence tool for Agent SDK |
+
+---
+
+## Phase 1: Core Loop — `render_farm.py` + `render_diagnostics.py`
+
+### RenderFarmOrchestrator
+
+Single class that wraps existing handlers (no new Houdini API surface):
+
+- `render_frame_validated(rop, frame)` — render + validate + auto-fix one frame
+- `render_sequence(rop, frame_range, auto_fix, max_retries)` — full sequence with per-frame loop
+- `render_sequence_via_tops(topnet_path)` — wraps TOPs graph cook with validation overlay
+- Uses existing `_handle_render`, `_handle_validate_frame`, `_handle_render_settings` from `handlers_render.py`
+- All Houdini mutations go through handler safety middleware (atomic scripts, undo groups)
+
+### Recursive Self-Improvement Loop (per frame)
+
+```
+render(frame N) → validate → PASS? → record success, next frame
+                              │
+                              FAIL → diagnose(issues)
+                                     │
+                                     ├─ memory has fix? → apply known-good settings
+                                     │
+                                     └─ no memory? → apply default remedy from ISSUE_REMEDIES
+                                     │
+                                     re-render → validate → PASS? → record fix as "success" in memory
+                                                             │
+                                                             FAIL → retry (up to max_retries)
+                                                                     │
+                                                                     exhausted → record as "failure", notify, continue
+```
+
+### ISSUE_REMEDIES Map (render_diagnostics.py)
+
+| Validation Issue | Default Fix | Confidence |
+|-----------------|-------------|------------|
+| `saturation` (fireflies) | Double pixel samples (max 256) | 0.9 |
+| `saturation` (fireflies) | Lower ray recursion to 4 | 0.5 |
+| `black_frame` | Increase exposure +2 stops | 0.8 |
+| `nan_check` | Enable pixel filter clamp at 100 | 0.7 |
+| `clipping` | Reduce exposure -1 stop | 0.7 |
+| `underexposure` | Increase exposure +1 stop | 0.8 |
+
+Memory-assisted fixes take priority — if a past session recorded "128 samples fixed fireflies for this scene type", use that directly instead of the default "double samples from current" strategy.
+
+### GPU/CPU Pipeline Overlap
+
+```
+Frame N:   [==== GPU Render ====]
+Frame N:                          [CPU: Validate + Record]
+Frame N+1:                        [==== GPU Render ====]
+Frame N+1:                                                [CPU: Validate + Record]
+```
+
+RTX 4090: 1 concurrent Karma XPU render (exclusive GPU). CPU pool (4 workers) handles validation, contact sheets, reporting in parallel with GPU renders.
+
+---
+
+## Phase 2: Memory Integration
+
+### What Gets Recorded
+
+| Event | Memory Type | Tags | Future Use |
+|-------|------------|------|------------|
+| Successful fix | `parameter_experiment` | `render_fix, success, {issue}` | "What fixed fireflies before?" |
+| Render settings chosen | `decision` | `render_settings, {scene_tags}` | "What settings work for interiors?" |
+| Persistent failure | `blocker` | `render_failure, {issue}` | "Known problem with this asset" |
+| Batch report | `note` | `render_report` | "Show past render reports" |
+
+### Scene-Type Classification
+
+Before rendering, analyze USD stage to tag the scene: `interior/outdoor`, `many_lights`, `has_environment`, `has_volumes`, `high_poly`. Tags enable cross-shot learning ("all cave shots need 128 samples").
+
+### Memory Query at Render Start
+
+Before first frame, query memory for known-good settings matching current scene tags. If high-confidence match exists, start with those settings instead of defaults. This is where the "self-improvement" compounds across sessions.
+
+---
+
+## Phase 3: Notifications — `render_notify.py`
+
+Three channels, zero new pip dependencies:
+
+1. **Windows Toast** — PowerShell `[Windows.UI.Notifications]` (fires on: batch complete, persistent failure, milestone frames)
+2. **Report File** — Markdown to `$HIP/.synapse/render_reports/` (always written: frame table, issues, fixes applied, settings used, timing)
+3. **WebSocket Push** — Broadcast to connected MCP clients (progress events for UI integration)
+
+Notification triggers:
+- Each frame: silent (just log). Toast only on failure if auto-fix disabled.
+- 25%/50%/75% milestones: optional progress toast
+- Batch complete: always toast + report
+- Persistent failure (exhausted retries): immediate toast
+
+---
+
+## Phase 4: Recipes + MCP Tools
+
+### 3 New Recipes (Tier 0, no LLM)
+
+| Recipe | Trigger Pattern | Gate Level |
+|--------|----------------|------------|
+| `render_sequence` | "render sequence 1001-1100" | APPROVE |
+| `render_validate_frame` | "render and validate" / "test render" | REVIEW |
+| `setup_render_farm` | "setup render farm" | APPROVE |
+
+### 2 New MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `synapse_render_sequence` | Render frame range with validation + auto-fix + notifications |
+| `synapse_render_farm_status` | Check progress of running render job |
+
+---
+
+## Phase 5: TOPs Integration
+
+### Programmatic TOPs Graph Builder
+
+`build_render_farm_topnet()` creates a TOPs network:
+
+```
+/obj/synapse_renderfarm/
+  ├── localscheduler (maxprocs=1 for GPU)
+  ├── frame_range (generates work items per frame)
+  ├── ropfetch_render (Karma XPU render)
+  ├── python_validate (runs validate_frame per output)
+  ├── waitforall (collection point)
+  └── python_report (generates contact sheet + report)
+```
+
+The orchestrator can either:
+- **Direct mode**: Drive the render loop in Python (simpler, no TOPs needed)
+- **TOPs mode**: Build and cook this graph, then overlay validation on the outputs
+
+---
+
+## Implementation Order
+
+| # | Phase | Deliverable | Effort |
+|---|-------|-------------|--------|
+| 1 | Core Loop | `render_farm.py` + `render_diagnostics.py` + tests | Medium |
+| 2 | Memory | Memory integration in orchestrator | Small |
+| 3 | Notifications | `render_notify.py` + tests | Small |
+| 4 | Recipes + MCP | Recipe registration + tool registration | Small |
+| 5 | TOPs Builder | Programmatic TOPs graph + TOPs-mode rendering | Medium |
+| 6 | RAG | `render_farm.md` knowledge doc + semantic index entries | Small |
+
+---
+
+## Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| External orchestrator, not pure PDG | PDG is acyclic — can't loop. SideFX recommends external driver for feedback loops. |
+| Tier 0 speed (no LLM per frame) | 100 frames x 15s LLM latency = 25 min overhead. Orchestrator runs at code speed, only escalates to agent if all default remedies fail. |
+| PowerShell toast, not pip library | Zero-dependency project requirement. `win10toast`/`plyer` would add deps. |
+| FEEDBACK memories, not new type | Integrates with existing `OutcomeTracker` pattern. No schema changes needed. |
+| Validation stays read-only | `validate_frame` is pure inspection. Diagnosis + remedy is a separate module. Separation of concerns. |
+
+---
+
+## Verification
+
+1. **Unit tests**: `pytest tests/test_render_farm.py tests/test_render_diagnostics.py tests/test_render_notify.py -v` (all mocked, no Houdini needed)
+2. **Integration**: In Houdini with Synapse running, call `synapse_render_sequence` via MCP for a 5-frame range. Verify: frames render, validation runs, report generated, toast fires.
+3. **Self-improvement test**: Render same sequence twice. Second run should start with adjusted defaults if first run had fixes.
+4. **Existing tests**: `python -m pytest tests/ -v` (all ~1,012 existing tests must still pass)
+
+---
+
+## Key Files Referenced
+
+- `Synapse/python/synapse/server/handlers_render.py` — existing render + validate + TOPs handlers
+- `Synapse/python/synapse/routing/recipes.py` — recipe system to extend
+- `Synapse/python/synapse/agent/learning.py` — OutcomeTracker pattern to follow
+- `Synapse/python/synapse/memory/models.py` — Memory types and query structures
+- `Synapse/python/synapse/mcp/tools.py` — MCP tool registry
+- `Synapse/mcp_server.py` — WebSocket tool registry

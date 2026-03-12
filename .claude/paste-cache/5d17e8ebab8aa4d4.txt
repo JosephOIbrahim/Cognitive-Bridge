@@ -1,0 +1,94 @@
+# Claude Code Prompt — Synapse: Demo Integration Audit
+
+## Context
+
+I'm preparing a live demo for the ComfyUI NYC meetup at ZeroSpace (Brooklyn). The demo shows two of my systems — **ComfyUI Agent** (an AI co-pilot for ComfyUI with 61 tools and an MCP server) and **Synapse** (this repo — an AI-to-Houdini/Solaris bridge) — coordinating via MCP so that a user can speak in natural language and have an AI agent generate assets in ComfyUI, then place and compose them in a Houdini/Solaris USD stage, all in one conversational flow.
+
+The orchestration layer is Claude itself, talking to both MCP servers simultaneously:
+
+```
+User (natural language)
+  → Claude (orchestrator)
+      → ComfyUI Agent MCP (generate, inspect, modify, execute workflows)
+      → Synapse MCP (place assets in Houdini/Solaris, manage USD stage)
+```
+
+## Your Task
+
+Audit this repo (Synapse) for demo readiness. I need you to answer these questions with specifics — file paths, function names, code snippets. Not hand-wavy summaries.
+
+### 1. MCP Server — Current State
+
+- Does Synapse currently have an MCP server? If yes: where is it, what transport (stdio, SSE, HTTP), what tools are exposed?
+- If no MCP server exists: what is the current interface? (WebSocket server? REST API? Python API? CLI?)
+- What would it take to wrap the existing interface in an MCP server? Which functions/endpoints map cleanly to MCP tools?
+
+### 2. Core Capabilities — What Can Synapse Do Today
+
+- List the operations Synapse can perform in Houdini/Solaris. For each, note:
+  - Function/endpoint name
+  - Input it expects (file path? USD prim path? Python snippet?)
+  - Output it returns
+  - Safety guarantees (atomic? idempotent? rollback?)
+- Can Synapse currently:
+  - Create a new prim in a USD stage?
+  - Assign a material (MaterialX or otherwise) to a prim?
+  - Import an image/texture from a file path and use it in a shader?
+  - Set transform (translate/rotate/scale) on a prim?
+  - Query the current state of the stage (list prims, get properties)?
+
+### 3. The Critical Demo Path
+
+The money shot for the demo is this sequence:
+
+1. ComfyUI Agent generates an image (returns a file path like `/output/cityscape_00001.png`)
+2. Claude passes that path to Synapse
+3. Synapse creates a plane/card geometry in Solaris
+4. Synapse creates a MaterialX material with the image as a texture
+5. Synapse assigns the material to the geometry
+6. Synapse positions it in the scene
+7. Synapse triggers a render preview or viewport update
+8. Result is visible in Houdini's viewport
+
+For each step: does Synapse support it today? If partially, what's missing? If not at all, what's the estimated effort?
+
+### 4. Connection Architecture
+
+- How does Synapse talk to Houdini? (hrpyc? hwebserver? Custom WebSocket? hou module directly?)
+- Does Houdini need to be running first? How is the connection established?
+- Is there a handshake/health check? What happens if Houdini crashes mid-operation?
+- Can Synapse handle multiple sequential operations in a single session without state corruption?
+- Are there any assumptions about Houdini's scene state (e.g., "a Solaris LOP network must already exist")?
+
+### 5. What's Missing for the Demo
+
+Given the architecture above, identify the gaps:
+
+- If no MCP server: what's the fastest path to one? Can I wrap existing functions with FastMCP or similar?
+- Are there any tools/operations that need to be added for the demo path above?
+- File path handling: if ComfyUI outputs to one directory and Houdini expects textures in another, is there path resolution logic? Or does Synapse need the absolute path?
+- Platform assumptions: is this Windows-only (matching my Threadripper/4090 setup)? Any cross-platform issues?
+
+### 6. Safety & Demo Stability
+
+- Atomic execution: if step 4 (material creation) fails, does step 3 (geometry) get rolled back?
+- What's the error surface? If Houdini rejects a command, does Synapse return a useful error, or does it hang/crash?
+- Timeout handling: is there a timeout on Houdini operations?
+- State cleanup: after the demo, is there a "reset scene" or "undo all" capability?
+- Idempotent operations: if I accidentally trigger the same command twice, does it create duplicates or handle it gracefully?
+
+### 7. Quick Wins
+
+- What's the fastest path to a working demo? What can I skip, what's essential?
+- Are there existing atomic scripts or operations that cover most of the demo path?
+- What's the minimum Houdini scene setup needed before the demo starts? (e.g., a pre-built Solaris LOP network with a camera and lights?)
+
+## Output Format
+
+Give me a structured report with:
+1. **Current State** — what exists and works today (with specifics)
+2. **MCP Feasibility** — how hard is it to add an MCP server, with a proposed tool list
+3. **Demo Path Gap Analysis** — for each of the 8 demo steps, status (ready / partial / missing) and effort
+4. **Recommendations** — ordered by priority, with estimated effort (trivial / half-day / multi-day)
+5. **Risk Register** — things that could blow up during a live demo
+6. **Pre-Demo Checklist** — Houdini scene setup, network config, fallback plans

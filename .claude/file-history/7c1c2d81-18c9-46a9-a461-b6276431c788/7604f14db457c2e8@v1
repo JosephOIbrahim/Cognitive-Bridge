@@ -1,0 +1,224 @@
+"""Cross-expert mixing matrix tracker.
+
+Tracks cross-expert bleeding coefficients.
+The mixing matrix starts as identity and records bleeds.
+Must remain invertible at all defined profiles.
+
+Uses pure Python (no numpy) to minimize dependencies.
+"""
+
+from src.lossless.constants import (
+    ANCHOR_PHASES,
+    FLOAT_TOLERANCE,
+    MODULATED_PHASES,
+)
+
+# Modulated phases in canonical sorted order
+_MOD_PHASES = sorted(MODULATED_PHASES)
+_MOD_INDEX = {p: i for i, p in enumerate(_MOD_PHASES)}
+_N = len(_MOD_PHASES)
+
+
+class MixingTracker:
+    """Tracks cross-expert bleeding in a mixing matrix.
+
+    The matrix is NxN where N = len(MODULATED_PHASES).
+    Starts as identity. Bleeds are recorded as off-diagonal entries.
+
+    Properties:
+        - det(matrix) > FLOAT_TOLERANCE (always invertible)
+        - condition_number < MAX_CONDITION_NUMBER at defined profiles
+        - invert(mix(signal)) == signal (within FLOAT_TOLERANCE)
+    """
+
+    def __init__(self):
+        # Initialize as identity matrix (list of lists)
+        self._matrix = [[0.0] * _N for _ in range(_N)]
+        for i in range(_N):
+            self._matrix[i][i] = 1.0
+
+    def record_bleed(
+        self, source_phase: str, target_phase: str, coefficient: float
+    ) -> None:
+        """Record a cross-expert bleed.
+
+        Args:
+            source_phase: Phase bleeding FROM (must be modulated).
+            target_phase: Phase bleeding TO (must be modulated).
+            coefficient: Bleed amount in [0, 1).
+
+        Raises:
+            ValueError: If either phase is anchor or coefficient invalid.
+        """
+        if source_phase in ANCHOR_PHASES:
+            raise ValueError(f"Cannot bleed from anchor phase: {source_phase}")
+        if target_phase in ANCHOR_PHASES:
+            raise ValueError(f"Cannot bleed to anchor phase: {target_phase}")
+        if source_phase not in _MOD_INDEX:
+            raise ValueError(f"Unknown modulated phase: {source_phase}")
+        if target_phase not in _MOD_INDEX:
+            raise ValueError(f"Unknown modulated phase: {target_phase}")
+        if coefficient < 0.0 or coefficient >= 1.0:
+            raise ValueError(f"Coefficient must be in [0, 1), got {coefficient}")
+
+        src_i = _MOD_INDEX[source_phase]
+        tgt_i = _MOD_INDEX[target_phase]
+        self._matrix[tgt_i][src_i] += coefficient
+
+    def determinant(self) -> float:
+        """Compute matrix determinant using LU decomposition."""
+        return _determinant(self._matrix)
+
+    def is_invertible(self) -> bool:
+        """Check if the mixing matrix is invertible."""
+        return abs(self.determinant()) > FLOAT_TOLERANCE
+
+    def condition_number(self) -> float:
+        """Estimate condition number (ratio of max/min singular values).
+
+        Uses a simplified estimate: ||A|| * ||A^-1|| using infinity norms.
+        """
+        norm_a = _infinity_norm(self._matrix)
+        try:
+            inv = _invert_matrix(self._matrix)
+        except ValueError:
+            return float('inf')
+        norm_inv = _infinity_norm(inv)
+        return norm_a * norm_inv
+
+    def mix(self, signal: list) -> list:
+        """Apply mixing matrix to a signal vector."""
+        if len(signal) != _N:
+            raise ValueError(f"Signal length must be {_N}, got {len(signal)}")
+        return _mat_vec_mul(self._matrix, signal)
+
+    def invert(self, mixed_signal: list) -> list:
+        """Recover original signal from mixed signal."""
+        if len(mixed_signal) != _N:
+            raise ValueError(
+                f"Signal length must be {_N}, got {len(mixed_signal)}"
+            )
+        inv = _invert_matrix(self._matrix)
+        return _mat_vec_mul(inv, mixed_signal)
+
+    def to_dict(self) -> dict:
+        """Serialize for integrity block.
+
+        Returns dict with sorted keys for determinism.
+        """
+        return {
+            "dimensions": _N,
+            "determinant": self.determinant(),
+            "condition_number": self.condition_number(),
+            "is_invertible": self.is_invertible(),
+            "phases": _MOD_PHASES,
+            "matrix": [row[:] for row in self._matrix],
+        }
+
+    def get_matrix_copy(self) -> list:
+        """Return a copy of the internal matrix."""
+        return [row[:] for row in self._matrix]
+
+
+# ── Matrix math (pure Python, no numpy) ─────────────────────────────
+
+
+def _mat_vec_mul(mat: list, vec: list) -> list:
+    """Matrix-vector multiplication."""
+    n = len(vec)
+    result = [0.0] * n
+    for i in range(n):
+        # Kahan summation for numerical stability
+        s = 0.0
+        c = 0.0
+        for j in range(n):
+            y = mat[i][j] * vec[j] - c
+            t = s + y
+            c = (t - s) - y
+            s = t
+        result[i] = s
+    return result
+
+
+def _infinity_norm(mat: list) -> float:
+    """Infinity norm: max absolute row sum."""
+    n = len(mat)
+    max_sum = 0.0
+    for i in range(n):
+        row_sum = sum(abs(mat[i][j]) for j in range(n))
+        if row_sum > max_sum:
+            max_sum = row_sum
+    return max_sum
+
+
+def _determinant(mat: list) -> float:
+    """Compute determinant via LU decomposition."""
+    n = len(mat)
+    if n == 0:
+        return 1.0
+
+    # Copy matrix
+    lu = [row[:] for row in mat]
+    det = 1.0
+
+    for col in range(n):
+        # Partial pivoting
+        max_val = abs(lu[col][col])
+        max_row = col
+        for row in range(col + 1, n):
+            if abs(lu[row][col]) > max_val:
+                max_val = abs(lu[row][col])
+                max_row = row
+
+        if max_row != col:
+            lu[col], lu[max_row] = lu[max_row], lu[col]
+            det *= -1.0
+
+        if abs(lu[col][col]) < FLOAT_TOLERANCE:
+            return 0.0
+
+        det *= lu[col][col]
+
+        for row in range(col + 1, n):
+            factor = lu[row][col] / lu[col][col]
+            for j in range(col + 1, n):
+                lu[row][j] -= factor * lu[col][j]
+
+    return det
+
+
+def _invert_matrix(mat: list) -> list:
+    """Invert matrix using Gauss-Jordan elimination."""
+    n = len(mat)
+    # Augmented matrix [A | I]
+    aug = [mat[i][:] + [1.0 if j == i else 0.0 for j in range(n)]
+           for i in range(n)]
+
+    for col in range(n):
+        # Partial pivoting
+        max_val = abs(aug[col][col])
+        max_row = col
+        for row in range(col + 1, n):
+            if abs(aug[row][col]) > max_val:
+                max_val = abs(aug[row][col])
+                max_row = row
+
+        if max_val < FLOAT_TOLERANCE:
+            raise ValueError("Matrix is singular")
+
+        if max_row != col:
+            aug[col], aug[max_row] = aug[max_row], aug[col]
+
+        pivot = aug[col][col]
+        for j in range(2 * n):
+            aug[col][j] /= pivot
+
+        for row in range(n):
+            if row == col:
+                continue
+            factor = aug[row][col]
+            for j in range(2 * n):
+                aug[row][j] -= factor * aug[col][j]
+
+    # Extract inverse
+    return [aug[i][n:] for i in range(n)]

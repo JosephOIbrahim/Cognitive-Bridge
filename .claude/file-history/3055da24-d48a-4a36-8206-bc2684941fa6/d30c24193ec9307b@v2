@@ -1,0 +1,29 @@
+# Fix Nuke 16 startup warnings
+# Must be run as Administrator
+
+Write-Host "=== Nuke Startup Fix ===" -ForegroundColor Cyan
+
+# 1. Remove CUDA_CACHE_MAXSIZE
+$current = [System.Environment]::GetEnvironmentVariable('CUDA_CACHE_MAXSIZE', 'Machine')
+if ($current) {
+    [System.Environment]::SetEnvironmentVariable('CUDA_CACHE_MAXSIZE', $null, 'Machine')
+    Write-Host "[OK] Removed CUDA_CACHE_MAXSIZE (was $current)" -ForegroundColor Green
+} else {
+    Write-Host "[SKIP] CUDA_CACHE_MAXSIZE already removed" -ForegroundColor Yellow
+}
+
+# 2. Disable Topaz OFX plugin
+$ofxPath = 'C:\Program Files\Common Files\OFX\Plugins\Topaz Video.ofx.bundle'
+$disabledPath = 'C:\Program Files\Common Files\OFX\Plugins\Topaz Video.ofx.bundle.disabled'
+if (Test-Path $ofxPath) {
+    Rename-Item -Path $ofxPath -NewName 'Topaz Video.ofx.bundle.disabled'
+    Write-Host "[OK] Disabled Topaz OFX plugin" -ForegroundColor Green
+} elseif (Test-Path $disabledPath) {
+    Write-Host "[SKIP] Topaz OFX already disabled" -ForegroundColor Yellow
+} else {
+    Write-Host "[SKIP] Topaz OFX plugin not found" -ForegroundColor Yellow
+}
+
+Write-Host "`nDone. Restart Nuke for changes to take effect." -ForegroundColor Cyan
+Write-Host "Press any key to close..."
+$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')

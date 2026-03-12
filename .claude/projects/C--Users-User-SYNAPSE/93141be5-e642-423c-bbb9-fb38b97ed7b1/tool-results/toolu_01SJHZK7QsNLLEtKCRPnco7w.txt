@@ -1,0 +1,2383 @@
+C:\Users\User\SYNAPSE\tests\test_agent.py-83-        assert step.step_id != ""
+C:\Users\User\SYNAPSE\tests\test_agent.py:84:        assert len(step.step_id) == 16  # deterministic_uuid output
+C:\Users\User\SYNAPSE\tests\test_agent.py-85-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-100-        assert cmd.payload["parm"] == "intensity"
+C:\Users\User\SYNAPSE\tests\test_agent.py:101:        assert cmd.payload["value"] == 1.0
+C:\Users\User\SYNAPSE\tests\test_agent.py-102-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-125-        assert restored.gate_level == GateLevel.REVIEW
+C:\Users\User\SYNAPSE\tests\test_agent.py:126:        assert restored.confidence == 0.85
+C:\Users\User\SYNAPSE\tests\test_agent.py-127-        assert restored.status == StepStatus.COMPLETED
+C:\Users\User\SYNAPSE\tests\test_agent.py-128-        assert restored.observation == {"result": "ok"}
+C:\Users\User\SYNAPSE\tests\test_agent.py:129:        assert restored.duration_ms == 42.5
+C:\Users\User\SYNAPSE\tests\test_agent.py-130-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-165-        )
+C:\Users\User\SYNAPSE\tests\test_agent.py:166:        assert len(task.relevant_memories) == 2
+C:\Users\User\SYNAPSE\tests\test_agent.py-167-        assert "Do not use area lights" in task.constraints
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-208-        plan = AgentPlan(plan_id="", task=task, steps=[], reasoning="Test")
+C:\Users\User\SYNAPSE\tests\test_agent.py:209:        assert plan.progress() == 0.0
+C:\Users\User\SYNAPSE\tests\test_agent.py-210-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-216-        plan = AgentPlan(plan_id="", task=task, steps=steps, reasoning="Test")
+C:\Users\User\SYNAPSE\tests\test_agent.py:217:        assert plan.progress() == 0.5
+C:\Users\User\SYNAPSE\tests\test_agent.py-218-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-224-        plan = AgentPlan(plan_id="", task=task, steps=steps, reasoning="Test")
+C:\Users\User\SYNAPSE\tests\test_agent.py:225:        assert plan.progress() == 1.0
+C:\Users\User\SYNAPSE\tests\test_agent.py-226-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-232-        plan = AgentPlan(plan_id="", task=task, steps=steps, reasoning="Test")
+C:\Users\User\SYNAPSE\tests\test_agent.py:233:        assert plan.progress() == 1.0
+C:\Users\User\SYNAPSE\tests\test_agent.py-234-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-239-        plan = AgentPlan(plan_id="", task=task, steps=steps, reasoning="Test")
+C:\Users\User\SYNAPSE\tests\test_agent.py:240:        assert len(plan.pending_steps()) == 2
+C:\Users\User\SYNAPSE\tests\test_agent.py-241-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-247-        plan = AgentPlan(plan_id="", task=task, steps=steps, reasoning="Test")
+C:\Users\User\SYNAPSE\tests\test_agent.py:248:        assert len(plan.completed_steps()) == 2
+C:\Users\User\SYNAPSE\tests\test_agent.py-249-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-254-        plan = AgentPlan(plan_id="", task=task, steps=steps, reasoning="Test")
+C:\Users\User\SYNAPSE\tests\test_agent.py:255:        assert len(plan.failed_steps()) == 1
+C:\Users\User\SYNAPSE\tests\test_agent.py-256-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-280-        assert restored.task.goal == task.goal
+C:\Users\User\SYNAPSE\tests\test_agent.py:281:        assert len(restored.steps) == 2
+C:\Users\User\SYNAPSE\tests\test_agent.py-282-        assert restored.reasoning == "Test plan"
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-366-        assert plan.task is task
+C:\Users\User\SYNAPSE\tests\test_agent.py:367:        assert len(plan.steps) == 1
+C:\Users\User\SYNAPSE\tests\test_agent.py-368-        assert plan.reasoning == "Basic setup"
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-423-        assert result.success is True
+C:\Users\User\SYNAPSE\tests\test_agent.py:424:        assert len(result.completed_steps()) == 2
+C:\Users\User\SYNAPSE\tests\test_agent.py-425-        assert all(s.status == StepStatus.COMPLETED for s in result.steps)
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-488-
+C:\Users\User\SYNAPSE\tests\test_agent.py:489:        assert mock_fn.call_count == 1
+C:\Users\User\SYNAPSE\tests\test_agent.py-490-        cmd_arg = mock_fn.call_args[0][0]
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-563-
+C:\Users\User\SYNAPSE\tests\test_agent.py:564:        assert call_count == 2  # Third step never reached
+C:\Users\User\SYNAPSE\tests\test_agent.py-565-        assert result.steps[0].status == StepStatus.COMPLETED
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-639-        assert batch is not None
+C:\Users\User\SYNAPSE\tests\test_agent.py:640:        assert len(batch.proposals) >= 1
+C:\Users\User\SYNAPSE\tests\test_agent.py-641-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-726-        results = self.tracker.get_relevant("Set up lighting", AuditCategory.LIGHTING)
+C:\Users\User\SYNAPSE\tests\test_agent.py:727:        assert len(results) >= 1
+C:\Users\User\SYNAPSE\tests\test_agent.py-728-        # At least one should mention lighting
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-744-        rejections = self.tracker.get_rejections("shot_010")
+C:\Users\User\SYNAPSE\tests\test_agent.py:745:        assert len(rejections) >= 1
+C:\Users\User\SYNAPSE\tests\test_agent.py-746-        # All should be failures
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-759-        rate = self.tracker.success_rate()
+C:\Users\User\SYNAPSE\tests\test_agent.py:760:        assert 0.7 <= rate <= 0.8  # 3/4 = 0.75
+C:\Users\User\SYNAPSE\tests\test_agent.py-761-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-763-        rate = self.tracker.success_rate()
+C:\Users\User\SYNAPSE\tests\test_agent.py:764:        assert rate == 0.0
+C:\Users\User\SYNAPSE\tests\test_agent.py-765-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-820-        feedback = self.memory.store.get_by_type(MemoryType.FEEDBACK)
+C:\Users\User\SYNAPSE\tests\test_agent.py:821:        assert len(feedback) >= 1
+C:\Users\User\SYNAPSE\tests\test_agent.py-822-        assert any("success" in m.tags for m in feedback)
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-848-        assert result.success is True
+C:\Users\User\SYNAPSE\tests\test_agent.py:849:        assert result.progress() == 1.0
+C:\Users\User\SYNAPSE\tests\test_agent.py-850-
+--
+C:\Users\User\SYNAPSE\tests\test_agent.py-852-        feedback = self.memory.store.get_by_type(MemoryType.FEEDBACK)
+C:\Users\User\SYNAPSE\tests\test_agent.py:853:        assert len(feedback) >= 1
+C:\Users\User\SYNAPSE\tests\test_agent.py-854-
+--
+C:\Users\User\SYNAPSE\tests\test_auth.py-191-        h = hash_key_for_log("my-secret-key")
+C:\Users\User\SYNAPSE\tests\test_auth.py:192:        assert len(h) == 8
+C:\Users\User\SYNAPSE\tests\test_auth.py-193-        assert all(c in "0123456789abcdef" for c in h)
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py-185-        assert report.success is True
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py:186:        assert report.iterations >= 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py-187-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py-227-        assert isinstance(report, RenderReport)
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py:228:        assert report.iterations >= 2 or mock_planner.replan.called
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py-229-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py-235-        assert isinstance(report, RenderReport)
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py:236:        assert report.iterations <= 3
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py-237-        assert report.success is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py-253-        report = await d.execute("render frame 1")
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py:254:        assert report.iterations <= 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_driver.py-255-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-111-        assert ev.passed is True
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py:112:        assert len(ev.issues) == 0
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-113-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-153-        assert ev.passed is False
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py:154:        assert len(ev.issues) >= 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-155-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-163-        assert ev.passed is False
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py:164:        assert len(ev.issues) >= 2
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-165-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-169-        ev_clean = evaluator.evaluate_frame(frame=1, output_path="/tmp/f1.exr", image_data=clean)
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py:170:        assert ev_clean.metrics["quality_score"] == 1.0
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-171-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-266-        assert isinstance(seq, SequenceEvaluation)
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py:267:        assert seq.overall_score == 0.0
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-268-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py-274-        assert seq.overall_score > 0
+C:\Users\User\SYNAPSE\tests\test_autonomy_evaluator.py:275:        assert len(seq.frame_evaluations) == 1
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-47-    def test_gate_level_count(self):
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:48:        assert len(GateLevel) == 3
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-49-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-92-        assert plan.validation_checks == []
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:93:        assert plan.estimated_frames == 0
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-94-        assert plan.gate_level == GateLevel.REVIEW
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-103-        plan = RenderPlan(intent="render frame 1", steps=[step])
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:104:        assert len(plan.steps) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-105-        assert plan.steps[0].handler == "render"
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-137-        ev = FrameEvaluation(frame=1, output_path="/tmp/frame_0001.exr", passed=True)
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:138:        assert ev.frame == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-139-        assert ev.issues == []
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-150-        )
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:151:        assert len(ev.issues) == 2
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:152:        assert ev.metrics["mean_luminance"] == 0.0
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-153-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-179-        assert report.plan is plan
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:180:        assert len(report.decisions) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:181:        assert report.iterations == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-182-        assert report.success is True
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-189-        assert report.decisions == []
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:190:        assert report.iterations == 0
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py:191:        assert report.total_time_seconds == 0.0
+C:\Users\User\SYNAPSE\tests\test_autonomy_models.py-192-        assert report.success is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-71-        assert plan.intent == "render frame 1"
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:72:        assert len(plan.steps) >= 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:73:        assert plan.estimated_frames == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-74-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-77-        plan = planner.plan("render frames 1-48")
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:78:        assert plan.estimated_frames == 48
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:79:        assert len(plan.steps) >= 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-80-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-84-        assert plan.intent == "render turntable"
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:85:        assert plan.estimated_frames == 48
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:86:        assert len(plan.steps) >= 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-87-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-91-        assert isinstance(plan, RenderPlan)
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:92:        assert plan.estimated_frames == 0
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-93-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-115-        plan = planner.plan("render frames 10-20")
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:116:        assert plan.estimated_frames == 11
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-117-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-120-        plan = planner.plan("render frame 1")
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:121:        assert len(plan.validation_checks) == 8
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-122-        check_names = {c.name for c in plan.validation_checks}
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-165-        assert isinstance(replan, RenderPlan)
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:166:        assert replan.estimated_frames == 3  # Only the 3 failed frames
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:167:        assert len(replan.steps) >= 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-168-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-208-        settings_steps = [s for s in replan.steps if s.handler == "render_settings"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:209:        assert len(settings_steps) >= 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py:210:        assert settings_steps[0].params.get("pixel_samples", 0) >= 64
+C:\Users\User\SYNAPSE\tests\test_autonomy_planner.py-211-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-139-    assert prediction.camera_prim == "/cameras/render_cam"
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py:140:    assert prediction.material_count == 3
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py:141:    assert prediction.light_count == 2
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py:142:    assert prediction.geo_prim_count == 15
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-143-    assert prediction.render_product_path == "/Render/Products/renderproduct1"
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-146-    assert prediction.expected_frame_range == (1, 10)
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py:147:    assert len(prediction.pre_render_issues) == 0
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-148-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-339-    assert not result.should_rerender
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py:340:    assert len(result.discrepancies) == 0
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-341-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-511-    benefit = predictor.predict_replan_benefit(evaluation, {"pixel_samples": 128})
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py:512:    assert benefit == 0.0
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-513-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-553-    benefit = predictor.predict_replan_benefit(evaluation, {"pixel_samples": 128})
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py:554:    assert benefit == 0.0  # Negative clamped to 0
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-555-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-600-    )
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py:601:    assert benefit == 0.0
+C:\Users\User\SYNAPSE\tests\test_autonomy_predictor.py-602-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-124-        hard_fails = [c for c in checks if c.severity == CheckSeverity.HARD_FAIL and not c.passed]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:125:        assert len(hard_fails) == 0, f"Unexpected hard fails: {[c.name + ': ' + c.message for c in hard_fails]}"
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-126-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-141-        camera_checks = [c for c in checks if c.name == "camera"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:142:        assert len(camera_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-143-        assert camera_checks[0].passed is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-160-        prim_checks = [c for c in checks if c.name == "renderable_prims"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:161:        assert len(prim_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-162-        assert prim_checks[0].passed is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-179-        mat_checks = [c for c in checks if c.name == "materials"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:180:        assert len(mat_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-181-        assert mat_checks[0].passed is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-196-        settings_checks = [c for c in checks if c.name == "render_settings"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:197:        assert len(settings_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-198-        assert settings_checks[0].passed is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-221-        range_checks = [c for c in checks if c.name == "frame_range"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:222:        assert len(range_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-223-        assert range_checks[0].passed is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-232-        range_checks = [c for c in checks if c.name == "frame_range"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:233:        assert len(range_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-234-        assert range_checks[0].passed is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-250-        path_checks = [c for c in checks if c.name == "output_path"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:251:        assert len(path_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-252-        assert path_checks[0].passed is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-259-        ordering_checks = [c for c in checks if c.name == "solaris_ordering"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:260:        assert len(ordering_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-261-        assert ordering_checks[0].severity == CheckSeverity.INFO
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-278-        asset_checks = [c for c in checks if c.name == "missing_assets"]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:279:        assert len(asset_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-280-        assert asset_checks[0].passed is False
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-298-        hard_fails = [c for c in checks if c.severity == CheckSeverity.HARD_FAIL and not c.passed]
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:299:        assert len(hard_fails) >= 2, f"Expected at least 2 hard fails, got {len(hard_fails)}: {[c.name for c in hard_fails]}"
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-300-
+--
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-304-        checks = await validator.validate(plan)
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py:305:        assert len(checks) == 8, f"Expected 8 checks, got {len(checks)}: {[c.name for c in checks]}"
+C:\Users\User\SYNAPSE\tests\test_autonomy_validator.py-306-        expected_names = {
+--
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py-48-        """All 8 cameras must be present in the SENSORS dict."""
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py:49:        assert len(SENSORS) == 8
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py-50-        expected_keys = [
+--
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py-73-        # Typical cinema range: 12mm to 300mm
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py:74:        assert 10 <= default_lens <= 300
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py-75-
+--
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py-165-            if recipe.name == "camera_match_real":
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py:166:                assert len(recipe.steps) == 1
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py-167-                assert recipe.steps[0].action == "execute_python"
+--
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py-197-            if recipe.name == "camera_match_turntable":
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py:198:                assert len(recipe.steps) >= 1
+C:\Users\User\SYNAPSE\tests\test_camera_twins.py-199-                # First step sets up camera + turntable via execute_python
+--
+C:\Users\User\SYNAPSE\tests\test_capture.py-72-        assert result["format"] == "jpeg"
+C:\Users\User\SYNAPSE\tests\test_capture.py:73:        assert result["width"] == 800
+C:\Users\User\SYNAPSE\tests\test_capture.py:74:        assert result["height"] == 600
+C:\Users\User\SYNAPSE\tests\test_capture.py-75-        assert result["image_path"].endswith(".jpg")
+--
+C:\Users\User\SYNAPSE\tests\test_capture.py-80-        assert result["format"] == "png"
+C:\Users\User\SYNAPSE\tests\test_capture.py:81:        assert result["width"] == 1920
+C:\Users\User\SYNAPSE\tests\test_capture.py:82:        assert result["height"] == 1080
+C:\Users\User\SYNAPSE\tests\test_capture.py-83-        assert result["image_path"].endswith(".png")
+--
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-292-    def test_minimum_actions(self):
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py:293:        assert len(QUICK_ACTIONS) >= 5
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-294-
+--
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-355-        parsed = json.loads(dumped)
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py:356:        assert parsed["context"]["frame"] == 24.0
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-357-        assert parsed["context"]["selected_nodes"] == ["/obj/geo1"]
+--
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-418-        bar.set_selection_count(3)
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py:419:        assert bar._selection_count == 3
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-420-
+--
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-425-        bar.set_frame(24.0)
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py:426:        assert bar._frame == 24.0
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-427-
+--
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-614-        # Text message + 2 system messages for commands
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py:615:        assert panel._chat.append_synapse_message.call_count == 1
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py:616:        assert panel._chat.append_system_message.call_count == 2
+C:\Users\User\SYNAPSE\tests\test_chat_panel.py-617-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-67-        result = round_float(3.14159265)
+C:\Users\User\SYNAPSE\tests\test_core.py:68:        assert result == 3.141593  # 6 decimal places
+C:\Users\User\SYNAPSE\tests\test_core.py-69-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-71-        result = round_float(3.14159265, precision=2)
+C:\Users\User\SYNAPSE\tests\test_core.py:72:        assert result == 3.14
+C:\Users\User\SYNAPSE\tests\test_core.py-73-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-79-        result = round_float(2.5, precision=0)
+C:\Users\User\SYNAPSE\tests\test_core.py:80:        assert result == 3.0
+C:\Users\User\SYNAPSE\tests\test_core.py-81-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-85-        result = round_float(3.14159, precision=2)
+C:\Users\User\SYNAPSE\tests\test_core.py:86:        assert result == 3.14
+C:\Users\User\SYNAPSE\tests\test_core.py-87-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-142-        uuid = deterministic_uuid("test")
+C:\Users\User\SYNAPSE\tests\test_core.py:143:        assert len(uuid) == 16
+C:\Users\User\SYNAPSE\tests\test_core.py-144-        assert all(c in '0123456789abcdef' for c in uuid)
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-192-            val = rng.uniform(0.0, 1.0)
+C:\Users\User\SYNAPSE\tests\test_core.py:193:            assert 0.0 <= val <= 1.0
+C:\Users\User\SYNAPSE\tests\test_core.py-194-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-198-            val = rng.randint(1, 6)
+C:\Users\User\SYNAPSE\tests\test_core.py:199:            assert 1 <= val <= 6
+C:\Users\User\SYNAPSE\tests\test_core.py-200-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-235-        result = func("test", intensity=3.14159265)
+C:\Users\User\SYNAPSE\tests\test_core.py:236:        assert result == 3.141593
+C:\Users\User\SYNAPSE\tests\test_core.py-237-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-269-        assert "seed" in rd
+C:\Users\User\SYNAPSE\tests\test_core.py:270:        assert rd["seed"] == 42  # default global seed
+C:\Users\User\SYNAPSE\tests\test_core.py-271-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-273-        op = DeterministicOperation(seed=99)
+C:\Users\User\SYNAPSE\tests\test_core.py:274:        assert op.get_seed() == 99
+C:\Users\User\SYNAPSE\tests\test_core.py-275-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-292-        assert entry.entry_hash != ""
+C:\Users\User\SYNAPSE\tests\test_core.py:293:        assert len(entry.entry_hash) == 64  # SHA-256 hex
+C:\Users\User\SYNAPSE\tests\test_core.py-294-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-370-        results = log.get_entries(category=AuditCategory.LIGHTING)
+C:\Users\User\SYNAPSE\tests\test_core.py:371:        assert len(results) == 2
+C:\Users\User\SYNAPSE\tests\test_core.py-372-        assert all(e.category == AuditCategory.LIGHTING for e in results)
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-383-        log.log("test", "msg")
+C:\Users\User\SYNAPSE\tests\test_core.py:384:        assert len(received) == 1
+C:\Users\User\SYNAPSE\tests\test_core.py-385-        assert received[0].operation == "test"
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-402-        jsonl_files = list(self.tmp_dir.glob("audit_*.jsonl"))
+C:\Users\User\SYNAPSE\tests\test_core.py:403:        assert len(jsonl_files) == 1
+C:\Users\User\SYNAPSE\tests\test_core.py-404-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-410-        exported = log.export_session()
+C:\Users\User\SYNAPSE\tests\test_core.py:411:        assert len(exported) == 2
+C:\Users\User\SYNAPSE\tests\test_core.py-412-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-453-        assert restored.operation == "create_light"
+C:\Users\User\SYNAPSE\tests\test_core.py:454:        assert restored.confidence == 0.85
+C:\Users\User\SYNAPSE\tests\test_core.py-455-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-535-        assert batch is not None
+C:\Users\User\SYNAPSE\tests\test_core.py:536:        assert len(batch.proposals) == 2
+C:\Users\User\SYNAPSE\tests\test_core.py:537:        assert batch.pending_count() == 2
+C:\Users\User\SYNAPSE\tests\test_core.py-538-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-570-        assert batch.status == "completed"
+C:\Users\User\SYNAPSE\tests\test_core.py:571:        assert batch.pending_count() == 0
+C:\Users\User\SYNAPSE\tests\test_core.py-572-        for p in batch.proposals:
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-610-        all_pending = gate.get_pending()
+C:\Users\User\SYNAPSE\tests\test_core.py:611:        assert len(all_pending) == 2
+C:\Users\User\SYNAPSE\tests\test_core.py-612-
+C:\Users\User\SYNAPSE\tests\test_core.py-613-        shot_010_pending = gate.get_pending(sequence_id="shot_010")
+C:\Users\User\SYNAPSE\tests\test_core.py:614:        assert len(shot_010_pending) == 1
+C:\Users\User\SYNAPSE\tests\test_core.py-615-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-624-        )
+C:\Users\User\SYNAPSE\tests\test_core.py:625:        assert len(received) == 1
+C:\Users\User\SYNAPSE\tests\test_core.py-626-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-656-        summary = batch.summary()
+C:\Users\User\SYNAPSE\tests\test_core.py:657:        assert summary["pending"] == 1
+C:\Users\User\SYNAPSE\tests\test_core.py:658:        assert summary["approved"] == 1
+C:\Users\User\SYNAPSE\tests\test_core.py-659-
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-661-        batch = GateBatch(batch_id="test", sequence_id="shot_010")
+C:\Users\User\SYNAPSE\tests\test_core.py:662:        assert batch.pending_count() == 0
+C:\Users\User\SYNAPSE\tests\test_core.py-663-        p = GateProposal(
+--
+C:\Users\User\SYNAPSE\tests\test_core.py-668-        batch.add_proposal(p)
+C:\Users\User\SYNAPSE\tests\test_core.py:669:        assert batch.pending_count() == 1
+C:\Users\User\SYNAPSE\tests\test_core.py-670-
+--
+C:\Users\User\SYNAPSE\tests\test_crypto.py-268-        from synapse.core.determinism import kahan_sum
+C:\Users\User\SYNAPSE\tests\test_crypto.py:269:        assert kahan_sum([1.0, 2.0, 3.0]) == 6.0
+C:\Users\User\SYNAPSE\tests\test_crypto.py-270-
+--
+C:\Users\User\SYNAPSE\tests\test_crypto.py-272-        from synapse.core.determinism import kahan_sum
+C:\Users\User\SYNAPSE\tests\test_crypto.py:273:        assert kahan_sum([]) == 0.0
+C:\Users\User\SYNAPSE\tests\test_crypto.py-274-
+--
+C:\Users\User\SYNAPSE\tests\test_crypto.py-278-        result = kahan_sum([0.1] * 10)
+C:\Users\User\SYNAPSE\tests\test_crypto.py:279:        assert result == 1.0
+C:\Users\User\SYNAPSE\tests\test_crypto.py-280-
+--
+C:\Users\User\SYNAPSE\tests\test_crypto.py-285-        result = kahan_sum(values)
+C:\Users\User\SYNAPSE\tests\test_crypto.py:286:        assert result == 2.0
+C:\Users\User\SYNAPSE\tests\test_crypto.py-287-
+--
+C:\Users\User\SYNAPSE\tests\test_crypto.py-295-        # Sum of 0.0, 0.1, 0.2, ..., 0.9 = 4.5
+C:\Users\User\SYNAPSE\tests\test_crypto.py:296:        assert result == 4.5
+C:\Users\User\SYNAPSE\tests\test_crypto.py-297-
+--
+C:\Users\User\SYNAPSE\tests\test_crypto.py-314-        result = add(0.1 + 0.2, 0.0)
+C:\Users\User\SYNAPSE\tests\test_crypto.py:315:        assert result == 0.3
+C:\Users\User\SYNAPSE\tests\test_crypto.py-316-
+--
+C:\Users\User\SYNAPSE\tests\test_crypto.py-324-        result = identity((0.1 + 0.2, 0.1 + 0.2, 0.1 + 0.2))
+C:\Users\User\SYNAPSE\tests\test_crypto.py:325:        assert all(c == 0.3 for c in result)
+C:\Users\User\SYNAPSE\tests\test_crypto.py-326-
+--
+C:\Users\User\SYNAPSE\tests\test_crypto.py-334-        result = fn(0.1 + 0.2, "hello", c=0.1 + 0.2)
+C:\Users\User\SYNAPSE\tests\test_crypto.py:335:        assert result[0] == 0.3
+C:\Users\User\SYNAPSE\tests\test_crypto.py-336-        assert result[1] == "hello"
+C:\Users\User\SYNAPSE\tests\test_crypto.py:337:        assert result[2] == 0.3
+C:\Users\User\SYNAPSE\tests\test_crypto.py-338-
+--
+C:\Users\User\SYNAPSE\tests\test_design_system.py-73-        r, g, b = c["rgb_int"]
+C:\Users\User\SYNAPSE\tests\test_design_system.py:74:        assert 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255
+C:\Users\User\SYNAPSE\tests\test_design_system.py-75-
+--
+C:\Users\User\SYNAPSE\tests\test_design_system.py-78-        c = color(SIGNAL, alpha=0.5)
+C:\Users\User\SYNAPSE\tests\test_design_system.py:79:        assert c["rgba_float"][3] == 0.5
+C:\Users\User\SYNAPSE\tests\test_design_system.py-80-        assert "0.5" in c["qt_rgba"]
+--
+C:\Users\User\SYNAPSE\tests\test_design_system.py-145-        svgs = self._get_svgs()
+C:\Users\User\SYNAPSE\tests\test_design_system.py:146:        assert len(svgs) >= 18, f"Expected at least 18 SVGs, found {len(svgs)}"
+C:\Users\User\SYNAPSE\tests\test_design_system.py-147-
+--
+C:\Users\User\SYNAPSE\tests\test_design_system.py-169-                w, h = float(parts[2]), float(parts[3])
+C:\Users\User\SYNAPSE\tests\test_design_system.py:170:                assert w == h == 64, f"{os.path.basename(svg_path)} viewBox is {w}x{h}, expected 64x64"
+C:\Users\User\SYNAPSE\tests\test_design_system.py-171-
+--
+C:\Users\User\SYNAPSE\tests\test_design_system.py-222-        tools = root.findall(".//tool")
+C:\Users\User\SYNAPSE\tests\test_design_system.py:223:        assert len(tools) >= 5, f"Expected at least 5 tools, found {len(tools)}"
+C:\Users\User\SYNAPSE\tests\test_design_system.py-224-
+--
+C:\Users\User\SYNAPSE\tests\test_design_system.py-268-        interfaces = root.findall(".//interface")
+C:\Users\User\SYNAPSE\tests\test_design_system.py:269:        assert len(interfaces) >= 1
+C:\Users\User\SYNAPSE\tests\test_design_system.py-270-        assert interfaces[0].get("name") == "synapse_panel"
+--
+C:\Users\User\SYNAPSE\tests\test_e2e_sprint.py-235-        suggestions = result["suggested_hda_interface"]
+C:\Users\User\SYNAPSE\tests\test_e2e_sprint.py:236:        assert len(suggestions) >= 2, "Should suggest at least npts and seed"
+C:\Users\User\SYNAPSE\tests\test_e2e_sprint.py-237-
+--
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py-111-            assert data["status"] == "generated"
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py:112:            assert data["item_count"] >= 0  # May be 0 before cook
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py-113-
+--
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py-124-            })
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py:125:            assert data["total_items"] >= 1
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py-126-
+--
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py-130-            })
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py:131:            assert data["total_items"] >= 1
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py-132-            assert "total_cook_time" in data
+--
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py-137-            })
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py:138:            assert data["node_count"] >= 1
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py:139:            assert len(data["nodes"]) >= 1
+C:\Users\User\SYNAPSE\tests\test_e2e_tops.py-140-
+--
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py-89-        # All values should be in [0, 1] after normalization
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py:90:        assert loaded.min() >= 0.0
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py:91:        assert loaded.max() <= 1.0
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py-92-
+--
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py-163-        assert ev.passed is True
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py:164:        assert len(ev.issues) == 0
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py-165-
+--
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py-220-        assert isinstance(seq, SequenceEvaluation)
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py:221:        assert len(seq.frame_evaluations) == 5
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py-222-        # Frames should be evaluated in sorted order
+--
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py-239-        assert isinstance(seq, SequenceEvaluation)
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py:240:        assert len(seq.frame_evaluations) == 3
+C:\Users\User\SYNAPSE\tests\test_evaluator_io.py-241-        # Frame 2 should have failed (file not found)
+--
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-247-        assert report.success is True
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py:248:        assert report.iterations >= 1
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-249-
+--
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-276-        assert report.success is True
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py:277:        assert report.iterations >= 1
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-278-
+--
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-282-        ]
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py:283:        assert len(warn_decisions) >= 1
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-284-        # The warning decision should mention the ordering issue
+--
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-317-        ]
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py:318:        assert len(fail_decisions) >= 1
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-319-        assert "camera" in fail_decisions[0].decision.lower() or "camera" in fail_decisions[0].reasoning.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-351-        # Should have taken at least 2 iterations (fail + succeed)
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py:352:        assert report.iterations >= 2
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-353-        # Planner should have been asked to replan after first failure
+--
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-362-        assert isinstance(report.decisions, list)
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py:363:        assert len(report.decisions) >= 1
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-364-
+--
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-431-        assert report.success is False
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py:432:        assert report.iterations == 3
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-433-
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-434-        # Planner should have been asked to replan after each failure (except last)
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py:435:        assert mock_planner.replan.call_count >= 2
+C:\Users\User\SYNAPSE\tests\test_forge_integration.py-436-
+--
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-276-        assert result["checks"]["nan_check"]["passed"] is False
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py:277:        assert result["checks"]["nan_check"]["value"] == 15
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-278-
+--
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-485-        assert result["resolution"] == [1920, 1080]
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py:486:        assert result["channels"] == 4
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-487-        assert result["format"] == "half"
+--
+C:\Users\User\SYNAPSE\tests\test_guards.py-349-
+C:\Users\User\SYNAPSE\tests\test_guards.py:350:        assert result["removed"] == 1
+C:\Users\User\SYNAPSE\tests\test_guards.py-351-        assert "/stage/a" in result["remaining"]
+--
+C:\Users\User\SYNAPSE\tests\test_guards.py-366-
+C:\Users\User\SYNAPSE\tests\test_guards.py:367:        assert result["removed"] == 2
+C:\Users\User\SYNAPSE\tests\test_guards.py-368-        assert result["remaining"] == ["/stage/a"]
+--
+C:\Users\User\SYNAPSE\tests\test_guards.py-381-
+C:\Users\User\SYNAPSE\tests\test_guards.py:382:        assert result["removed"] == 0
+C:\Users\User\SYNAPSE\tests\test_guards.py-383-        assert set(result["remaining"]) == {"/stage/a", "/stage/b"}
+--
+C:\Users\User\SYNAPSE\tests\test_guards.py-397-
+C:\Users\User\SYNAPSE\tests\test_guards.py:398:        assert result["removed"] == 1
+C:\Users\User\SYNAPSE\tests\test_guards.py-399-
+--
+C:\Users\User\SYNAPSE\tests\test_guards.py-701-        assert result["type"] == "distantlight"
+C:\Users\User\SYNAPSE\tests\test_guards.py:702:        assert result["inputs"] == 1
+C:\Users\User\SYNAPSE\tests\test_guards.py:703:        assert result["outputs"] == 2
+C:\Users\User\SYNAPSE\tests\test_guards.py-704-
+--
+C:\Users\User\SYNAPSE\tests\test_guards.py-726-
+C:\Users\User\SYNAPSE\tests\test_guards.py:727:        assert result["inputs"] == 1
+C:\Users\User\SYNAPSE\tests\test_guards.py:728:        assert result["outputs"] == 0
+C:\Users\User\SYNAPSE\tests\test_guards.py-729-
+--
+C:\Users\User\SYNAPSE\tests\test_hda.py-547-        assert result["status"] == "ok"
+C:\Users\User\SYNAPSE\tests\test_hda.py:548:        assert result["node_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_hda.py-549-        # subnet.createNode called for the subnet itself + 2 internal nodes
+C:\Users\User\SYNAPSE\tests\test_hda.py:550:        assert subnet.createNode.call_count >= 2
+C:\Users\User\SYNAPSE\tests\test_hda.py-551-
+--
+C:\Users\User\SYNAPSE\tests\test_hda.py-756-        assert result["status"] == "ok"
+C:\Users\User\SYNAPSE\tests\test_hda.py:757:        assert result["count"] == 1
+C:\Users\User\SYNAPSE\tests\test_hda.py-758-        assert result["hdas"][0]["name"] == "scatter_tool"
+--
+C:\Users\User\SYNAPSE\tests\test_hda.py-782-
+C:\Users\User\SYNAPSE\tests\test_hda.py:783:        assert result["count"] == 1
+C:\Users\User\SYNAPSE\tests\test_hda.py-784-        assert result["hdas"][0]["name"] == "my_tool"
+--
+C:\Users\User\SYNAPSE\tests\test_hda.py-792-        assert result["status"] == "ok"
+C:\Users\User\SYNAPSE\tests\test_hda.py:793:        assert result["count"] == 0
+C:\Users\User\SYNAPSE\tests\test_hda.py-794-        assert result["hdas"] == []
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-236-
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:237:        assert len(received) == 1
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-238-        assert received[0]["response"] == "hello"
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-248-
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:249:        assert len(received) == 1
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-250-        assert received[0]["stage"] == "building_nodes"
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-260-
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:261:        assert len(received) == 1
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-262-        assert received[0]["success"] is True
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-275-
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:276:        assert len(chat_received) == 0
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:277:        assert len(hda_received) == 0
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-278-
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-283-        assert "failed" in HDA_STAGES
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:284:        assert len(HDA_STAGES) == 9
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-285-
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-291-        bridge.send({"command": "test"})
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:292:        assert len(bridge._send_queue) == 1
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-293-        queued = json.loads(bridge._send_queue[0])
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-339-        assert recipe["name"] == "three_point_light_rig"
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:340:        assert len(recipe["node_graph"]) >= 4
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-341-        # Has key, fill, rim, dome
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-375-        recipe = HDA_RECIPES["sop_scatter"]
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:376:        assert len(recipe["connections"]) >= 2
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-377-        # __input0 -> scatter1
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-385-            if "xn__inputsintensity_i0a" in parms:
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:386:                assert parms["xn__inputsintensity_i0a"] == 1.0, (
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-387-                    "{} violates Lighting Law: intensity must be 1.0".format(
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-450-
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:451:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-452-        assert results[0]["success"] is False
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-464-        controller.execute("another hda", "SOP", {})
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:465:        assert len(errors) == 1
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-466-        assert "already in progress" in errors[0]
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-510-        # Verify progress was emitted
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:511:        assert len(progress_updates) >= 2
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-512-        assert progress_updates[0][0] == "parsing_prompt"
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-518-        assert bridge_call["payload"]["category"] == "Sop"
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:519:        assert len(bridge_call["payload"]["nodes"]) >= 2
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-520-
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-534-
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:535:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-536-        assert results[0]["success"] is True
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-567-        bridge.send_command("ping", {"msg": "hello"})
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:568:        assert len(bridge._send_queue) == 1
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-569-        msg = json.loads(bridge._send_queue[0])
+--
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-575-        from synapse.routing.hda_recipes import HDA_RECIPES, get_recipe
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py:576:        assert len(HDA_RECIPES) >= 5
+C:\Users\User\SYNAPSE\tests\test_hda_panel.py-577-        assert get_recipe("sop_scatter") is not None
+--
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-163-        assert resp.id == "my-id-42"
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py:164:        assert resp.sequence == 7
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-165-
+--
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-336-        assert all(results), "All pings should succeed"
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py:337:        assert len(results) == 50
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-338-
+--
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-366-
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py:367:        assert len(errors) == 0, f"Thread errors: {errors}"
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-368-
+--
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-389-        assert parsed.payload["parent"] == "/obj"
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py:390:        assert parsed.sequence == 5
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-391-
+--
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-404-        assert parsed.data["node"] == "/obj/geo1"
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py:405:        assert parsed.sequence == 3
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-406-
+--
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-467-        assert parsed["data"]["pong"] is True
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py:468:        assert parsed["sequence"] == 1
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-469-
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-169-        assert "height" in result
+C:\Users\User\SYNAPSE\tests\test_introspection.py:170:        assert result["height"] == 0.5
+C:\Users\User\SYNAPSE\tests\test_introspection.py-171-        assert "rows" not in result
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-201-        result = introspection._connections(node)
+C:\Users\User\SYNAPSE\tests\test_introspection.py:202:        assert len(result["inputs"]) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py:203:        assert result["inputs"][0]["index"] == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-204-
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-215-        assert result is not None
+C:\Users\User\SYNAPSE\tests\test_introspection.py:216:        assert result["points"] == 100
+C:\Users\User\SYNAPSE\tests\test_introspection.py:217:        assert result["prims"] == 50
+C:\Users\User\SYNAPSE\tests\test_introspection.py:218:        assert result["vertices"] == 200
+C:\Users\User\SYNAPSE\tests\test_introspection.py-219-
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-288-        result = introspection._recurse_inputs(node, depth=1)
+C:\Users\User\SYNAPSE\tests\test_introspection.py:289:        assert len(result) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-290-        assert result[0]["path"] == "/obj/geo1/grid1"
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-297-        result = introspection._recurse_inputs(node, depth=2)
+C:\Users\User\SYNAPSE\tests\test_introspection.py:298:        assert len(result) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-299-        assert "inputs" in result[0]
+C:\Users\User\SYNAPSE\tests\test_introspection.py:300:        assert len(result[0]["inputs"]) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-301-        assert result[0]["inputs"][0]["path"] == "/obj/geo1/line1"
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-311-        result = introspection.inspect_selection()
+C:\Users\User\SYNAPSE\tests\test_introspection.py:312:        assert result["count"] == 0
+C:\Users\User\SYNAPSE\tests\test_introspection.py-313-        assert result["nodes"] == []
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-318-        result = introspection.inspect_selection(depth=0)
+C:\Users\User\SYNAPSE\tests\test_introspection.py:319:        assert result["count"] == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-320-        assert result["nodes"][0]["path"] == "/obj/geo1/mountain1"
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-328-        assert "input_graph" in result["nodes"][0]
+C:\Users\User\SYNAPSE\tests\test_introspection.py:329:        assert len(result["nodes"][0]["input_graph"]) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-330-
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-353-        result = introspection.inspect_scene(root="/obj", max_depth=2)
+C:\Users\User\SYNAPSE\tests\test_introspection.py:354:        assert result["overview"]["node_count"] >= 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py:355:        assert len(result["network_tree"]) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-356-
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-378-        # Only Sop nodes counted
+C:\Users\User\SYNAPSE\tests\test_introspection.py:379:        assert result["overview"]["contexts"].get("Lop", 0) == 0
+C:\Users\User\SYNAPSE\tests\test_introspection.py-380-
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-385-        result = introspection.inspect_scene(root="/obj", max_depth=2)
+C:\Users\User\SYNAPSE\tests\test_introspection.py:386:        assert len(result["issues"]) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-387-        assert result["issues"][0]["path"] == "/obj/broken"
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-395-        result = introspection.inspect_scene(root="/obj", max_depth=2)
+C:\Users\User\SYNAPSE\tests\test_introspection.py:396:        assert len(result["artist_notes"]) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-397-        assert "Main character" in result["artist_notes"][0]["text"]
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-442-        result = introspection.inspect_node_detail("/obj/geo1/wrangle1")
+C:\Users\User\SYNAPSE\tests\test_introspection.py:443:        assert len(result["expressions"]) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py-444-        assert result["expressions"][0]["expression"] == "$F * 0.1"
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-452-        # Expression info should not be collected
+C:\Users\User\SYNAPSE\tests\test_introspection.py:453:        assert len(result["expressions"]) == 0
+C:\Users\User\SYNAPSE\tests\test_introspection.py-454-
+--
+C:\Users\User\SYNAPSE\tests\test_introspection.py-461-        result = introspection.inspect_node_detail("/obj/geo1/wrangle1")
+C:\Users\User\SYNAPSE\tests\test_introspection.py:462:        assert len(result["keyframed_parms"]) == 1
+C:\Users\User\SYNAPSE\tests\test_introspection.py:463:        assert result["keyframed_parms"][0]["count"] == 2
+C:\Users\User\SYNAPSE\tests\test_introspection.py-464-
+--
+C:\Users\User\SYNAPSE\tests\test_keyframe_aov.py-59-        parm.setKeyframe.assert_called_once()
+C:\Users\User\SYNAPSE\tests\test_keyframe_aov.py:60:        assert key._frame == 24.0
+C:\Users\User\SYNAPSE\tests\test_keyframe_aov.py:61:        assert key._value == 5.0
+C:\Users\User\SYNAPSE\tests\test_keyframe_aov.py-62-
+--
+C:\Users\User\SYNAPSE\tests\test_keyframe_aov.py-67-        key.setValue(3.0)
+C:\Users\User\SYNAPSE\tests\test_keyframe_aov.py:68:        assert key._frame == 1.0
+C:\Users\User\SYNAPSE\tests\test_keyframe_aov.py:69:        assert key._value == 3.0
+C:\Users\User\SYNAPSE\tests\test_keyframe_aov.py-70-
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-101-        """Index should load all topics from semantic_index.json."""
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:102:        assert len(knowledge._semantic_index) == 3
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-103-        assert "solaris_parameter_names" in knowledge._semantic_index
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-195-        result = KnowledgeIndex._normalize_semantic_index(nested)
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:196:        assert len(result) == 2
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-197-        assert "pyro_simulation" in result
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-205-        # common_queries preserved
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:206:        assert len(result["pyro_simulation"]["common_queries"]) == 2
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-207-        # When no description, primary_doc used as description
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-227-        ki = KnowledgeIndex(rag_root=str(tmp_path))
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:228:        assert ki.topic_count == 1
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-229-        result = ki.lookup("rbd fracture simulation")
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-251-        result = KnowledgeIndex._normalize_semantic_index(nested)
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:252:        assert len(result) == 1
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-253-        assert "valid_topic" in result
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-324-        assert result.answer == ""
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:325:        assert result.confidence == 0.0
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-326-        assert result.sources == []
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-337-        assert result.found
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:338:        assert result.confidence == 0.85
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-339-        assert result.agent_hint == "houdini_set_parm"
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-357-        """Real semantic index should have 13 topics."""
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:358:        assert len(real_knowledge._semantic_index) >= 10
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-359-
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-414-            assert isinstance(mod.TOOL_NAMES, list), f"{name}.TOOL_NAMES not a list"
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:415:            assert len(mod.TOOL_NAMES) >= 3, f"{name}.TOOL_NAMES has too few tools"
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-416-
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-602-        # Index is flat format: each key is a topic
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:603:        assert len(real_index) >= 40, (
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-604-            f"Only {len(real_index)} topics, need >= 40"
+--
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-613-        )
+C:\Users\User\SYNAPSE\tests\test_knowledge.py:614:        assert total_keywords >= 600, (
+C:\Users\User\SYNAPSE\tests\test_knowledge.py-615-            f"Only {total_keywords} keywords, need >= 600"
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-70-        assert s.hip_file == ""
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:71:        assert s.total_nodes == 0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:72:        assert s.fps == 24.0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-73-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-80-        r = RoutingMetrics()
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:81:        assert r.total_requests == 0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-82-        assert r.tier_counts == ()
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-92-        assert r.health_status == "healthy"
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:93:        assert r.uptime_seconds == 0.0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-94-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-96-        s = SessionMetrics()
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:97:        assert s.active_sessions == 0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-98-        assert s.deploy_mode == "local"
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-101-        snap = MetricSnapshot()
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:102:        assert snap.timestamp == 0.0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-103-        assert isinstance(snap.scene, SceneMetrics)
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-123-        agg = MetricsAggregator()
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:124:        assert agg._interval == 2.0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-125-        assert agg.latest() is None
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-128-        agg = MetricsAggregator(interval=5.0)
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:129:        assert agg._interval == 5.0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-130-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-133-            agg = MetricsAggregator()
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:134:            assert agg._interval == 3.5
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-135-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-137-        agg = MetricsAggregator(interval=0.1)
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:138:        assert agg._interval == 0.5
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-139-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-176-        routing = agg._collect_routing()
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:177:        assert routing.total_requests == 100
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:178:        assert routing.cache_hits == 40
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:179:        assert routing.cache_hit_rate == 40.0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:180:        assert len(routing.tier_counts) == 3
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:181:        assert routing.knowledge_entries == 50
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-182-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-199-        assert res.circuit_state == "closed"
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:200:        assert res.circuit_trip_count == 2
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-201-        assert res.rate_limiter_active is True
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:202:        assert res.rate_limit_rejects == 5
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-203-        assert res.health_status == "healthy"
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-207-        sess = agg._collect_session()
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:208:        assert sess.active_sessions == 0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-209-        assert sess.deploy_mode == "local"
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-215-        sess = agg._collect_session()
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:216:        assert sess.active_sessions == 3
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-217-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-240-        assert agg.latest() is not None
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:241:        assert len(agg._history) >= 1
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-242-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-248-        hist = agg.history(count=10)
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:249:        assert len(hist) >= 2
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-250-        assert hist[0]["timestamp"] >= hist[-1]["timestamp"]
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-257-        hist = agg.history(count=3)
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:258:        assert len(hist) == 3
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-259-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-263-            agg._history.append(MetricSnapshot(timestamp=float(i)))
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:264:        assert len(agg._history) == 5
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-265-
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-281-        d = snapshot_to_dict(snap)
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:282:        assert d["timestamp"] == 1.0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-283-        assert d["scene"]["hip_file"] == "test.hip"
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:284:        assert d["scene"]["total_nodes"] == 42
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-285-        # tier_counts converted to dict
+--
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-290-        d = snapshot_to_dict(snap)
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py:291:        assert d["timestamp"] == 0.0
+C:\Users\User\SYNAPSE\tests\test_live_metrics.py-292-        assert d["scene"]["hip_file"] == ""
+--
+C:\Users\User\SYNAPSE\tests\test_load.py-132-        stats = await run_load_test("ws://localhost:9999", connections=5, requests_per_conn=20)
+C:\Users\User\SYNAPSE\tests\test_load.py:133:        assert stats.conn_failures == 0, f"{stats.conn_failures} connection failures"
+C:\Users\User\SYNAPSE\tests\test_load.py-134-        assert stats.errors < 10, f"{stats.errors} errors (threshold: 10)"
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-129-        assert msg["jsonrpc"] == "2.0"
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:130:        assert msg["id"] == 1
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-131-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-163-        assert resp["jsonrpc"] == "2.0"
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:164:        assert resp["id"] == 42
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-165-        assert resp["result"]["answer"] is True
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-181-        resp = json.loads(body)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:182:        assert resp["id"] == 5
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-183-        assert resp["error"]["code"] == protocol_mod.INVALID_PARAMS
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-194-        assert sid.startswith("mcp-session-")
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:195:        assert mgr.active_count == 1
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-196-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-222-        assert mgr.get_session(sid) is None
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:223:        assert mgr.active_count == 0
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-224-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-256-        assert isinstance(tools, list)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:257:        assert len(tools) >= 70  # 80 tools registered
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-258-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-261-        tools = tools_mod.get_tools()
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:262:        assert len(tools) >= 80, f"Expected >= 80 tools, got {len(tools)}"
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-263-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-356-        _, headers = server.handle_request(body)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:357:        assert server.active_sessions == 1
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-358-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-379-        assert "tools" in resp["result"]
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:380:        assert len(resp["result"]["tools"]) >= 80
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-381-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-485-        sid = headers["Mcp-Session-Id"]
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:486:        assert server.active_sessions == 1
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-487-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-489-        server.destroy_session(sid)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:490:        assert server.active_sessions == 0
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-491-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-540-        resources = resp["result"]["resources"]
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:541:        assert len(resources) >= 3  # at least 3 static resources
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-542-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-572-        templates = resp["result"]["resourceTemplates"]
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:573:        assert len(templates) >= 9  # 9 resource templates (7 + 2 Phase 4)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-574-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-868-        ctx_resource = [r for r in resources if r["uri"] == "synapse://project/context"]
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:869:        assert len(ctx_resource) == 1
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-870-        assert "project memory" in ctx_resource[0]["description"].lower()
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-1006-        assert "isError" not in result
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:1007:        assert len(result["content"]) == 1
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-1008-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-1016-        assert "isError" not in result
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:1017:        assert len(result["content"]) == 1
+--
+C:\Users\User\SYNAPSE\tests\test_materials.py-120-        matlib.moveToGoodPosition.assert_called_once()
+C:\Users\User\SYNAPSE\tests\test_materials.py:121:        assert matlib.cook.call_count >= 1
+C:\Users\User\SYNAPSE\tests\test_materials.py-122-        matlib.cook.assert_any_call(force=True)
+--
+C:\Users\User\SYNAPSE\tests\test_materials.py-648-        assert result["name"] == "textured_material"
+C:\Users\User\SYNAPSE\tests\test_materials.py:649:        assert len(result["connected_maps"]) == 1
+C:\Users\User\SYNAPSE\tests\test_materials.py-650-        assert result["connected_maps"][0]["map"] == "diffuse_tex"
+--
+C:\Users\User\SYNAPSE\tests\test_materials.py-670-        # Should have 4 connected maps (diffuse, roughness, metalness, normal)
+C:\Users\User\SYNAPSE\tests\test_materials.py:671:        assert len(result["connected_maps"]) == 4
+C:\Users\User\SYNAPSE\tests\test_materials.py-672-        map_names = [m["map"] for m in result["connected_maps"]]
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_roundtrip.py-132-        assert "commands" in resp.data
+C:\Users\User\SYNAPSE\tests\test_mcp_roundtrip.py:133:        assert len(resp.data["commands"]) >= 30
+C:\Users\User\SYNAPSE\tests\test_mcp_roundtrip.py-134-
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_roundtrip.py-216-        )
+C:\Users\User\SYNAPSE\tests\test_mcp_roundtrip.py:217:        assert resp.sequence == 42
+C:\Users\User\SYNAPSE\tests\test_mcp_roundtrip.py-218-
+--
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py-26-        blocker = next(p for p in patterns if p["type"] == "repeated_blocker")
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py:27:        assert blocker["count"] >= 2
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py-28-
+--
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py-63-        patterns = detect_patterns(content)
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py:64:        assert len(patterns) >= 2
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py-65-        # Repeated blocker (severity=3) should rank above oscillating (severity=1)
+--
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py-100-        osc = next(p for p in patterns if p["type"] == "oscillating_parameter")
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py:101:        assert len(osc["evidence"]) == 3
+C:\Users\User\SYNAPSE\tests\test_memory_patterns.py-102-        assert "64->256" in osc["evidence"][0]
+--
+C:\Users\User\SYNAPSE\tests\test_multi_shot.py-142-        recipe, params = match
+C:\Users\User\SYNAPSE\tests\test_multi_shot.py:143:        assert len(recipe.steps) == 2
+C:\Users\User\SYNAPSE\tests\test_multi_shot.py-144-        assert recipe.steps[0].action == "execute_python"
+--
+C:\Users\User\SYNAPSE\tests\test_multi_shot.py-242-
+C:\Users\User\SYNAPSE\tests\test_multi_shot.py:243:        assert result["shot_count"] == 3
+C:\Users\User\SYNAPSE\tests\test_multi_shot.py:244:        assert result["work_items_generated"] == 3
+C:\Users\User\SYNAPSE\tests\test_multi_shot.py-245-        assert result["created_network"] is True
+--
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-159-        assert result["status"] == "ok"
+C:\Users\User\SYNAPSE\tests\test_network_explain.py:160:        assert result["node_count"] == 3
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-161-        # Grid has no inputs so should appear first in topo sort
+--
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-181-
+C:\Users\User\SYNAPSE\tests\test_network_explain.py:182:        assert result["node_count"] == 3
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-183-        # Grid should be first (no inputs)
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-184-        assert result["data_flow"][0]["node"] == "grid1"
+C:\Users\User\SYNAPSE\tests\test_network_explain.py:185:        assert len(result["data_flow"][0]["outputs_to"]) == 2
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-186-
+--
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-206-        # Should find grid1, subnet1, and inner_null (depth=2)
+C:\Users\User\SYNAPSE\tests\test_network_explain.py:207:        assert result["node_count"] == 3
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-208-        node_names = [e["node"] for e in result["data_flow"]]
+--
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-222-        assert result["status"] == "ok"
+C:\Users\User\SYNAPSE\tests\test_network_explain.py:223:        assert result["node_count"] == 0
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-224-        assert result["data_flow"] == []
+--
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-283-        assert "rows" in key_params
+C:\Users\User\SYNAPSE\tests\test_network_explain.py:284:        assert key_params["rows"] == 50
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-285-        assert "cols" not in key_params
+--
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-302-        suggestions = result["suggested_hda_interface"]
+C:\Users\User\SYNAPSE\tests\test_network_explain.py:303:        assert len(suggestions) >= 1
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-304-        assert suggestions[0]["node"] == "scatter1"
+--
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-364-        # depth=1 means only direct children, no recurse into subnet
+C:\Users\User\SYNAPSE\tests\test_network_explain.py:365:        assert result["node_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_network_explain.py-366-        node_names = [e["node"] for e in result["data_flow"]]
+--
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-99-        with rwl.read_lock():
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py:100:            assert rwl._readers == 1
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py:101:        assert rwl._readers == 0
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-102-
+--
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-127-
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py:128:        assert all(r >= 2 for r in max_readers), f"Expected concurrent readers, got {max_readers}"
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-129-
+--
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-400-        result = handler._handle_batch_commands(payload)
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py:401:        assert len(result["results"]) == 2
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-402-        assert all(s == "ok" for s in result["statuses"])
+--
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-443-        result = handler._handle_batch_commands(payload)
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py:444:        assert len(result["statuses"]) == 1
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-445-        assert result["statuses"][0] == "error"
+--
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-626-
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py:627:            assert len(results) == 3
+C:\Users\User\SYNAPSE\tests\test_pipeline_efficiency.py-628-        finally:
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-84-        ctx.add(EntryCategory.OBSERVATION, "Key light created", tool_call="create_usd_prim")
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:85:        assert len(ctx.entries) == 2
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-86-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-104-        ctx.add(EntryCategory.DECISION, "d2")
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:105:        assert len(ctx.decisions()) == 2
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-106-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-110-        ctx.add(EntryCategory.OBSERVATION, "o1")
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:111:        assert len(ctx.questions()) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-112-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-116-        ctx.add(EntryCategory.PLAN, "p2")
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:117:        assert len(ctx.plans()) == 2
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-118-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-136-        # All protected entries must survive
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:137:        assert len(ctx.decisions()) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:138:        assert len(ctx.questions()) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:139:        assert len(ctx.plans()) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-140-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-161-        assert result is False
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:162:        assert len(ctx.entries) == 5
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-163-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-195-        assert record["intent"] == "Lighting setup"
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:196:        assert len(record["decisions"]) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:197:        assert len(record["questions"]) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-198-        assert "create_usd_prim" in record["tool_chain"]
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:199:        assert record["entry_count"] == 3
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:200:        assert record["protected_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-201-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-210-        assert ctx2.intent == "test"
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:211:        assert len(ctx2.entries) == 2
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-212-        assert ctx2.tool_chain == ["ping"]
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-237-        mgr.create("b", chain_id="c2")
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:238:        assert mgr.active_count == 2
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-239-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-243-        mgr.archive("c1")
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:244:        assert mgr.active_count == 0
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:245:        assert mgr.total_count == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-246-
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-252-        active = mgr.active_contexts()
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:253:        assert len(active) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-254-        assert active[0].chain_id == "c2"
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-263-        records = mgr.export_all()
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:264:        assert len(records) == 2
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-265-        assert all(r["type"] == "reasoning_context" for r in records)
+--
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-281-
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:282:        assert len(ctx1.decisions()) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-283-        assert ctx1.decisions()[0].content == "Karma XPU"
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py:284:        assert len(ctx2.decisions()) == 1
+C:\Users\User\SYNAPSE\tests\test_reasoning_context.py-285-        assert ctx2.decisions()[0].content == "MaterialX"
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-522-
+C:\Users\User\SYNAPSE\tests\test_render.py:523:        assert result["pass_count"] == 3
+C:\Users\User\SYNAPSE\tests\test_render.py-524-        names = [p["name"] for p in result["passes"]]
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-545-
+C:\Users\User\SYNAPSE\tests\test_render.py:546:        assert result["pass_count"] == 3
+C:\Users\User\SYNAPSE\tests\test_render.py-547-        names = [p["name"] for p in result["passes"]]
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-561-
+C:\Users\User\SYNAPSE\tests\test_render.py:562:        assert result["pass_count"] == 1
+C:\Users\User\SYNAPSE\tests\test_render.py-563-        p = result["passes"][0]
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-623-
+C:\Users\User\SYNAPSE\tests\test_render.py:624:        assert result["pass_count"] == 1
+C:\Users\User\SYNAPSE\tests\test_render.py-625-        p = result["passes"][0]
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-646-
+C:\Users\User\SYNAPSE\tests\test_render.py:647:        assert result["pass_count"] == 3
+C:\Users\User\SYNAPSE\tests\test_render.py-648-        by_name = {p["name"]: p for p in result["passes"]}
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-738-        mat_check = [c for c in result["checks"] if c["name"] == "materials"]
+C:\Users\User\SYNAPSE\tests\test_render.py:739:        assert len(mat_check) == 1
+C:\Users\User\SYNAPSE\tests\test_render.py-740-        assert mat_check[0]["severity"] == "soft_warn"
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-752-        path_checks = [c for c in result["checks"] if c["name"] == "output_path"]
+C:\Users\User\SYNAPSE\tests\test_render.py:753:        assert len(path_checks) == 1
+C:\Users\User\SYNAPSE\tests\test_render.py-754-
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-776-        assert result["success"] is True
+C:\Users\User\SYNAPSE\tests\test_render.py:777:        assert result["completed_passes"] == 3
+C:\Users\User\SYNAPSE\tests\test_render.py:778:        assert result["total_passes"] == 3
+C:\Users\User\SYNAPSE\tests\test_render.py-779-        assert result["final_image"] == "/tmp/render.exr"
+C:\Users\User\SYNAPSE\tests\test_render.py:780:        assert len(result["passes"]) == 3
+C:\Users\User\SYNAPSE\tests\test_render.py-781-        assert [p["name"] for p in result["passes"]] == ["test", "preview", "production"]
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-794-        assert result["success"] is False
+C:\Users\User\SYNAPSE\tests\test_render.py:795:        assert result["completed_passes"] == 1
+C:\Users\User\SYNAPSE\tests\test_render.py-796-        assert result["final_image"] is None
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-806-        assert result["success"] is False
+C:\Users\User\SYNAPSE\tests\test_render.py:807:        assert result["completed_passes"] == 1
+C:\Users\User\SYNAPSE\tests\test_render.py-808-        assert result["passes"][0]["status"] == "failed"
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-829-        assert result["success"] is True
+C:\Users\User\SYNAPSE\tests\test_render.py:830:        assert result["completed_passes"] == 3
+C:\Users\User\SYNAPSE\tests\test_render.py-831-        for p in result["passes"]:
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-847-        assert prod_pass["resolution"] == "3840x2160"
+C:\Users\User\SYNAPSE\tests\test_render.py:848:        assert prod_pass["samples"] == 128
+C:\Users\User\SYNAPSE\tests\test_render.py-849-
+--
+C:\Users\User\SYNAPSE\tests\test_render.py-912-            paths = result.replace(" Similar prims: ", "").split(", ")
+C:\Users\User\SYNAPSE\tests\test_render.py:913:            assert len(paths) <= 2
+C:\Users\User\SYNAPSE\tests\test_render.py-914-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-58-        r = Remedy("test", "desc", "samples", "multiply", 2.0, max_value=256)
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:59:        assert r.compute_new_value(32) == 64
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-60-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-62-        r = Remedy("test", "desc", "samples", "multiply", 2.0, max_value=256)
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:63:        assert r.compute_new_value(200) == 256
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-64-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-66-        r = Remedy("test", "desc", "exposure", "add", 2.0, max_value=15.0)
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:67:        assert r.compute_new_value(3.0) == 5.0
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-68-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-70-        r = Remedy("test", "desc", "exposure", "add", -1.0)
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:71:        assert r.compute_new_value(5.0) == 4.0
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-72-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-74-        r = Remedy("test", "desc", "depth", "set", 4)
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:75:        assert r.compute_new_value(10) == 4
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-76-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-78-        r = Remedy("test", "desc", "x", "unknown", 99)
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:79:        assert r.compute_new_value(5.0) == 5.0
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-80-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-88-        assert "saturation" in ISSUE_REMEDIES
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:89:        assert len(ISSUE_REMEDIES["saturation"]) >= 2
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-90-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-92-        assert "black_frame" in ISSUE_REMEDIES
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:93:        assert len(ISSUE_REMEDIES["black_frame"]) >= 1
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-94-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-109-                assert r.adjust_fn in ("multiply", "add", "set")
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:110:                assert 0 <= r.confidence <= 1
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-111-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-191-        result = diagnose_issues(val)
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:192:        assert len(result) == 1
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-193-        issue_type, remedy, mem = result[0]
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-206-        result = diagnose_issues(val)
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:207:        assert len(result) == 2
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-208-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-218-        # Both have priority 10 for top remedy; sorted deterministically
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:219:        assert len(result) == 2
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-220-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-244-        result = diagnose_issues(val, memory=mock_memory, scene_tags=["interior"])
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:245:        assert len(result) == 1
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-246-        issue_type, remedy, mem_match = result[0]
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-268-        fixes = query_known_fixes(mock_memory, "saturation", ["interior"])
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:269:        assert len(fixes) == 1
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:270:        assert fixes[0]["score"] == 0.85
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-271-
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-281-        fixes = query_known_fixes(mock_memory, "saturation", [])
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:282:        assert len(fixes) == 0  # Filtered out because no "success" tag
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-283-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-102-        assert result.success is True
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:103:        assert result.frame == 1001
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:104:        assert result.retries == 0
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-105-        assert result.image_path == "/tmp/frame.exr"
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-145-        assert result.success is True
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:146:        assert result.retries == 1
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:147:        assert len(result.fixes_applied) >= 1
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-148-        # Render was called twice
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:149:        assert cb.render_frame.call_count == 2
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-150-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-160-        assert result.success is False
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:161:        assert result.retries == 2
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-162-        # 1 initial + 2 retries = 3 renders
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:163:        assert cb.render_frame.call_count == 3
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-164-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-177-        # Only one render attempt when auto_fix is disabled
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:178:        assert cb.render_frame.call_count == 1
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-179-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-223-        report = farm.render_sequence("/stage/karma1", (1001, 1005))
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:224:        assert report.total_frames == 5
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:225:        assert report.successful_frames == 5
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:226:        assert report.failed_frames == 0
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:227:        assert report.success_rate == 1.0
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:228:        assert report.start_frame == 1001
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:229:        assert report.end_frame == 1005
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:230:        assert callbacks.render_frame.call_count == 5
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-231-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-237-        # Frames: 1001, 1003, 1005, 1007, 1009
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:238:        assert report.total_frames == 5
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-239-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-261-        report = farm.render_sequence("/stage/karma1", (1001, 1003))
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:262:        assert report.total_frames == 3
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-263-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-269-        # Broadcast called for each frame
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:270:        assert callbacks.broadcast.call_count >= 4
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-271-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-282-        # Most frames should not have rendered (cancelled after first)
+C:\Users\User\SYNAPSE\tests\test_render_farm.py:283:        assert report.successful_frames <= 1
+C:\Users\User\SYNAPSE\tests\test_render_farm.py-284-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py-109-        assert call_kwargs[1]["frame_range"] == (1, 3)
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py:110:        assert call_kwargs[1]["step"] == 1
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py-111-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py-113-        assert isinstance(result, dict)
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py:114:        assert result["start_frame"] == 1
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py:115:        assert result["end_frame"] == 3
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py-116-
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py-136-        # Defaults applied
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py:137:        assert handler._render_farm._max_retries == 3
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py-138-        assert handler._render_farm._auto_fix is True
+--
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py-159-        call_kwargs = mock_seq.call_args
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py:160:        assert call_kwargs[1]["step"] == 2
+C:\Users\User\SYNAPSE\tests\test_render_farm_handler.py-161-
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-62-        fr = FrameResult(frame=1001, success=True)
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:63:        assert fr.frame == 1001
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-64-        assert fr.success is True
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:65:        assert fr.retries == 0
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-66-        assert fr.issues == []
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-75-        )
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:76:        assert fr.retries == 3
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:77:        assert len(fr.issues) == 2
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-78-
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-89-        )
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:90:        assert report.success_rate == 1.0
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-91-
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-96-        )
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:97:        assert report.success_rate == 0.7
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-98-
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-100-        report = BatchReport(start_frame=1, end_frame=1, total_frames=0)
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:101:        assert report.success_rate == 0.0
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-102-
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-116-        d = report.to_dict()
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:117:        assert d["total_frames"] == 5
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:118:        assert d["success_rate"] == 0.8
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-119-        assert d["rop_path"] == "/stage/karma1"
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:120:        assert len(d["frame_results"]) == 2
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:121:        assert d["frame_results"][0]["frame"] == 1001
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-122-        assert d["frame_results"][1]["success"] is False
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-191-        assert event["type"] == "render_farm_progress"
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:192:        assert event["frame"] == 5
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:193:        assert event["total_frames"] == 100
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:194:        assert event["progress"] == 0.05
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-195-        assert event["status"] == "rendering"
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-199-        event = build_progress_event(50, 100, "complete", details={"fps": 2.5})
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:200:        assert event["details"]["fps"] == 2.5
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-201-
+--
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-203-        event = build_progress_event(0, 0, "idle")
+C:\Users\User\SYNAPSE\tests\test_render_notify.py:204:        assert event["progress"] == 0.0
+C:\Users\User\SYNAPSE\tests\test_render_notify.py-205-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-136-        assert result.command.type == "ping"
+C:\Users\User\SYNAPSE\tests\test_routing.py:137:        assert result.confidence == 1.0
+C:\Users\User\SYNAPSE\tests\test_routing.py-138-        assert result.pattern_name == "ping"
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-153-        assert result.command.type == "get_help"
+C:\Users\User\SYNAPSE\tests\test_routing.py:154:        assert result.confidence == 0.95
+C:\Users\User\SYNAPSE\tests\test_routing.py-155-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-166-        assert result.command.type == "get_selection"
+C:\Users\User\SYNAPSE\tests\test_routing.py:167:        assert result.confidence == 0.95
+C:\Users\User\SYNAPSE\tests\test_routing.py-168-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-191-        assert result.command.payload["parent"] == "/obj"
+C:\Users\User\SYNAPSE\tests\test_routing.py:192:        assert result.confidence == 0.9
+C:\Users\User\SYNAPSE\tests\test_routing.py-193-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-200-        assert result.command.payload["parent"] == "/obj"
+C:\Users\User\SYNAPSE\tests\test_routing.py:201:        assert result.confidence == 0.95
+C:\Users\User\SYNAPSE\tests\test_routing.py-202-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-216-        assert result.command.payload["node"] == "/obj/key"
+C:\Users\User\SYNAPSE\tests\test_routing.py:217:        assert result.command.payload["value"] == 1.5
+C:\Users\User\SYNAPSE\tests\test_routing.py-218-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-221-        assert result.matched
+C:\Users\User\SYNAPSE\tests\test_routing.py:222:        assert result.command.payload["value"] == 10
+C:\Users\User\SYNAPSE\tests\test_routing.py-223-        assert isinstance(result.command.payload["value"], int)
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-276-        assert not result.matched
+C:\Users\User\SYNAPSE\tests\test_routing.py:277:        assert result.confidence == 0.0
+C:\Users\User\SYNAPSE\tests\test_routing.py-278-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-307-        assert result.command.payload["domain"] == "compositing"
+C:\Users\User\SYNAPSE\tests\test_routing.py:308:        assert result.confidence == 0.9
+C:\Users\User\SYNAPSE\tests\test_routing.py-309-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-347-        index = KnowledgeIndex(rag_root=self.tmp_dir)
+C:\Users\User\SYNAPSE\tests\test_routing.py:348:        assert index.topic_count == 4
+C:\Users\User\SYNAPSE\tests\test_routing.py:349:        assert index.reference_count == 3
+C:\Users\User\SYNAPSE\tests\test_routing.py-350-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-352-        index = KnowledgeIndex()
+C:\Users\User\SYNAPSE\tests\test_routing.py:353:        assert index.topic_count == 0
+C:\Users\User\SYNAPSE\tests\test_routing.py:354:        assert index.reference_count == 0
+C:\Users\User\SYNAPSE\tests\test_routing.py-355-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-429-        s = index.stats()
+C:\Users\User\SYNAPSE\tests\test_routing.py:430:        assert s["topics"] == 4
+C:\Users\User\SYNAPSE\tests\test_routing.py:431:        assert s["references"] == 3
+C:\Users\User\SYNAPSE\tests\test_routing.py-432-        assert s["has_rag"]
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-459-    def test_builtin_recipes_registered(self):
+C:\Users\User\SYNAPSE\tests\test_routing.py:460:        assert len(self.registry.recipes) == 46
+C:\Users\User\SYNAPSE\tests\test_routing.py-461-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-472-        commands = recipe.instantiate(params)
+C:\Users\User\SYNAPSE\tests\test_routing.py:473:        assert len(commands) == 6  # 3 creates + 3 set_parm
+C:\Users\User\SYNAPSE\tests\test_routing.py-474-        assert commands[0].type == "create_node"
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-478-        assert commands[1].payload["parm"] == "light_exposure"
+C:\Users\User\SYNAPSE\tests\test_routing.py:479:        assert commands[1].payload["value"] == 4
+C:\Users\User\SYNAPSE\tests\test_routing.py-480-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-492-        commands = recipe.instantiate(params)
+C:\Users\User\SYNAPSE\tests\test_routing.py:493:        assert len(commands) == 3
+C:\Users\User\SYNAPSE\tests\test_routing.py-494-        assert commands[0].type == "create_node"
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-507-        commands = recipe.instantiate(params)
+C:\Users\User\SYNAPSE\tests\test_routing.py:508:        assert len(commands) == 2
+C:\Users\User\SYNAPSE\tests\test_routing.py-509-        assert commands[0].payload["type"] == "null"
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-528-        self.registry.register(custom)
+C:\Users\User\SYNAPSE\tests\test_routing.py:529:        assert len(self.registry.recipes) == 47
+C:\Users\User\SYNAPSE\tests\test_routing.py-530-        match = self.registry.match("run test")
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-557-        commands = recipe.instantiate(params)
+C:\Users\User\SYNAPSE\tests\test_routing.py:558:        assert len(commands) == 4
+C:\Users\User\SYNAPSE\tests\test_routing.py-559-        assert commands[0].type == "create_node"
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-654-        self.cache.put("fast", "b", "", result)
+C:\Users\User\SYNAPSE\tests\test_routing.py:655:        assert self.cache.stats()["size"] == 2
+C:\Users\User\SYNAPSE\tests\test_routing.py-656-        self.cache.invalidate()
+C:\Users\User\SYNAPSE\tests\test_routing.py:657:        assert self.cache.stats()["size"] == 0
+C:\Users\User\SYNAPSE\tests\test_routing.py-658-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-664-            self.cache.put("fast", f"query{i}", "", result)
+C:\Users\User\SYNAPSE\tests\test_routing.py:665:        assert self.cache.stats()["size"] <= 10
+C:\Users\User\SYNAPSE\tests\test_routing.py-666-        assert self.cache.stats()["evictions"] > 0
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-675-        s = self.cache.stats()
+C:\Users\User\SYNAPSE\tests\test_routing.py:676:        assert s["hits"] == 1
+C:\Users\User\SYNAPSE\tests\test_routing.py:677:        assert s["misses"] == 1
+C:\Users\User\SYNAPSE\tests\test_routing.py:678:        assert s["hit_rate"] == 0.5
+C:\Users\User\SYNAPSE\tests\test_routing.py-679-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-700-        assert result.tier == RoutingTier.INSTANT
+C:\Users\User\SYNAPSE\tests\test_routing.py:701:        assert result.confidence == 1.0
+C:\Users\User\SYNAPSE\tests\test_routing.py-702-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-706-        assert result.tier == RoutingTier.INSTANT
+C:\Users\User\SYNAPSE\tests\test_routing.py:707:        assert len(result.commands) == 1
+C:\Users\User\SYNAPSE\tests\test_routing.py-708-        assert result.commands[0].type == "create_node"
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-716-        assert result.success
+C:\Users\User\SYNAPSE\tests\test_routing.py:717:        assert len(result.responses) == 1
+C:\Users\User\SYNAPSE\tests\test_routing.py-718-        assert result.responses[0].success
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-725-        assert result.success  # Routing succeeded even if execution failed
+C:\Users\User\SYNAPSE\tests\test_routing.py:726:        assert len(result.responses) == 1
+C:\Users\User\SYNAPSE\tests\test_routing.py-727-        assert not result.responses[0].success
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-734-        assert result.tier == RoutingTier.RECIPE
+C:\Users\User\SYNAPSE\tests\test_routing.py:735:        assert len(result.commands) == 6
+C:\Users\User\SYNAPSE\tests\test_routing.py-736-        assert result.metadata["recipe"] == "three_point_lighting"
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-744-        assert result.success
+C:\Users\User\SYNAPSE\tests\test_routing.py:745:        assert mock_fn.call_count == 6  # 6 steps in recipe
+C:\Users\User\SYNAPSE\tests\test_routing.py-746-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-829-        s = self.router.stats()
+C:\Users\User\SYNAPSE\tests\test_routing.py:830:        assert s["total_routes"] == 2
+C:\Users\User\SYNAPSE\tests\test_routing.py:831:        assert s["tiers"]["instant"]["count"] >= 1
+C:\Users\User\SYNAPSE\tests\test_routing.py-832-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-834-        s = self.router.stats()
+C:\Users\User\SYNAPSE\tests\test_routing.py:835:        assert s["total_routes"] == 0
+C:\Users\User\SYNAPSE\tests\test_routing.py-836-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-846-        assert config.enable_cache
+C:\Users\User\SYNAPSE\tests\test_routing.py:847:        assert config.tier0_confidence == 0.8
+C:\Users\User\SYNAPSE\tests\test_routing.py:848:        assert config.tier1_confidence == 0.5
+C:\Users\User\SYNAPSE\tests\test_routing.py-849-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-916-        assert "displacement" in result.answer.lower()
+C:\Users\User\SYNAPSE\tests\test_routing.py:917:        assert result.confidence == 0.8
+C:\Users\User\SYNAPSE\tests\test_routing.py-918-
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-950-        assert result.tier == RoutingTier.STANDARD
+C:\Users\User\SYNAPSE\tests\test_routing.py:951:        assert len(result.commands) == 1
+C:\Users\User\SYNAPSE\tests\test_routing.py-952-        assert result.commands[0].type == "create_node"
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-1166-                router.route("karma rendering xpu")
+C:\Users\User\SYNAPSE\tests\test_routing.py:1167:                assert spy.call_count == 1  # Called once in route(), not again in _try_tier2
+C:\Users\User\SYNAPSE\tests\test_routing.py-1168-        finally:
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-1372-        # This test always passes — it's a report
+C:\Users\User\SYNAPSE\tests\test_routing.py:1373:        assert accuracy >= 0.95, (
+C:\Users\User\SYNAPSE\tests\test_routing.py-1374-            f"Routing accuracy {accuracy:.1%} below 95% threshold. "
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-147-    stats = limiter.get_stats()
+C:\Users\User\SYNAPSE\tests\test_resilience.py:148:    assert stats["total_requests"] == 3, f"Wrong total: {stats['total_requests']}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py:149:    assert stats["rejected_requests"] >= 1, "Should have rejections"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-150-    print(f"  [PASS] Stats: total={stats['total_requests']}, rejected={stats['rejected_requests']}")
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-164-    stats_before = limiter.get_stats()
+C:\Users\User\SYNAPSE\tests\test_resilience.py:165:    assert stats_before["active_clients"] == 2, f"Wrong client count: {stats_before['active_clients']}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-166-
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-170-    stats_after = limiter.get_stats()
+C:\Users\User\SYNAPSE\tests\test_resilience.py:171:    assert stats_after["active_clients"] == 1, f"Client not removed: {stats_after['active_clients']}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-172-    print(f"  [PASS] Client cleanup: {stats_before['active_clients']} -> {stats_after['active_clients']}")
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-310-    stats = cb.get_stats()
+C:\Users\User\SYNAPSE\tests\test_resilience.py:311:    assert stats["failure_count"] == 0, "reset should clear failure count"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-312-    print(f"  [PASS] reset: state={cb.state.value}, failures={stats['failure_count']}")
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-367-
+C:\Users\User\SYNAPSE\tests\test_resilience.py:368:    assert len(transitions) >= 2, f"Expected transitions, got {transitions}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-369-    print(f"  [PASS] Transitions recorded: {transitions}")
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-383-    status = pm.get_status()
+C:\Users\User\SYNAPSE\tests\test_resilience.py:384:    assert status["primary_port"] == 9999, "Wrong primary port"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-385-    assert 9999 in status["ports"], "Primary not in ports"
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-400-
+C:\Users\User\SYNAPSE\tests\test_resilience.py:401:    assert status["active_port"] == 9999, "Active port not set"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-402-    assert status["ports"][9999]["is_active"], "Port not marked active"
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-418-    assert status["ports"][9999]["last_error"] == "Address in use", "Error not recorded"
+C:\Users\User\SYNAPSE\tests\test_resilience.py:419:    assert status["ports"][9999]["error_count"] == 1, "Error count wrong"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-420-    print(f"  [PASS] Marked unhealthy: error='{status['ports'][9999]['last_error']}'")
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-447-    assert should_failover, "Should failover when active is unhealthy"
+C:\Users\User\SYNAPSE\tests\test_resilience.py:448:    assert new_port == 9998, f"Should failover to first backup, got {new_port}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-449-    print(f"  [PASS] Failover detected: {9999} -> {new_port}")
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-460-    port = pm.get_active_port()
+C:\Users\User\SYNAPSE\tests\test_resilience.py:461:    assert port == 9999, f"Should prefer primary, got {port}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-462-    print(f"  [PASS] Returns primary when healthy: {port}")
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-466-    port = pm.get_active_port()
+C:\Users\User\SYNAPSE\tests\test_resilience.py:467:    assert port == 9998, f"Should return backup, got {port}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-468-    print(f"  [PASS] Returns backup when primary unhealthy: {port}")
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-486-
+C:\Users\User\SYNAPSE\tests\test_resilience.py:487:    assert stats["total_heartbeats"] == 1, f"Wrong count: {stats['total_heartbeats']}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-488-    assert not stats["is_frozen"], "Should not be frozen"
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-574-    stats = watchdog.get_stats()
+C:\Users\User\SYNAPSE\tests\test_resilience.py:575:    assert stats["total_heartbeats"] == 3, f"Wrong count: {stats['total_heartbeats']}"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-576-    assert "avg_latency" in stats, "Should track avg latency"
+--
+C:\Users\User\SYNAPSE\tests\test_resilience.py-777-    assert "circuit_breaker" in health["components"], "Should include circuit_breaker"
+C:\Users\User\SYNAPSE\tests\test_resilience.py:778:    assert health["components"]["rate_limiter"]["total_requests"] == 1, "Should track requests"
+C:\Users\User\SYNAPSE\tests\test_resilience.py-779-    print(f"  [PASS] Component stats included")
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-387-        assert state["has_suspended_tasks"] is True
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:388:        assert state["suspended_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-389-
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-402-        history = stage.GetPrimAtPath("/SYNAPSE/agent/session_history")
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:403:        assert len(list(history.GetChildren())) == 1
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-404-
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-444-        counts = evo.count_structured_data(str(md))
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:445:        assert counts["structured_data_count"] == 0
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:446:        assert counts["node_path_references"] == 0
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-447-
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-454-        counts = evo.count_structured_data(str(md))
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:455:        assert counts["node_path_references"] >= 10
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-456-
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-490-        parsed = evo.parse_markdown_memory(str(md))
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:491:        assert len(parsed["sessions"]) == 2
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:492:        assert len(parsed["decisions"]) >= 1
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:493:        assert len(parsed["parameters"]) >= 1
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-494-
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-499-        result = evo.prune_memory(str(tmp_path))
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:500:        assert result["pruned_sessions"] == 0
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-501-
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-503-        counts = evo.count_structured_data(str(tmp_path / "missing.md"))
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:504:        assert counts["structured_data_count"] == 0
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:505:        assert counts["session_count"] == 0
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-506-
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-665-        results = sm.search_memory(self.SAMPLE_MD, "displacement crashing meshes")
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:666:        assert len(results) >= 2
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-667-        # Direct title match should score higher
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-717-        # The decision about displacement should be the top hit
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:718:        assert len(results) >= 1
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-719-        assert "displacement" in results[0]["title"].lower()
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-725-        # Should find multiple matches
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:726:        assert len(results) >= 2
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-727-        # All scores should be positive
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-783-        lines = [l for l in content.split("\n") if l.startswith("Line ")]
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:784:        assert len(lines) == 20
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-785-
+--
+C:\Users\User\SYNAPSE\tests\test_sessions.py-131-        assert removed is s
+C:\Users\User\SYNAPSE\tests\test_sessions.py:132:        assert self.mgr.count == 0
+C:\Users\User\SYNAPSE\tests\test_sessions.py-133-
+--
+C:\Users\User\SYNAPSE\tests\test_sessions.py-140-        expired = self.mgr.expire_stale(max_idle=0.0)
+C:\Users\User\SYNAPSE\tests\test_sessions.py:141:        assert expired == 1
+C:\Users\User\SYNAPSE\tests\test_sessions.py:142:        assert self.mgr.count == 0
+C:\Users\User\SYNAPSE\tests\test_sessions.py-143-
+--
+C:\Users\User\SYNAPSE\tests\test_sessions.py-146-        expired = self.mgr.expire_stale(max_idle=9999.0)
+C:\Users\User\SYNAPSE\tests\test_sessions.py:147:        assert expired == 0
+C:\Users\User\SYNAPSE\tests\test_sessions.py:148:        assert self.mgr.count == 1
+C:\Users\User\SYNAPSE\tests\test_sessions.py-149-
+--
+C:\Users\User\SYNAPSE\tests\test_sessions.py-158-    def test_count_property(self):
+C:\Users\User\SYNAPSE\tests\test_sessions.py:159:        assert self.mgr.count == 0
+C:\Users\User\SYNAPSE\tests\test_sessions.py-160-        self.mgr.create_session("alice", Role.ARTIST, "client_001")
+C:\Users\User\SYNAPSE\tests\test_sessions.py:161:        assert self.mgr.count == 1
+C:\Users\User\SYNAPSE\tests\test_sessions.py-162-        self.mgr.create_session("bob", Role.VIEWER, "client_002")
+C:\Users\User\SYNAPSE\tests\test_sessions.py:163:        assert self.mgr.count == 2
+C:\Users\User\SYNAPSE\tests\test_sessions.py-164-
+--
+C:\Users\User\SYNAPSE\tests\test_sessions.py-195-        assert h.startswith("sha256:")
+C:\Users\User\SYNAPSE\tests\test_sessions.py:196:        assert len(h) == 7 + 64  # "sha256:" + 64 hex chars
+C:\Users\User\SYNAPSE\tests\test_sessions.py-197-
+--
+C:\Users\User\SYNAPSE\tests\test_sessions.py-211-        users = load_user_directory(users_file)
+C:\Users\User\SYNAPSE\tests\test_sessions.py:212:        assert len(users) == 2
+C:\Users\User\SYNAPSE\tests\test_sessions.py-213-        assert users["alice"]["name"] == "Alice Chen"
+--
+C:\Users\User\SYNAPSE\tests\test_sessions.py-295-        assert cfg.bind == "192.168.1.100"
+C:\Users\User\SYNAPSE\tests\test_sessions.py:296:        assert cfg.port == 8888
+C:\Users\User\SYNAPSE\tests\test_sessions.py:297:        assert cfg.session_timeout == 7200.0
+C:\Users\User\SYNAPSE\tests\test_sessions.py-298-
+--
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-116-
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py:117:        assert len(ordering_check) == 1
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-118-        check = ordering_check[0]
+--
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-144-
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py:145:        assert len(ordering_check) == 1
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-146-        check = ordering_check[0]
+--
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-165-
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py:166:        assert len(ordering_check) == 1
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-167-        check = ordering_check[0]
+--
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-203-
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py:204:        assert len(ordering_check) == 1
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-205-        check = ordering_check[0]
+--
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-240-
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py:241:        assert len(ordering_check) == 1
+C:\Users\User\SYNAPSE\tests\test_solaris_ordering.py-242-        check = ordering_check[0]
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-117-    def test_register_and_count(self, indexer):
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:118:        assert indexer.tool_count == 6
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-119-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-122-        # Dense mode (under calibration_calls), returns all tools
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:123:        assert len(results) == 6
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-124-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-130-        results = idx.index(query_keywords=["render"])
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:131:        assert len(results) == 2
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-132-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-146-        render_result = [r for r in results if r.tool_name == "render"][0]
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:147:        assert render_result.match_signals["domain"] == 1.0
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-148-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-163-        scene_info = [r for r in results if r.tool_name == "get_scene_info"][0]
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:164:        assert scene_info.match_signals["recency"] == 1.0
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-165-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-179-            r = idx.index(query_keywords=["test"])
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:180:            assert len(r) == 6
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-181-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-183-        r = idx.index(query_keywords=["test"])
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:184:        assert len(r) == 2
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-185-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-198-        d = indexer.to_dict()
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:199:        assert d["tool_count"] == 6
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:200:        assert d["call_count"] == 0
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-201-        assert "mode" in d
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-204-        results = indexer.index(query_keywords=[])
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:205:        assert len(results) == 6
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-206-        # All keyword scores should be 0
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-207-        for r in results:
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:208:            assert r.match_signals["keyword"] == 0.0
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-209-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-218-        d = rc.to_dict()
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:219:        assert d["score"] == 0.1235
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:220:        assert d["match_signals"]["keyword"] == 0.3333
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-221-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-246-        sigs = build_signatures_from_registry(tool_defs)
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:247:        assert len(sigs) == 2
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-248-
+--
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-286-        ])
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py:287:        assert len(sigs) == 1
+C:\Users\User\SYNAPSE\tests\test_sparse_router.py-288-        assert sigs[0].read_only is False
+--
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py-43-    def test_registry_count(self):
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py:44:        assert len(SPECIALIST_REGISTRY) == 5
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py-45-
+--
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py-62-        specs = list_specialists()
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py:63:        assert len(specs) == 5
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py-64-        domains = [s["domain"] for s in specs]
+--
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py-120-        intensity_signal = [s for s in signals if s.name == "intensity_law"]
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py:121:        assert len(intensity_signal) == 1
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py-122-        assert intensity_signal[0].check_type == "range"
+--
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py-127-        exposure_signal = [s for s in signals if s.name == "exposure_set"]
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py:128:        assert len(exposure_signal) == 1
+C:\Users\User\SYNAPSE\tests\test_specialist_modes.py-129-        assert exposure_signal[0].expected == "set"
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-117-        store = _make_store(tmp_path)
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:118:        assert store.count() == 0
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-119-        store.add(_make_memory("one"))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-120-        store.add(_make_memory("two"))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:121:        assert store.count() == 2
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-122-
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-127-        all_mems = store.all()
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:128:        assert len(all_mems) == 2
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-129-        contents = {m.content for m in all_mems}
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-136-        store.clear()
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:137:        assert store.count() == 0
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-138-        assert store.all() == []
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-177-        assert got.hip_file == "SH010_fx_v003.hip"
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:178:        assert got.hip_version == 3
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:179:        assert got.frame == 42
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-180-        assert got.frame_range == (1, 100)
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-183-        assert got.agent_id == "agent-001"
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:184:        assert got.confidence == 0.95
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-185-        assert got.is_consolidated is False
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-224-        got = store.get(source.id)
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:225:        assert len(got.links) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-226-        assert got.links[0].target_id == target.id
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-283-        results = store.search(MemoryQuery(text="Karma XPU"))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:284:        assert len(results) >= 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-285-        assert any("Karma XPU" in r.memory.content for r in results)
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-291-        results = store.search(MemoryQuery(tags=["lighting"]))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:292:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-293-        assert results[0].memory.tags == ["key-light", "lighting"]
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-299-        results = store.search(MemoryQuery(keywords=["pyro"]))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:300:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-301-        assert "pyro" in results[0].memory.keywords
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-307-        results = store.search(MemoryQuery(memory_types=[MemoryType.DECISION]))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:308:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-309-        assert results[0].memory.memory_type == MemoryType.DECISION
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-315-        results = store.search(MemoryQuery(source="auto"))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:316:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-317-        assert results[0].memory.source == "auto"
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-323-        results = store.search(MemoryQuery())
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:324:        assert len(results) == 3
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-325-
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-330-        results = store.search(MemoryQuery(limit=1))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:331:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-332-
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-340-        ))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:341:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-342-        assert "pyro" in results[0].memory.content.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-350-        results = store.search(MemoryQuery())
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:351:        assert len(results) == 0
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-352-
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-359-        results = store.search(MemoryQuery(include_consolidated=True))
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:360:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-361-
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-376-        notes = store.get_by_type(MemoryType.NOTE)
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:377:        assert len(notes) == 2
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-378-        assert all(m.memory_type == MemoryType.NOTE for m in notes)
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-386-        lighting = store.get_by_tag("lighting")
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:387:        assert len(lighting) == 2
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-388-
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-397-        recent = store.get_recent(3)
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:398:        assert len(recent) == 3
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-399-        # Most recent first
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-466-
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:467:        assert len(errors) == 0
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:468:        assert store.count() == 50
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-469-
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-502-
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:503:        assert len(errors) == 0
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:504:        assert store.count() == 40  # 20 seed + 20 new
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-505-
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-547-        store2 = _make_store(tmp_path)
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:548:        assert store2.count() == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-549-        mems = store2.all()
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-562-        got = store2.get(source.id)
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:563:        assert len(got.links) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-564-        assert got.links[0].target_id == target.id
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-572-        results = store2.get_by_tag("lighting")
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:573:        assert len(results) == 1
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-574-
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-90-        total = results["allowed"] + results["rejected"]
+C:\Users\User\SYNAPSE\tests\test_stress.py:91:        assert total == 50, f"Expected 50 results, got {total}"
+C:\Users\User\SYNAPSE\tests\test_stress.py-92-        # With 200 global tokens and 50 per-client, most should succeed
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-104-        # Should have exhausted after ~10 tokens
+C:\Users\User\SYNAPSE\tests\test_stress.py:105:        assert 8 <= allowed_count <= 12, f"Expected ~10 allowed, got {allowed_count}"
+C:\Users\User\SYNAPSE\tests\test_stress.py-106-
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-148-
+C:\Users\User\SYNAPSE\tests\test_stress.py:149:        assert len(errors) == 0, f"Thread errors: {errors}"
+C:\Users\User\SYNAPSE\tests\test_stress.py-150-
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-157-        stats = limiter.get_stats()
+C:\Users\User\SYNAPSE\tests\test_stress.py:158:        assert stats["total_requests"] == 30
+C:\Users\User\SYNAPSE\tests\test_stress.py:159:        assert stats["active_clients"] == 5
+C:\Users\User\SYNAPSE\tests\test_stress.py-160-
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-230-
+C:\Users\User\SYNAPSE\tests\test_stress.py:231:        assert len(errors) == 0, f"Thread errors: {errors}"
+C:\Users\User\SYNAPSE\tests\test_stress.py-232-        # Should still be queryable
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-274-        stats = cb.get_stats()
+C:\Users\User\SYNAPSE\tests\test_stress.py:275:        assert len(stats["history"]) <= 10  # get_stats returns last 10
+C:\Users\User\SYNAPSE\tests\test_stress.py-276-
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-304-
+C:\Users\User\SYNAPSE\tests\test_stress.py:305:        assert len(read_results) == 20
+C:\Users\User\SYNAPSE\tests\test_stress.py-306-
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-327-
+C:\Users\User\SYNAPSE\tests\test_stress.py:328:        assert len(errors) == 0
+C:\Users\User\SYNAPSE\tests\test_stress.py:329:        assert shared["value"] == 10, f"Expected 10, got {shared['value']}"
+C:\Users\User\SYNAPSE\tests\test_stress.py-330-
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-361-
+C:\Users\User\SYNAPSE\tests\test_stress.py:362:        assert len(errors) == 0, f"Errors: {errors}"
+C:\Users\User\SYNAPSE\tests\test_stress.py:363:        assert data["counter"] == 15  # 3 writers * 5 increments
+C:\Users\User\SYNAPSE\tests\test_stress.py-364-
+--
+C:\Users\User\SYNAPSE\tests\test_stress.py-550-        total = results["total_allowed"] + results["total_rejected"]
+C:\Users\User\SYNAPSE\tests\test_stress.py:551:        assert total == 500, f"Expected 500 total, got {total}"
+C:\Users\User\SYNAPSE\tests\test_stress.py-552-        # Most should succeed with generous limits
+--
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-134-        users = load_user_directory(Path(cfg.users_file))
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py:135:        assert len(users) == 2
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-136-
+--
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-223-        )
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py:224:        assert mgr.count == 1
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-225-
+--
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-229-        expired = mgr.expire_stale()
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py:230:        assert expired == 1
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py:231:        assert mgr.count == 0
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-232-
+--
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-248-
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py:249:        assert mgr.count == 2
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-250-        sessions = mgr.active_sessions()
+--
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-276-        assert cfg.bind == "10.0.1.50"
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py:277:        assert cfg.port == 8888
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-278-        assert cfg.default_role == "viewer"
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py:279:        assert cfg.session_timeout == 1800.0
+C:\Users\User\SYNAPSE\tests\test_studio_integration.py-280-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-33-    def test_complexity_values(self):
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:34:        assert len(Complexity) == 5
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-35-        assert Complexity.MINIMAL.value == "minimal"
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-38-    def test_constraint_types(self):
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:39:        assert len(ConstraintType) >= 6
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-40-
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-41-    def test_failure_modes(self):
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:42:        assert len(FailureMode) == 7
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-43-        assert FailureMode.NONE.value == "none"
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-56-        assert d["type"] == "time_budget"
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:57:        assert d["value"] == 30
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-58-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-63-        d = sc.to_dict()
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:64:        assert d["weight"] == 0.3333
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-65-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-80-        assert d["failure_mode"] == "none"
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:81:        assert len(d["expected_tool_chain"]) == 2
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-82-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-91-        tasks = synth.generate(n=7)
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:92:        assert len(tasks) == 7
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-93-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-96-        tasks = synth.generate(n=1)
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:97:        assert len(tasks) == 1
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-98-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-101-        synth.generate(n=3)
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:102:        assert synth.generated_count == 3
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-103-        synth.generate(n=2)
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:104:        assert synth.generated_count == 5
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-105-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-148-            tasks = synth.generate(n=1, complexity=complexity)
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:149:            assert len(tasks) == 1
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-150-            assert tasks[0].complexity == complexity
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-185-        # With high diversity, we should see multiple unique descriptions
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:186:        assert len(unique) >= 2
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-187-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-193-        assert [t.task_id for t in t1] == [t.task_id for t in t2]
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:194:        assert synth.generated_count == 3  # reset clears count
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-195-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-199-        synth.reset(seed=99)
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:200:        assert synth.seed == 99
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:201:        assert synth.generated_count == 0
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-202-
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-205-        tasks = synth.generate_for_complexity(Complexity.SIMPLE, n=3)
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:206:        assert len(tasks) == 3
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-207-        assert all(t.complexity == Complexity.SIMPLE for t in tasks)
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-213-        for t in tasks:
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:214:            assert len(t.task_id) == 16
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-215-            assert all(c in "0123456789abcdef" for c in t.task_id)
+--
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py-220-        seeds = [t.seed for t in tasks]
+C:\Users\User\SYNAPSE\tests\test_task_synthesizer.py:221:        assert len(set(seeds)) == 5
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-218-
+C:\Users\User\SYNAPSE\tests\test_tops.py:219:        assert result["total_items"] == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py:220:        assert result["returned"] == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py-221-        assert result["filter"] == "all"
+C:\Users\User\SYNAPSE\tests\test_tops.py:222:        assert len(result["items"]) == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py-223-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-238-
+C:\Users\User\SYNAPSE\tests\test_tops.py:239:        assert result["returned"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:240:        assert result["total_items"] == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py-241-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-255-
+C:\Users\User\SYNAPSE\tests\test_tops.py:256:        assert result["returned"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-257-        assert result["items"][0]["state"] == "CookedFail"
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-296-
+C:\Users\User\SYNAPSE\tests\test_tops.py:297:        assert result["returned"] == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py:298:        assert result["total_items"] == 10
+C:\Users\User\SYNAPSE\tests\test_tops.py-299-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-317-
+C:\Users\User\SYNAPSE\tests\test_tops.py:318:        assert result["total_items"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py:319:        assert result["returned"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-320-        assert result["items"] == []
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-346-
+C:\Users\User\SYNAPSE\tests\test_tops.py:347:        assert result["node_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:348:        assert len(result["edges"]) == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-349-        assert result["edges"][0]["from"] == "/obj/topnet1/gen1"
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-356-
+C:\Users\User\SYNAPSE\tests\test_tops.py:357:        assert result["node_count"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-358-        assert result["nodes"] == []
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-385-        node_info = result["nodes"][0]
+C:\Users\User\SYNAPSE\tests\test_tops.py:386:        assert node_info["total_items"] == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py:387:        assert node_info["work_items"]["CookedSuccess"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:388:        assert node_info["work_items"]["CookedFail"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-389-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-396-
+C:\Users\User\SYNAPSE\tests\test_tops.py:397:        assert result["nodes"][0]["total_items"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-398-        assert result["nodes"][0]["work_items"] == {}
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-417-        assert result["is_network"] is False
+C:\Users\User\SYNAPSE\tests\test_tops.py:418:        assert result["total_items"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:419:        assert result["total_cook_time"] == 3.8
+C:\Users\User\SYNAPSE\tests\test_tops.py:420:        assert result["by_state"]["CookedSuccess"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-421-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-436-        assert result["is_network"] is True
+C:\Users\User\SYNAPSE\tests\test_tops.py:437:        assert result["total_items"] == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py:438:        assert result["by_state"]["CookedSuccess"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:439:        assert result["by_state"]["CookedFail"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py:440:        assert result["total_cook_time"] == 1.7
+C:\Users\User\SYNAPSE\tests\test_tops.py:441:        assert len(result["nodes"]) == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-442-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-449-
+C:\Users\User\SYNAPSE\tests\test_tops.py:450:        assert result["total_items"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py:451:        assert result["total_cook_time"] == 0.0
+C:\Users\User\SYNAPSE\tests\test_tops.py-452-        assert result["by_state"] == {}
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-459-
+C:\Users\User\SYNAPSE\tests\test_tops.py:460:        assert result["total_items"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py:461:        assert result["total_cook_time"] == 0.0
+C:\Users\User\SYNAPSE\tests\test_tops.py-462-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-478-
+C:\Users\User\SYNAPSE\tests\test_tops.py:479:        assert result["total_cook_time"] == 0.6912
+C:\Users\User\SYNAPSE\tests\test_tops.py-480-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-544-        assert "work_items" in result
+C:\Users\User\SYNAPSE\tests\test_tops.py:545:        assert result["work_items"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-546-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-575-        assert result["status"] == "generated"
+C:\Users\User\SYNAPSE\tests\test_tops.py:576:        assert result["item_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-577-        node.generateStaticItems.assert_called_once()
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-607-
+C:\Users\User\SYNAPSE\tests\test_tops.py:608:        assert result["item_count"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-609-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-636-        assert result["topnet"] == "/obj/topnet1"
+C:\Users\User\SYNAPSE\tests\test_tops.py:637:        assert result["max_concurrent"] == 8
+C:\Users\User\SYNAPSE\tests\test_tops.py-638-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-744-        assert result["wedge_node"] == "/obj/topnet1/wedge1"
+C:\Users\User\SYNAPSE\tests\test_tops.py:745:        assert result["total_variations"] == 5
+C:\Users\User\SYNAPSE\tests\test_tops.py:746:        assert len(result["attributes"]) == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-747-        assert result["attributes"][0]["name"] == "roughness"
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-766-
+C:\Users\User\SYNAPSE\tests\test_tops.py:767:        assert result["total_variations"] == 12  # 3 * 4
+C:\Users\User\SYNAPSE\tests\test_tops.py-768-        # He2025: attributes sorted by name
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-799-
+C:\Users\User\SYNAPSE\tests\test_tops.py:800:        assert len(result["nodes"]) == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-801-        assert result["nodes"][0]["status"] == "cooked"
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-856-
+C:\Users\User\SYNAPSE\tests\test_tops.py:857:        assert result["matched_count"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py:858:        assert result["total_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-859-        assert result["items"][0]["name"] == "item_0"
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-877-
+C:\Users\User\SYNAPSE\tests\test_tops.py:878:        assert result["matched_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-879-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-930-
+C:\Users\User\SYNAPSE\tests\test_tops.py:931:        assert result["returned"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-932-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1146-        assert result["status"] == "success"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1147:        assert result["total_attempts"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-1148-        assert result["node"] == "/obj/topnet1/gen1"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1149:        assert result["final_by_state"]["CookedSuccess"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1150-        node.cook.assert_called_once_with(block=True)
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1164-        assert result["status"] == "failed"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1165:        assert result["total_attempts"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py:1166:        assert result["attempts"][0]["failed_items"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-1167-        node.cook.assert_called_once()
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1201-        assert result["status"] == "success"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1202:        assert result["total_attempts"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1203-        assert result["attempts"][0]["status"] == "retry"
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1222-        assert result["status"] == "failed"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1223:        assert result["total_attempts"] == 3  # 1 initial + 2 retries
+C:\Users\User\SYNAPSE\tests\test_tops.py-1224-        # First two attempts should be "retry", last should be "failed"
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1243-        # validate_states=False means we don't check and don't retry
+C:\Users\User\SYNAPSE\tests\test_tops.py:1244:        assert result["total_attempts"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-1245-        # With validation disabled, status comes from failed_count check
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1258-        assert isinstance(result["total_cook_time"], (int, float))
+C:\Users\User\SYNAPSE\tests\test_tops.py:1259:        assert result["total_cook_time"] >= 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-1260-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1303-
+C:\Users\User\SYNAPSE\tests\test_tops.py:1304:        assert result["total_items"] == 4
+C:\Users\User\SYNAPSE\tests\test_tops.py:1305:        assert result["failed_items"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:1306:        assert result["by_state"]["CookedSuccess"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:1307:        assert result["by_state"]["CookedFail"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:1308:        assert len(result["failed_details"]) == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1309-        # He2025: failed_details sorted by id
+C:\Users\User\SYNAPSE\tests\test_tops.py:1310:        assert result["failed_details"][0]["id"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py:1311:        assert result["failed_details"][1]["id"] == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py-1312-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1323-
+C:\Users\User\SYNAPSE\tests\test_tops.py:1324:        assert result["total_items"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-1325-        assert any("No work items" in s for s in result["suggestions"])
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1336-
+C:\Users\User\SYNAPSE\tests\test_tops.py:1337:        assert result["total_items"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py:1338:        assert result["failed_items"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-1339-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1358-
+C:\Users\User\SYNAPSE\tests\test_tops.py:1359:        assert len(result["upstream"]) == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-1360-        assert result["upstream"][0]["has_failures"] is True
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1384-        assert result["scheduler"]["type"] == "localscheduler"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1385:        assert result["scheduler"]["max_procs"] == 4
+C:\Users\User\SYNAPSE\tests\test_tops.py-1386-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1432-        assert result["overall_health"] == "healthy"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1433:        assert result["node_count"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:1434:        assert result["total_items"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1435-        assert result["issues"] == []
+C:\Users\User\SYNAPSE\tests\test_tops.py:1436:        assert result["by_state"]["CookedSuccess"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1437-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1455-        assert result["overall_health"] == "error"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1456:        assert len(result["issues"]) == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-1457-        assert "/obj/topnet1/process1" in result["issues"][0]
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1470-        assert result["overall_health"] == "empty"
+C:\Users\User\SYNAPSE\tests\test_tops.py:1471:        assert result["total_items"] == 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-1472-        assert any("No work items" in s for s in result["suggestions"])
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1491-        assert "items" in result["nodes"][0]
+C:\Users\User\SYNAPSE\tests\test_tops.py:1492:        assert len(result["nodes"][0]["items"]) == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1493-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1521-
+C:\Users\User\SYNAPSE\tests\test_tops.py:1522:        assert result["node_count"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-1523-        node_names = [n["name"] for n in result["nodes"]]
+--
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py-95-        wedge_nodes = [n for n in node.children() if "wedge" in n.type().name().lower()]
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py:96:        assert len(wedge_nodes) == 1
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py-97-
+--
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py-268-
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py:269:        assert result["count"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py-270-        assert result["variant_sets"][0]["name"] == "color"
+--
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py-436-
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py:437:        assert result["count"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops_assembly.py-438-        assert result["collections"][0]["name"] == "key_lights"
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-235-        adapter = self.EpochAdapter(epoch_size=3)
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:236:        assert adapter.epoch_id == 0
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-237-        adapter.record("instant", True, 1.0)
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-240-        # Should have rotated
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:241:        assert adapter.epoch_id == 1
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-242-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-248-            adapter.record("instant", True, 1.0)
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:249:        assert adapter.epoch_id == 3
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:250:        assert adapter.get_stale_pin_epoch() == 1
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-251-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-258-        assert "epoch_progress" in stats
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:259:        assert stats["epoch_progress"] == 1
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-260-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-279-        # 4 threads * 50 = 200, epoch_size=100, so should have rotated twice
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:280:        assert adapter.epoch_id == 2
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-281-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-376-        results = recipe.execute({}, mock_command_fn)
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:377:        assert len(results) == 2
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-378-        # Second step should have resolved $step1.path
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-571-        result = handler._handle_list_recipes({})
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:572:        assert result["count"] == 46
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:573:        assert len(result["recipes"]) == 46
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-574-        # Should be sorted by name
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-637-        index = json.loads(index_path.read_text(encoding="utf-8"))
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:638:        assert len(index) >= 78  # base topics, grows with vex-corpus sync
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-639-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-662-        tool_count = content.count("Tool(\n")
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:663:        assert tool_count >= 37, f"Expected >= 37 tools, got {tool_count}"
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-664-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-668-        registered = handler._registry.registered_types
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:669:        assert len(registered) >= 37, f"Expected >= 37 handlers, got {len(registered)}: {registered}"
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-670-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-783-                value = payload.get("value")
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:784:                assert value is None or value <= 1.0, (
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-785-                    f"Lighting Law violation: intensity set to {value}"
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-799-        for recipe in self.registry.recipes:
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:800:            assert len(recipe.steps) >= 1, f"Recipe '{recipe.name}' has no steps"
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-801-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-938-        assert plan.name == "cloth_pipeline"
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:939:        assert len(plan.steps) >= 1
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-940-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-946-        # Core + collision + wind = 3 steps
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:947:        assert len(plan.steps) == 3
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-948-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-953-        assert "add_cache" in plan.metadata["modifiers"]
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:954:        assert len(plan.steps) == 3
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-955-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-960-        # Core + cache = 2 steps minimum
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:961:        assert len(plan.steps) >= 2
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-962-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-968-        # Core + debris + dust + cache = 4 steps
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:969:        assert len(plan.steps) == 4
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-970-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-980-        # Key + fill + rim + dome = 8 steps (each has create + set exposure)
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:981:        assert len(plan.steps) >= 6
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-982-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-988-        # Core + flip + whitewater = 3
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:989:        assert len(plan.steps) == 3
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-990-
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-1028-            for role, val in sorted(exposures.items()):
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:1029:                assert -5 <= val <= 10, (
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-1030-                    f"Exposure {role}={val} for {mood} looks wrong"
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-1043-        assert result.metadata.get("planned") is True
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:1044:        assert len(result.commands) == 3
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-41-        diags = diagnose_vex_error("line 3: expected ';'")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:42:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-43-        assert diags[0].category == "syntax"
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-44-        assert "semicolon" in diags[0].symptom.lower() or "semicolon" in diags[0].fix.lower()
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:45:        assert diags[0].line_number == 3
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-46-
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-48-        diags = diagnose_vex_error("expected ';' before end of statement")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:49:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-50-        assert diags[0].category == "syntax"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-53-        diags = diagnose_vex_error("undeclared variable 'myVar'")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:54:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-55-        assert diags[0].category == "syntax"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-59-        diags = diagnose_vex_error("unknown function 'pcfin'")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:60:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-61-        assert diags[0].category == "function"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-66-        diags = diagnose_vex_error("unknown function 'zzzzxyz'")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:67:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-68-        assert diags[0].category == "function"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-71-        diags = diagnose_vex_error("type mismatch in assignment")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:72:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-73-        assert diags[0].category == "type"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-77-        diags = diagnose_vex_error("cannot convert vector to int")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:78:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-79-        assert diags[0].category == "type"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-82-        diags = diagnose_vex_error("read-only attribute '@ptnum'")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:83:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-84-        assert diags[0].category == "attribute"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-89-        diags = diagnose_vex_error("cannot write to @Frame")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:90:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-91-        assert diags[0].category == "attribute"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-94-        diags = diagnose_vex_error("input 1 is not connected")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:95:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-96-        assert diags[0].category == "runtime"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-99-        diags = diagnose_vex_error("no geometry on input 0")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:100:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-101-        assert diags[0].category == "runtime"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-104-        diags = diagnose_vex_error("division by zero at point 42")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:105:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-106-        assert diags[0].category == "runtime"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-110-        diags = diagnose_vex_error("array index out of bounds")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:111:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-112-        assert diags[0].category == "runtime"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-116-        diags = diagnose_vex_error("something completely unrecognized xyz")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:117:        assert len(diags) == 0
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-118-
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-120-        diags = diagnose_vex_error("line 5: unexpected token ')'")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:121:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-122-        assert diags[0].category == "syntax"
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:123:        assert diags[0].line_number == 5
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-124-
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-134-        issues = lint_vex_snippet("@ptnum = 5;")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:135:        assert len(issues) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-136-        assert issues[0].category == "attribute"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-140-        issues = lint_vex_snippet("@Frame = 10;")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:141:        assert len(issues) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-142-        assert issues[0].category == "attribute"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-147-        readonly_issues = [i for i in issues if "ptnum" in i.symptom]
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:148:        assert len(readonly_issues) == 0
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-149-
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-153-        high_conf = [i for i in issues if i.confidence > 0.8]
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:154:        assert len(high_conf) == 0
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-155-
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-158-        readonly_issues = [i for i in issues if "ptnum" in i.symptom]
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:159:        assert len(readonly_issues) == 0
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-160-
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-281-        # Should pick up the readonly write from lint
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:282:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-283-        assert any(d.category == "attribute" for d in diags)
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-295-        diags = diagnose_vex_symptom("my points aren't moving")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:296:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-297-        assert diags[0].reference_topic == "vex_attributes"
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-301-        diags = diagnose_vex_symptom("nothing is happening in the wrangle")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:302:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-303-        assert "run-over" in diags[0].cause.lower() or "connected" in diags[0].cause.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-306-        diags = diagnose_vex_symptom("colors look weird on my geometry")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:307:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-308-        assert "Cd" in diags[0].cause or "color" in diags[0].cause.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-311-        diags = diagnose_vex_symptom("orientations are wrong on copy to points")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:312:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-313-        assert "orient" in diags[0].cause.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-316-        diags = diagnose_vex_symptom("pscale is not working")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:317:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-318-        assert "pscale" in diags[0].cause.lower() or "scale" in diags[0].cause.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-321-        diags = diagnose_vex_symptom("noise looks blocky on my displacement")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:322:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-323-        assert "frequency" in diags[0].cause.lower() or "octave" in diags[0].cause.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-326-        diags = diagnose_vex_symptom("my wrangle is slow")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:327:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:328:        assert diags[0].confidence >= 0.7
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-329-        assert "pcfind" in diags[0].example.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-332-        diags = diagnose_vex_symptom("pcfind returns nothing")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:333:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-334-        assert "radius" in diags[0].cause.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-337-        diags = diagnose_vex_symptom("attribute is not showing up")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:338:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-339-        assert "type prefix" in diags[0].fix.lower() or "spreadsheet" in diags[0].fix.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-342-        diags = diagnose_vex_symptom("my solver is exploding")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:343:        assert len(diags) >= 1
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-344-        assert "TimeInc" in diags[0].fix or "damping" in diags[0].fix.lower()
+--
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-348-        diags = diagnose_vex_symptom("how do I create a dome light")
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py:349:        assert len(diags) == 0
+C:\Users\User\SYNAPSE\tests\test_vex_diagnostics.py-350-

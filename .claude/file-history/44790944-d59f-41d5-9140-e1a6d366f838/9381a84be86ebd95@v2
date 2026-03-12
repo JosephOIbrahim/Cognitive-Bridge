@@ -1,0 +1,148 @@
+# Spec: VEX Docs Integration for Synapse RAG Layer
+
+**Status**: Files created, metadata updated. Ready for ingestion testing.
+**Location**: `G:\HOUDINI21_RAG_SYSTEM\documentation\vex_reference\`
+**Synapse mirror**: `Synapse/rag/documentation/` (sync on next deploy)
+
+---
+
+## What Was Added
+
+### New Reference Files (5 files, ~1,400 lines total)
+
+| File | Lines | Coverage |
+|------|-------|----------|
+| `fundamentals.md` | ~180 | Execution contexts, data types, type prefixes, control flow, inputs/outputs, preprocessor, functions, VEX vs HScript |
+| `attributes.md` | ~200 | Built-in attributes (14 point attrs, context vars, globals), read/write patterns, groups, intrinsics, promotion patterns, transfer patterns |
+| `functions.md` | ~300 | Complete function reference: geometry read (9), write (6), create/delete (7), spatial (10), connectivity (8), counting (3), math (25), noise (12 + tips), vector/matrix (22), string (17), channels (9), arrays (17), utility (6) |
+| `types.md` | ~140 | Type hierarchy, implicit/explicit conversions, quaternion operations, matrix operations |
+| `performance.md` | ~150 | Fast vs slow patterns (spatial, attributes, distance, branching, loops), memory efficiency, run-over selection, compilation/JIT, profiling, bottleneck checklist |
+| `examples/basic_patterns.md` | ~250 | 15+ copy-paste patterns: deformation (sine, noise, twist, taper), color (height, curvature, per-piece), generation (spiral, polyline, grid), grouping (bbox, normal, nth), solver (advection, decay), transfer (proximity, smooth, edge detection) |
+
+### Metadata Updates
+
+**semantic_index.json** -- 6 new topic entries added:
+- `vex_functions` -- function signatures, pcfind, noise, chramp, etc.
+- `vex_attributes` -- @P, @N, type prefixes, groups, intrinsics
+- `vex_types` -- data types, conversions, quaternions, matrices
+- `vex_performance` -- optimization, bottlenecks, fast vs slow patterns
+- `vex_patterns` -- examples, snippets, deformation, color, generation
+
+Existing `vex` topic updated with new related_docs and expanded keywords.
+
+**agent_relevance_map.json** -- 5 new multi-agent routing patterns added:
+- `vex.*function|pcfind|noise.*vex|chramp` -> VexAuditor + Librarian
+- `vex.*type|quaternion|matrix.*vex|vector4` -> VexAuditor + Librarian
+- `vex.*pattern|vex.*example|snippet` -> VexAuditor + Librarian + GraphTracer
+- `vex.*slow|wrangle.*performance` -> VexAuditor + GraphTracer
+
+## Coverage Analysis
+
+### Before (what existed)
+- `skills/houdini21-reference/vex-functions.md` -- 78 lines, ~50 function signatures in tables
+- `skills/houdini21-reference/SKILL.md` -- inline VEX quick reference (~30 lines)
+- `documentation/vex_reference/` -- empty directory structure
+- 1 semantic index entry (`vex`) with 5 common queries
+
+### After (what's there now)
+- **6 new reference files** with ~1,400 lines of structured VEX documentation
+- **~150 function signatures** with types, descriptions, and usage notes
+- **15+ copy-paste code patterns** with explanations
+- **6 new semantic index topics** with targeted keywords and query routing
+- **5 new multi-agent routing patterns** for VEX-specific queries
+- **YAML frontmatter** on all files for metadata-first discovery
+
+### Coverage Gap Closure
+
+| Area | Before | After |
+|------|--------|-------|
+| Function signatures | ~50 in tables | ~150 with grouping, types, notes |
+| Attribute reference | Inline snippet only | Full reference: 14 built-ins, vars, globals, groups, intrinsics |
+| Type system | Not covered | Complete: hierarchy, conversions, quaternions, matrices |
+| Performance | Not covered | Fast/slow patterns, checklist, profiling tips |
+| Code examples | Not covered | 15+ patterns across deformation, color, generation, solver |
+| Semantic topics | 1 (vex) | 7 (vex, vex_functions, vex_attributes, vex_types, vex_performance, vex_patterns) |
+| Routing rules | 1 pattern | 6 patterns with multi-agent strategies |
+
+## Synapse Knowledge Layer Sync
+
+The files in `G:\HOUDINI21_RAG_SYSTEM` are the **source of truth**. To sync with Synapse's embedded knowledge:
+
+1. **Synapse semantic_index.json** (`Synapse/rag/documentation/_metadata/semantic_index.json`) needs matching entries using Synapse's simpler format (summary, description, keywords, reference_file)
+2. **Synapse reference files** (`Synapse/rag/skills/houdini21-reference/`) should be expanded or new files added
+3. The Synapse `KnowledgeIndex` auto-loads on startup -- no code changes needed after files are in place
+
+### Synapse Format Translation
+
+The RAG system uses a richer schema (YAML frontmatter, agent_relevance with scores, common_queries, performance_notes). Synapse's `KnowledgeIndex` uses a simpler format. Here's the translation for each new topic:
+
+```json
+// Add to Synapse/rag/documentation/_metadata/semantic_index.json
+{
+  "vex_functions": {
+    "summary": "VEX function reference: 150+ signatures across geometry, math, noise, strings, channels, arrays",
+    "description": "Complete VEX function signatures organized by category. Geometry read: point/prim/vertex/detail, attribsize, hasattrib. Write: setpointattrib, setprimattrib, addattrib. Create/delete: addpoint, addprim, addvertex, removepoint, removeprim. Spatial: nearpoint, nearpoints, pcfind, pcfind_radius, pcopen, pcfilter, intersect, xyzdist. Connectivity: neighbours, pointprims, primpoints. Math: sin/cos, pow, sqrt, clamp, fit, lerp, smooth, chramp. Noise: noise, snoise, xnoise, curlnoise, flownoise, vnoise. Vector/matrix: length, normalize, dot, cross, maketransform, cracktransform, quaternion, qrotate. String: sprintf, split, join, match, re_match. Channel: ch, chf, chi, chs, chv, chramp. Array: len, append, find, sort, sum, avg.",
+    "keywords": ["vex", "function", "signature", "pcfind", "noise", "lerp", "fit", "addpoint", "nearpoint", "chramp", "channel", "math", "string", "array"],
+    "reference_file": "vex-functions-expanded"
+  },
+  "vex_attributes": {
+    "summary": "VEX attribute system: built-in attributes, type prefixes, groups, intrinsics",
+    "description": "VEX attribute access patterns. Built-in point attributes: @P (position), @N (normal), @Cd (color), @v (velocity), @pscale, @orient, @id, @age, @life, @rest, @uv. Context variables: @ptnum, @numpt, @primnum, @numprim, @vtxnum. Globals: @Time, @Frame. Type prefixes: f@ float, i@ int, v@ vector, u@ vector2, p@ vector4, s@ string, 2@/3@/4@ matrices. Groups: i@group_name = 1/0, inpointgroup(). Intrinsics: primintrinsic(0, 'measuredarea', @primnum). Promotion: point-to-detail via loops, detail-to-point broadcast, nearest-point transfer via pcfind.",
+    "keywords": ["vex", "attribute", "@P", "@N", "@Cd", "point", "prim", "vertex", "detail", "group", "prefix", "type", "intrinsic", "transfer"],
+    "reference_file": "vex-attributes"
+  },
+  "vex_types": {
+    "summary": "VEX data types: int, float, vector, matrix, quaternion, string, array; conversions",
+    "description": "VEX type system. Scalars: int (32-bit), float (32-bit), string. Vectors: vector2 (2f), vector (3f/xyz), vector4 (4f/quaternion). Matrices: matrix2 (2x2), matrix3 (3x3, rotation/scale), matrix (4x4, full transform). Implicit promotion: int->float->vector2->vector->vector4. Explicit: int(), float(), set(x,y,z). Component access: v.x/.y/.z or v[0]/[1]/[2]. Quaternion ops: quaternion(angle, axis), eulertoquaternion(), qrotate(), slerp(), qmultiply(), qinvert(). Matrix ops: ident(), maketransform(), cracktransform(), invert(), transpose(), lookat(), dihedral().",
+    "keywords": ["vex", "type", "conversion", "cast", "vector", "matrix", "quaternion", "vector4", "matrix3", "int", "float", "string", "array"],
+    "reference_file": "vex-types"
+  },
+  "vex_performance": {
+    "summary": "VEX optimization: fast/slow patterns, spatial queries, memory, profiling",
+    "description": "VEX performance patterns. Fast: pcfind (KD-tree O(log n)) over nearpoints (O(n)). Use distance2/length2 (avoid sqrt). Cache @-reads outside loops. Use smooth/lerp for branchless blends. Pre-size arrays with resize(). Slow: string attribute lookups in loops, dynamic array growth, complex branching. Run-over selection: Points for per-point, Detail + explicit loops for small geo with inter-element deps. Compilation: first cook compiles, ch() changes don't trigger recompile. Profile via Performance Monitor. Common bottlenecks: O(n^2) spatial query, memory spikes from per-element arrays, string lookups in loops.",
+    "keywords": ["vex", "performance", "optimization", "speed", "slow", "fast", "bottleneck", "pcfind", "distance2", "parallel", "memory", "compile"],
+    "reference_file": "vex-performance"
+  },
+  "vex_patterns": {
+    "summary": "VEX code patterns: deformation, color, generation, grouping, solver, transfer",
+    "description": "15+ copy-paste VEX patterns. Deformation: sine wave, noise displacement along normal, twist, taper via chramp. Color: by height (chramp), by curvature (neighbour dot products), random per piece (hsvtorgb). Generation: spiral points (detail wrangle), polyline from points, grid from scratch. Grouping: by bounding box, by normal direction (dot product threshold), every Nth point. Solver: point advection with gravity/ground collision, attribute decay (frame-rate independent). Transfer: nearest-point attribute transfer, distance-weighted blend via pcfind, smooth/relax points (neighbour averaging), edge detection (gradient magnitude).",
+    "keywords": ["vex", "pattern", "example", "snippet", "deform", "color", "noise", "spiral", "wave", "group", "solver", "transfer", "smooth", "relax"],
+    "reference_file": "vex-patterns"
+  }
+}
+```
+
+## Testing
+
+After deployment, verify with these Synapse MCP queries:
+
+```
+synapse_knowledge_lookup(query="VEX noise functions")
+-> Should match vex_functions topic, return noise signatures
+
+synapse_knowledge_lookup(query="What is @P in VEX?")
+-> Should match vex_attributes topic, return built-in attribute table
+
+synapse_knowledge_lookup(query="quaternion rotation in VEX")
+-> Should match vex_types topic, return quaternion operations
+
+synapse_knowledge_lookup(query="why is my wrangle slow")
+-> Should match vex_performance topic, return bottleneck checklist
+
+synapse_knowledge_lookup(query="VEX code to deform with noise")
+-> Should match vex_patterns topic, return noise displacement pattern
+```
+
+## What's NOT Covered (Future Work)
+
+| Gap | Priority | Notes |
+|-----|----------|-------|
+| VOP node equivalents | Low | VOPs compile to VEX; most artists prefer wrangles |
+| OpenCL context | Medium | Relevant for GPU-accelerated workflows |
+| Version-specific changes (H20 vs H21) | Low | Most VEX is stable across versions |
+| Include file reference (`voplib.h`, `math.h`) | Medium | Important for advanced patterns |
+| Custom VEX operators | Low | Rare use case, HDK territory |
+| DOP-specific VEX (gas fields) | Medium | Important for FX artists |
+
+---
+*Spec written for G:\HOUDINI21_RAG_SYSTEM with Synapse v5.3.0 sync instructions.*

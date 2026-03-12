@@ -1,0 +1,53 @@
+# Fix Auto-Fix Parm Discovery
+
+## Context
+
+The render farm's auto-fix system has fictional parameter names and targets the wrong node. When validation detects fireflies (saturation), the remedy tries to set `karma_samples` on the usdrender ROP — but that parameter doesn't exist. The real parameters live on the Karma Render Properties LOP (`karmarenderproperties` node type).
+
+**Live evidence (this session):**
+- ROP `/out/test_render` has zero sample/quality parms — only `filtertimesamples`
+- Karma LOP `/stage/karma_settings` (type `karmarenderproperties`) has the real parms:
+  - `pathtracedsamples` = 128 (primary quality knob)
+  - `samplesperpixel` = 9 (AA samples)
+  - `colorlimit` = 10.0 (firefly clamp)
+  - `diffuselimit` = 3.0, `reflectionlimit` = 4.0
+
+## Two Problems
+
+1. **Wrong parm names**: `karma_samples`, `karma_maxpathdepth`, `karma_pixelfilterclamp` don't exist on any Houdini node
+2. **Wrong target node**: Remedies apply to the ROP but the real parms live on the Karma LOP referenced via the ROP's `loppath`
+
+## Files to Modify (6 files)
+
+### 1. `python/synapse/server/render_diagnostics.py` — Fix ISSUE_REMEDIES
+
+Replace all fictional parm names with real Karma parameter names:
+
+| Old (fictional) | New (real) | What it does |
+|---|---|---|
+| `karma_samples` | `pathtracedsamples` | Primary pixel sample count |
+| `karma_maxpathdepth` | `diffuselimit` | Max diffuse bounce depth |
+| `karma_pixelfilterclamp` | `colorlimit` | Firefly clamp threshold |
+| `exposure` (on lights) | `pathtracedsamples` / `colorlimit` | Can't reach lights from render settings — use what we can |
+
+Add a third saturation remedy: tighten `colorlimit` (priority 8, between samples and bounces).
+
+### 2. `python/synapse/server/handlers_render.py` — Karma LOP discovery
+
+In `_handle_render_sequence`, before building callbacks, discover the Karma settings node:
+- Read ROP's `loppath` parm → get the LOP network path
+- Walk the LOP network's children for `karmarenderproperties` type
+- Wrap `get/set_render_settings` callbacks with a lambda that injects the discovered node
+
+### 3-6. Tests — Update fictional parm names
+
+- `tests/test_render_diagnostics.py` — `karma_samples` → `pathtracedsamples`
+- `tests/test_render_farm.py` — mock settings keys
+- `tests/test_render_farm_handler.py` — mock settings keys
+- `tests/test_render_notify.py` — test fixture data
+
+## Verification
+
+1. `python -m pytest tests/test_render_diagnostics.py tests/test_render_farm.py tests/test_render_farm_handler.py tests/test_render_notify.py -v`
+2. `python -m pytest tests/ -v` — full suite (1,416 tests)
+3. Live: `render_sequence` with `start_frame=1, end_frame=3, rop=/out/test_render` — auto-fix should modify `pathtracedsamples` on `/stage/karma_settings`

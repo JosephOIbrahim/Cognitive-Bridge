@@ -1,0 +1,145 @@
+"""LIVRPS composition resolver for the clean channel.
+
+Takes parsed prims from all layers and resolves conflicts
+using USD sublayer composition semantics (stronger wins).
+"""
+
+from pathlib import Path
+
+from src.lossless.constants import PHASES
+from src.lossless.schema.composition import ConflictRecord, compose_livrps
+from src.lossless.schema.prims import CognitivePrim
+from src.lossless.clean_channel.parser import parse_file, parse_sublayers
+
+
+def resolve_from_root(root_path: Path) -> tuple:
+    """Parse and resolve all layers starting from a root USDA file.
+
+    Args:
+        root_path: Path to the root .usda file.
+
+    Returns:
+        (resolved_prims, conflict_log) where resolved_prims is a list
+        of CognitivePrim in canonical order.
+    """
+    root_text = root_path.read_text(encoding='utf-8')
+    sublayer_paths = parse_sublayers(root_text, root_path.parent)
+
+    if not sublayer_paths:
+        return [], []
+
+    return resolve_sublayers(sublayer_paths)
+
+
+def resolve_sublayers(sublayer_paths: list) -> tuple:
+    """Parse and resolve sublayers into a single prim list.
+
+    Sublayers are processed weakest-first (reversed list order),
+    with stronger layers overwriting weaker ones.
+
+    Args:
+        sublayer_paths: Paths in declaration order (strongest first).
+
+    Returns:
+        (resolved_prims, conflict_log)
+    """
+    # Build layers list: weakest first for compose_livrps
+    layers = []
+    override_map = {}  # name -> list of (over_prim, source_layer)
+
+    for path in reversed(sublayer_paths):
+        if not path.exists():
+            continue
+
+        layer_name = path.name
+        defs, overs = parse_file(path)
+
+        if defs:
+            layers.append((layer_name, defs))
+
+        # Collect overrides for later application
+        for over_prim in overs:
+            if over_prim.name not in override_map:
+                override_map[over_prim.name] = []
+            override_map[over_prim.name].append((over_prim, layer_name))
+
+    # Compose def prims using LIVRPS
+    resolved_prims, conflict_log = compose_livrps(layers)
+
+    # Apply over prims: merge attributes from overs into resolved defs
+    resolved_prims = _apply_over_prims(resolved_prims, override_map)
+
+    return resolved_prims, conflict_log
+
+
+def _apply_over_prims(
+    prims: list, override_map: dict
+) -> list:
+    """Apply over prims to resolved def prims.
+
+    Over prims augment existing defs with additional attributes
+    (like phase_classification, is_anchor, receptor_density).
+    They do NOT replace markdown content unless explicitly set.
+
+    Processing order: sorted by name for determinism.
+    """
+    prim_by_name = {p.name: p for p in prims}
+
+    # Process overrides in sorted name order for determinism
+    for name in sorted(override_map.keys()):
+        if name not in prim_by_name:
+            continue
+
+        target = prim_by_name[name]
+        over_list = override_map[name]
+
+        # Apply overs in order (weakest first, already in that order)
+        for over_prim, _layer_name in over_list:
+            target = _merge_over(target, over_prim)
+
+        prim_by_name[name] = target
+
+    # Rebuild list maintaining canonical order
+    phase_order = {name: i for i, name in enumerate(PHASES)}
+    default_idx = len(PHASES)
+
+    result = sorted(
+        prim_by_name.values(),
+        key=lambda p: (
+            phase_order.get(p.phase, default_idx),
+            p.priority,
+            p.name,
+        ),
+    )
+    return result
+
+
+def _merge_over(target: CognitivePrim, over_prim: CognitivePrim) -> CognitivePrim:
+    """Merge an over prim's attributes into a target def prim.
+
+    Over prims can set phase_classification, is_anchor, etc.
+    They only replace markdown_content if explicitly non-empty.
+    """
+    # Extract over attributes into a dict
+    over_attrs = dict(over_prim.attributes)
+
+    new_phase = over_attrs.get("phase_classification", target.phase)
+    new_content = target.markdown_content
+    if over_prim.markdown_content:
+        new_content = over_prim.markdown_content
+
+    # Merge attribute tuples: target attrs + over attrs (over wins)
+    merged_attrs = dict(target.attributes)
+    merged_attrs.update(dict(over_prim.attributes))
+
+    return CognitivePrim(
+        name=target.name,
+        phase=new_phase,
+        prim_type=target.prim_type,
+        markdown_content=new_content,
+        priority=target.priority,
+        enabled=target.enabled,
+        source_file=target.source_file,
+        doc=target.doc,
+        attributes=tuple(sorted(merged_attrs.items())),
+    )

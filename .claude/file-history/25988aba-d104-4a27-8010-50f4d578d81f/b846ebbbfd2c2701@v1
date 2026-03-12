@@ -1,0 +1,159 @@
+# Legendary Threads: Course-to-Website + RAG Pipeline
+
+## Context
+
+MFX Labs "Legendary Threads" is a ~33-lesson Thinkific course on Houdini thread/knit simulation. The goal is to extract its video content into (a) a browsable offline website and (b) a Synapse-compatible RAG knowledge base for a Houdini thread simulation assistant.
+
+**Key finding:** ~80% of the infrastructure already exists. The `vex_rag_pipeline` is a working 9-stage YouTube→RAG system that exports directly to Synapse's knowledge layer. This plan extends it rather than rebuilding.
+
+**Why this works:**
+- yt-dlp has native Wistia extractors (Thinkific uses Wistia for video hosting)
+- FFmpeg 8.0.1 is installed with `--enable-whisper` for transcription fallback
+- `vex_rag_pipeline` already outputs JSONL + thematic markdown + Synapse semantic index updates
+- Synapse's `synapse_knowledge_lookup` MCP tool will automatically surface the new content
+
+---
+
+## What Already Exists
+
+| Component | Path | Role |
+|-----------|------|------|
+| **vex_rag_pipeline** | `~/vex_rag_pipeline/` | 9-stage YouTube→RAG pipeline, already exports to Synapse |
+| **Synapse RAG** | `~/Synapse/rag/` | Keyword knowledge index, 100+ topics, MCP tool |
+| **Youtube2Webpage** | `~/Youtube2Webpage/` | Perl script: video → HTML with transcript + screenshots |
+| **vex-corpus** | `~/vex-corpus/` | `nomic-embed-text` configured (768d), Ollama LLM integration |
+| **yt-dlp** | installed | Has Wistia/Vimeo extractors for Thinkific videos |
+| **FFmpeg 8.0.1** | installed | Built with `--enable-whisper` for speech-to-text |
+
+---
+
+## Phase 0: Prerequisites (Manual — Before Any Code)
+
+1. **Verify course access** — Log into Thinkific, open DevTools → Network, play a lesson video, note the Wistia video ID format
+2. **Check for captions** — Determine if lessons have VTT/SRT subtitles (affects whether Whisper is fallback or mandatory)
+3. **Download Whisper model** — `ggml-base.en.bin` (~142MB) from `huggingface.co/ggerganov/whisper.cpp`
+4. **Test Wistia download** — `yt-dlp --list-formats "wistia:VIDEO_ID"` to confirm extraction works
+5. **Export browser cookies** — If auth required: `yt-dlp --cookies cookies.txt "wistia:VIDEO_ID"`
+
+**Decision point:** If most lessons lack captions → install `openai-whisper` Python package (auto-uses RTX 4090 CUDA, ~1.5-3min per 30min video). If captions exist → Whisper is fallback only.
+
+---
+
+## Phase 1: Course Manifest + Download Adapter
+
+### New file: `vex_rag_pipeline/scripts/00_build_manifest.py`
+- Generates `data/metadata/course_manifest.json` with course structure (sections → lessons → Wistia IDs)
+- Start manual (JSON with 3 test lessons), automate later if needed
+
+### Modify: `vex_rag_pipeline/scripts/01_download.py`
+- Add `load_course_manifest()` to replace `get_playlist_info()`
+- Use `wistia:{video_id}` URLs instead of YouTube
+- Hierarchical filenames: `{section:02d}_{lesson:02d}_{title}.mp4`
+- Add `--cookies` flag support for Thinkific auth
+- Download VTT subs when available: `--write-auto-sub --sub-lang en`
+
+---
+
+## Phase 2: Whisper Transcription Fallback
+
+### Modify: `vex_rag_pipeline/scripts/05_process_transcripts.py`
+- Detect videos missing VTT files after download
+- Add `transcribe_with_whisper(video_path)` function using `openai-whisper` Python package
+- Outputs standard VTT format to `data/subs/` (same as yt-dlp would)
+- Rest of pipeline unchanged — stage 05 already reads VTT
+
+**Alternative:** FFmpeg's native Whisper filter works but is experimental. `openai-whisper` is more reliable and leverages your RTX 4090 via CUDA.
+
+---
+
+## Phase 3: Course Structure in Pipeline
+
+### Modify: `vex_rag_pipeline/config/schema.json`
+- Add fields: `section_number`, `section_title`, `lesson_number`, `course_name`
+- New ID pattern: `legendary_threads_s{section}_l{lesson}_{sequence}`
+
+### Modify: `vex_rag_pipeline/scripts/07_structure_jsonl.py`
+- Extract section/lesson from filename pattern `01_03_title.mp4`
+- Include course context in LLM structuring prompt
+
+### Modify: `vex_rag_pipeline/scripts/09_synapse_export.py`
+- New `FILE_ROUTES` organized by course section (not VEX topic)
+- Route records by `section_number` field
+- Output: `Synapse/rag/skills/houdini21-reference/legendary_threads_section_*.md`
+- Merge new topics into `semantic_index.json`
+
+---
+
+## Phase 4: Browsable Website Generator
+
+### New file: `vex_rag_pipeline/scripts/10_generate_website.py`
+- Reads `output/legendary_threads_rag.jsonl` + `course_manifest.json`
+- Generates self-contained HTML site:
+  - `website/index.html` — Course homepage with section TOC
+  - `website/section_XX.html` — Per-section lesson lists
+  - `website/lesson_XX_YY.html` — Transcript + code snippets + screenshots
+  - `website/images/` — Keyframe screenshots (ffmpeg extract at code timestamps)
+  - `website/styles.css` — Adapted from Youtube2Webpage
+- Client-side search via `fuse.js` + generated `search_index.json`
+- Syntax highlighting for VEX/HScript via bundled Prism.js
+- Fully offline (no CDN dependencies)
+
+---
+
+## Phase 5: Test with 3 Lessons, Then Scale
+
+### Validation (3 lessons first):
+1. Videos download correctly via Wistia
+2. Captions exist OR Whisper generates clean transcripts
+3. Code detection works (thread sims may have fewer VEX snippets than Joy of VEX — more Houdini UI)
+4. Website generates with working navigation
+5. Synapse `synapse_knowledge_lookup("thread constraint")` returns results
+
+### Scale to full course:
+- Complete manifest for all 33 lessons
+- Run full pipeline (~2-4 hours: download + transcribe + structure + export)
+- Review flagged items (`needs_review: true`)
+- Website link check
+
+---
+
+## Key Differences from Joy of VEX Pipeline
+
+| Aspect | Joy of VEX | Legendary Threads |
+|--------|-----------|-------------------|
+| Source | YouTube playlist | Thinkific/Wistia (auth required) |
+| Captions | YouTube auto-subs | May need Whisper |
+| Content type | VEX code tutorials | Thread sim workflows (more UI, less code) |
+| Structure | Flat (episodes) | Hierarchical (sections → lessons) |
+| ID format | `joy_of_vex_ep03_002` | `legendary_threads_s01_l03_002` |
+| RAG routing | By VEX topic | By course section |
+
+**Important:** Thread simulation content may have significantly less on-screen code than Joy of VEX. Stages 03-04 (code detection + OCR) may yield fewer results. The transcript + explanation content becomes the primary RAG material, not extracted code snippets.
+
+---
+
+## Files to Create/Modify
+
+| Action | File | Changes |
+|--------|------|---------|
+| **Create** | `scripts/00_build_manifest.py` | Course manifest generator |
+| **Create** | `scripts/10_generate_website.py` | HTML website generator |
+| **Create** | `data/metadata/course_manifest.json` | Course structure (manual first) |
+| **Modify** | `scripts/01_download.py` | Thinkific/Wistia support, hierarchical filenames |
+| **Modify** | `scripts/05_process_transcripts.py` | Whisper fallback when VTT missing |
+| **Modify** | `scripts/07_structure_jsonl.py` | Section/lesson metadata in LLM prompt |
+| **Modify** | `scripts/09_synapse_export.py` | Course-based routing, new FILE_ROUTES |
+| **Modify** | `config/schema.json` | Add section/lesson/course fields |
+
+All files in `~/vex_rag_pipeline/` (repo source, not deployed copies).
+
+---
+
+## Verification
+
+1. **Download test:** `yt-dlp --cookies cookies.txt "wistia:TEST_ID"` succeeds
+2. **Whisper test:** Process one video → clean VTT output
+3. **Pipeline test:** Run stages 01-09 on 3 lessons → valid JSONL + Synapse export
+4. **Website test:** Open `website/index.html` → navigate all pages, search works
+5. **RAG test:** `synapse_knowledge_lookup("thread simulation setup")` returns relevant content
+6. **Full run:** Process all 33 lessons → review quality report

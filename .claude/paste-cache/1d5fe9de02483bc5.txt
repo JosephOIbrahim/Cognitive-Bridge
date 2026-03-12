@@ -1,0 +1,29 @@
+Read LOSSLESS_IMPLEMENTATION_BLUEPRINT.md in full. This is a 7-agent sequential build plan for rebuilding the USD Cognitive Substrate around a lossless signal architecture.
+
+You will execute ALL 7 agents in sequence. Do NOT proceed to the next agent until the current agent's exit gate is met (all tests pass, no import errors, no circular dependencies).
+
+Start with Agent 1: Schema Architect.
+
+Before writing any code:
+1. Read the existing files in cognitive_substrate/ to understand current structure
+2. Read COGNITIVE_BATCH_INVARIANCE.md and DETERMINISM.md for existing guarantees
+3. Create the directory structure specified in Section 1 (Pre-Flight)
+4. Then begin Agent 1's tasks in order (1a through 1g)
+
+After Agent 1 passes its exit gate, proceed to Agent 2, then 3, then 4, then 5, then 6, then 7. Each agent reads its dependency files first, implements its tasks, writes its tests, and runs them.
+
+Key rules:
+- No file exceeds 300 lines. Split if needed.
+- constants.py is the ONLY source of magic numbers after Agent 1 creates it.
+- No agent modifies another agent's files.
+- Every agent writes AND runs its own tests before moving on.
+- If any test fails, fix it before proceeding. Do not skip.
+- Use sorted() on any dict/set iteration in output-determining code.
+- No random, no datetime.now(), no nondeterministic operations anywhere.
+
+The end state is:
+- python -m pytest tests/lossless/ -v → ALL PASS
+- python -m src.lossless.integration.cli compile → valid CLAUDE.md
+- CONSISTENCY_REPORT.md → all categories PASS
+
+Begin.

@@ -1,0 +1,23 @@
+"""Query light node parms to find correct names for shape/intensity/exposure."""
+import asyncio, sys, os
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+CODE = r'''
+import hou
+stage = hou.node("/stage")
+tmp = stage.createNode("light::2.0", "__tmp_light_query")
+parms = [(p.name(), p.description(), str(p.eval())) for p in tmp.parms()]
+# Filter for interesting ones
+interesting = [p for p in parms if any(k in p[0].lower() or k in p[1].lower()
+    for k in ["intensity", "exposure", "shape", "type", "area", "color", "width", "height", "radius"])]
+tmp.destroy()
+result = interesting
+'''
+
+async def main():
+    async with SynapseClient() as client:
+        r = await client.execute_python(CODE, timeout=15.0)
+        print(r)
+
+asyncio.run(main())

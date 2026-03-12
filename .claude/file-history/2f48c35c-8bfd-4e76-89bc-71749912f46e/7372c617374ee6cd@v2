@@ -1,0 +1,113 @@
+import Image from "next/image";
+import styles from "./ImageGallery.module.css";
+
+/**
+ * Gretel-inspired image layout.
+ * Arranges images in a rhythm: full-width → asymmetric pair → full-width → flipped pair...
+ * This creates visual variety instead of uniform single-column stacking.
+ */
+
+type LayoutRow =
+  | { type: "full"; images: string[] }
+  | { type: "wide-narrow"; images: string[] }
+  | { type: "narrow-wide"; images: string[] };
+
+function buildLayout(images: string[]): LayoutRow[] {
+  const rows: LayoutRow[] = [];
+  let i = 0;
+  let pairFlip = false;
+
+  while (i < images.length) {
+    const remaining = images.length - i;
+
+    if (remaining === 1) {
+      // Last image always full-width
+      rows.push({ type: "full", images: [images[i]] });
+      i += 1;
+    } else if (remaining === 2) {
+      // Last two: make a pair
+      rows.push({
+        type: pairFlip ? "narrow-wide" : "wide-narrow",
+        images: [images[i], images[i + 1]],
+      });
+      i += 2;
+    } else if (remaining === 3) {
+      // Three left: full + pair (avoids orphan)
+      rows.push({ type: "full", images: [images[i]] });
+      rows.push({
+        type: pairFlip ? "narrow-wide" : "wide-narrow",
+        images: [images[i + 1], images[i + 2]],
+      });
+      i += 3;
+    } else {
+      // 4+: alternate full → pair
+      rows.push({ type: "full", images: [images[i]] });
+      i += 1;
+      rows.push({
+        type: pairFlip ? "narrow-wide" : "wide-narrow",
+        images: [images[i], images[i + 1]],
+      });
+      pairFlip = !pairFlip;
+      i += 2;
+    }
+  }
+
+  return rows;
+}
+
+interface ImageGalleryProps {
+  images: string[];
+  alt: string;
+}
+
+export function ImageGallery({ images, alt }: ImageGalleryProps) {
+  if (images.length === 0) return null;
+
+  const rows = buildLayout(images);
+
+  return (
+    <div className={styles.gallery}>
+      {rows.map((row, ri) => {
+        if (row.type === "full") {
+          return (
+            <div key={ri} className={styles.rowFull}>
+              <Image
+                src={row.images[0]}
+                alt={`${alt} detail`}
+                width={2400}
+                height={1600}
+                style={{ width: "100%", height: "auto", borderRadius: "var(--img-radius)" }}
+                sizes="(max-width: 768px) 100vw, (max-width: 1400px) 90vw, 1400px"
+              />
+            </div>
+          );
+        }
+
+        return (
+          <div
+            key={ri}
+            className={styles.rowPair}
+            style={{
+              gridTemplateColumns: row.type === "wide-narrow" ? "2fr 1fr" : "1fr 2fr",
+            }}
+          >
+            {row.images.map((src, ii) => (
+              <Image
+                key={ii}
+                src={src}
+                alt={`${alt} detail`}
+                width={2400}
+                height={1600}
+                style={{ width: "100%", height: "auto", borderRadius: "var(--img-radius)" }}
+                sizes={row.type === "wide-narrow"
+                  ? (ii === 0 ? "(max-width: 768px) 100vw, 60vw" : "(max-width: 768px) 100vw, 30vw")
+                  : (ii === 0 ? "(max-width: 768px) 100vw, 30vw" : "(max-width: 768px) 100vw, 60vw")
+                }
+              />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

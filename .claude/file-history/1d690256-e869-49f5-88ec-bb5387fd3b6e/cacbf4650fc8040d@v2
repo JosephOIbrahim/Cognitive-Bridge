@@ -1,0 +1,32 @@
+"""Check TOPS work item states and outputs."""
+import hou
+import pdg
+
+topnet = hou.node("/obj/renderfarm")
+render_node = hou.node("/obj/renderfarm/render_frames")
+
+# Get PDG node
+ctx = topnet.getPDGGraphContext()
+pdg_node = render_node.getPDGNode()
+
+parts = []
+parts.append("PDG node: " + str(pdg_node))
+
+if pdg_node:
+    items = pdg_node.workItems
+    parts.append("Work items: " + str(len(items)))
+    for wi in items:
+        state = str(wi.state)
+        frame = wi.frame
+        outputs = wi.resultData
+        parts.append("  WI frame={} state={} outputs={}".format(frame, state, outputs))
+else:
+    parts.append("No PDG node found")
+
+# Also check what the ROP outputimage resolves to at frame 1
+rop = hou.node("/out/test_render")
+hou.setFrame(1)
+resolved = rop.parm("outputimage").eval()
+parts.append("ROP output at frame 1: " + resolved)
+
+result = "\n".join(parts)

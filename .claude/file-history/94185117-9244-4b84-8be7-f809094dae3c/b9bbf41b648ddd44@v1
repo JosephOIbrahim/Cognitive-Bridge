@@ -1,0 +1,659 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ChatTypingIndicator } from './ChatTypingIndicator';
+import { ChatProjectCard, parseMessageWithProjects } from './ChatProjectCard';
+import { usePerception, SensorEventType } from '@/lib/perception/context';
+import { analyzeChatMessage } from '@/lib/perception/classifier';
+
+interface ChatBotProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+interface Message {
+  type: 'bot' | 'user';
+  text: string;
+  isStreaming?: boolean;
+}
+
+// Contextual quick reply suggestions based on conversation
+const INITIAL_SUGGESTIONS = [
+  'What makes Joseph different?',
+  'Tell me about Cinderella',
+  'How does Joseph use AI?',
+  'Is Joseph available?'
+];
+
+const FOLLOW_UP_SUGGESTIONS = [
+  'Tell me more',
+  'Show me another project',
+  'What tools does he use?',
+  'How can I contact Joseph?'
+];
+
+/**
+ * Render markdown-style text with basic formatting
+ * Supports: **bold**, *italic*, `code`, and links
+ */
+/**
+ * Render markdown-style text as React nodes (no dangerouslySetInnerHTML).
+ * Supports: **bold**, *italic*, `code`
+ */
+function renderFormattedText(text: string): React.ReactNode {
+  // Tokenize: split on bold, code, and italic markers
+  const tokenRegex = /(\*\*(.+?)\*\*|`(.+?)`|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*))/g;
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRegex.exec(text)) !== null) {
+    // Push plain text before this match
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    if (match[2]) {
+      // Bold: **text**
+      nodes.push(<b key={key++}>{match[2]}</b>);
+    } else if (match[3]) {
+      // Code: `text`
+      nodes.push(<code key={key++}>{match[3]}</code>);
+    } else if (match[4]) {
+      // Italic: *text*
+      nodes.push(<em key={key++}>{match[4]}</em>);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Push remaining plain text
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return <>{nodes}</>;
+}
+
+/**
+ * Render a message with project cards inline
+ */
+function MessageContent({ text }: { text: string }) {
+  const parts = parseMessageWithProjects(text);
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (part.type === 'project') {
+          return <ChatProjectCard key={index} slug={part.content} />;
+        }
+        return (
+          <span key={index}>
+            {renderFormattedText(part.content)}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+export function ChatBot({ isOpen, onClose }: ChatBotProps) {
+  // Get visitor archetype and event recorder from perception system
+  const { archetype, confidence, recordEvent } = usePerception();
+
+  const getInitialMessage = (): string => {
+    return "What would you like to know about Joseph's work?";
+  };
+
+  const [messages, setMessages] = useState<Message[]>([
+    { type: 'bot', text: getInitialMessage() }
+  ]);
+  const [inputValue, setInputValue] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [hasConversation, setHasConversation] = useState(false);
+
+  // Track timing for response read time calculation
+  const lastBotResponseTimeRef = useRef<number>(0);
+  const userMessageCountRef = useRef<number>(0);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isMountedRef = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Track mounted state
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Focus input when chatbot opens
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      const focusTimeout = setTimeout(() => {
+        if (isMountedRef.current && inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 100);
+      return () => clearTimeout(focusTimeout);
+    }
+  }, [isOpen]);
+
+  // Scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isTyping]);
+
+  // Handle escape key to close
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  // Reset on open
+  useEffect(() => {
+    if (isOpen) {
+      setMessages([{ type: 'bot', text: getInitialMessage() }]);
+      setInputValue('');
+      setIsTyping(false);
+      setHasConversation(false);
+      // Reset chat tracking for perception system
+      lastBotResponseTimeRef.current = 0;
+      userMessageCountRef.current = 0;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      document.body.setAttribute('data-chatbot-open', 'true');
+    } else {
+      document.body.removeAttribute('data-chatbot-open');
+    }
+  }, [isOpen]);
+
+  // Send message to AI and stream response
+  const sendMessage = useCallback(async (query: string) => {
+    if (!query.trim() || isTyping) return;
+
+    // Record response read time if this isn't the first message
+    if (lastBotResponseTimeRef.current > 0) {
+      const responseReadTime = Date.now() - lastBotResponseTimeRef.current;
+      recordEvent({
+        timestamp: Date.now(),
+        type: SensorEventType.CHAT_RESPONSE_READ,
+        data: {
+          responseReadTime,
+        },
+      });
+    }
+
+    // Analyze the message for behavioral signals
+    const isFollowUp = userMessageCountRef.current > 0;
+    const messageAnalysis = analyzeChatMessage(query, isFollowUp);
+    userMessageCountRef.current++;
+
+    // Record the chat message event
+    recordEvent({
+      timestamp: Date.now(),
+      type: SensorEventType.CHAT_MESSAGE,
+      data: {
+        messageLength: messageAnalysis.messageLength,
+        wordCount: messageAnalysis.wordCount,
+        hasTechnicalTerms: messageAnalysis.hasTechnicalTerms,
+        isFollowUp: messageAnalysis.isFollowUp,
+        questionCategory: messageAnalysis.questionCategory,
+      },
+    });
+
+    // Add user message
+    const userMessage: Message = { type: 'user', text: query };
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
+    setIsTyping(true);
+    setHasConversation(true);
+
+    // Abort any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    try {
+      // Get conversation history (excluding the message we just added)
+      const conversationHistory = messages.map(m => ({
+        type: m.type,
+        text: m.text
+      }));
+
+      // Server handles model selection deterministically based on environment
+      // (Anthropic in production, Ollama locally)
+      // Visitor context enables archetype-aware response adaptation
+      const response = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: query,
+          messages: conversationHistory,
+          stream: true,
+          context: 'portfolio',
+          // Perception context for invisible adaptation
+          visitor: {
+            archetype: archetype ?? 'unknown',
+            confidence: confidence ?? 0,
+          },
+        }),
+        signal: abortControllerRef.current.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      // Add empty bot message that we'll stream into
+      const botMessageIndex = messages.length + 1; // +1 for user message we just added
+      setMessages(prev => [...prev, { type: 'bot', text: '', isStreaming: true }]);
+
+      // Stream the response
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        fullText += chunk;
+
+        // Update the bot message with streamed content
+        // Optimization: only clone the last element, reuse the rest of the array
+        if (isMountedRef.current) {
+          setMessages(prev => {
+            const lastIndex = prev.length - 1;
+            if (prev[lastIndex]?.type === 'bot') {
+              const updated = prev.slice(0, lastIndex);
+              updated.push({ type: 'bot', text: fullText, isStreaming: true });
+              return updated;
+            }
+            return prev;
+          });
+        }
+      }
+
+      // Mark streaming as complete
+      if (isMountedRef.current) {
+        setMessages(prev => {
+          const lastIndex = prev.length - 1;
+          if (prev[lastIndex]?.type === 'bot') {
+            const updated = prev.slice(0, lastIndex);
+            updated.push({ type: 'bot', text: fullText, isStreaming: false });
+            return updated;
+          }
+          return prev;
+        });
+        setIsTyping(false);
+        // Track when bot response completed (for read time calculation)
+        lastBotResponseTimeRef.current = Date.now();
+      }
+
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        // Request was aborted, ignore
+        return;
+      }
+
+      console.error('Chat error:', error);
+
+      // Add fallback error message
+      if (isMountedRef.current) {
+        setMessages(prev => [...prev, {
+          type: 'bot',
+          text: "I'm having trouble connecting right now. You can reach Joseph directly at jomar.ibrahim@gmail.com for any questions about his work or availability."
+        }]);
+        setIsTyping(false);
+      }
+    }
+  }, [messages, isTyping, archetype, confidence, recordEvent]);
+
+  // Handle form submit
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage(inputValue);
+  }, [inputValue, sendMessage]);
+
+  // Handle quick reply click
+  const handleQuickReply = useCallback((question: string) => {
+    if (!isTyping) {
+      sendMessage(question);
+    }
+  }, [isTyping, sendMessage]);
+
+  if (!isOpen) return null;
+
+  const isInitialState = messages.length === 1 && messages[0].type === 'bot';
+  const currentSuggestions = hasConversation ? FOLLOW_UP_SUGGESTIONS : INITIAL_SUGGESTIONS;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Chat with Joseph Ibrahim"
+      className="fixed inset-0 flex items-center justify-center"
+      onClick={onClose}
+      style={{
+        backgroundColor: '#141414',
+        zIndex: 200,
+        animation: 'chatFadeIn 250ms ease-out'
+      }}
+    >
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        className="absolute top-8 right-8 transition-opacity duration-300"
+        aria-label="Close"
+        style={{ opacity: 0.4, zIndex: 10 }}
+        onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.4')}
+      >
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1"
+          strokeLinecap="round"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+
+      {/* Centered container */}
+      <div
+        className="w-full max-w-2xl mx-6 md:mx-8"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          animation: 'chatSlideUp 350ms cubic-bezier(0.16, 1, 0.3, 1)'
+        }}
+      >
+        {/* Messages area */}
+        <div
+          className="overflow-y-auto"
+          style={{
+            maxHeight: '60vh',
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#2a2a2a transparent'
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '64px' }}>
+            {messages.map((message, index) => {
+              const isHeroPrompt = index === 0 && message.type === 'bot' && isInitialState;
+
+              return (
+                <div
+                  key={index}
+                  className={index > 0 ? 'chat-message-enter' : ''}
+                  style={{
+                    paddingLeft: message.type === 'user' ? '24px' : '0',
+                    borderLeft: message.type === 'user' ? '1px solid var(--border-subtle)' : 'none',
+                    // Skip paint for off-screen messages in long conversations
+                    ...(index < messages.length - 2 ? { contentVisibility: 'auto' as const, containIntrinsicSize: '0 80px' } : {})
+                  }}
+                >
+                  {isHeroPrompt ? (
+                    <h2
+                      style={{
+                        color: 'var(--grey-300)',
+                        fontFamily: 'var(--font-lora)',
+                        fontWeight: 400,
+                        fontStyle: 'italic',
+                        fontSize: 'clamp(32px, 5.5vw, 48px)',
+                        lineHeight: 1.15,
+                        letterSpacing: '0.01em'
+                      }}
+                    >
+                      {message.text}
+                    </h2>
+                  ) : (
+                    <>
+                      {/* Speaker label */}
+                      <span
+                        style={{
+                          display: 'block',
+                          color: '#5a5a5a',
+                          fontFamily: 'var(--font-display)',
+                          fontWeight: 600,
+                          fontSize: '10px',
+                          letterSpacing: '0.18em',
+                          textTransform: 'uppercase',
+                          marginBottom: '14px'
+                        }}
+                      >
+                        {message.type === 'user' ? 'You' : 'Joseph Ibrahim'}
+                      </span>
+                      {/* Message text with rich content */}
+                      <div
+                        style={{
+                          color: message.type === 'user' ? '#7a7a7a' : '#9a9a9a',
+                          fontFamily: 'var(--font-display)',
+                          fontWeight: 400,
+                          fontSize: message.type === 'bot' ? '16.5px' : '15px',
+                          lineHeight: 1.75,
+                          letterSpacing: '0.01em'
+                        }}
+                      >
+                        <MessageContent text={message.text} />
+                        {message.isStreaming && (
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: '2px',
+                              height: '1em',
+                              backgroundColor: '#9a9a9a',
+                              marginLeft: '2px',
+                              animation: 'blink 1s step-end infinite'
+                            }}
+                          />
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Typing indicator */}
+            {isTyping && messages[messages.length - 1]?.type !== 'bot' && (
+              <div className="chat-message-enter">
+                <ChatTypingIndicator />
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        {/* Input area */}
+        <form
+          onSubmit={handleSubmit}
+          style={{ marginTop: isInitialState ? '72px' : '64px' }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              borderBottom: '1px solid var(--border-subtle)',
+              transition: 'border-color 0.3s ease'
+            }}
+          >
+            <input
+              ref={inputRef}
+              type="text"
+              name="chat-message"
+              autoComplete="off"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder={isTyping ? "Thinking\u2026" : "Ask about Joseph\u2019s work\u2026"}
+              disabled={isTyping}
+              className="w-full outline-none"
+              style={{
+                color: '#f0f0f0',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 400,
+                fontSize: '17px',
+                letterSpacing: '0.01em',
+                backgroundColor: 'transparent',
+                border: 'none',
+                paddingTop: '18px',
+                paddingBottom: '18px',
+                paddingRight: '48px',
+                opacity: isTyping ? 0.5 : 1,
+                cursor: isTyping ? 'wait' : 'text'
+              }}
+            />
+            <button
+              type="submit"
+              disabled={isTyping || !inputValue.trim()}
+              className="absolute right-0 top-1/2 -translate-y-1/2 transition-opacity duration-300"
+              style={{
+                opacity: isTyping || !inputValue.trim() ? 0.15 : 0.5,
+                cursor: isTyping || !inputValue.trim() ? 'default' : 'pointer'
+              }}
+              aria-label="Send"
+              onMouseEnter={(e) => {
+                if (!isTyping && inputValue.trim()) {
+                  e.currentTarget.style.opacity = '1';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isTyping && inputValue.trim()) {
+                  e.currentTarget.style.opacity = '0.5';
+                }
+              }}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Quick reply suggestions - show when not typing */}
+          {!isTyping && (
+            <div
+              style={{
+                marginTop: '48px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '10px'
+              }}
+            >
+              {currentSuggestions.map((question) => (
+                <button
+                  key={question}
+                  type="button"
+                  onClick={() => handleQuickReply(question)}
+                  style={{
+                    color: '#7a7a7a',
+                    fontFamily: 'var(--font-open-sans)',
+                    fontWeight: 400,
+                    fontSize: '13px',
+                    letterSpacing: '0.01em',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: 'none',
+                    borderRadius: '3px',
+                    padding: '8px 14px',
+                    minHeight: '44px',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s ease, color 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                    e.currentTarget.style.color = '#9a9a9a';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                    e.currentTarget.style.color = '#7a7a7a';
+                  }}
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          )}
+        </form>
+      </div>
+
+      <style jsx>{`
+        @keyframes chatFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes chatSlideUp {
+          from {
+            opacity: 0;
+            transform: translateY(24px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+
+        input::placeholder {
+          color: var(--text-dim);
+        }
+
+        input:focus {
+          outline: none;
+        }
+
+        :global(code) {
+          background: rgba(255, 255, 255, 0.06);
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-family: monospace;
+          font-size: 0.9em;
+        }
+
+        :global(b), :global(strong) {
+          color: #c0c0c0;
+          font-weight: 500;
+        }
+
+        :global(em) {
+          font-style: italic;
+        }
+      `}</style>
+    </div>
+  );
+}

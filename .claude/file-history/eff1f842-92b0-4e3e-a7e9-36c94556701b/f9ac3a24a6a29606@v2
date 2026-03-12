@@ -1,0 +1,131 @@
+"""CUTLASS availability detection, path management, and benchmark cache.
+
+Provides lazy detection of CUTLASS installation and a JSON-based cache
+for GEMM benchmark results that feed into GPU Specialist recommendations.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+import time
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Default CUTLASS install location (built from source for SM89)
+_CUTLASS_ROOT = Path(os.environ.get(
+    "CUTLASS_PATH",
+    r"C:\Users\User\OneDrive\Desktop\AI_Dev\cutlass",
+))
+
+_CACHE_PATH = Path(__file__).parent.parent / "data" / "cutlass_benchmark_cache.json"
+
+# Cache TTL: 7 days
+_CACHE_TTL_SECONDS = 7 * 24 * 3600
+
+# Lazy init flag (same pattern as pynvml in telemetry.py)
+_HAS_CUTLASS: bool | None = None
+
+
+def _setup_cutlass_path() -> bool:
+    """Add CUTLASS Python bindings to sys.path and set env vars."""
+    python_dir = _CUTLASS_ROOT / "python"
+    if not python_dir.exists():
+        return False
+
+    path_str = str(python_dir)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
+
+    # Prevent the Linux-only /usr/bin/which call in cutlass_cppgen
+    if "CUDA_INSTALL_PATH" not in os.environ:
+        cuda_path = os.environ.get("CUDA_PATH", r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8")
+        os.environ["CUDA_INSTALL_PATH"] = cuda_path
+
+    return True
+
+
+def is_available() -> bool:
+    """Check if CUTLASS is available (lazy init, cached)."""
+    global _HAS_CUTLASS
+    if _HAS_CUTLASS is None:
+        _HAS_CUTLASS = _setup_cutlass_path()
+        if _HAS_CUTLASS:
+            logger.info("CUTLASS found at %s", _CUTLASS_ROOT)
+        else:
+            logger.debug("CUTLASS not found at %s", _CUTLASS_ROOT)
+    return _HAS_CUTLASS
+
+
+@dataclass
+class CUTLASSBenchmarkResult:
+    """Single benchmark measurement."""
+    precision: str  # fp32, tf32, fp16, bf16
+    matrix_size: int
+    tflops: float
+    theoretical_peak: float
+    efficiency_pct: float
+    time_ms: float
+
+
+@dataclass
+class CUTLASSBenchmarkCache:
+    """Cached benchmark results with invalidation metadata."""
+    gpu_name: str
+    driver_version: str
+    cuda_version: str
+    timestamp: float
+    results: list[CUTLASSBenchmarkResult] = field(default_factory=list)
+
+    def is_valid(self, gpu_name: str, driver_version: str) -> bool:
+        """Check if cache is still valid for current hardware."""
+        if self.gpu_name != gpu_name:
+            return False
+        if self.driver_version != driver_version:
+            return False
+        age = time.time() - self.timestamp
+        if age > _CACHE_TTL_SECONDS:
+            return False
+        return True
+
+
+def load_cached_benchmarks() -> CUTLASSBenchmarkCache | None:
+    """Load benchmark cache from disk. Returns None if missing or corrupt."""
+    if not _CACHE_PATH.exists():
+        return None
+    try:
+        data = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
+        results = [CUTLASSBenchmarkResult(**r) for r in data.get("results", [])]
+        return CUTLASSBenchmarkCache(
+            gpu_name=data["gpu_name"],
+            driver_version=data["driver_version"],
+            cuda_version=data["cuda_version"],
+            timestamp=data["timestamp"],
+            results=results,
+        )
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning("Corrupt benchmark cache, ignoring: %s", e)
+        return None
+
+
+def save_benchmark_cache(cache: CUTLASSBenchmarkCache) -> Path:
+    """Save benchmark cache to disk. Returns the cache file path."""
+    _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "gpu_name": cache.gpu_name,
+        "driver_version": cache.driver_version,
+        "cuda_version": cache.cuda_version,
+        "timestamp": cache.timestamp,
+        "results": [asdict(r) for r in cache.results],
+    }
+    _CACHE_PATH.write_text(
+        json.dumps(data, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    logger.info("Benchmark cache saved to %s", _CACHE_PATH)
+    return _CACHE_PATH

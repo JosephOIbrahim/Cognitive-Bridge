@@ -1,0 +1,28 @@
+"""Cook the TOPS render farm and report results."""
+import hou
+import os
+import time
+import tempfile
+
+topnet = hou.node("/obj/renderfarm")
+render_node = hou.node("/obj/renderfarm/render_frames")
+
+# Cook using PDG
+t0 = time.time()
+render_node.executeGraph(False, False, False, False)  # block=False
+
+# Wait for cook to complete (poll PDG state)
+import pdg
+context = topnet.getPDGGraphContext()
+
+# Use cookNode which blocks
+render_node.cookWorkItems(block=True)
+
+dt = time.time() - t0
+
+# Check results
+outdir = os.path.join(tempfile.gettempdir(), "synapse_farm")
+files = sorted([f for f in os.listdir(outdir) if f.startswith("frame_") and f.endswith(".jpg")])
+sizes = [(f, os.path.getsize(os.path.join(outdir, f))) for f in files]
+
+result = "Cook done in {:.1f}s | {} files: {}".format(dt, len(files), str(sizes))

@@ -1,0 +1,88 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import styles from "./IntroAnimation.module.css";
+
+const SESSION_KEY = "jaime-intro-played";
+
+// Timeline (ms)
+const T_NAME = 600;
+const T_FADE = 2400;
+const T_CLEANUP = 3100;
+
+export function IntroAnimation() {
+  const [phase, setPhase] = useState<
+    "check" | "playing" | "fadeOut" | "done"
+  >("check");
+  const [nameVisible, setNameVisible] = useState(false);
+
+  const skipIntro = useCallback(() => {
+    setPhase("done");
+    try {
+      sessionStorage.setItem(SESSION_KEY, "1");
+    } catch {
+      // sessionStorage unavailable
+    }
+  }, []);
+
+  useEffect(() => {
+    // Check if already played this session
+    try {
+      if (sessionStorage.getItem(SESSION_KEY)) {
+        setPhase("done");
+        return;
+      }
+    } catch {
+      // sessionStorage unavailable, play anyway
+    }
+
+    // Check reduced motion preference
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      skipIntro();
+      return;
+    }
+
+    setPhase("playing");
+
+    // Name reveals
+    const t1 = setTimeout(() => setNameVisible(true), T_NAME);
+    // Fade out overlay
+    const t2 = setTimeout(() => setPhase("fadeOut"), T_FADE);
+    // Remove from DOM
+    const t3 = setTimeout(() => {
+      setPhase("done");
+      try {
+        sessionStorage.setItem(SESSION_KEY, "1");
+      } catch {
+        // sessionStorage unavailable
+      }
+    }, T_CLEANUP);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [skipIntro]);
+
+  if (phase === "done") return null;
+
+  return (
+    <div
+      className={`${styles.overlay} ${phase === "fadeOut" ? styles.fadeOut : ""}`}
+      aria-hidden="true"
+    >
+      <div className={styles.content}>
+        <div className={styles.nameMask}>
+          <span
+            className={`${styles.name} ${nameVisible ? styles.nameVisible : ""}`}
+          >
+            Jaime Ibrahim
+            <span className={styles.separator}>|</span>
+            Brand Design Director
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}

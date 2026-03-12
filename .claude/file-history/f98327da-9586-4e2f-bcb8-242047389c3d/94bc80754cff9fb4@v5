@@ -1,0 +1,66 @@
+# Session Handover
+**Date:** 2026-02-27 13:00
+**Project:** Cinema Camera Rig v4.0 (Houdini 21)
+**Working directory:** C:\Users\User\OneDrive\Documents\houdini21.0
+
+## What Was Done This Session
+- Phase 2b: USD builder + shader binding + EXR metadata — verified with hython, committed (377ed83)
+- Phase 2c: Synapse preflight + 4 HDA builder scripts — syntax verified, committed (e7c914d)
+- Amendment A: Wolfram Oracle + 4 upgrade scripts + PupilShiftFit + calibrated biomechanics — committed (395906e)
+- Read README Steps 8-10 specs — context exhausted before execution
+
+## Current Task: Steps 8-10 (Synapse Bridge Execution)
+
+These steps require a LIVE Houdini session with command port 12345. They cannot run offline.
+
+### STEP 8: User must open Houdini and enable command port
+- Launch Houdini 21
+- Enable command port on port 12345 (Edit > Preferences > Network)
+- Or set `HOUDINI_SCRIPT_PORT = 12345` in houdini.env
+
+### STEP 9: Run synapse_preflight() through bridge
+Send to Houdini via command port:
+```python
+import sys
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+from cinema_camera.synapse_preflight import synapse_preflight
+result = synapse_preflight()
+print(result)
+```
+Expected: dict with houdini_version, cinema_camera_path, vex_include_path, hda_dirs_ready, copernicus_available
+
+### STEP 10: Execute 4 HDA builders through bridge
+Send sequentially to Houdini. Save to otls/ (not hda/chops or hda/post as builders default):
+```python
+from cinema_camera.builders import *
+path1 = build_chops_biomechanics_hda(save_dir=r"C:\Users\User\OneDrive\Documents\houdini21.0\otls")
+path2 = build_cop_anamorphic_flare_hda(save_dir=r"C:\Users\User\OneDrive\Documents\houdini21.0\otls")
+path3 = build_cop_sensor_noise_hda(save_dir=r"C:\Users\User\OneDrive\Documents\houdini21.0\otls")
+path4 = build_cop_stmap_aov_hda(save_dir=r"C:\Users\User\OneDrive\Documents\houdini21.0\otls")
+```
+Verify each with: `hou.nodeType(category, "cinema::type::version")` — should not be None.
+
+**IMPORTANT:** The builders default save_dir uses CINEMA_CAMERA_PATH/hda/{chops,post}. But README says HDAs go to otls/. Pass `save_dir=r"...\otls"` explicitly.
+
+## After Steps 8-10
+- Step 11: Integration testing through Synapse bridge
+- Step 12: Top-level cinema::camera_rig::2.0 orchestrator HDA
+- Step 13: Manual rig test in Houdini viewport + Karma render
+
+## Git State
+- Remote: https://github.com/JosephOIbrahim/Houdini_Camera_Rig_System.git (main)
+- Latest commit: 395906e — All committed and pushed, working tree clean
+
+## Key Decision: Bridge Mechanism
+Claude Code needs a way to send Python commands to Houdini's command port. Options:
+1. `hython` can import `hou` but is a separate process (no live session)
+2. TCP socket to localhost:12345 (the actual Synapse bridge)
+3. User manually pastes commands into Houdini Python shell
+Check if the user has a Synapse bridge configured, or if we need to write a simple TCP sender.
+
+## All Completed Phases
+- Phase 1: Protocols, biomechanics, optics, registry, lens JSON, tests (44 tests)
+- Phase 2a: VEX files (libcinema_optics.h + karma_cinema_lens.vfl), vcc verified
+- Phase 2b: USD builder, shader binding, EXR metadata, hython verified
+- Phase 2c: Synapse preflight + 4 HDA builders
+- Amendment A: Wolfram Oracle (additive, needs API key to activate)

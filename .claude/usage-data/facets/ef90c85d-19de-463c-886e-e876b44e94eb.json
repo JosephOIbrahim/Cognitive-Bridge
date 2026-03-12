@@ -1,0 +1,25 @@
+{
+  "underlying_goal": "Fix a bug where summary and reference_file fields in knowledge_lookup responses were empty despite data existing in the index, then verify the fix works end-to-end through the MCP bridge",
+  "goal_categories": {
+    "read_file": 1,
+    "bug_investigation_and_fix": 1,
+    "run_tests": 1,
+    "git_commit": 1,
+    "test_via_mcp_bridge": 1,
+    "restart_session": 1
+  },
+  "outcome": "mostly_achieved",
+  "user_satisfaction_counts": {
+    "likely_satisfied": 4,
+    "neutral": 2
+  },
+  "claude_helpfulness": "very_helpful",
+  "session_type": "iterative_refinement",
+  "friction_counts": {
+    "tool_infrastructure_issue": 3
+  },
+  "friction_detail": "The MCP bridge repeatedly timed out due to stale/zombie bridge processes, preventing end-to-end verification through the bridge despite the fix working via direct WebSocket.",
+  "primary_success": "good_debugging",
+  "brief_summary": "User asked Claude to investigate and fix empty summary/reference_file fields in knowledge_lookup responses; the bug was correctly diagnosed and fixed with all tests passing, but MCP bridge verification was blocked by stale bridge processes requiring a session restart.",
+  "session_id": "ef90c85d-19de-463c-886e-e876b44e94eb"
+}

@@ -1,0 +1,13 @@
+I want to create and render a Solaris scene via the SYNAPSE MCP connection to Houdini. Follow this strict progressive pipeline—do NOT skip stages:
+
+1. STAGE SETUP: Create the scene geometry and light rig. After creation, run a validation sub-task that queries the stage and confirms all expected prims exist at their correct paths. List any missing prims before proceeding.
+
+2. MATERIAL ASSIGNMENT: Assign materials to geometry. After assignment, validate by querying each prim's material binding — print the prim path and its bound material. If any pattern like '/**' is used, verify it resolves to actual prims. Fix mismatches before proceeding.
+
+3. RENDER OUTPUT CONFIG: Set up the render product and output path. Validate the output directory exists and is writable. Print the resolved output path.
+
+4. TEST RENDER: Execute a minimal-resolution render (max 256x256, no SSS, no subsurface, low samples) as a stability test. Wait for completion with a 60-second timeout. If Houdini becomes unresponsive, report the failure and do NOT attempt a higher-quality render.
+
+5. FULL RENDER: Only if stage 4 succeeds, increase to target resolution and quality settings. Monitor for completion.
+
+The scene I want: [describe scene]. Report status after each stage.

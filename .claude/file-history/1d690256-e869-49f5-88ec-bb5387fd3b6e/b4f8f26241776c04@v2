@@ -1,0 +1,88 @@
+"""Cook TOPS render farm - save HIP first, configure scheduler properly."""
+
+def run():
+    import hou
+    import os
+    import time
+    import tempfile
+
+    # Save HIP file first (PDG needs it)
+    hip_path = os.path.join(tempfile.gettempdir(), "synapse_farm_test.hip")
+    hou.hipFile.save(hip_path)
+
+    # Clean TOPS
+    topnet = hou.node("/obj/renderfarm")
+    for c in topnet.children():
+        if c.type().name() != "localscheduler":
+            c.destroy()
+
+    # Configure scheduler
+    sched = topnet.node("localscheduler")
+    if sched:
+        sched.parm("maxprocsmenu").set(1)  # 1 concurrent process (GPU)
+
+    # Configure ROP
+    rop = hou.node("/out/test_render")
+    rop.parm("trange").set(1)
+    rop.parm("f1").set(1)
+    rop.parm("f2").set(3)
+    rop.parm("f3").set(1)
+    rop.parm("soho_foreground").set(0)  # External process for TOPS
+
+    outdir = os.path.join(tempfile.gettempdir(), "synapse_farm_tops")
+    os.makedirs(outdir, exist_ok=True)
+    outdir_fwd = outdir.replace("\\", "/")
+    rop.parm("outputimage").set(outdir_fwd + "/frame_$F4.jpg")
+
+    # Create ROP Fetch
+    ropfetch = topnet.createNode("ropfetch", "render_frames")
+    ropfetch.parm("roppath").set("/out/test_render")
+    topnet.layoutChildren()
+
+    # Save again to capture TOPS changes
+    hou.hipFile.save(hip_path)
+
+    # Dirty and cook
+    ropfetch.dirtyAllTasks(True)
+
+    t0 = time.time()
+    try:
+        ropfetch.cookWorkItems(block=True)
+        dt = time.time() - t0
+
+        # Report
+        pdg_node = ropfetch.getPDGNode()
+        items = pdg_node.workItems if pdg_node else []
+        parts = ["TOPS cook: {:.1f}s, {} work items".format(dt, len(items))]
+        for wi in items:
+            parts.append("  frame={} state={}".format(wi.frame, wi.state))
+
+        # Check files
+        if os.path.exists(outdir):
+            files = sorted(os.listdir(outdir))
+            parts.append("Output ({} files): {}".format(len(files), files))
+            for f in files:
+                fp = os.path.join(outdir, f)
+                parts.append("  {} = {} bytes".format(f, os.path.getsize(fp)))
+        else:
+            parts.append("No output dir")
+
+        # Check logs
+        hip_dir = os.path.dirname(hip_path)
+        pdg_temp = os.path.join(hip_dir, "pdgtemp")
+        if os.path.exists(pdg_temp):
+            for root, dirs, fnames in os.walk(pdg_temp):
+                for fn in fnames:
+                    if fn.endswith(".log"):
+                        fp = os.path.join(root, fn)
+                        with open(fp, encoding="utf-8", errors="replace") as fh:
+                            content = fh.read()
+                            if content.strip():
+                                parts.append("LOG {}: ...{}".format(fn, content[-200:]))
+
+        return "\n".join(parts)
+    except Exception as e:
+        dt = time.time() - t0
+        return "Error after {:.1f}s: {}".format(dt, str(e))
+
+result = run()

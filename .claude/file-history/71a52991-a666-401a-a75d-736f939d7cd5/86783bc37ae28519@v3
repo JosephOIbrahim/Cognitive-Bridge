@@ -1,0 +1,174 @@
+"""
+RAG Retrieval Test - MPM H21 Masterclass
+==========================================
+Simulates keyword-based retrieval against the semantic index
+and knowledge documents. Tests that queries find relevant content.
+"""
+
+import json
+import re
+from pathlib import Path
+
+DOCS_DIR = Path("G:/HOUDINI21_RAG_SYSTEM/documentation")
+INDEX_PATH = DOCS_DIR / "_metadata" / "semantic_index.json"
+TUTORIALS_DIR = DOCS_DIR / "tutorials" / "workflow_guides"
+
+def load_index():
+    with open(INDEX_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data["semantic_index"]["topics"]
+
+def score_topic(topic_entry, query_tokens):
+    """Score a topic entry against query tokens.
+
+    Scoring rules:
+      - Exact keyword match: +3 per token
+      - Partial keyword match (substring): +1 per token (capped at 1)
+      - Token appears in ANY common query: +2 per token (capped at 1)
+      - Best common query coverage bonus: +3 per overlapping token
+        (rewards entries where a single query matches many search tokens)
+    """
+    score = 0
+    keywords = [k.lower() for k in topic_entry.get("keywords", [])]
+    queries = [q.lower() for q in topic_entry.get("common_queries", [])]
+
+    for token in query_tokens:
+        # Exact keyword match: +3
+        if token in keywords:
+            score += 3
+        else:
+            # Partial keyword match (substring either way): +1, once
+            for kw in keywords:
+                if token in kw or kw in token:
+                    score += 1
+                    break
+
+        # Common query match: +2 if token in ANY query (not per-query)
+        if any(token in q for q in queries):
+            score += 2
+
+    # Best common query coverage bonus — find the single query with
+    # the most overlapping tokens and reward concentrated relevance
+    if queries:
+        best_overlap = max(
+            sum(1 for t in query_tokens if t in q)
+            for q in queries
+        )
+        score += best_overlap * 3
+
+    return score
+
+def search_docs(query, top_k=3):
+    """Search semantic index and return top-k matching documents."""
+    topics = load_index()
+    tokens = [t.lower().strip() for t in re.split(r'\s+', query) if len(t) > 2]
+
+    scored = []
+    for key, entry in topics.items():
+        if not key.startswith("mpm_"):
+            continue
+        s = score_topic(entry, tokens)
+        if s > 0:
+            scored.append((s, key, entry))
+
+    scored.sort(key=lambda x: -x[0])
+    return scored[:top_k]
+
+def get_excerpt(doc_path, max_lines=8):
+    """Get the Overview and first Key Concept from a document."""
+    if not doc_path.exists():
+        return "(file not found)"
+
+    text = doc_path.read_text(encoding="utf-8")
+    lines = text.split("\n")
+
+    # Find Overview section
+    overview = []
+    in_overview = False
+    in_concepts = False
+    concepts = []
+
+    for line in lines:
+        if line.strip() == "## Overview":
+            in_overview = True
+            continue
+        if line.strip() == "## Key Concepts":
+            in_overview = False
+            in_concepts = True
+            continue
+        if in_concepts and line.startswith("## "):
+            break
+        if in_overview and line.startswith("## "):
+            in_overview = False
+            continue
+        if in_overview and line.strip():
+            overview.append(line.strip())
+        if in_concepts and line.strip() and len(concepts) < 4:
+            concepts.append(line.strip())
+
+    result = ""
+    if overview:
+        result += "  OVERVIEW: " + " ".join(overview[:3])[:300]
+    if concepts:
+        result += "\n  CONCEPT:  " + " ".join(concepts[:2])[:200]
+    return result or "(no excerpt)"
+
+def run_test(query):
+    """Run a single retrieval test."""
+    print(f"\n{'='*70}")
+    print(f"QUERY: \"{query}\"")
+    print(f"{'='*70}")
+
+    results = search_docs(query)
+    if not results:
+        print("  NO RESULTS FOUND")
+        return
+
+    for i, (score, key, entry) in enumerate(results, 1):
+        doc_file = key.replace("mpm_", "mpm_", 1) + ".md"
+        # The primary_doc path tells us the filename
+        primary = entry.get("primary_doc", "")
+        filename = Path(primary).name if primary else doc_file
+        doc_path = TUTORIALS_DIR / filename
+
+        print(f"\n  [{i}] {key} (score: {score})")
+        print(f"      Doc: {filename}")
+        print(f"      Keywords: {', '.join(entry.get('keywords', [])[:6])}")
+        excerpt = get_excerpt(doc_path)
+        print(excerpt)
+
+# ---------------------------------------------------------------------------
+# Test Queries
+# ---------------------------------------------------------------------------
+
+QUERIES = [
+    "How does surface tension work in MPM?",
+    "MPM particles falling through collider",
+    "optimize MPM simulation performance",
+    "fill a container with liquid MPM",
+    "material sticking to fast moving object",
+    "convert MPM particles to mesh for rendering",
+    "MPM destruction fracture workflow",
+    "debris from MPM simulation",
+    "snow interaction with character",
+    "large scale building collapse",
+]
+
+def main():
+    print("RAG Retrieval Test - MPM H21 Masterclass Knowledge Base")
+    print(f"Index: {INDEX_PATH}")
+    print(f"Docs:  {TUTORIALS_DIR}")
+
+    topics = load_index()
+    mpm_count = sum(1 for k in topics if k.startswith("mpm_"))
+    print(f"MPM topics in index: {mpm_count}")
+
+    for query in QUERIES:
+        run_test(query)
+
+    print(f"\n{'='*70}")
+    print("RETRIEVAL TEST COMPLETE")
+    print(f"{'='*70}")
+
+if __name__ == "__main__":
+    main()

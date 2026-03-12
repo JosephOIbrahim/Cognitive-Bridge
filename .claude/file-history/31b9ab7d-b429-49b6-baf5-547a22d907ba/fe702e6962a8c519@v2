@@ -1,0 +1,35 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+
+/**
+ * Shared mobile detection hook
+ *
+ * Uses matchMedia instead of resize listener — fires only at breakpoint,
+ * not every pixel. Combines touch detection with viewport width.
+ *
+ * Returns { isMobile, isReady }:
+ * - isMobile: true on touch devices OR viewports < 768px
+ * - isReady: true after hydration (prevents SSR/client mismatch race conditions)
+ */
+export function useIsMobile(): { isMobile: boolean; isReady: boolean } {
+  const [isMobile, setIsMobile] = useState(true); // Default to mobile (safer — avoids initializing heavy desktop features)
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const mq = window.matchMedia('(max-width: 767px)');
+
+    const update = () => setIsMobile(isTouchDevice || mq.matches);
+
+    update();
+    setIsReady(true);
+
+    const handler = (e: MediaQueryListEvent) => setIsMobile(isTouchDevice || e.matches);
+    mq.addEventListener('change', handler);
+
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  return { isMobile, isReady };
+}

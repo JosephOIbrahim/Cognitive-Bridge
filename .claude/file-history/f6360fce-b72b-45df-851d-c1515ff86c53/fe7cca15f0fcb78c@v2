@@ -1,0 +1,96 @@
+// ViewportPerceptionSubsystem.h
+// UEditorSubsystem that orchestrates the viewport perception pipeline:
+// FrameProducer -> PixelBus -> MetadataCollector -> PerceptionAdapter -> PerceptionEndpoint
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "EditorSubsystem.h"
+#include "PerceptionTypes.h"
+#include "ViewportPerceptionSubsystem.generated.h"
+
+class FFrameProducer;
+class FPixelBus;
+class FMetadataCollector;
+class FPerceptionEndpoint;
+
+UCLASS()
+class VIEWPORTPERCEPTION_API UViewportPerceptionSubsystem : public UEditorSubsystem
+{
+	GENERATED_BODY()
+
+public:
+	// --- Lifecycle ---
+
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
+
+	// --- Control ---
+
+	/** Start continuous viewport capture at the given FPS and resolution. */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	void StartCapture(float MaxFPS = 5.0f, int32 Width = 1280, int32 Height = 720);
+
+	/** Stop continuous capture. */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	void StopCapture();
+
+	/** Capture a single frame (starts capture, grabs one frame, stops). */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	void RequestSingleFrame();
+
+	// --- Configuration ---
+
+	/** Set the output resolution for encoded images. */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	void SetCaptureResolution(int32 Width, int32 Height);
+
+	/** Set maximum capture rate in frames per second. */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	void SetMaxCaptureRate(float FPS);
+
+	/** Set the output image format (JPEG or PNG). */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	void SetImageFormat(EPerceptionImageFormat Format);
+
+	/** Set JPEG quality (1-100). Only applies when format is JPEG. */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	void SetJPEGQuality(int32 Quality);
+
+	// --- Reading ---
+
+	/** Get the latest encoded perception packet. Returns invalid packet if no frame available. */
+	FPerceptionPacket GetLatestPacket();
+
+	/** True if capture is currently active. */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	bool IsCapturing() const;
+
+	/** True if a new frame has arrived since the last GetLatestPacket call. */
+	UFUNCTION(BlueprintCallable, Category = "ViewportPerception")
+	bool HasNewFrame() const;
+
+	/** Get the HTTP endpoint instance (for route registration). */
+	FPerceptionEndpoint* GetEndpoint() const { return Endpoint.Get(); }
+
+private:
+	/** Tick handler for metadata collection and single-frame logic. */
+	void OnTick(float DeltaTime);
+
+	TUniquePtr<FFrameProducer> Producer;
+	TUniquePtr<FPixelBus> Bus;
+	TUniquePtr<FMetadataCollector> Collector;
+	TUniquePtr<FPerceptionEndpoint> Endpoint;
+
+	// Config
+	FIntPoint CaptureResolution = FIntPoint(1280, 720);
+	EPerceptionImageFormat ImageFormat = EPerceptionImageFormat::JPEG;
+	int32 JPEGQuality = 85;
+
+	// State
+	int64 LastSeenFrame = 0;
+	bool bSingleFrameRequested = false;
+	bool bCapturing = false;
+
+	FDelegateHandle TickDelegateHandle;
+};

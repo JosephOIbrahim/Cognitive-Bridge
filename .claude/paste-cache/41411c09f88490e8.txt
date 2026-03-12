@@ -1,0 +1,34 @@
+ Here's the post-revision audit — what needs addressing beyond what we just shipped:
+
+  ---
+  Critical (fix now)
+
+  1. Color contrast failure — --muted-light (#999999) on --bg (#EEEEEC) is 2.8:1, fails WCAG AA. Used in nav links, footer,
+  metadata labels. Needs to darken to at least #757575.
+  2. Skip link invisible on focus — The skip-to-content link never becomes visible when focused via keyboard. Needs a
+  :focus-visible style that brings it on-screen.
+  3. Dead THOUGHTS code — The THOUGHTS array and Thought type still exist in projects.ts/types.ts despite the pages being deleted.
+   Dead exports.
+
+  Important (next session)
+
+  4. Work page is 100% client-rendered — Marked "use client" for a single useState filter. The entire project grid + data ships as
+   client JS. Lift the filter into a small client wrapper.
+  5. No priority on homepage hero image — Battle Bank (LCP candidate) loads lazy. GridCard never passes priority={true}.
+  6. Mobile nav breakpoint too narrow — Hamburger triggers at 480px. Between 481-768px the nav is cramped. Should break at ~640px.
+  7. Fixed pixel image heights on mobile — 560px tall cards on a 375px-wide phone. Heights should scale or use aspect ratios below
+   768px.
+  8. No error boundary — No error.tsx in any route. Runtime errors show generic Next.js error page.
+  9. Hamburger missing aria-expanded — Screen readers can't tell if the mobile menu is open.
+  10. No CSP headers — Vimeo iframes, GA scripts, Open-Meteo API calls with no Content Security Policy.
+  11. No contact CTA on homepage — Hiring manager has to navigate to About, then scroll to find the email.
+
+  Nice-to-have (polish)
+
+  12. Category filter state lost on back-navigation (use URL params)
+  13. 404 page says "Back to Work" but links to /
+  14. Mobile menu doesn't trap focus or close on Escape
+  15. Weather API re-fetches on every navigation (no caching)
+  16. Inline styles on page files (about, work/[slug], homepage) — should be CSS Modules per spec
+  17. No downloadable resume/CV for a fractional CD portfolio
+  18. isActive nav logic treats homepage as "Work" active state

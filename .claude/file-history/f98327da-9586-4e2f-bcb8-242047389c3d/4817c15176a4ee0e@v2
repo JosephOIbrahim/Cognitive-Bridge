@@ -1,0 +1,54 @@
+"""Debug: figure out how to use VEX code in cop2net nodes."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        # Test 1: vopcop2gen - what children can be created
+        code = r"""
+import hou
+obj = hou.node("/obj")
+cn = obj.createNode("cop2net", "__test_vex")
+
+# vopcop2gen is a VOP container
+vgen = cn.createNode("vopcop2gen", "test_gen")
+# list child VOP types
+vop_types = sorted(hou.vopNodeTypeCategory().nodeTypes().keys())
+snippet_types = [t for t in vop_types if any(k in t.lower() for k in ['snippet', 'inline', 'code', 'vex'])]
+
+# Try creating an inline/snippet VOP inside vopcop2gen
+inline_ok = {}
+for name in ['snippet', 'inline', 'inlinecode', 'vex']:
+    try:
+        n = vgen.createNode(name, f"test_{name}")
+        inline_ok[name] = [p.name() for p in n.parms()][:10]
+        n.destroy()
+    except:
+        inline_ok[name] = False
+
+# Check vexgenerate function parm in detail
+vexg = cn.createNode("vexgenerate", "test_vexg")
+vexg_all_parms = {p.name(): str(p.parmTemplate().type()) for p in vexg.parms()}
+
+# Check vexfilter too
+vexf = cn.createNode("vexfilter", "test_vexf")
+vexf_all_parms = {p.name(): str(p.parmTemplate().type()) for p in vexf.parms()}
+
+cn.destroy()
+result = {
+    "snippet_vop_types": snippet_types[:20],
+    "inline_creation": inline_ok,
+    "vexgenerate_parms": vexg_all_parms,
+    "vexfilter_parms": vexf_all_parms,
+}
+"""
+        r = await client.execute_python(code, timeout=15)
+        print("Snippet VOP types:", r.get("snippet_vop_types") if isinstance(r, dict) else r)
+        if isinstance(r, dict):
+            print("\nInline VOP creation in vopcop2gen:", r.get("inline_creation"))
+            print("\nvexgenerate parms:", r.get("vexgenerate_parms"))
+            print("\nvexfilter parms:", r.get("vexfilter_parms"))
+
+asyncio.run(main())

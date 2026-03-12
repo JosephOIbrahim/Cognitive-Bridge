@@ -1,0 +1,178 @@
+"""
+Synapse Runner — Claude Code <-> Houdini bridge
+Execute Python code inside Houdini's live session via WebSocket.
+
+Usage:
+    python synapse_runner.py <command_file.py> [--timeout 30]
+    python synapse_runner.py --inline "import hou; print(hou.applicationVersionString())"
+    python synapse_runner.py --check
+    python synapse_runner.py --all-phases --timeout 60
+"""
+import asyncio
+import sys
+import json
+import argparse
+
+# Add synapse client to path
+sys.path.insert(0, r'C:\Users\User\.synapse\agent')
+
+
+async def run_in_houdini(code: str, timeout: int = 30):
+    """Execute Python code inside Houdini via Synapse, return result."""
+    from synapse_ws import SynapseClient
+    async with SynapseClient() as client:
+        result = await client.execute_python(code, timeout=timeout)
+        return result
+
+
+async def health_check():
+    """Quick Synapse/Houdini health check."""
+    from synapse_ws import SynapseClient
+    checks = {}
+    try:
+        async with SynapseClient() as c:
+            # Basic connectivity
+            r = await c.execute_python(
+                "import hou; result = hou.applicationVersionString()", timeout=5
+            )
+            checks['houdini_version'] = str(r).strip() if r else 'unknown'
+            checks['synapse_connected'] = True
+
+            # Python environment
+            r = await c.execute_python("""
+import sys, importlib
+result = {
+    'python_version': sys.version.split()[0],
+    'has_wolframalpha': importlib.util.find_spec('wolframalpha') is not None,
+    'has_httpx': importlib.util.find_spec('httpx') is not None,
+    'has_nest_asyncio': importlib.util.find_spec('nest_asyncio') is not None,
+    'houdini_prefs': __import__('hou').homeHoudiniDirectory(),
+}
+""", timeout=10)
+            if isinstance(r, dict):
+                checks.update(r)
+
+            # Warn if nest_asyncio is present (poison)
+            if checks.get('has_nest_asyncio'):
+                checks['WARNING'] = 'nest_asyncio.py found — DELETE IT from scripts/python/'
+
+    except Exception as e:
+        checks['synapse_connected'] = False
+        checks['error'] = str(e)
+        checks['fix'] = 'Start Houdini, then in Python Shell: from synapse.server import SynapseServer; s = SynapseServer(port=9999); s.start()'
+
+    return checks
+
+
+async def run_wolfram_phase(phase: str, timeout: int = 60):
+    """Run a specific Wolfram upgrade phase."""
+    phases = {
+        'W1': """
+import sys, os, traceback
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\cinema_camera"
+sys.path.insert(0, r'C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\scripts\\python')
+try:
+    from cinema_camera.wolfram_upgrades.validate_optics import validate_all_optics
+    results = validate_all_optics()
+    passed = sum(1 for r in results if r.verified)
+    result = {"success": True, "passed": passed, "total": len(results)}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+""",
+        'W2-W3': """
+import sys, os, traceback
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\cinema_camera"
+sys.path.insert(0, r'C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\scripts\\python')
+try:
+    from cinema_camera.wolfram_upgrades.fit_squeeze_breathing import fit_squeeze_curves
+    fit_squeeze_curves()
+    result = {"success": True}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+""",
+        'W4': """
+import sys, os, traceback
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\cinema_camera"
+sys.path.insert(0, r'C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\scripts\\python')
+try:
+    from cinema_camera.wolfram_upgrades.fit_pupil_shift import fit_pupil_shift_curves
+    fit_pupil_shift_curves()
+    result = {"success": True}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+""",
+        'W5': """
+import sys, os, traceback
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\cinema_camera"
+sys.path.insert(0, r'C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\scripts\\python')
+try:
+    from cinema_camera.wolfram_upgrades.calibrate_biomechanics import calibrate_biomechanics
+    calibrate_biomechanics()
+    result = {"success": True}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+""",
+    }
+
+    if phase not in phases:
+        return {'error': f'Unknown phase: {phase}. Valid: {list(phases.keys())}'}
+
+    from synapse_ws import SynapseClient
+    async with SynapseClient() as client:
+        result = await client.execute_python(phases[phase], timeout=timeout)
+        return result
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Synapse Runner — Claude Code <-> Houdini bridge')
+    parser.add_argument('command_file', nargs='?', help='Python file to execute in Houdini')
+    parser.add_argument('--inline', '-i', help='Inline Python code to execute')
+    parser.add_argument('--check', '-c', action='store_true', help='Run health check')
+    parser.add_argument('--phase', '-p', help='Run Wolfram phase (W1, W2-W3, W4, W5)')
+    parser.add_argument('--all-phases', action='store_true', help='Run all Wolfram phases')
+    parser.add_argument('--timeout', type=int, default=30)
+    args = parser.parse_args()
+
+    if args.check:
+        result = asyncio.run(health_check())
+        print(json.dumps(result, indent=2))
+
+    elif args.phase:
+        result = asyncio.run(run_wolfram_phase(args.phase, args.timeout))
+        print(json.dumps(result, indent=2, default=str))
+
+    elif args.all_phases:
+        async def run_all():
+            results = {}
+            for phase in ['W1', 'W2-W3', 'W4', 'W5']:
+                print(f"\n[{phase}] Running...")
+                r = await run_wolfram_phase(phase, args.timeout)
+                results[phase] = r
+                if isinstance(r, dict):
+                    ok = r.get('success')
+                elif isinstance(r, str):
+                    ok = "'success': True" in r or '"success": true' in r.lower()
+                else:
+                    ok = False
+                status = 'PASS' if ok else 'FAIL'
+                print(f"[{phase}] {status}")
+            return results
+        results = asyncio.run(run_all())
+        print(json.dumps(results, indent=2, default=str))
+
+    elif args.inline:
+        result = asyncio.run(run_in_houdini(args.inline, args.timeout))
+        print(json.dumps(result, indent=2, default=str) if isinstance(result, dict) else result)
+
+    elif args.command_file:
+        with open(args.command_file, 'r', encoding='utf-8') as f:
+            code = f.read()
+        result = asyncio.run(run_in_houdini(code, args.timeout))
+        print(json.dumps(result, indent=2, default=str) if isinstance(result, dict) else result)
+
+    else:
+        parser.print_help()

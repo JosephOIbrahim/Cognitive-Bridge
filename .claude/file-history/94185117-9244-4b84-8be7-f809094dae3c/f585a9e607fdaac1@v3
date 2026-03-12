@@ -1,0 +1,545 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { EmbeddedVideoPlayer } from './EmbeddedVideoPlayer';
+import { projects, type Project } from '@/lib/projects';
+
+/**
+ * PROJECT DETAIL — Editorial Narrative Layout
+ *
+ * Reference-aligned: Tendril, Found Studio, Electric Theatre
+ * Structure: type tag → title → metadata → role → hero video → description
+ *   → editorial sections (always visible) → technologies → credits (collapsible)
+ *   → related work (thumbnail cards) → next project (full-width card)
+ *
+ * COLOR HIERARCHY MANTRA:
+ * - PRIMARY (--text-primary): Titles, role titles, key info
+ * - SECONDARY (--grey-500): Descriptions, body content
+ * - TERTIARY (--text-dim): Labels, metadata, footnotes
+ */
+
+interface ProjectDetailContentProps {
+  project: Project;
+}
+
+export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+  const [showCredits, setShowCredits] = useState(false);
+
+  // Find next project for navigation (forward-only, Tendril pattern)
+  const currentIndex = projects.findIndex(p => p.slug === project.slug);
+  const nextProject = currentIndex < projects.length - 1 ? projects[currentIndex + 1] : projects[0];
+
+  // Build metadata sidebar items (no year per design direction)
+  const metadataPairs = [
+    { label: 'Client', value: project.client },
+    { label: 'Studio', value: project.studio },
+    { label: 'Role', value: project.myRole || project.role },
+    { label: 'Type', value: project.projectType },
+  ].filter(item => item.value);
+
+  // Narrative sections — always visible (not collapsible)
+  const narrativeSections = [
+    { label: 'Intent', content: project.lightingIntent },
+    { label: 'Challenge', content: project.challenge },
+    { label: 'Approach', content: project.approach },
+    { label: 'Reference', content: project.reference },
+  ].filter(s => s.content);
+
+  // Related projects — overlapping disciplines, exclude current + next
+  const excludeSlugs = new Set([project.slug, nextProject.slug]);
+  const relatedProjects = projects
+    .filter(p => !excludeSlugs.has(p.slug))
+    .filter(p => p.disciplines.some(d =>
+      project.disciplines.map(pd => pd.toLowerCase()).includes(d.toLowerCase())
+    ))
+    .slice(0, 3);
+
+  // Vimeo thumbnail URL for related/next cards
+  const getThumbnail = (p: Project) =>
+    p.thumbnail || `https://vumbnail.com/${p.videoId}.jpg`;
+
+  return (
+    <article>
+      {/* Project Type Tag */}
+      {project.projectType && (
+        <div className="mb-8">
+          <span
+            className="text-xs uppercase tracking-widest"
+            style={{
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 600,
+              letterSpacing: '0.18em'
+            }}
+          >
+            {project.projectType}
+          </span>
+        </div>
+      )}
+
+      {/* Title — clean Inter, no italic */}
+      <h1
+        className="text-4xl md:text-5xl lg:text-6xl"
+        style={{
+          color: 'var(--grey-50)',
+          fontWeight: 400,
+          fontFamily: 'var(--font-display)',
+          letterSpacing: '0.01em',
+          lineHeight: 1.1,
+          marginBottom: 'var(--space-sm)'
+        }}
+      >
+        {project.title}
+      </h1>
+
+      {/* Hero Video */}
+      <div style={{ marginBottom: 'var(--space-md)' }}>
+        <div className="relative w-full">
+          <EmbeddedVideoPlayer videoId={project.videoId} videoHash={project.videoHash} />
+        </div>
+      </div>
+
+      {/* Metadata Sidebar + Description — Pentagram editorial layout */}
+      <div
+        className="grid grid-cols-1 md:grid-cols-[200px_1fr] lg:grid-cols-[240px_1fr]"
+        style={{
+          gap: 'var(--space-sm)',
+          marginBottom: 'var(--space-section, 120px)'
+        }}
+      >
+        {/* Metadata Column */}
+        <div className="flex flex-col" style={{ gap: 'var(--space-xs)' }}>
+          {metadataPairs.map(({ label, value }) => (
+            <div key={label}>
+              <p
+                style={{
+                  color: 'var(--text-dim)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  fontSize: '10px',
+                  letterSpacing: '0.15em',
+                  textTransform: 'uppercase',
+                  marginBottom: '4px'
+                }}
+              >
+                {label}
+              </p>
+              <p
+                style={{
+                  color: 'var(--grey-500)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  lineHeight: 1.4
+                }}
+              >
+                {value}
+              </p>
+            </div>
+          ))}
+
+          {project.shotCount && (
+            <div>
+              <p
+                style={{
+                  color: 'var(--text-dim)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  fontSize: '10px',
+                  letterSpacing: '0.15em',
+                  textTransform: 'uppercase',
+                  marginBottom: '4px'
+                }}
+              >
+                Shots
+              </p>
+              <p
+                style={{
+                  color: 'var(--grey-500)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 400,
+                  fontSize: '14px'
+                }}
+              >
+                {project.shotCount}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Description + Responsibilities Column */}
+        <div>
+          {project.description && (
+            <p
+              className="text-lg md:text-xl"
+              style={{
+                color: 'var(--grey-500)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 400,
+                lineHeight: 1.75,
+                letterSpacing: '0.01em',
+                maxWidth: '780px',
+                marginBottom: project.responsibilities?.length ? 'var(--space-xs)' : 0
+              }}
+            >
+              {project.description}
+            </p>
+          )}
+
+          {project.responsibilities && project.responsibilities.length > 0 && (
+            <p
+              style={{
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 400,
+                fontSize: '14px',
+                lineHeight: 1.7,
+                maxWidth: '780px'
+              }}
+            >
+              {project.responsibilities.join(' · ')}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── EDITORIAL SECTIONS (always visible, NOT collapsible) ── */}
+      {narrativeSections.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-section, 120px)' }}>
+          {narrativeSections.map((section, index) => (
+            <div
+              key={section.label}
+              style={{
+                marginBottom: index < narrativeSections.length - 1 ? 'var(--space-lg)' : '0'
+              }}
+            >
+              <p
+                className="text-xs uppercase mb-3"
+                style={{
+                  color: 'var(--text-dim)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  letterSpacing: '0.15em'
+                }}
+              >
+                {section.label}
+              </p>
+              <p
+                className="text-base leading-relaxed"
+                style={{
+                  color: 'var(--grey-500)',
+                  fontFamily: 'var(--font-display)',
+                  maxWidth: '780px',
+                  lineHeight: 1.7
+                }}
+              >
+                {section.content}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Technologies — inline list */}
+      {project.technologies && project.technologies.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-lg)' }}>
+          <p
+            className="text-xs uppercase mb-3"
+            style={{
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 600,
+              letterSpacing: '0.15em'
+            }}
+          >
+            Technologies
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {project.technologies.map((tech) => (
+              <span
+                key={tech}
+                style={{
+                  color: 'var(--grey-500)',
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '13px',
+                  fontWeight: 400,
+                  padding: '6px 12px',
+                  backgroundColor: 'var(--surface)',
+                  borderRadius: 'var(--radius-sm)'
+                }}
+              >
+                {tech}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Credits — own collapsible toggle (Tendril pattern) */}
+      {project.credits && project.credits.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-section, 120px)' }}>
+          <button
+            onClick={() => setShowCredits(!showCredits)}
+            className="group flex items-center gap-3 transition-all duration-200"
+            style={{ color: 'var(--grey-500)' }}
+          >
+            <span
+              className="text-xs uppercase tracking-wide"
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 600,
+                letterSpacing: '0.15em'
+              }}
+            >
+              {showCredits ? 'Hide Credits' : 'Credits'}
+            </span>
+            <span
+              className="transition-transform duration-200"
+              style={{
+                fontSize: '11px',
+                transform: showCredits ? 'rotate(180deg)' : 'rotate(0deg)'
+              }}
+            >
+              ▼
+            </span>
+          </button>
+
+          <div
+            className={`overflow-hidden transition-all duration-400 ease-out ${
+              showCredits ? 'max-h-[2000px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0'
+            }`}
+          >
+            <div className="space-y-1">
+              {project.credits.map((credit, index) => (
+                <p
+                  key={index}
+                  className="text-sm leading-relaxed"
+                  style={{
+                    color: 'var(--grey-500)',
+                    fontFamily: 'var(--font-display)'
+                  }}
+                >
+                  {credit}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Breakdown Videos */}
+      {project.breakdownVideos && project.breakdownVideos.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-section, 120px)' }}>
+          {project.breakdownVideos.map((video) => (
+            <div key={video.videoId} className="mb-16 last:mb-0">
+              <p
+                className="text-xs uppercase mb-6"
+                style={{
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  letterSpacing: '0.15em'
+                }}
+              >
+                Behind the Scenes
+              </p>
+
+              <h2
+                className="text-2xl md:text-3xl mb-4"
+                style={{
+                  color: 'var(--grey-50)',
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-display)',
+                  letterSpacing: '0.01em'
+                }}
+              >
+                {video.title}
+              </h2>
+
+              {video.description && (
+                <p
+                  className="text-base leading-relaxed mb-8 max-w-3xl"
+                  style={{
+                    color: 'var(--grey-500)',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 400
+                  }}
+                >
+                  {video.description}
+                </p>
+              )}
+
+              <div className="relative w-full">
+                <EmbeddedVideoPlayer videoId={video.videoId} videoHash={video.videoHash} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Related Work — 3-col thumbnail grid (Found pattern) */}
+      {relatedProjects.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-section, 120px)' }}>
+          <p
+            style={{
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 600,
+              fontSize: '11px',
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              marginBottom: 'var(--space-sm)'
+            }}
+          >
+            Related Work
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {relatedProjects.map((related) => (
+              <Link
+                key={related.slug}
+                href={`/projects/${related.slug}`}
+                className="group"
+                style={{ textDecoration: 'none' }}
+              >
+                {/* Thumbnail */}
+                <div
+                  className="relative w-full overflow-hidden related-thumbnail"
+                  style={{
+                    aspectRatio: '16/9',
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: 'var(--space-tiny)',
+                    backgroundColor: '#1a1a1a'
+                  }}
+                >
+                  <img
+                    src={getThumbnail(related)}
+                    alt={related.title}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      opacity: 0.85,
+                      transition: 'opacity 0.3s ease, transform 0.3s ease'
+                    }}
+                    className="group-hover:opacity-100 group-hover:scale-[1.02]"
+                    loading="lazy"
+                  />
+                </div>
+                {/* Title */}
+                <p
+                  style={{
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 400,
+                    fontSize: '16px',
+                    letterSpacing: '0.01em',
+                    lineHeight: 1.3,
+                    marginBottom: related.client ? '4px' : '0',
+                    transition: 'color 0.25s ease'
+                  }}
+                  className="group-hover:text-white"
+                >
+                  {related.title}
+                </p>
+                {/* Client */}
+                {related.client && (
+                  <p
+                    style={{
+                      color: 'var(--text-dim)',
+                      fontFamily: 'var(--font-display)',
+                      fontWeight: 500,
+                      fontSize: '11px',
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase'
+                    }}
+                  >
+                    {related.client}
+                  </p>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Next Project — full-width card (Tendril pattern, forward-only) */}
+      <div style={{ paddingTop: 'var(--space-lg)' }}>
+        <Link
+          href={`/projects/${nextProject.slug}`}
+          className="group block"
+          style={{ textDecoration: 'none' }}
+        >
+          <p
+            className="text-xs uppercase mb-4"
+            style={{
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 600,
+              letterSpacing: '0.15em'
+            }}
+          >
+            Next Project
+          </p>
+
+          {/* Full-width thumbnail */}
+          <div
+            className="relative w-full overflow-hidden"
+            style={{
+              aspectRatio: '16/9',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: 'var(--space-xs)',
+              backgroundColor: '#1a1a1a'
+            }}
+          >
+            <img
+              src={getThumbnail(nextProject)}
+              alt={nextProject.title}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                opacity: 0.85,
+                transition: 'opacity 0.3s ease, transform 0.5s ease'
+              }}
+              className="group-hover:opacity-100 group-hover:scale-[1.01]"
+              loading="lazy"
+            />
+          </div>
+
+          {/* Title */}
+          <h3
+            className="text-2xl md:text-3xl group-hover:text-white"
+            style={{
+              color: 'var(--text-primary)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              letterSpacing: '0.01em',
+              lineHeight: 1.2,
+              marginBottom: nextProject.client ? '6px' : '0',
+              transition: 'color 0.25s ease'
+            }}
+          >
+            {nextProject.title}
+          </h3>
+
+          {/* Client */}
+          {nextProject.client && (
+            <p
+              style={{
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 500,
+                fontSize: '11px',
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase'
+              }}
+            >
+              {nextProject.client}
+            </p>
+          )}
+        </Link>
+      </div>
+    </article>
+  );
+}

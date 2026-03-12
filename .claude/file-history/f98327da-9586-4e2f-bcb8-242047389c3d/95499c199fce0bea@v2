@@ -1,0 +1,99 @@
+"""Debug: check parameter names on CHOP and COP nodes in Houdini 21."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        # Check constant CHOP parms
+        code = r"""
+import hou
+obj = hou.node("/obj")
+net = obj.createNode("chopnet", "__debug_chops")
+c = net.createNode("constant", "test_const")
+parms = [p.name() for p in c.parms()]
+result = {"constant_chop_parms": parms[:30]}
+net.destroy()
+"""
+        r = await client.execute_python(code)
+        print("constant CHOP parms:", r)
+
+        # Check spring CHOP parms
+        code2 = r"""
+import hou
+obj = hou.node("/obj")
+net = obj.createNode("chopnet", "__debug_chops2")
+s = net.createNode("spring", "test_spring")
+parms = [p.name() for p in s.parms()]
+result = {"spring_chop_parms": parms[:30]}
+net.destroy()
+"""
+        r2 = await client.execute_python(code2)
+        print("spring CHOP parms:", r2)
+
+        # Check lag CHOP parms
+        code3 = r"""
+import hou
+obj = hou.node("/obj")
+net = obj.createNode("chopnet", "__debug_chops3")
+l = net.createNode("lag", "test_lag")
+parms = [p.name() for p in l.parms()]
+result = {"lag_chop_parms": parms[:30]}
+net.destroy()
+"""
+        r3 = await client.execute_python(code3)
+        print("lag CHOP parms:", r3)
+
+        # Check noise CHOP parms
+        code4 = r"""
+import hou
+obj = hou.node("/obj")
+net = obj.createNode("chopnet", "__debug_chops4")
+n = net.createNode("noise", "test_noise")
+parms = [p.name() for p in n.parms()]
+result = {"noise_chop_parms": parms[:40]}
+net.destroy()
+"""
+        r4 = await client.execute_python(code4)
+        print("noise CHOP parms:", r4)
+
+        # Check what COP nodes are available (Copernicus vs classic)
+        code5 = r"""
+import hou
+obj = hou.node("/obj")
+# Try cop2net (classic)
+try:
+    cn = obj.createNode("cop2net", "__debug_cops_classic")
+    cop_types = [t.name() for t in hou.cop2NodeTypeCategory().nodeTypes().keys()][:30]
+    cn.destroy()
+    classic = True
+except:
+    classic = False
+    cop_types = []
+# Try copnet (Copernicus)
+try:
+    cn2 = obj.createNode("copnet", "__debug_cops_new")
+    new_types = True
+    cn2.destroy()
+except:
+    new_types = False
+result = {"classic_cop2net": classic, "copernicus_copnet": new_types, "sample_types": cop_types[:20]}
+"""
+        r5 = await client.execute_python(code5)
+        print("COP info:", r5)
+
+        # Check math CHOP parms
+        code6 = r"""
+import hou
+obj = hou.node("/obj")
+net = obj.createNode("chopnet", "__debug_chops5")
+m = net.createNode("math", "test_math")
+parms = [p.name() for p in m.parms()]
+result = {"math_chop_parms": parms[:30]}
+net.destroy()
+"""
+        r6 = await client.execute_python(code6)
+        print("math CHOP parms:", r6)
+
+asyncio.run(main())

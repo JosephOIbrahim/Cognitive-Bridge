@@ -1,0 +1,294 @@
+/**
+ * Image optimization pipeline for jaimeibrahim.com
+ *
+ * Reads high-res source images from G:\JAIME_IBRAHIM_2026_Website_Update\2026 Work\
+ * Outputs optimized JPEGs to public/images/{slug}/
+ *
+ * Usage: node scripts/optimize-images.mjs [--dry-run]
+ */
+
+import sharp from "sharp";
+import { readdir, mkdir, stat } from "node:fs/promises";
+import { join, extname, basename } from "node:path";
+
+const SRC_ROOT = "G:/JAIME_IBRAHIM_2026_Website_Update/2026 Work";
+const DEST_ROOT = "public/images";
+const MAX_WIDTH = 2400;
+const JPEG_QUALITY = 80;
+const DRY_RUN = process.argv.includes("--dry-run");
+
+// Source folder -> slug -> files mapping
+// hero = grid card thumbnail + project detail hero
+// details = project detail page images (order matters)
+const IMAGE_MAP = {
+  battlebank: {
+    src: "Battle_Bank",
+    hero: "BB brand elements for site-04.png",
+    details: [
+      "BB brand elements for site-03.png",
+      "BB brand elements for site-05.png",
+      "BB brand elements for site-06.png",
+      "BB_product_app.png",
+      "BB_FTM_in_situ_single_phone.gif",
+      "BBbrand_elements_01.png",
+      "BBbrand_elements_site_02.png",
+      "BB_debit_card2.png",
+      "BB debit card.png",
+      "BB thumb 2.jpg",
+      "BB thumb2.jpg",
+      "BB thumb3.jpg",
+      "BB thumb4.png",
+      "BBFTM_nsitu_singlephone.png",
+    ],
+  },
+  "glg-brand": {
+    src: "GLG_Brand_Work",
+    hero: "GLG_thumb6.png",
+    details: [
+      "GLG_guidelines_2500.jpg",
+      "GLGguidelines2.jpg",
+      "GLG-IG-grid.png",
+      "GLGbizcards2500.jpg",
+      "in-situ-laptop.png",
+      "GLGCEO_survey.jpg",
+      "GLGGEOsurveygrid2500.jpg",
+      "GLG-GEO-survey-grid.png",
+      "GLG-GEO-survey-social.png",
+      "GLGbox2500.jpg",
+      "in-situ-ceosurvey-lp.png",
+      // Subfolders
+      "Digital branding/myglg_2500.jpg",
+      "Digital branding/myglg_lockup.png",
+      "Digital branding/myglg_signin.jpg",
+      "Collateral System/collateral cover examples.jpg",
+      "Collateral System/collateral cover examples2.jpg",
+      "Collateral System/collateral cover examples3.jpg",
+      "Collateral System/collateral cover examples4.jpg",
+      "Collateral System/collateral cover examples5.jpg",
+      "Collateral System/collateral cover examples6.jpg",
+      "Collateral System/Case study example.jpg",
+      "Internal branding/GLG_SimplyWell_Emotional.png",
+      "Internal branding/GLG_SimplyWell_Financial.png",
+      "Internal branding/GLG_SimplyWell_Mental.png",
+      "Internal branding/GLG_SimplyWell_Physical.png",
+      "Internal branding/GLG_SimplyWell_Social.png",
+    ],
+  },
+  "glg-video": {
+    src: "GLG_Brand_Work",
+    hero: "manifesto thumb.jpg",
+    details: [],
+  },
+  "glg-explainer": {
+    src: "GLG_Brand_Work",
+    hero: "GLG explainer video thumb.jpg",
+    details: [
+      "GLG-GEO-survey-social.png",
+      "GLGCEO_survey.jpg",
+    ],
+  },
+  liquidstock: {
+    src: "LRTF_Package_Design",
+    hero: "LRTF_cover_1600.jpg",
+    details: [
+      "lrtf_big_1.jpg",
+      "lrtf_big_2.jpg",
+      "lrtf_big_3.jpg",
+      "lrtf_big_4.jpg",
+      "lrtf_big_5.jpg",
+      "lrtf_big_6.jpg",
+      "lrtf_big3.jpg",
+      "lrtf_big4.jpg",
+      "lrtf_big5.jpg",
+      "lrtf_big6.jpg",
+      "lrtf_big7.jpg",
+      "lrtf_big8.jpg",
+      "lrtf_big9.jpg",
+      "LRFT_spread3.jpg",
+      "LRFT_spread5.jpg",
+      "LRTF_thumb2.jpg",
+      "LRTFthumb3.jpg",
+      "LRTFthumb4.jpg",
+    ],
+  },
+  "year-ahead": {
+    src: "TYA_Event_Branding",
+    hero: "TYA_invite_mockup_web.jpg",
+    details: [
+      "TYA_2500.jpg",
+      "TYA_25002.jpg",
+      "TYA_25003.jpg",
+      "TYA_25004.jpg",
+      "tya_appandsite.jpg",
+      "TYA_invite_mockup_web.jpg",
+      "TYA_laptop2500.jpg",
+      "tya_imagepattern.jpg",
+      "tya_interiors.jpg",
+      "tya_lock-up.jpg",
+      "tya_pattern.jpg",
+      "tya_thankyousponsorad.jpg",
+      "tya_thankyousponsorad2.jpg",
+    ],
+  },
+  tiaa: {
+    src: "TIAA_Brand_Work",
+    hero: "heritagewall_1a.jpg",
+    details: [
+      "wall_thumbnail.jpg",
+      "heritagewall_1.jpg",
+      "heritagewall_1a.jpg",
+      "TIAATNGbrochure_insitu2500.jpg",
+      "voices_ipad1.jpg",
+      "voices_thumb.jpg",
+      "voices_wholepage.jpg",
+    ],
+  },
+  bloomberg: {
+    src: "Bloomberg_Brand_Work/video installation",
+    hero: "bigvideo_storyboard.jpg",
+    details: [
+      "bigvideo_storyboard.jpg",
+      "bigvideo_thumb.jpg",
+    ],
+  },
+  "employee-brand": {
+    src: "Bloomberg_Brand_Work/employee recognition",
+    hero: "IMG_0147.JPG",
+    details: [
+      "ball wall installation.jpg",
+      "b_all22.jpg",
+      "b_all3.jpg",
+      "b_all4.jpg",
+      "b_all5.jpg",
+      "b_all5a.jpg",
+      "b_all6.jpg",
+      "b_all7.jpg",
+    ],
+  },
+  construction: {
+    src: "Bloomberg_Brand_Work/Construction design",
+    hero: "wall_1.jpg",
+    details: [
+      "wall_2.jpg",
+      "wall_3.jpg",
+      "wall_4.jpg",
+      "wall_5.jpg",
+    ],
+  },
+  // opera: Met_Opera folder is empty -- skip
+  // unused-concepts: no source folder -- skip
+};
+
+// Portrait for about page
+const PORTRAIT = {
+  src: "Professional_Portrait/Jaime Ibrahim headshot bw.jpg",
+  dest: "about/portrait.jpg",
+};
+
+// Supported image extensions (skip GIFs and videos)
+const SUPPORTED_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".tiff"]);
+
+function isSupported(filename) {
+  return SUPPORTED_EXT.has(extname(filename).toLowerCase());
+}
+
+async function ensureDir(dir) {
+  await mkdir(dir, { recursive: true });
+}
+
+async function processImage(srcPath, destPath, label) {
+  if (!isSupported(srcPath)) {
+    console.log(`  SKIP (unsupported format): ${basename(srcPath)}`);
+    return false;
+  }
+
+  if (DRY_RUN) {
+    console.log(`  DRY-RUN: ${basename(srcPath)} -> ${destPath}`);
+    return true;
+  }
+
+  try {
+    const image = sharp(srcPath);
+    const metadata = await image.metadata();
+    const needsResize = metadata.width > MAX_WIDTH;
+
+    let pipeline = image;
+    if (needsResize) {
+      pipeline = pipeline.resize({ width: MAX_WIDTH, withoutEnlargement: true });
+    }
+
+    await pipeline
+      .jpeg({ quality: JPEG_QUALITY, mozjpeg: true })
+      .toFile(destPath);
+
+    const srcStat = await stat(srcPath);
+    const destStat = await stat(destPath);
+    const savings = Math.round((1 - destStat.size / srcStat.size) * 100);
+    const dims = needsResize ? `${metadata.width} -> ${MAX_WIDTH}w` : `${metadata.width}w (no resize)`;
+
+    console.log(`  OK: ${label} [${dims}, ${savings > 0 ? `-${savings}%` : `+${Math.abs(savings)}%`}]`);
+    return true;
+  } catch (err) {
+    console.error(`  ERROR: ${label} -- ${err.message}`);
+    return false;
+  }
+}
+
+async function processProject(slug, config) {
+  console.log(`\n--- ${slug} ---`);
+  const srcDir = join(SRC_ROOT, config.src);
+  const destDir = join(DEST_ROOT, slug);
+  await ensureDir(destDir);
+
+  let count = 0;
+
+  // Hero image
+  const heroSrc = join(srcDir, config.hero);
+  const heroDest = join(destDir, "hero.jpg");
+  if (await processImage(heroSrc, heroDest, `hero (${config.hero})`)) count++;
+
+  // Detail images
+  for (let i = 0; i < config.details.length; i++) {
+    const filename = config.details[i];
+    const srcPath = join(srcDir, filename);
+    const num = String(i + 1).padStart(2, "0");
+    const destPath = join(destDir, `detail-${num}.jpg`);
+    if (await processImage(srcPath, destPath, `detail-${num} (${basename(filename)})`)) count++;
+  }
+
+  console.log(`  Total: ${count} images`);
+  return count;
+}
+
+async function processPortrait() {
+  console.log(`\n--- portrait ---`);
+  const srcPath = join(SRC_ROOT, PORTRAIT.src);
+  const destDir = join(DEST_ROOT, "about");
+  await ensureDir(destDir);
+  const destPath = join(DEST_ROOT, PORTRAIT.dest);
+  await processImage(srcPath, destPath, "portrait");
+}
+
+async function main() {
+  console.log("=== Image Optimization Pipeline ===");
+  console.log(`Source: ${SRC_ROOT}`);
+  console.log(`Dest:   ${DEST_ROOT}`);
+  console.log(`Max width: ${MAX_WIDTH}px, JPEG quality: ${JPEG_QUALITY}`);
+  if (DRY_RUN) console.log("*** DRY RUN -- no files will be written ***\n");
+
+  let totalImages = 0;
+
+  for (const [slug, config] of Object.entries(IMAGE_MAP)) {
+    totalImages += await processProject(slug, config);
+  }
+
+  await processPortrait();
+  totalImages++;
+
+  console.log(`\n=== Done: ${totalImages} images processed ===`);
+}
+
+main().catch((err) => {
+  console.error("Fatal error:", err);
+  process.exit(1);
+});

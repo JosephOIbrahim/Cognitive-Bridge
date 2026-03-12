@@ -1,0 +1,99 @@
+"""Spawn CRT setup in current level from exported JSON data."""
+import unreal
+import json
+import os
+
+# Load exported CRT data
+data_path = os.path.join(os.environ['TEMP'], 'ue_crt_full.json')
+with open(data_path, 'r', encoding='utf-8') as f:
+    actors_data = json.load(f)
+
+print(f"Spawning {len(actors_data)} CRT actors...")
+
+# Material assignments for CRT actors (by label prefix)
+MATERIAL_MAP = {
+    'CRT_Screen_Backing': '/Game/Materials/M_CRT_Screen',
+    'CRT_Frame_': '/Game/Materials/M_CRT_Frame',
+    'Dot_': '/Game/Materials/M_CRT_Dot',
+}
+
+# Mesh map
+MESH_MAP = {
+    '/Engine/BasicShapes/Cube.Cube': '/Engine/BasicShapes/Cube.Cube',
+    '/Engine/BasicShapes/Sphere.Sphere': '/Engine/BasicShapes/Sphere.Sphere',
+}
+
+spawned = 0
+errors = 0
+
+with unreal.ScopedEditorTransaction("Spawn CRT Setup"):
+    for entry in actors_data:
+        label = entry['label']
+        cls = entry['class']
+        loc = unreal.Vector(entry['loc'][0], entry['loc'][1], entry['loc'][2])
+        rot = unreal.Rotator(entry['rot'][0], entry['rot'][1], entry['rot'][2])
+
+        actor = None
+
+        if cls == 'StaticMeshActor':
+            mesh_path = entry.get('mesh', '')
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+                unreal.StaticMeshActor, loc, rot
+            )
+            if actor:
+                # Set scale
+                actor.set_actor_scale3d(unreal.Vector(entry['scale'][0], entry['scale'][1], entry['scale'][2]))
+                # Set mesh
+                if mesh_path:
+                    mesh = unreal.load_asset(mesh_path)
+                    if mesh:
+                        actor.static_mesh_component.set_static_mesh(mesh)
+                # Set material based on label
+                for prefix, mat_path in MATERIAL_MAP.items():
+                    if label.startswith(prefix):
+                        mat = unreal.load_asset(mat_path)
+                        if mat:
+                            actor.static_mesh_component.set_material(0, mat)
+                        break
+
+        elif cls == 'PostProcessVolume':
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+                unreal.PostProcessVolume, loc, rot
+            )
+            if actor:
+                actor.set_actor_scale3d(unreal.Vector(entry['scale'][0], entry['scale'][1], entry['scale'][2]))
+                actor.unbound = True
+
+        elif cls == 'CineCameraActor':
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+                unreal.CineCameraActor, loc, rot
+            )
+            if actor:
+                actor.set_actor_scale3d(unreal.Vector(entry['scale'][0], entry['scale'][1], entry['scale'][2]))
+
+        elif cls == 'SpotLight':
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+                unreal.SpotLight, loc, rot
+            )
+            if actor:
+                actor.set_actor_scale3d(unreal.Vector(entry['scale'][0], entry['scale'][1], entry['scale'][2]))
+
+        elif cls == 'PointLight':
+            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+                unreal.PointLight, loc, rot
+            )
+            if actor:
+                actor.set_actor_scale3d(unreal.Vector(entry['scale'][0], entry['scale'][1], entry['scale'][2]))
+
+        if actor:
+            actor.set_actor_label(label)
+            spawned += 1
+        else:
+            errors += 1
+
+result = f"Spawned {spawned} actors, {errors} errors"
+print(result)
+
+# Write result
+with open(os.path.join(os.environ['TEMP'], 'ue_crt_result.txt'), 'w', encoding='utf-8') as f:
+    f.write(result)

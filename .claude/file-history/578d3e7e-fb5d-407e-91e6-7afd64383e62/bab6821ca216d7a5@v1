@@ -1,0 +1,15 @@
+// TranslatorsCardEditor.Target.cs
+// Editor target configuration
+
+using UnrealBuildTool;
+
+public class TranslatorsCardEditorTarget : TargetRules
+{
+    public TranslatorsCardEditorTarget(TargetInfo Target) : base(Target)
+    {
+        Type = TargetType.Editor;
+        DefaultBuildSettings = BuildSettingsVersion.Latest;
+        IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
+        ExtraModuleNames.Add("TranslatorsCard");
+    }
+}

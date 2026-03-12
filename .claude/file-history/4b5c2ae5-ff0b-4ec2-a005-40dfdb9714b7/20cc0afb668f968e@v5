@@ -1,0 +1,49 @@
+"use client";
+
+import Image from "next/image";
+import { useInView } from "@/lib/hooks";
+import { T } from "@/lib/tokens";
+import type { CaseStudySection as CaseStudySectionType } from "@/lib/types";
+import styles from "./CaseStudySection.module.css";
+
+interface Props {
+  section: CaseStudySectionType;
+  title: string;
+  /** Pre-sliced image paths for this section */
+  images: string[];
+}
+
+export function CaseStudySection({ section, title, images }: Props) {
+  const [ref, inView] = useInView({ threshold: 0.1 });
+
+  return (
+    <div ref={ref} className={styles.section}>
+      <div
+        className={styles.textBlock}
+        style={{
+          opacity: inView ? 1 : 0,
+          transform: inView ? "translateY(0)" : "translateY(20px)",
+          transition: `all 600ms ${T.easeOut}`,
+        }}
+      >
+        <h2 className={styles.heading}>{section.heading}</h2>
+        <p className={styles.body}>{section.body}</p>
+      </div>
+
+      {/* Images -- single column, natural aspect ratios, 11px gap */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+        {images.map((src, i) => (
+          <Image
+            key={i}
+            src={src}
+            alt={`${title} - ${section.heading}`}
+            width={2400}
+            height={1600}
+            style={{ width: "100%", height: "auto", borderRadius: "var(--img-radius)" }}
+            sizes="(max-width: 768px) 100vw, (max-width: 1400px) 90vw, 1400px"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}

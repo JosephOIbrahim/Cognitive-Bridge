@@ -1,0 +1,41 @@
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      // Old Squarespace portfolio slugs (top-level, Google-indexed)
+      { source: '/bank-visual-identity', destination: '/work/battlebank', permanent: true },
+      { source: '/glg-brand-identity', destination: '/work/glg-brand', permanent: true },
+      { source: '/glg-brand-video', destination: '/work/glg-video', permanent: true },
+      { source: '/glg-explainer-video', destination: '/work/glg-explainer', permanent: true },
+      { source: '/fintech-brand-identity', destination: '/work/liquidstock', permanent: true },
+      { source: '/event-brand-identity', destination: '/work/year-ahead', permanent: true },
+      { source: '/tiaa-branding', destination: '/work/tiaa', permanent: true },
+      { source: '/bloomberg-black', destination: '/work/bloomberg', permanent: true },
+      { source: '/employee-brand-identity', destination: '/work/employee-brand', permanent: true },
+      { source: '/opera-video', destination: '/work/opera', permanent: true },
+      { source: '/construction-wall', destination: '/work/construction', permanent: true },
+      { source: '/product-branding', destination: '/work/product-branding', permanent: true },
+      { source: '/visual-brand', destination: '/about', permanent: true },
+      { source: '/work-1', destination: '/work', permanent: true },
+      // Squarespace /work/ sub-path slugs
+      { source: '/work/glgbrand', destination: '/work/glg-brand', permanent: true },
+      { source: '/work/project-five-748cx-egbkj', destination: '/work/glg-video', permanent: true },
+      { source: '/work/glgexplainer', destination: '/work/glg-explainer', permanent: true },
+      { source: '/work/yearahead', destination: '/work/year-ahead', permanent: true },
+      { source: '/work/tiaa-branding', destination: '/work/tiaa', permanent: true },
+      { source: '/work/eventbrand', destination: '/work/employee-brand', permanent: true },
+      { source: '/work/opera-video', destination: '/work/opera', permanent: true },
+      // Squarespace pages with no equivalent
+      { source: '/contact', destination: '/about', permanent: true },
+      { source: '/alt-work-section', destination: '/work', permanent: true },
+      { source: '/presentation-design', destination: '/work', permanent: true },
+      { source: '/digital-products-3-1', destination: '/work', permanent: true },
+      { source: '/visual-brand-1', destination: '/work', permanent: true },
+      { source: '/store', destination: '/', permanent: true },
+      { source: '/cart', destination: '/', permanent: true },
+    ];
+  },
+};
+
+export default nextConfig;

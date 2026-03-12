@@ -1,0 +1,67 @@
+// W_FinaleScreen.h
+// Final completion screen widget
+// Part of The Translators Card - Claude Code -> UE5.7 Bridge
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "W_FinaleScreen.generated.h"
+
+class UTextBlock;
+class UBorder;
+class UVerticalBox;
+
+/**
+ * W_FinaleScreen - Displayed when questionnaire is complete
+ *
+ * Shows completion message and profile export status
+ * Programmatic UI - no Blueprint required
+ */
+UCLASS(Blueprintable, BlueprintType)
+class TRANSLATORSCARD_API UW_FinaleScreen : public UUserWidget
+{
+    GENERATED_BODY()
+
+public:
+    UW_FinaleScreen(const FObjectInitializer& ObjectInitializer);
+
+    // === STYLE ===
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Translators|Style")
+    FLinearColor BackgroundColor = FLinearColor(0.02f, 0.02f, 0.05f, 0.98f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Translators|Style")
+    FLinearColor TitleColor = FLinearColor(0.36f, 1.0f, 0.86f, 1.0f);  // Cyan
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Translators|Style")
+    FLinearColor SubtitleColor = FLinearColor(0.7f, 0.7f, 0.8f, 1.0f);
+
+    // === FUNCTIONS ===
+
+    /** Set the completion message */
+    UFUNCTION(BlueprintCallable, Category = "Translators|Display")
+    void SetCompletionMessage(const FString& Message);
+
+    /** Set the USD path display */
+    UFUNCTION(BlueprintCallable, Category = "Translators|Display")
+    void SetUsdPath(const FString& Path);
+
+protected:
+    virtual void NativeConstruct() override;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget, OptionalWidget = true))
+    UTextBlock* TitleText;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget, OptionalWidget = true))
+    UTextBlock* SubtitleText;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget, OptionalWidget = true))
+    UTextBlock* PathText;
+
+    UPROPERTY(BlueprintReadOnly, meta = (BindWidget, OptionalWidget = true))
+    UBorder* BackgroundBorder;
+
+private:
+    void BuildWidgetTree();
+};

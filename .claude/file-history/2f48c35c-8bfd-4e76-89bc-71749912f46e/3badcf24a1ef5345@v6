@@ -1,0 +1,169 @@
+/* --- Intro Animation Overlay --- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.overlay.fadeOut {
+  animation: overlayFade 600ms var(--ease-out) forwards;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+/* --- Grid lines inside overlay --- */
+.gridContainer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.gridInner {
+  width: 100%;
+  max-width: var(--max-w);
+  padding-left: var(--pad);
+  padding-right: var(--pad);
+  display: flex;
+}
+
+.gridTrack {
+  position: relative;
+  flex: 1;
+}
+
+.gridLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%) scaleY(0);
+  transform-origin: top center;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gridLine.lineVisible {
+  animation: introLineReveal 600ms var(--ease-out) forwards;
+}
+
+/* --- Center text block --- */
+.content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+/* --- Name --- */
+.nameMask {
+  overflow: hidden;
+  line-height: 1;
+}
+
+.name {
+  font-family: var(--font);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fff;
+  transform: translateY(110%);
+  display: block;
+}
+
+.name.nameVisible {
+  animation: textReveal 700ms var(--ease-out) forwards;
+}
+
+/* --- Subtitle --- */
+.subtitleMask {
+  overflow: hidden;
+  line-height: 1;
+}
+
+.subtitle {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  transform: translateY(110%);
+  display: block;
+}
+
+.subtitle.subtitleVisible {
+  animation: textReveal 700ms var(--ease-out) forwards;
+}
+
+/* --- Portfolio date at bottom --- */
+.portfolioDate {
+  position: absolute;
+  bottom: clamp(24px, 4vw, 48px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.25);
+  opacity: 0;
+}
+
+.portfolioDate.dateVisible {
+  animation: dateFadeIn 600ms var(--ease-out) forwards;
+}
+
+/* --- Keyframes --- */
+@keyframes introLineReveal {
+  from { transform: translateX(-50%) scaleY(0); }
+  to { transform: translateX(-50%) scaleY(1); }
+}
+
+@keyframes textReveal {
+  from { transform: translateY(110%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes dateFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlayFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* --- Reduced motion --- */
+@media (prefers-reduced-motion: reduce) {
+  .gridLine.lineVisible {
+    animation: none;
+    transform: translateX(-50%) scaleY(1);
+  }
+  .name.nameVisible,
+  .subtitle.subtitleVisible {
+    animation: none;
+    transform: translateY(0);
+  }
+  .portfolioDate.dateVisible {
+    animation: none;
+    opacity: 1;
+  }
+  .overlay.fadeOut {
+    animation: none;
+    opacity: 0;
+  }
+}

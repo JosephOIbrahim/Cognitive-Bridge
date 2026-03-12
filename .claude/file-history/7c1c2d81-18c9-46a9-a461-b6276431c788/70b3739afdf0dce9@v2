@@ -1,0 +1,54 @@
+"""Core audit engine: fixed tile/split-size structural verification.
+
+Verifies that architectural invariants hold: phase count is exactly 10,
+expert count is exactly 7, cognitive tile size is positive, and phase
+ordering is stable across repeated reads.
+"""
+
+from src.lossless.constants import (
+    COGNITIVE_TILE_SIZE,
+    EXPERT_COUNT,
+    EXPERTS,
+    PHASE_COUNT,
+    PHASES,
+)
+
+
+def check_fixed_phase_count() -> bool:
+    """Verify that PHASES list length matches PHASE_COUNT (10).
+
+    Returns:
+        True if len(PHASES) == PHASE_COUNT == 10.
+    """
+    return len(PHASES) == PHASE_COUNT == 10
+
+
+def check_fixed_expert_count() -> bool:
+    """Verify that EXPERTS list length matches EXPERT_COUNT (7).
+
+    Returns:
+        True if len(EXPERTS) == EXPERT_COUNT == 7.
+    """
+    return len(EXPERTS) == EXPERT_COUNT == 7
+
+
+def check_tile_size_positive() -> bool:
+    """Verify that COGNITIVE_TILE_SIZE is positive.
+
+    Returns:
+        True if COGNITIVE_TILE_SIZE > 0.
+    """
+    return COGNITIVE_TILE_SIZE > 0
+
+
+def check_phase_order_stable() -> bool:
+    """Verify PHASES list ordering is stable across 100 consecutive reads.
+
+    Returns:
+        True if every read produces the same ordering.
+    """
+    baseline = list(PHASES)
+    for _ in range(100):
+        if list(PHASES) != baseline:
+            return False
+    return True

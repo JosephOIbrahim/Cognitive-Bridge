@@ -1,0 +1,33 @@
+Open ui/web/js/sidebar.js and ui/server/routes.py. Make these changes:
+
+IN sidebar.js:
+1. Import createDispatchCard and updateAgentStatus from ./dispatch.js (match the existing import pattern used for chat.js)
+
+2. Find the WebSocket message handler (the switch/if block that processes incoming events like text_delta, stage, panel, done).
+
+3. Add handling for two new event types:
+
+   "agent_dispatch" event — data contains { prompt, agents: [{key, name, role, status}], estimate_seconds, node_count }
+   → Call createDispatchCard(data), insert the card element into the message area (same container where chat messages go)
+   → Store a reference to the card element so agent_status events can update it
+
+   "agent_status" event — data contains { agent_key, status, message, duration }
+   → Call updateAgentStatus(storedCard, data.agent_key, data.status, data.message, data.duration)
+
+4. Keep all existing event handlers untouched. These are additive handlers only.
+
+IN routes.py:
+1. Find _infer_stage() and _run_agent_sync() — these are where tool calls map to stages and agent turns execute.
+
+2. Add a helper function emit_agent_dispatch(queue, prompt_text, agents_list) that pushes an agent_dispatch event to the WebSocket queue. Call it at the START of _run_agent_sync() before the first agent turn.
+
+3. Add a helper function emit_agent_status(queue, agent_key, status, message, duration) that pushes an agent_status event. Call it when each stage transitions (starting → active, finished → complete).
+
+4. Map the existing stages to agent keys:
+   UNDERSTAND → "router"
+   DISCOVER → "intent"  
+   PILOT → "execution"
+   VERIFY → "verify"
+   BRAIN → "router" (secondary dispatch)
+
+Do NOT change any existing event types or break the current chat flow. The deployment card should appear ABOVE the streaming chat messages for that turn.

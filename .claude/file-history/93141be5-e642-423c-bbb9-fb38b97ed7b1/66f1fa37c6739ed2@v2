@@ -1,0 +1,69 @@
+"""PreToolUse hook: block dangerous Bash commands that are hard to reverse.
+
+Reads JSON from stdin (Claude Code hook protocol), checks the command
+against known destructive patterns. Blocks with a deny decision if
+matched, otherwise exits 0 silently.
+
+Covered patterns:
+  - rm -rf (recursive force delete)
+  - git push --force / -f (overwrites remote history)
+  - git reset --hard (discards uncommitted changes)
+  - git clean -f (deletes untracked files)
+  - git checkout . / git restore . (discards all changes)
+  - git branch -D (force-deletes branch)
+  - drop table / drop database (SQL destruction)
+"""
+import json
+import re
+import sys
+
+
+# (pattern, human-readable reason)
+DANGEROUS_PATTERNS = [
+    (r"\brm\s+.*-[a-zA-Z]*r[a-zA-Z]*f", "rm -rf can recursively delete files irreversibly"),
+    (r"\bgit\s+push\s+.*--force\b", "git push --force overwrites remote history"),
+    (r"\bgit\s+push\s+.*\s+-f\b", "git push -f overwrites remote history"),
+    (r"\bgit\s+reset\s+--hard\b", "git reset --hard discards all uncommitted changes"),
+    (r"\bgit\s+clean\s+.*-[a-zA-Z]*f", "git clean -f deletes untracked files permanently"),
+    (r"\bgit\s+checkout\s+\.\s*$", "git checkout . discards all unstaged changes"),
+    (r"\bgit\s+restore\s+\.\s*$", "git restore . discards all unstaged changes"),
+    (r"\bgit\s+branch\s+.*-D\b", "git branch -D force-deletes a branch without merge check"),
+    (r"\bdrop\s+table\b", "DROP TABLE is irreversible database destruction"),
+    (r"\bdrop\s+database\b", "DROP DATABASE is irreversible database destruction"),
+]
+
+
+def main():
+    try:
+        raw = sys.stdin.read()
+        if not raw.strip():
+            sys.exit(0)
+        data = json.loads(raw)
+    except (json.JSONDecodeError, EOFError):
+        sys.exit(0)
+
+    command = data.get("tool_input", {}).get("command", "")
+    if not command:
+        sys.exit(0)
+
+    # Check each line of the command (handles && chains)
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            result = {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "ask",
+                    "permissionDecisionReason": (
+                        f"Dangerous command: {reason}. "
+                        f"Allow this?"
+                    ),
+                }
+            }
+            json.dump(result, sys.stdout)
+            sys.exit(0)
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

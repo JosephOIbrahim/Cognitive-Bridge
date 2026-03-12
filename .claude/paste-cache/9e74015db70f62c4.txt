@@ -1,0 +1,52 @@
+Right now the progress bar only appears during agent dispatch. But when someone clicks "Queue Prompt" normally in ComfyUI, there's no SuperDuper feedback at all. Fix that.
+
+FILE 1: ui/web/js/node_fx.js
+
+At the top of the setup() function, add a workflow execution tracker:
+
+let executionActive = false;
+let executionNodes = [];
+let executionIndex = 0;
+
+Listen for ComfyUI's built-in execution events to track the full run:
+
+api.addEventListener("execution_start", ({detail}) => {
+  executionActive = true;
+  executionIndex = 0;
+  document.dispatchEvent(new CustomEvent("superduper:execution_start", { detail }));
+});
+
+api.addEventListener("executing", ({detail}) => {
+  if (detail) {
+    executionIndex++;
+    const node = app.graph.getNodeById(detail);
+    document.dispatchEvent(new CustomEvent("superduper:execution_progress", {
+      detail: {
+        nodeId: detail,
+        nodeName: node ? node.title || node.type : "Node " + detail,
+        nodeIndex: executionIndex
+      }
+    }));
+  } else {
+    // detail is null = execution complete
+    executionActive = false;
+    document.dispatchEvent(new CustomEvent("superduper:execution_complete"));
+  }
+});
+
+api.addEventListener("progress", ({detail}) => {
+  // This fires for nodes that report step-level progress (like KSampler)
+  if (detail && detail.max) {
+    document.dispatchEvent(new CustomEvent("superduper:node_progress", {
+      detail: {
+        value: detail.value,
+        max: detail.max,
+        progress: detail.value / detail.max
+      }
+    }));
+  }
+});
+
+FILE 2: ui/web/js/sidebar.js
+
+Add a standalone execution progress tracker that works WITHOUT agent dispatch. Add these listeners inside the sidebar setup (near where the

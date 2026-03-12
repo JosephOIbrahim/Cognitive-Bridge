@@ -1,0 +1,44 @@
+export type Category =
+  | "Identity"
+  | "Design"
+  | "Motion";
+
+export interface Project {
+  slug: string;
+  title: string;
+  category: Category;
+  desc: string;
+  longDesc?: string;
+  credits?: string;
+  videoUrl?: string;
+  cropPosition?: string;
+  color: string;
+  year: string;
+  featured?: boolean;
+}
+
+export type GridRowType = "hero" | "wide-narrow" | "narrow-wide" | "triple";
+
+export interface GridRow {
+  type: GridRowType;
+  slugs: string[];
+  text: boolean[];
+  heights: number[];
+}
+
+export interface CaseStudySection {
+  heading: string;
+  body: string;
+  images: number;
+}
+
+export interface CaseStudy {
+  sections: CaseStudySection[];
+}
+
+export interface Thought {
+  slug: string;
+  title: string;
+  date: string;
+  excerpt: string;
+}

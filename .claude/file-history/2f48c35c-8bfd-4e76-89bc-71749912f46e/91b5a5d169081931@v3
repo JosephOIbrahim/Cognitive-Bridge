@@ -1,0 +1,87 @@
+import type { Metadata, Viewport } from "next";
+import { Inter, Barlow_Condensed } from "next/font/google";
+import { Nav } from "@/components/Nav";
+import { GridLines } from "@/components/GridLines";
+import { Footer } from "@/components/Footer";
+import { ScrollProgress } from "@/components/ScrollProgress";
+import { IntroAnimation } from "@/components/IntroAnimation";
+import "./globals.css";
+
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const barlowCondensed = Barlow_Condensed({
+  variable: "--font-nav",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: {
+    default: "Jaime Ibrahim -- Brand Design Director",
+    template: "%s | Jaime Ibrahim",
+  },
+  description:
+    "Brand Design Director with 25+ years of experience in brand identity, systems design, event design, and motion for clients including Bloomberg, GLG, TIAA, Mastercard, and JPMorgan Chase.",
+  metadataBase: new URL("https://jaimeibrahim.com"),
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://jaimeibrahim.com",
+    siteName: "Jaime Ibrahim",
+  },
+  twitter: { card: "summary_large_image" },
+  robots: { index: true, follow: true },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#EEEEEC",
+  width: "device-width",
+  initialScale: 1,
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" className={`${inter.variable} ${barlowCondensed.variable}`}>
+      <body>
+        <a
+          href="#main-content"
+          style={{
+            position: "absolute",
+            left: "-9999px",
+            top: "auto",
+            width: "1px",
+            height: "1px",
+            overflow: "hidden",
+          }}
+        >
+          Skip to content
+        </a>
+        <IntroAnimation />
+        <GridLines animated />
+        <ScrollProgress />
+        <Nav />
+        <main id="main-content" style={{ position: "relative", zIndex: 1 }}>
+          {children}
+        </main>
+        <Footer />
+      </body>
+    </html>
+  );
+}

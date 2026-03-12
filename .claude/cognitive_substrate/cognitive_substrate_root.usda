@@ -1,0 +1,14 @@
+#usda 1.0
+(
+    doc = "Cognitive Substrate Root -- USD Source of Truth for Claude Code"
+    subLayers = [
+        # GRAFTS (stronger opinion -- listed first in USD sublayer order)
+        @./grafts/graft_digital_injection.usda@,
+        @./grafts/graft_deepseek_v32.usda@,
+        # @./grafts/graft_infmem.usda@,          # uncomment when ready
+        # @./grafts/graft_alphaproof.usda@,      # uncomment when ready
+
+        # CORE (weakest opinion -- base layer)
+        @./core_substrate_v7.usda@
+    ]
+)

@@ -1,0 +1,42 @@
+"""Debug: get tracebacks from all 4 builders."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        await client.execute_python(r"""
+import os
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+result = "ok"
+""")
+        builders = [
+            ("chops_biomechanics", "build_chops_biomechanics_hda"),
+            ("cop_anamorphic_flare", "build_cop_anamorphic_flare_hda"),
+            ("cop_sensor_noise", "build_cop_sensor_noise_hda"),
+            ("cop_stmap_aov", "build_cop_stmap_aov_hda"),
+        ]
+        for label, func in builders:
+            code = f"""
+import sys, traceback
+sys.path.insert(0, r"C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\scripts\\python")
+# Force reimport
+import importlib
+import cinema_camera.builders.build_{label} as mod
+importlib.reload(mod)
+try:
+    path = mod.{func}(save_dir=r"C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\otls")
+    result = {{"success": True, "path": path}}
+except Exception as e:
+    result = {{"success": False, "error": str(e), "tb": traceback.format_exc()}}
+"""
+            r = await client.execute_python(code, timeout=30)
+            if isinstance(r, dict) and not r.get("success"):
+                print(f"\n{'='*50}")
+                print(f"FAIL: {label}")
+                print(r["tb"])
+            else:
+                print(f"\nOK: {label} -> {r}")
+
+asyncio.run(main())

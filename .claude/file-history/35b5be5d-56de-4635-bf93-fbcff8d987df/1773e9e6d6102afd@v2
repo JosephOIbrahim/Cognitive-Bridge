@@ -1,0 +1,17 @@
+---
+type: moc
+domain: sessions
+---
+# Sessions
+
+```dataview
+TABLE WITHOUT ID
+  file.link AS "Session",
+  project AS "Project",
+  momentum AS "Momentum",
+  energy AS "Energy",
+  burnout AS "Burnout"
+FROM "_sessions"
+WHERE file.name != "_README"
+SORT date DESC
+```

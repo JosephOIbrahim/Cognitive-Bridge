@@ -1,0 +1,17 @@
+"use client";
+
+import { useState } from "react";
+import { CategoryFilter } from "@/components/CategoryFilter";
+import { EditorialGrid } from "@/components/EditorialGrid";
+import { GRID_ROWS_ALL } from "@/lib/projects";
+
+export default function WorkPage() {
+  const [filter, setFilter] = useState("All");
+
+  return (
+    <div style={{ padding: "var(--nav-h) var(--pad) clamp(48px, 6vh, 80px)" }}>
+      <CategoryFilter active={filter} onChange={setFilter} />
+      <EditorialGrid rows={GRID_ROWS_ALL} filterCategory={filter} />
+    </div>
+  );
+}

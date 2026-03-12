@@ -1,0 +1,253 @@
+"""USDA file parser for the Lossless Signal Architecture.
+
+Reads .usda files, extracts prims with attributes.
+Returns CognitivePrim objects from the schema module.
+
+CRITICAL: This parser is DETERMINISTIC.
+Same file content -> same parse tree, always.
+No dict iteration without sorted keys.
+No set iteration without sorted().
+"""
+
+import re
+from pathlib import Path
+
+from src.lossless.schema.prims import CognitivePrim
+
+
+# Regex patterns for USDA parsing
+_DEF_RE = re.compile(r'\bdef\s+"([^"]+)"\s*(?:\((.*?)\)\s*)?\{', re.DOTALL)
+_OVER_RE = re.compile(r'\bover\s+"([^"]+)"\s*\{', re.DOTALL)
+_SUBLAYERS_RE = re.compile(r'subLayers\s*=\s*\[(.*?)\]', re.DOTALL)
+_SUBLAYER_PATH_RE = re.compile(r'@([^@]+)@')
+_TRIPLE_STR_RE = re.compile(
+    r'(?:string|custom\s+string)\s+(\w+)\s*=\s*"""(.*?)"""', re.DOTALL
+)
+_SINGLE_STR_RE = re.compile(
+    r'(?:string|custom\s+string)\s+(\w+)\s*=\s*"([^"]*)"'
+)
+_INT_RE = re.compile(r'(?:int|custom\s+int)\s+(\w+)\s*=\s*(-?\d+)')
+_BOOL_RE = re.compile(r'(?:bool|custom\s+bool)\s+(\w+)\s*=\s*(true|false)')
+_FLOAT_RE = re.compile(
+    r'(?:float|custom\s+float)\s+(\w+)\s*=\s*(-?[\d.]+(?:e[+-]?\d+)?)'
+)
+_STR_ARRAY_RE = re.compile(
+    r'(?:string\[\]|custom\s+string\[\])\s+(\w+)\s*=\s*\[(.*?)\]', re.DOTALL
+)
+_DOC_RE = re.compile(r'doc\s*=\s*(?:"""(.*?)"""|"([^"]*)")', re.DOTALL)
+
+
+def parse_sublayers(text: str, root_dir: Path) -> list:
+    """Extract sublayer paths from a root composition file.
+
+    Returns paths in declaration order (strongest first).
+    Skips commented-out lines.
+    """
+    m = _SUBLAYERS_RE.search(text)
+    if not m:
+        return []
+
+    block = m.group(1)
+    paths = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('#'):
+            continue
+        pm = _SUBLAYER_PATH_RE.search(stripped)
+        if pm:
+            rel = pm.group(1)
+            abs_path = (root_dir / rel).resolve()
+            paths.append(abs_path)
+    return paths
+
+
+def parse_file(path: Path) -> tuple:
+    """Parse a USDA file into (defs, overs).
+
+    Returns:
+        (list[CognitivePrim], list[CognitivePrim]) where first list
+        is def prims and second is over prims.
+    """
+    text = path.read_text(encoding='utf-8')
+    filename = path.name
+    defs = []
+    overs = []
+
+    pos = 0
+    while pos < len(text):
+        def_m = _DEF_RE.search(text, pos)
+        over_m = _OVER_RE.search(text, pos)
+
+        candidates = []
+        if def_m:
+            candidates.append(('def', def_m))
+        if over_m:
+            candidates.append(('over', over_m))
+
+        if not candidates:
+            break
+
+        candidates.sort(key=lambda c: c[1].start())
+        kind, match = candidates[0]
+
+        brace_pos = match.end() - 1
+        body_end = _find_matching_brace(text, brace_pos)
+        if body_end == -1:
+            pos = match.end()
+            continue
+
+        body = text[brace_pos + 1:body_end]
+        name = match.group(1)
+
+        if kind == 'def':
+            if name == "Preamble":
+                pos = body_end + 1
+                continue
+            metadata = match.group(2) or ""
+            prim = _parse_def_prim(name, metadata, body, filename)
+            defs.append(prim)
+        else:
+            prim = _parse_over_prim(name, body, filename)
+            overs.append(prim)
+
+        pos = body_end + 1
+
+    return defs, overs
+
+
+def _parse_def_prim(
+    name: str, metadata: str, body: str, filename: str
+) -> CognitivePrim:
+    """Parse a def prim into a CognitivePrim."""
+    doc = ""
+    doc_m = _DOC_RE.search(metadata)
+    if doc_m:
+        doc = doc_m.group(1) or doc_m.group(2) or ""
+
+    clean_body = _strip_nested(body)
+    attrs = _parse_attrs(clean_body)
+
+    return CognitivePrim(
+        name=name,
+        phase=attrs.get("phase_classification", "DEFAULT"),
+        prim_type="def",
+        markdown_content=attrs.get("markdown_content", ""),
+        priority=attrs.get("priority", 50),
+        enabled=attrs.get("enabled", True),
+        source_file=filename,
+        doc=doc,
+        attributes=tuple(sorted(attrs.items())),
+    )
+
+
+def _parse_over_prim(
+    name: str, body: str, filename: str
+) -> CognitivePrim:
+    """Parse an over prim into a CognitivePrim."""
+    attrs = _parse_attrs(body)
+
+    return CognitivePrim(
+        name=name,
+        phase=attrs.get("phase_classification", "DEFAULT"),
+        prim_type="over",
+        markdown_content=attrs.get("markdown_content", ""),
+        priority=attrs.get("priority", 50),
+        enabled=attrs.get("enabled", True),
+        source_file=filename,
+        doc="",
+        attributes=tuple(sorted(attrs.items())),
+    )
+
+
+def _parse_attrs(body: str) -> dict:
+    """Extract typed attributes from a prim body."""
+    attrs = {}
+
+    for m in _TRIPLE_STR_RE.finditer(body):
+        attrs[m.group(1)] = m.group(2)
+
+    for m in _SINGLE_STR_RE.finditer(body):
+        if m.group(1) not in attrs:
+            attrs[m.group(1)] = m.group(2)
+
+    for m in _INT_RE.finditer(body):
+        attrs[m.group(1)] = int(m.group(2))
+
+    for m in _BOOL_RE.finditer(body):
+        attrs[m.group(1)] = m.group(2) == 'true'
+
+    for m in _FLOAT_RE.finditer(body):
+        attrs[m.group(1)] = float(m.group(2))
+
+    for m in _STR_ARRAY_RE.finditer(body):
+        raw = m.group(2)
+        items = re.findall(r'"([^"]*)"', raw)
+        attrs[m.group(1)] = items
+
+    return attrs
+
+
+def _strip_nested(body: str) -> str:
+    """Remove nested def/over blocks to avoid matching their attrs."""
+    result = []
+    pos = 0
+    for m in re.finditer(
+        r'\b(?:def|over)\s+"[^"]+"\s*(?:\([^)]*\)\s*)?\{', body, re.DOTALL
+    ):
+        result.append(body[pos:m.start()])
+        brace_pos = m.end() - 1
+        end = _find_matching_brace(body, brace_pos)
+        pos = (end + 1) if end != -1 else m.end()
+    result.append(body[pos:])
+    return ''.join(result)
+
+
+def _find_matching_brace(text: str, open_pos: int) -> int:
+    """Find closing brace matching the one at open_pos."""
+    depth = 0
+    i = open_pos
+    in_triple = False
+    in_string = False
+
+    while i < len(text):
+        if not in_string and text[i:i + 3] == '"""':
+            in_triple = not in_triple
+            i += 3
+            continue
+        if in_triple:
+            i += 1
+            continue
+
+        c = text[i]
+
+        if c == '"' and not in_string:
+            in_string = True
+            i += 1
+            continue
+        if c == '"' and in_string:
+            bs = 0
+            j = i - 1
+            while j >= 0 and text[j] == '\\':
+                bs += 1
+                j -= 1
+            if bs % 2 == 0:
+                in_string = False
+            i += 1
+            continue
+        if in_string:
+            i += 1
+            continue
+
+        if c == '#':
+            nl = text.find('\n', i)
+            i = nl + 1 if nl != -1 else len(text)
+            continue
+
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1

@@ -1,0 +1,43 @@
+"""Batch invariance tests: clean signal invariant to injection profile."""
+
+from pathlib import Path
+
+from src.lossless.constants import ANCHOR_PHASES, PROFILES
+from src.lossless.injection.state import InjectionState
+from src.lossless.integration.pipeline import LosslessPipeline
+
+
+def check_clean_signal_invariance(root_path: Path) -> dict:
+    """Verify clean signal is BIT-IDENTICAL across all profiles."""
+    hashes = {}
+    for name in sorted(PROFILES.keys()):
+        state = InjectionState()
+        if name != "none":
+            state.activate(name)
+            for _ in range(5):
+                state.advance_exchange()
+        pipeline = LosslessPipeline(root_path, state)
+        result = pipeline.convert()
+        hashes[name] = result.clean.clean_hash
+
+    baseline = hashes["none"]
+    passed = all(h == baseline for h in hashes.values())
+    return {"passed": passed, "hashes": hashes}
+
+
+def check_anchor_hash_invariance(root_path: Path) -> dict:
+    """Verify anchor hash is identical across all profiles."""
+    hashes = {}
+    for name in sorted(PROFILES.keys()):
+        state = InjectionState()
+        if name != "none":
+            state.activate(name)
+            for _ in range(5):
+                state.advance_exchange()
+        pipeline = LosslessPipeline(root_path, state)
+        result = pipeline.convert()
+        hashes[name] = result.clean.anchor_hash
+
+    baseline = hashes["none"]
+    passed = all(h == baseline for h in hashes.values())
+    return {"passed": passed, "hashes": hashes}

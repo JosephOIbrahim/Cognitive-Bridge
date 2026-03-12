@@ -1,0 +1,108 @@
+import { app } from "../../../scripts/app.js";
+
+/* ── SUPER DUPER Sidebar ─────────────────────────────────────────────
+ *  Registers a sidebar tab in ComfyUI's extension manager.
+ *  Phase 1: local echo only (no backend connection).
+ *  Phase 2: wired to agent brain via WebSocket.
+ * ──────────────────────────────────────────────────────────────────── */
+
+const SIDEBAR_ID = "superduper";
+const SIDEBAR_TITLE = "SUPER DUPER";
+
+/* ── Load stylesheet ──────────────────────────────────────────────── */
+
+const cssLink = document.createElement("link");
+cssLink.rel = "stylesheet";
+cssLink.href = new URL("../css/superduper.css", import.meta.url).href;
+document.head.appendChild(cssLink);
+
+/* ── Message rendering ────────────────────────────────────────────── */
+
+function createMessageEl(role, text) {
+  const msg = document.createElement("div");
+  msg.className = `sd-message sd-message--${role}`;
+
+  const label = document.createElement("span");
+  label.className = "sd-message__label";
+  label.textContent = role === "user" ? "You" : "Agent";
+
+  const body = document.createElement("span");
+  body.className = "sd-message__body";
+  body.textContent = text;
+
+  msg.appendChild(label);
+  msg.appendChild(body);
+  return msg;
+}
+
+/* ── Build the sidebar DOM ────────────────────────────────────────── */
+
+function buildSidebar(el) {
+  el.style.height = "100%";
+  el.style.display = "flex";
+  el.style.flexDirection = "column";
+  el.style.fontFamily = "system-ui, -apple-system, sans-serif";
+
+  el.innerHTML = `
+    <div class="sd-header">${SIDEBAR_TITLE}</div>
+    <div class="sd-messages" id="sd-messages">
+      <div class="sd-message sd-message--system">
+        <span class="sd-message__body">Ready. Type below.</span>
+      </div>
+    </div>
+    <div class="sd-input-bar">
+      <input
+        type="text"
+        id="sd-input"
+        class="sd-input"
+        placeholder="Ask me anything about your workflow..."
+        autocomplete="off"
+      />
+      <button id="sd-send" class="sd-send-btn">Send</button>
+    </div>
+  `;
+
+  const messagesEl = el.querySelector("#sd-messages");
+  const inputEl = el.querySelector("#sd-input");
+  const sendBtn = el.querySelector("#sd-send");
+
+  function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+
+    // Show user message
+    messagesEl.appendChild(createMessageEl("user", text));
+    inputEl.value = "";
+
+    // Phase 1: local echo. Phase 2 replaces this with WebSocket send.
+    const reply = "(not connected yet) You said: " + text;
+    messagesEl.appendChild(createMessageEl("agent", reply));
+
+    // Auto-scroll
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  sendBtn.addEventListener("click", sendMessage);
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Focus input on tab open
+  setTimeout(() => inputEl.focus(), 100);
+}
+
+/* ── Register with ComfyUI ────────────────────────────────────────── */
+
+app.extensionManager.registerSidebarTab({
+  id: SIDEBAR_ID,
+  icon: "pi pi-bolt",
+  title: SIDEBAR_TITLE,
+  tooltip: "SUPER DUPER AI Co-pilot",
+  type: "custom",
+  render(el) {
+    buildSidebar(el);
+  },
+});

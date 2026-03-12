@@ -1,0 +1,17 @@
+---
+type: moc
+domain: projects
+---
+# Projects
+
+Key patterns across projects: [[mcp-tools]], [[determinism]], [[human-in-the-loop-gates]], [[usd]]
+
+```dataview
+TABLE WITHOUT ID
+  file.link AS "Project",
+  status AS "Status",
+  file.mtime AS "Last Modified"
+FROM "_projects"
+WHERE file.name != "_README"
+SORT file.name ASC
+```

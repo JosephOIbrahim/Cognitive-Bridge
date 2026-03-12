@@ -1,0 +1,554 @@
+# Synapse v5.7.0 — Agent Team Dispatch
+# Sprint: A — Foundation Fixes
+# Date: 2026-02-23
+# Status: READY TO EXECUTE
+
+---
+
+## PRE-FLIGHT: Read Before Anything
+
+Before ANY implementation, read these files and internalize their conventions:
+
+```bash
+cat C:/Users/User/SYNAPSE/CLAUDE.md
+cat C:/Users/User/SYNAPSE/python/synapse/routing/router.py
+cat C:/Users/User/SYNAPSE/python/synapse/memory/store.py
+cat C:/Users/User/SYNAPSE/python/synapse/mcp/server.py
+cat C:/Users/User/SYNAPSE/python/synapse/mcp/tools.py
+cat C:/Users/User/SYNAPSE/python/synapse/core/audit.py
+cat C:/Users/User/SYNAPSE/python/synapse/core/gates.py
+cat C:/Users/User/SYNAPSE/python/synapse/server/handlers_tops.py
+```
+
+Report what you find. Do NOT proceed until you understand:
+- Coaching tone convention: "Couldn't find" not "not found"
+- He2025 determinism: `round_float()` for output, `sort_keys=True`, `@deterministic`
+- Threading: `ReadWriteLock` (writer-priority), tier_pins_lock for cache, `_loaded` Event for memory
+- Test pattern: inline `hou` stub via `sys.modules`, patch `_handlers_hou` not `sys.modules["hou"]`
+- Error classification: User errors don't trip circuit breaker; service errors DO
+
+---
+
+## STATUS REPORTING PROTOCOL
+
+**MANDATORY:** After completing each task, print the status bar in this EXACT format.
+This is the user's ONLY visibility into progress. Never skip it.
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SYNAPSE — Sprint A: Foundation Fixes STATUS                ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: Critical Fixes        [░░░░░░░░░░░░░░░░░░░░] 0%  ║
+║    ROUTER  ◆ C1a ○  C1b ○  C1c ○                           ║
+║    MEMORY  ⟡ C2a ○  C2b ○                                  ║
+║    MCP     ◈ C3a ○  C3b ○                                  ║
+║    TOPS    ⬡ C4a ○                                          ║
+║    SAFETY  ◇ C5a ○  C5b ○                                  ║
+║                                                              ║
+║  Phase 2: Verification          [░░░░░░░░░░░░░░░░░░░░] 0%  ║
+║    GATE    ○ V1 ○  V2 ○  V3 ○                              ║
+║                                                              ║
+║  Overall: [░░░░░░░░░░░░░░░░░░░░] 0%  (0/11 tasks)         ║
+║                                                              ║
+║  Legend: ✓ done  ▶ active  ○ pending  ✗ failed              ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+**Rules:**
+- Print after EVERY completed task (not just phases)
+- Update symbols: ○ → ▶ (when starting) → ✓ (when done) or ✗ (on failure)
+- Calculate percentages: done_tasks / total_tasks × 100
+- If a task FAILS (✗), report the error message before the status bar
+
+---
+
+## ARCHITECTURE DECISIONS (NON-NEGOTIABLE)
+
+### 1. Tier-pin check MUST precede cache check
+The He2025 consistency guarantee requires that if a tier pin exists for an input, that pin is honored before any cache lookup. Cache results are anonymous (any tier); pins are authoritative (specific tier). Checking cache first can return a stale result from a different tier than the pin specifies.
+
+```
+BEFORE (broken):
+  cache check → pin check → tier cascade
+
+AFTER (correct):
+  pin check → cache check → tier cascade
+```
+
+### 2. MCP error format follows JSON-RPC convention
+Tool errors MUST be detectable by MCP clients. The `isError` field in content is a Synapse convention; MCP clients expect JSON-RPC error responses for failures. We keep `isError` in the content dict (backwards compat) but ALSO detect it in `_handle_tools_call` and convert to a proper JSON-RPC error response.
+
+```
+dispatch_tool() returns: {"content": [...], "isError": true}
+                              ↓
+_handle_tools_call() detects isError
+                              ↓
+Returns JSON-RPC error response with code -32603 and error text
+```
+
+### 3. Memory add() must wait for background load
+The `_wait_loaded()` call ensures the in-memory dict is fully populated before we add new entries. Without it, the background loader's final state can overwrite entries added during the load window.
+
+```
+BEFORE (race):
+  Thread A: add() → writes to empty dict
+  Thread B: _load_background() → overwrites dict with disk state (loses A's entry)
+
+AFTER (safe):
+  Thread A: add() → _wait_loaded() → blocks until B completes → writes to populated dict
+```
+
+---
+
+## FILE OWNERSHIP TABLE
+
+**Every file has exactly ONE owner. Violation = merge conflicts = sprint failure.**
+
+| Agent | Role (MOE) | Exclusive Write | Read Only |
+|-------|------------|-----------------|-----------|
+| ROUTER | Routing/concurrency specialist | `python/synapse/routing/router.py`, `tests/test_routing.py` | `core/protocol.py`, `routing/cache.py` |
+| MEMORY | Memory/threading specialist | `python/synapse/memory/store.py`, `tests/test_sqlite_store.py` | `core/determinism.py` |
+| MCP | Protocol/transport specialist | `python/synapse/mcp/server.py`, `python/synapse/mcp/tools.py`, `tests/test_mcp_protocol.py` | `core/protocol.py`, `server/handlers.py` |
+| TOPS | PDG/handler specialist | `python/synapse/server/handlers_tops.py`, `tests/test_tops.py` | `core/aliases.py`, `core/determinism.py` |
+| SAFETY | Audit/gate specialist | `python/synapse/core/audit.py`, `python/synapse/core/gates.py`, `tests/test_core.py` | `core/protocol.py` |
+
+**Patch protocol:** If Agent A needs a change in Agent B's file:
+1. Agent A writes the change to a `.patch` description in their task output
+2. Orchestrator applies the patch after Agent B's current task completes
+3. Agent B's next task incorporates the change
+
+---
+
+## PHASE 1: Critical Fixes
+
+Fix all 5 critical issues identified in the codebase review. Each agent works on their owned files only.
+
+Run these agents **in parallel** via Task tool.
+
+### ═══ Agent ROUTER — Routing/Concurrency Specialist ◆ ═══
+
+**MOE Expertise:** Threading, lock ordering, cache consistency, He2025 determinism patterns. You think about race conditions before correctness.
+**You OWN:** `python/synapse/routing/router.py`, `tests/test_routing.py`
+**DO NOT TOUCH:** Any file not listed above. Read others for context only.
+
+**Task C1a: Reorder tier-pin check before cache check in route()**
+
+In `python/synapse/routing/router.py`, the `route()` method currently runs:
+1. Tier-pin READ (line 249-251) — reads `pinned_tier` but doesn't act yet
+2. Cache check (lines 256-272) — returns cached result from ANY tier
+3. Pinned-tier execution (lines 277-285) — only reached if cache missed
+
+This violates He2025: a pinned input can return a cached result from a DIFFERENT tier than the pin specifies.
+
+**Fix:** Move the pinned-tier execution block (lines 277-285) ABOVE the cache check block (lines 256-272). The tier-pin read at lines 249-251 stays where it is. The execution of the pinned tier moves up:
+
+```python
+        # ---------------------------------------------------------------
+        # -1. Tier-pin check (He2025 consistency)
+        # ---------------------------------------------------------------
+        pin_key = f"{input_text.strip().lower()}|{context_hash}"
+        with self._tier_pins_lock.read_lock():
+            pinned_tier = self._tier_pins.get(pin_key)
+
+        # ---------------------------------------------------------------
+        # 0. Pinned-tier fast path (He2025: same input → same tier)
+        #    MUST come before cache to honor tier-specific pin
+        # ---------------------------------------------------------------
+        if pinned_tier:
+            result = self._try_pinned_tier(
+                pinned_tier, input_text, context, context_hash, start
+            )
+            if result:
+                return result
+            # Stale pin — tier returned None; delete and fall through
+            with self._tier_pins_lock.write_lock():
+                self._tier_pins.pop(pin_key, None)
+
+        # ---------------------------------------------------------------
+        # 0.5. Cache check (He2025)
+        # ---------------------------------------------------------------
+        if self._config.enable_cache:
+            for tier_name in ("recipe", "instant", "fast", "standard", "deep"):
+                cached = self._cache.get(tier_name, input_text, context_hash)
+                ...  # rest unchanged
+```
+
+Update the section comment numbers accordingly (cache becomes 0.5, subsequent sections renumber).
+
+**Task C1b: Add LRU eviction to _pin_tier()**
+
+The `_MAX_TIER_PINS = 1000` constant (line 141) is defined but never enforced. Add eviction in `_pin_tier()`:
+
+Find the `_pin_tier` method and add eviction logic at the top of the write-lock block. When `len(self._tier_pins) >= _MAX_TIER_PINS` and the new pin_key is not already present, evict the oldest 10% of entries. Since `dict` preserves insertion order in Python 3.7+, use `list(self._tier_pins.keys())[:evict_count]` to find oldest.
+
+```python
+    def _pin_tier(self, text, context_hash, tier_value, pin_key):
+        with self._tier_pins_lock.write_lock():
+            # LRU eviction: remove oldest 10% when at capacity
+            if len(self._tier_pins) >= _MAX_TIER_PINS and pin_key not in self._tier_pins:
+                evict_count = max(1, len(self._tier_pins) // 10)
+                for old_key in list(self._tier_pins.keys())[:evict_count]:
+                    del self._tier_pins[old_key]
+            self._tier_pins[pin_key] = tier_value
+```
+
+**Task C1c: Add test for pin-before-cache ordering**
+
+In `tests/test_routing.py`, add a test that verifies:
+1. Route an input → gets pinned to tier RECIPE
+2. Manually insert a DIFFERENT cache entry for the same input (e.g., tier FAST)
+3. Route the same input again
+4. Assert the result comes from RECIPE (pin), NOT FAST (cache)
+
+Use the existing test patterns in that file. Name it `test_tier_pin_takes_precedence_over_cache`.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent MEMORY — Memory/Threading Specialist ⟡ ═══
+
+**MOE Expertise:** Threading primitives (Event, Lock, RWLock), background loading patterns, race condition prevention. You reason about interleaving before correctness.
+**You OWN:** `python/synapse/memory/store.py`, `tests/test_sqlite_store.py`
+**DO NOT TOUCH:** Any file not listed above.
+
+**Task C2a: Add _wait_loaded() guard to add() method**
+
+In `python/synapse/memory/store.py`, the `add()` method (line 365) does NOT call `_wait_loaded()` before acquiring the write lock. This creates a race: if `add()` is called while the background loader is still running, the loader may overwrite the newly added memory.
+
+The `get()` method (line 392) already calls `_wait_loaded()`. The `update()` method (line 396) also needs this guard — check if it already has one.
+
+**Fix:** Add `self._wait_loaded()` as the first line of `add()`, BEFORE the `with self._lock.write_lock():` block:
+
+```python
+    def add(self, memory: Memory) -> str:
+        """Add a memory to the store.
+
+        Buffers disk write for background flush (saves 1-5ms per call).
+        In-memory state is updated immediately for read consistency.
+        """
+        self._wait_loaded()  # Block until background load completes
+        with self._lock.write_lock():
+            self._memories[memory.id] = memory
+            ...
+```
+
+Also check `update()` and `search()` — add `_wait_loaded()` to any that read or write `self._memories` without it.
+
+**Task C2b: Add test for add-during-load race**
+
+Add a test (in the appropriate test file for store.py — check existing test organization) that:
+1. Creates a MemoryStore with `background_load=True` but a slow-loading file (use a mock or large fixture)
+2. Immediately calls `add()` with a new memory BEFORE load completes
+3. Waits for load to complete
+4. Asserts the added memory exists in the store (not overwritten)
+
+Use `threading.Event` to control timing. Name it `test_add_during_background_load_preserved`.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent MCP — Protocol/Transport Specialist ◈ ═══
+
+**MOE Expertise:** JSON-RPC 2.0, MCP spec compliance, error propagation, HTTP semantics. You think about wire formats and client expectations.
+**You OWN:** `python/synapse/mcp/server.py`, `python/synapse/mcp/tools.py`, `tests/test_mcp_protocol.py`
+**DO NOT TOUCH:** Any file not listed above.
+
+**Task C3a: Fix error propagation in _handle_tools_call()**
+
+In `python/synapse/mcp/server.py:290-311`, the `_handle_tools_call()` method calls `dispatch_tool()` which returns `{"content": [...], "isError": True}` on failure. But `_handle_tools_call` returns this dict as-is, which gets wrapped as a JSON-RPC **success** response. MCP clients can't detect the failure.
+
+**Fix:** After calling `dispatch_tool()`, check for `isError` and raise a `JsonRpcError` instead of returning it silently:
+
+```python
+    def _handle_tools_call(self, params: dict) -> dict:
+        """Dispatch a tool call to SynapseHandler."""
+        tool_name = params.get("name")
+        if not tool_name:
+            raise JsonRpcInvalidParams("Missing 'name' in tools/call params")
+
+        arguments = params.get("arguments", {})
+        handler = self._get_handler()
+
+        try:
+            import hdefereval
+            result = hdefereval.executeInMainThreadWithResult(
+                dispatch_tool, handler, tool_name, arguments
+            )
+        except ImportError:
+            result = dispatch_tool(handler, tool_name, arguments)
+
+        # Propagate tool errors to JSON-RPC layer so MCP clients can detect them
+        if isinstance(result, dict) and result.get("isError"):
+            error_text = "Unknown error"
+            content = result.get("content", [])
+            if content and isinstance(content[0], dict):
+                error_text = content[0].get("text", error_text)
+            raise JsonRpcError(-32603, error_text)
+
+        return result
+```
+
+Check that `JsonRpcError` is importable from `python/synapse/mcp/protocol.py`. If a different error class is used (e.g., `JsonRpcInternalError`), use that instead. Read the protocol.py to confirm the correct class name and error code conventions.
+
+**Task C3b: Add test for error propagation**
+
+In `tests/test_mcp_protocol.py`, add a test that:
+1. Calls `_handle_tools_call` with a tool that triggers an error (e.g., unknown tool, or mock a handler that returns `success=False`)
+2. Asserts the response is a JSON-RPC error (not a success with `isError` buried in content)
+3. Asserts the error code is -32603 (internal error)
+4. Asserts the error message contains the tool's error text
+
+Follow existing test patterns in that file. Name it `test_tool_error_propagated_as_jsonrpc_error`.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent TOPS — PDG/Handler Specialist ⬡ ═══
+
+**MOE Expertise:** Houdini PDG/TOPS, handler patterns, parameter resolution, deterministic UUIDs. You know the handler convention deeply.
+**You OWN:** `python/synapse/server/handlers_tops.py`, `tests/test_tops.py`
+**DO NOT TOUCH:** Any file not listed above.
+
+**Task C4a: Fix undefined frame_range variable**
+
+In `python/synapse/server/handlers_tops.py:1894`, inside the `_run()` closure of `_handle_tops_render_sequence`:
+
+```python
+job_id = f"render-seq-{deterministic_uuid(f'tops_render_seq_{rop_path}_{frame_range}')[:8]}"
+```
+
+The variable `frame_range` is NOT defined in scope. The actual frame range variables are `start_frame` (line 1728/1741) and `end_frame` (line 1729/1742), both defined in the enclosing function scope and accessible via closure.
+
+**Fix:** Replace `frame_range` with a string built from the actual variables:
+
+```python
+job_id = f"render-seq-{deterministic_uuid(f'tops_render_seq_{rop_path}_{start_frame}_{end_frame}')[:8]}"
+```
+
+This also produces a better deterministic UUID since it includes both bounds. Make sure `start_frame` and `end_frame` are the `int()` versions (they are — cast happens at lines 1741-1742 before `_run()` is defined at line 1754).
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent SAFETY — Audit/Gate Specialist ◇ ═══
+
+**MOE Expertise:** Compliance logging, tamper-evident audit chains, callback resilience, gate decision workflows. You think about failure visibility.
+**You OWN:** `python/synapse/core/audit.py`, `python/synapse/core/gates.py`, `tests/test_core.py`
+**DO NOT TOUCH:** Any file not listed above.
+
+**Task C5a: Add logging to audit callback exception handler**
+
+In `python/synapse/core/audit.py:274-278`:
+
+```python
+            for callback in self._callbacks:
+                try:
+                    callback(entry)
+                except Exception:
+                    pass  # Don't let callback errors break logging
+```
+
+**Fix:** Replace `pass` with a `logger.error` call. Check what logger is used in this file (likely `logging.getLogger(__name__)` or similar). If no logger exists at module level, add one:
+
+```python
+            for callback in self._callbacks:
+                try:
+                    callback(entry)
+                except Exception:
+                    logger.error(
+                        "Audit callback %s failed for entry %s",
+                        getattr(callback, "__name__", repr(callback)),
+                        entry.entry_id,
+                        exc_info=True,
+                    )
+```
+
+The comment `# Don't let callback errors break logging` is still valid — we log but don't re-raise. Keep the try/except, just replace `pass` with logging.
+
+**Task C5b: Add logging to gate callback exception handlers**
+
+In `python/synapse/core/gates.py`, there are three `except Exception: pass` blocks:
+
+1. **Line 357-360** — `_on_proposal` callbacks in `propose()`:
+```python
+            for callback in self._on_proposal:
+                try:
+                    callback(proposal)
+                except Exception:
+                    pass
+```
+
+2. **Line 392-396** — `_on_batch_ready` callbacks in `mark_batch_ready()`:
+```python
+            for callback in self._on_batch_ready:
+                try:
+                    callback(batch)
+                except Exception:
+                    pass
+```
+
+3. **Line 457-461** — `_on_decision` callbacks in `decide()`:
+```python
+            for callback in self._on_decision:
+                try:
+                    callback(proposal, decision)
+                except Exception:
+                    pass
+```
+
+**Fix:** Replace all three `pass` statements with `logger.error(...)`. Check what logger is used in gates.py. Use the same pattern:
+
+```python
+                except Exception:
+                    logger.error(
+                        "Gate callback %s failed",
+                        getattr(callback, "__name__", repr(callback)),
+                        exc_info=True,
+                    )
+```
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 1 GATE ═══
+
+**Run BEFORE starting Phase 2. Gate is HARD — no skip.**
+
+```bash
+# Gate 1: All existing tests pass (no regressions)
+python -m pytest C:/Users/User/SYNAPSE/tests/ -v --tb=short -x -q 2>&1 | tail -20
+
+# Gate 2: Router pin-before-cache test exists and passes
+python -m pytest C:/Users/User/SYNAPSE/tests/test_routing.py -v -k "test_tier_pin_takes_precedence_over_cache"
+
+# Gate 3: Memory add-during-load test exists and passes
+python -m pytest C:/Users/User/SYNAPSE/tests/ -v -k "test_add_during_background_load"
+
+# Gate 4: MCP error propagation test exists and passes
+python -m pytest C:/Users/User/SYNAPSE/tests/test_mcp_protocol.py -v -k "test_tool_error_propagated"
+
+# Gate 5: No 'except Exception: pass' in audit.py or gates.py (grep must return 0 matches)
+grep -n "except Exception:" C:/Users/User/SYNAPSE/python/synapse/core/audit.py C:/Users/User/SYNAPSE/python/synapse/core/gates.py | grep -c "pass"
+# Expected: 0
+
+# Gate 6: frame_range not referenced in handlers_tops.py line 1894
+grep -n "frame_range" C:/Users/User/SYNAPSE/python/synapse/server/handlers_tops.py | grep -c "deterministic_uuid"
+# Expected: 0 (the old pattern should be gone)
+```
+
+**ALL checks must pass. If ANY fail, fix before proceeding.**
+
+Print status bar after gate check.
+
+---
+
+## PHASE 2: Verification
+
+Run a full test suite and verify no regressions. This phase runs SEQUENTIALLY after Phase 1 gate passes.
+
+Run this agent **sequentially** (after Phase 1 gate) via Task tool.
+
+### ═══ Agent GATE — Verification Specialist ═══
+
+**MOE Expertise:** Test suite execution, regression detection, coverage verification.
+**You OWN:** No source files — read-only verification.
+**DO NOT TOUCH:** All source files are read-only for this agent.
+
+**Task V1: Full test suite**
+
+Run the complete test suite:
+```bash
+python -m pytest C:/Users/User/SYNAPSE/tests/ -v --tb=short 2>&1
+```
+
+Report: total tests, passed, failed, errors. If any FAIL, identify the failing test and which Phase 1 agent's files are involved.
+
+**Task V2: Verify fix correctness**
+
+For each critical fix, verify it's correct:
+
+1. **Router (C1):** Read `router.py`, confirm tier-pin block appears BEFORE cache block in `route()`. Confirm `_pin_tier()` has eviction logic.
+2. **Memory (C2):** Read `store.py`, confirm `_wait_loaded()` is called in `add()`.
+3. **MCP (C3):** Read `mcp/server.py`, confirm `_handle_tools_call()` checks for `isError` and raises `JsonRpcError`.
+4. **TOPS (C4):** Read `handlers_tops.py` line ~1894, confirm `frame_range` is replaced with `start_frame`/`end_frame`.
+5. **Safety (C5):** Read `audit.py` and `gates.py`, confirm all `except Exception: pass` blocks now have `logger.error`.
+
+**Task V3: Check for collateral damage**
+
+Verify that no agent accidentally modified another agent's files:
+```bash
+git diff --name-only
+```
+
+Confirm each modified file belongs to the agent that owns it per the File Ownership Table.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 2 GATE ═══
+
+**Final gate — sprint completion.**
+
+```bash
+# All tests pass
+python -m pytest C:/Users/User/SYNAPSE/tests/ -v --tb=short -q 2>&1 | tail -5
+
+# No type errors in modified files
+python -m mypy C:/Users/User/SYNAPSE/python/synapse/routing/router.py C:/Users/User/SYNAPSE/python/synapse/memory/store.py C:/Users/User/SYNAPSE/python/synapse/mcp/server.py C:/Users/User/SYNAPSE/python/synapse/core/audit.py C:/Users/User/SYNAPSE/python/synapse/core/gates.py --config-file C:/Users/User/SYNAPSE/pyproject.toml 2>&1 | tail -5
+```
+
+**ALL checks must pass.**
+
+Print status bar after gate check.
+
+---
+
+## FINAL STATUS BAR
+
+Print after the last phase gate passes:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SYNAPSE — Sprint A: Foundation Fixes — COMPLETE            ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: Critical Fixes        [████████████████████] 100% ║
+║    ROUTER  ◆ C1a ✓  C1b ✓  C1c ✓                           ║
+║    MEMORY  ⟡ C2a ✓  C2b ✓                                  ║
+║    MCP     ◈ C3a ✓  C3b ✓                                  ║
+║    TOPS    ⬡ C4a ✓                                          ║
+║    SAFETY  ◇ C5a ✓  C5b ✓                                  ║
+║                                                              ║
+║  Phase 2: Verification          [████████████████████] 100% ║
+║    GATE    ○ V1 ✓  V2 ✓  V3 ✓                              ║
+║                                                              ║
+║  Overall: [████████████████████] 100%  (11/11 tasks)        ║
+║                                                              ║
+║  Modified:     7 files                                       ║
+║  Tests added:  3                                             ║
+║  Regressions:  0                                             ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## SAFETY RULES (ALL AGENTS — NON-NEGOTIABLE)
+
+1. **Coaching tone:** All error messages use "Couldn't find" not "not found". Always offer next step.
+2. **Determinism:** Any new float output must use `round_float()`. Any new JSON serialization must use `sort_keys=True`.
+3. **Threading safety:** Any new lock acquisition must follow existing read/write lock ordering. Never hold two locks simultaneously (deadlock risk).
+4. **Test pattern:** Inline `hou` stub via `sys.modules`. Patch `_handlers_hou` not `sys.modules["hou"]`. Use `encoding="utf-8"` for any file writes in tests.
+5. **Windows paths:** Use forward slashes in Python code. Use `encoding="utf-8"` in all `open()` calls.
+
+### Universal Safety (always include these):
+1. **Read before write:** Always read existing code and match conventions
+2. **File ownership:** NEVER write to another agent's files
+3. **Regression zero:** Existing tests must keep passing
+4. **Status reporting:** Print status bar after EVERY task completion

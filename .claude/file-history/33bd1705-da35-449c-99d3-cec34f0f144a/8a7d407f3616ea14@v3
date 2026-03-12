@@ -1,0 +1,34 @@
+# Project Memory
+
+## Key Decisions
+- **Renderer**: Direct GL, not Hydra Storm. `usd-core` pip wheels exclude `UsdImagingGL`. Storm upgrade deferred to Sprint 7+.
+- **Python**: Must use 3.12 venv (usd-core has no 3.14 wheels). Venv at `.venv/`.
+- **Dependencies**: usd-core 25.11, PySide6 6.10.2, PyOpenGL 3.1.10, numpy
+- **Two parallel tracks**: Viewport track (this repo) and Agent track (comfyui-agent). Don't modify SUPERDUPER_3D_GRAFT.md — agent track handles that.
+
+## Sprint Status
+- Sprint 1: USD + Qt + GL cube + depth AOV — DONE
+- Sprint 1.5: Orbit camera (Alt+LMB/MMB/RMB, scroll, F) — DONE
+- Sprint 2: Physical camera projection (sensor+lens→matrix, LOAD3D_CAMERA export) — DONE
+
+## Project Structure
+- `src/viewport.py` — Main app: QMainWindow + StormViewport (QOpenGLWidget) + shaders
+- `src/camera.py` — OrbitCamera with optional PhysicalProjection
+- `src/projection.py` — Physical camera: SensorGate + Lens → projection matrices
+- `src/stage_builder.py` — USD stage factory (cube, ground, dome light)
+- `data/camera_lens_database.json` — 6 cameras, 12 lenses, 4 presets (ARRI/RED/Sony + Cooke/Atlas)
+
+## Run Command
+```bash
+cd comfyui_3D_viewport && .venv/Scripts/python src/viewport.py
+```
+
+## Keyboard Shortcuts
+- Alt+LMB: Orbit | Alt+MMB: Pan | Alt+RMB/Scroll: Zoom | F: Frame
+- 0: Simple FOV | 1: Alexa35+Cooke Ana 40 | 2: V-RAPTOR+Atlas 65 | 3: VENICE2+Cooke S7/i 50 | 4: Alexa35 S35+Cooke 25
+
+## Gotchas
+- MSAA disabled (samples=0) to enable direct depth buffer readback. Re-enable with render-to-texture later.
+- Qt silently swallows exceptions in `initializeGL` — always wrap in try/except with explicit print.
+- Output buffering: use `PYTHONUNBUFFERED=1` or `-u` flag when capturing subprocess output.
+- `from __future__ import annotations` in camera.py for TYPE_CHECKING import of PhysicalProjection.

@@ -1,0 +1,65 @@
+"""
+Stage 2: Extract frames from downloaded videos at 0.5fps.
+
+We use 0.5fps (1 frame every 2 seconds) because code changes are
+relatively slow in tutorials. This keeps frame count manageable.
+
+Usage: python scripts/02_extract_frames.py
+
+Output: data/frames/{episode}/frame_%05d.png
+"""
+
+import subprocess
+import json
+from pathlib import Path
+from tqdm import tqdm
+from _tools import ffmpeg as find_ffmpeg
+
+DATA_DIR = Path("data")
+VIDEO_DIR = DATA_DIR / "videos"
+FRAME_DIR = DATA_DIR / "frames"
+
+
+FFMPEG = find_ffmpeg()
+
+
+def extract_frames(video_path, output_dir, fps=0.5):
+    """Extract frames from video at specified fps."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    subprocess.run(
+        [
+            FFMPEG,
+            "-i", str(video_path),
+            "-vf", f"fps={fps}",
+            "-q:v", "2",
+            str(output_dir / "frame_%05d.png"),
+            "-y",
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+    return len(list(output_dir.glob("*.png")))
+
+
+def main():
+    with open(DATA_DIR / "metadata" / "playlist_index.json") as f:
+        playlist = json.load(f)
+
+    for entry in tqdm(playlist, desc="Extracting frames"):
+        if "error" in entry:
+            continue
+
+        video_file = VIDEO_DIR / f"{entry['filename_base']}.mp4"
+        if not video_file.exists():
+            print(f"Video not found: {video_file}")
+            continue
+
+        episode_dir = FRAME_DIR / entry["filename_base"]
+        n_frames = extract_frames(video_file, episode_dir)
+        print(f"  {entry['filename_base']}: {n_frames} frames")
+
+
+if __name__ == "__main__":
+    main()

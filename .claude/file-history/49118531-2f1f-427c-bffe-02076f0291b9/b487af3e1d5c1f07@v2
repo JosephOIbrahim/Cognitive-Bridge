@@ -1,0 +1,30 @@
+#!/bin/bash
+# Auto-sync Houdini integration files after commit.
+# Source: ~/.synapse/houdini/ -> ~/houdini21.0/
+
+HOUDINI_PREFS="$HOME/houdini21.0"
+
+# Files to sync (source relative to repo root -> destination)
+declare -A FILES=(
+    ["houdini/python_panels/synapse_panel.pypanel"]="$HOUDINI_PREFS/python_panels/synapse_panel.pypanel"
+    ["houdini/scripts/python/synapse_shelf.py"]="$HOUDINI_PREFS/scripts/python/synapse_shelf.py"
+    ["houdini/toolbar/synapse.shelf"]="$HOUDINI_PREFS/toolbar/synapse.shelf"
+)
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SYNCED=0
+
+for src_rel in "${!FILES[@]}"; do
+    src="$REPO_ROOT/$src_rel"
+    dst="${FILES[$src_rel]}"
+    if [ -f "$src" ]; then
+        dst_dir="$(dirname "$dst")"
+        mkdir -p "$dst_dir"
+        cp "$src" "$dst"
+        SYNCED=$((SYNCED + 1))
+    fi
+done
+
+if [ $SYNCED -gt 0 ]; then
+    echo "post-commit: synced $SYNCED file(s) to $HOUDINI_PREFS"
+fi

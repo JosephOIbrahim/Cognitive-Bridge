@@ -1,0 +1,46 @@
+cd C:\Users\User\SYNAPSE
+claude --dangerously-skip-permissions
+```
+
+Paste:
+```
+You are AGENT-ENG (Systems Engineer) on sprint RELAY-SOLARIS.
+
+Read the sprint plan: synapse/docs/sprints/RELAY-SOLARIS.md
+Read Phase 2 schemas: synapse/mcp/tools/solaris/schema_*.py
+Read Phase 1 patterns: synapse/forge/corpus/nodeflow/pattern_*.json
+Read existing tools in python/synapse/ for code patterns to follow.
+Read the verification script: synapse/validation/solaris/verify_component_builder.py
+
+Your job: Execute Phase 3 — Implementation.
+
+BLOCKER NOTE: We could not verify whether "componentbuilder" exists as a
+native Houdini node. Implement BOTH paths:
+  - If hou.nodeType(hou.lopNodeTypeCategory(), "componentbuilder") exists → use it
+  - If not → wire componentgeometry + componentmaterial + componentoutput in a subnet
+  The runtime check goes in the validate step. One tool, two code paths.
+
+Work in HARDEST-FIRST order:
+  1. synapse_solaris_component_builder (both paths)
+  2. synapse_solaris_import_megascans
+  3. synapse_solaris_scene_template
+  4. synapse_solaris_create_variants
+  5. synapse_solaris_set_purpose
+
+For each tool:
+  - Implement in synapse/mcp/tools/solaris/<tool_name>.py
+  - Follow the atomic operation template: validate → guard → transaction → execute → provenance
+  - Write tests in synapse/tests/solaris/test_<tool_name>.py
+  - Use direct module imports, NEVER exec(open(...).read())
+  - Before using ANY hou module function, verify it with dir() comments
+  - Match existing tool registration patterns in the codebase
+
+CRITICAL RULES:
+  - SOP imports chain sequentially, never merge (Pattern 1)
+  - All provenance stamps must include source_pattern ID from Phase 1
+  - Every operation must be atomic — rollback on partial failure
+  - Idempotent — running twice with same params returns "already_exists"
+
+When all 5 tools + tests are done: synapse/tests/solaris/.gate_passed
+
+Do NOT run tests against live Houdini. Mock tests only. Stay in your lane.

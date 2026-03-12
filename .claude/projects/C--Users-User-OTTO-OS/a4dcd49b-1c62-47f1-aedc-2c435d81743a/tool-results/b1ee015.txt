@@ -1,0 +1,914 @@
+diff --git a/otto_v4/src/otto/nudge.py b/otto_v4/src/otto/nudge.py
+index 8b3c524..a34a5df 100644
+--- a/otto_v4/src/otto/nudge.py
++++ b/otto_v4/src/otto/nudge.py
+@@ -66,7 +66,7 @@ COOLDOWN_HOURS = 24
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def format_nudge(commitment: Commitment, reason: str) -> str:
++def format_nudge(commitment: Commitment, reason: str, *, now: datetime | None = None) -> str:
+     """Build a human-friendly nudge message for *commitment*.
+ 
+     Parameters
+@@ -81,7 +81,7 @@ def format_nudge(commitment: Commitment, reason: str) -> str:
+     str
+         A warm, non-judgmental nudge message.
+     """
+-    days = _days_since(commitment, reason)
++    days = _days_since(commitment, reason, now=now)
+ 
+     # Repeated follow-ups (count > 2) always use the escalation template.
+     if commitment.follow_up_count > 2:
+@@ -170,9 +170,10 @@ def _past_cooldown(commitment: Commitment, cutoff: datetime) -> bool:
+     return commitment.updated_at <= cutoff
+ 
+ 
+-def _days_since(commitment: Commitment, reason: str) -> int:
++def _days_since(commitment: Commitment, reason: str, *, now: datetime | None = None) -> int:
+     """Return the number of days since the relevant anchor date."""
+-    now = datetime.now(timezone.utc)
++    if now is None:
++        now = datetime.now(timezone.utc)
+     if reason == "overdue" and commitment.deadline is not None:
+         delta = now - commitment.deadline
+     else:
+diff --git a/otto_v4/src/otto/plasticity.py b/otto_v4/src/otto/plasticity.py
+index 6739a48..0317e85 100644
+--- a/otto_v4/src/otto/plasticity.py
++++ b/otto_v4/src/otto/plasticity.py
+@@ -124,15 +124,12 @@ class PlasticityWindow:
+         persisted state exists.
+         """
+         state_store._ensure_table()
+-        conn = state_store._connect()
+-        try:
++        with state_store._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT key, value FROM cognitive_state "
+                 "WHERE key IN ('plasticity_open', 'plasticity_stable_count')"
+             )
+             rows = {k: v for k, v in cur.fetchall()}
+-        finally:
+-            conn.close()
+ 
+         return cls(
+             is_open=rows.get("plasticity_open", "0") == "1",
+diff --git a/otto_v4/src/otto/state.py b/otto_v4/src/otto/state.py
+index d056100..b9f4500 100644
+--- a/otto_v4/src/otto/state.py
++++ b/otto_v4/src/otto/state.py
+@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS interaction_log (
+ class CognitiveState:
+     """Snapshot of the user's cognitive state.
+ 
+-    Defaults match a healthy baseline — the user shouldn't need to
++    Defaults match a healthy baseline -- the user shouldn't need to
+     configure anything on first run.
+     """
+ 
+@@ -84,28 +84,23 @@ class StateStore:
+     separate ``cognitive_state`` table.
+     """
+ 
+-    def __init__(self, db_path: str) -> None:
+-        self._db_path = db_path
++    def __init__(self, db_path: str = "", *, db: "Database | None" = None) -> None:
++        if db is not None:
++            self._db = db
++        else:
++            from .db import Database
++            self._db = Database(db_path)
+         self._ensure_table()
+ 
+-    def _connect(self) -> sqlite3.Connection:
+-        return sqlite3.connect(self._db_path)
+-
+     def _ensure_table(self) -> None:
+-        conn = self._connect()
+-        try:
+-            conn.execute("PRAGMA journal_mode=WAL")
++        with self._db.connect() as conn:
+             conn.execute(_STATE_SCHEMA)
+             conn.execute(_INTERACTION_LOG_SCHEMA)
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def _set_key(self, key: str, value: str) -> None:
+         """Set a single key-value pair in the cognitive_state table."""
+-        now = datetime.now(timezone.utc).isoformat()
+-        conn = self._connect()
+-        try:
++        now = datetime.now(timezone.utc).isoformat()  # boundary: write timestamp
++        with self._db.connect() as conn:
+             conn.execute(
+                 """
+                 INSERT INTO cognitive_state (key, value, updated_at)
+@@ -114,9 +109,6 @@ class StateStore:
+                 """,
+                 (key, value, now, value, now),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     # ------------------------------------------------------------------
+     # Public API
+@@ -127,14 +119,11 @@ class StateStore:
+ 
+         Automatically resets daily counters when the date changes.
+         """
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute("SELECT key, value FROM cognitive_state")
+             rows = {k: v for k, v in cur.fetchall()}
+-        finally:
+-            conn.close()
+ 
+-        # Check for daily rollover
++        # boundary: daily rollover check (wall clock)
+         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+         last_reset = rows.get("last_reset_date", "")
+ 
+@@ -162,7 +151,7 @@ class StateStore:
+ 
+     def save(self, state: CognitiveState) -> None:
+         """Persist the full cognitive state."""
+-        now = datetime.now(timezone.utc).isoformat()
++        now = datetime.now(timezone.utc).isoformat()  # boundary: write timestamp
+         pairs = [
+             ("energy", state.energy),
+             ("burnout", state.burnout),
+@@ -171,8 +160,7 @@ class StateStore:
+             ("nudges_completed_today", str(state.nudges_completed_today)),
+             ("suppressed_count", str(state.suppressed_count)),
+         ]
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             for key, value in pairs:
+                 conn.execute(
+                     """
+@@ -182,9 +170,6 @@ class StateStore:
+                     """,
+                     (key, value, now, value, now),
+                 )
+-            conn.commit()
+-        finally:
+-            conn.close()
+         _log.debug("Cognitive state saved: energy=%s burnout=%s", state.energy, state.burnout)
+ 
+     def set_energy(self, level: str) -> CognitiveState:
+@@ -272,15 +257,11 @@ class StateStore:
+     ) -> None:
+         """Record an interaction for behavioral pattern analysis."""
+         ts = (timestamp or datetime.now(timezone.utc)).isoformat()
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute(
+                 "INSERT INTO interaction_log (timestamp, message_length, source) VALUES (?, ?, ?)",
+                 (ts, message_length, source),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def get_recent_interactions(
+         self,
+@@ -290,15 +271,12 @@ class StateStore:
+ 
+         Sorted by timestamp ascending (oldest first).
+         """
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT timestamp, message_length, source FROM interaction_log "
+                 "ORDER BY id DESC LIMIT ?",
+                 (limit,),
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+         # Reverse so oldest is first (consistent with HistoryAnalyzer expectation)
+         return list(reversed(rows))
+diff --git a/otto_v4/src/otto/store.py b/otto_v4/src/otto/store.py
+index b801e51..e001304 100644
+--- a/otto_v4/src/otto/store.py
++++ b/otto_v4/src/otto/store.py
+@@ -1,7 +1,7 @@
+ """SQLite commitment store for OTTO v4.0.
+ 
+ Uses stdlib sqlite3 only. No ORM. Datetimes stored as ISO strings.
+-Opens and closes connection per operation (no pooling).
++Connection management delegated to the centralized Database class.
+ """
+ 
+ from __future__ import annotations
+@@ -38,24 +38,27 @@ CREATE TABLE IF NOT EXISTS commitments (
+ class CommitmentStore:
+     """Persistent store for commitments backed by SQLite."""
+ 
+-    def __init__(self, db_path: str = "~/.otto/commitments.db") -> None:
+-        expanded = os.path.expanduser(db_path)
+-        self._db_path = Path(expanded)
+-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
++    def __init__(
++        self,
++        db_path: str = "~/.otto/commitments.db",
++        *,
++        db: "Database | None" = None,
++        encryption_key: bytes | None = None,
++    ) -> None:
++        if db is not None:
++            self._db = db
++        else:
++            from .db import Database
++            self._db = Database(db_path)
++        self._encryption_key = encryption_key
+         self._ensure_table()
+ 
+     # ------------------------------------------------------------------
+     # Internal helpers
+     # ------------------------------------------------------------------
+ 
+-    def _connect(self) -> sqlite3.Connection:
+-        """Open a new connection. Caller must close it."""
+-        return sqlite3.connect(str(self._db_path))
+-
+     def _ensure_table(self) -> None:
+-        conn = self._connect()
+-        try:
+-            conn.execute("PRAGMA journal_mode=WAL")
++        with self._db.connect() as conn:
+             conn.execute(_SCHEMA)
+             # Migrate existing DBs: add new columns if missing
+             cursor = conn.execute("PRAGMA table_info(commitments)")
+@@ -73,6 +76,12 @@ class CommitmentStore:
+                 conn.execute(
+                     "ALTER TABLE commitments ADD COLUMN sender_phone TEXT"
+                 )
++            # Migration: add is_encrypted flag for at-rest encryption
++            if "is_encrypted" not in columns:
++                conn.execute(
++                    "ALTER TABLE commitments "
++                    "ADD COLUMN is_encrypted INTEGER NOT NULL DEFAULT 0"
++                )
+             # Performance indices for common query patterns
+             conn.execute(
+                 "CREATE INDEX IF NOT EXISTS idx_commitments_status "
+@@ -86,38 +95,48 @@ class CommitmentStore:
+                 "CREATE INDEX IF NOT EXISTS idx_commitments_created_at "
+                 "ON commitments(created_at)"
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+-    @staticmethod
+-    def _row_to_commitment(row: tuple) -> Commitment:
++    def _row_to_commitment(self, row: tuple) -> Commitment:
+         """Map a SELECT * row to a Commitment instance.
+ 
+-        Column order matches _SCHEMA:
+-            id, raw_message, commitment_text, who_to, who_from,
+-            direction, deadline, deadline_source, status,
+-            created_at, updated_at, follow_up_count, source_chat,
+-            snoozed_until, notes, sender_phone
++        Column order matches _SCHEMA + migrations:
++            0  id, 1 raw_message, 2 commitment_text, 3 who_to, 4 who_from,
++            5  direction, 6 deadline, 7 deadline_source, 8 status,
++            9  created_at, 10 updated_at, 11 follow_up_count, 12 source_chat,
++            13 snoozed_until, 14 notes, 15 sender_phone, 16 is_encrypted
+         """
+-        (
+-            id_,
+-            raw_message,
+-            commitment_text,
+-            who_to,
+-            who_from,
+-            direction,
+-            deadline_str,
+-            deadline_source,
+-            status,
+-            created_at_str,
+-            updated_at_str,
+-            follow_up_count,
+-            source_chat,
+-            snoozed_until_str,
+-            notes,
+-            sender_phone,
+-        ) = row
++        id_ = row[0]
++        raw_message = row[1]
++        commitment_text = row[2]
++        who_to = row[3]
++        who_from = row[4]
++        direction = row[5]
++        deadline_str = row[6]
++        deadline_source = row[7]
++        status = row[8]
++        created_at_str = row[9]
++        updated_at_str = row[10]
++        follow_up_count = row[11]
++        source_chat = row[12]
++        snoozed_until_str = row[13]
++        notes = row[14]
++        sender_phone = row[15]
++        # is_encrypted may be absent for very old DBs (pre-migration)
++        is_encrypted = row[16] if len(row) > 16 else 0
++
++        # Decrypt sensitive fields when the row is encrypted and we have a key
++        if is_encrypted and self._encryption_key:
++            from otto.crypto import decrypt_field
++
++            raw_message = decrypt_field(raw_message, self._encryption_key)
++            commitment_text = decrypt_field(
++                commitment_text, self._encryption_key
++            )
++            who_to = decrypt_field(who_to, self._encryption_key)
++            source_chat = decrypt_field(source_chat, self._encryption_key)
++            sender_phone = decrypt_field(
++                sender_phone or "", self._encryption_key
++            ) or None
+ 
+         deadline = (
+             datetime.fromisoformat(deadline_str) if deadline_str else None
+@@ -149,6 +168,11 @@ class CommitmentStore:
+ 
+     @staticmethod
+     def _utcnow_iso() -> str:
++        """Wall-clock timestamp for write operations (boundary call).
++
++        Not injected because updated_at should always reflect real time,
++        not test time.
++        """
+         return datetime.now(timezone.utc).isoformat()
+ 
+     # ------------------------------------------------------------------
+@@ -157,8 +181,7 @@ class CommitmentStore:
+ 
+     def is_duplicate(self, commitment: Commitment) -> bool:
+         """Check if a near-identical commitment already exists (active)."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             # Check by normalized commitment text + who_to + source_chat
+             cur = conn.execute(
+                 """
+@@ -171,8 +194,6 @@ class CommitmentStore:
+                 (commitment.commitment_text, commitment.who_to, commitment.source_chat),
+             )
+             count = cur.fetchone()[0]
+-        finally:
+-            conn.close()
+         return count > 0
+ 
+     def add(self, commitment: Commitment, *, dedup: bool = True) -> str:
+@@ -184,22 +205,43 @@ class CommitmentStore:
+         if dedup and self.is_duplicate(commitment):
+             return ""
+ 
+-        conn = self._connect()
+-        try:
++        # Prepare field values -- encrypt sensitive fields if key is set
++        if self._encryption_key:
++            from otto.crypto import encrypt_field
++
++            raw_message = encrypt_field(commitment.raw_message, self._encryption_key)
++            commitment_text = encrypt_field(
++                commitment.commitment_text, self._encryption_key
++            )
++            who_to = encrypt_field(commitment.who_to, self._encryption_key)
++            source_chat = encrypt_field(commitment.source_chat, self._encryption_key)
++            sender_phone = encrypt_field(
++                commitment.sender_phone or "", self._encryption_key
++            )
++            is_encrypted = 1
++        else:
++            raw_message = commitment.raw_message
++            commitment_text = commitment.commitment_text
++            who_to = commitment.who_to
++            source_chat = commitment.source_chat
++            sender_phone = commitment.sender_phone
++            is_encrypted = 0
++
++        with self._db.connect() as conn:
+             conn.execute(
+                 """
+                 INSERT INTO commitments (
+                     id, raw_message, commitment_text, who_to, who_from,
+                     direction, deadline, deadline_source, status,
+                     created_at, updated_at, follow_up_count, source_chat,
+-                    snoozed_until, notes, sender_phone
+-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++                    snoozed_until, notes, sender_phone, is_encrypted
++                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 """,
+                 (
+                     commitment.id,
+-                    commitment.raw_message,
+-                    commitment.commitment_text,
+-                    commitment.who_to,
++                    raw_message,
++                    commitment_text,
++                    who_to,
+                     commitment.who_from,
+                     commitment.direction,
+                     commitment.deadline.isoformat() if commitment.deadline else None,
+@@ -208,36 +250,30 @@ class CommitmentStore:
+                     commitment.created_at.isoformat(),
+                     commitment.updated_at.isoformat(),
+                     commitment.follow_up_count,
+-                    commitment.source_chat,
++                    source_chat,
+                     commitment.snoozed_until.isoformat() if commitment.snoozed_until else None,
+                     commitment.notes,
+-                    commitment.sender_phone,
++                    sender_phone,
++                    is_encrypted,
+                 ),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+         return commitment.id
+ 
+     def get(self, commitment_id: str) -> Commitment | None:
+         """Retrieve a commitment by ID. Returns None if not found."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT * FROM commitments WHERE id = ?",
+                 (commitment_id,),
+             )
+             row = cur.fetchone()
+-        finally:
+-            conn.close()
+         if row is None:
+             return None
+         return self._row_to_commitment(row)
+ 
+     def get_active(self) -> list[Commitment]:
+         """Return active commitments ordered by deadline (NULLs last)."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 """
+                 SELECT * FROM commitments
+@@ -249,8 +285,6 @@ class CommitmentStore:
+                 """
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+         return [self._row_to_commitment(r) for r in rows]
+ 
+     def get_due(self, as_of: datetime | None = None) -> list[Commitment]:
+@@ -258,9 +292,8 @@ class CommitmentStore:
+         if as_of is None:
+             as_of = datetime.now(timezone.utc)
+         cutoff = as_of.isoformat()
+-        now_iso = datetime.now(timezone.utc).isoformat()
+-        conn = self._connect()
+-        try:
++        now_iso = as_of.isoformat()  # determinism: use as_of, not a second wall-clock call
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 """
+                 SELECT * FROM commitments
+@@ -273,18 +306,17 @@ class CommitmentStore:
+                 (cutoff, now_iso),
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+         return [self._row_to_commitment(r) for r in rows]
+ 
+-    def get_stale(self, days: int = 3) -> list[Commitment]:
++    def get_stale(self, days: int = 3, *, now: datetime | None = None) -> list[Commitment]:
+         """Return active commitments with no deadline older than *days*."""
+         from datetime import timedelta
+ 
+-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+-        now_iso = datetime.now(timezone.utc).isoformat()
+-        conn = self._connect()
+-        try:
++        if now is None:
++            now = datetime.now(timezone.utc)
++        cutoff = (now - timedelta(days=days)).isoformat()
++        now_iso = now.isoformat()
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 """
+                 SELECT * FROM commitments
+@@ -297,14 +329,11 @@ class CommitmentStore:
+                 (cutoff, now_iso),
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+         return [self._row_to_commitment(r) for r in rows]
+ 
+     def mark_done(self, commitment_id: str) -> None:
+         """Set status to 'done' and update updated_at."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute(
+                 """
+                 UPDATE commitments
+@@ -313,14 +342,10 @@ class CommitmentStore:
+                 """,
+                 (self._utcnow_iso(), commitment_id),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def mark_parked(self, commitment_id: str) -> None:
+         """Set status to 'parked' and update updated_at."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute(
+                 """
+                 UPDATE commitments
+@@ -329,14 +354,10 @@ class CommitmentStore:
+                 """,
+                 (self._utcnow_iso(), commitment_id),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def increment_follow_up(self, commitment_id: str) -> None:
+         """Bump follow_up_count by 1 and update updated_at."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute(
+                 """
+                 UPDATE commitments
+@@ -346,14 +367,10 @@ class CommitmentStore:
+                 """,
+                 (self._utcnow_iso(), commitment_id),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def snooze(self, commitment_id: str, until: datetime) -> None:
+         """Snooze a commitment until a given time."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute(
+                 """
+                 UPDATE commitments
+@@ -362,14 +379,10 @@ class CommitmentStore:
+                 """,
+                 (until.isoformat(), self._utcnow_iso(), commitment_id),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def unsnooze(self, commitment_id: str) -> None:
+         """Clear the snooze on a commitment."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute(
+                 """
+                 UPDATE commitments
+@@ -378,14 +391,10 @@ class CommitmentStore:
+                 """,
+                 (self._utcnow_iso(), commitment_id),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def add_note(self, commitment_id: str, text: str) -> None:
+         """Append a note to a commitment. Notes are newline-separated."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT notes FROM commitments WHERE id = ?",
+                 (commitment_id,),
+@@ -403,66 +412,48 @@ class CommitmentStore:
+                 """,
+                 (new_notes, self._utcnow_iso(), commitment_id),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def delete(self, commitment_id: str) -> None:
+         """Hard-delete a commitment."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute(
+                 "DELETE FROM commitments WHERE id = ?",
+                 (commitment_id,),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def count(self) -> dict[str, int]:
+         """Return commitment counts grouped by status."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT status, COUNT(*) FROM commitments GROUP BY status"
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+         return {status: cnt for status, cnt in rows}
+ 
+     def get_all(self) -> list[Commitment]:
+         """Return all commitments regardless of status, newest first."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT * FROM commitments ORDER BY created_at DESC, id DESC"
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+         return [self._row_to_commitment(r) for r in rows]
+ 
+     def avg_follow_ups_done(self) -> float | None:
+         """Return average follow_up_count across done commitments, or None."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT AVG(follow_up_count) FROM commitments WHERE status = 'done'"
+             )
+             row = cur.fetchone()
+-        finally:
+-            conn.close()
+         if row is None or row[0] is None:
+             return None
+         return row[0]
+ 
+     def nuke(self) -> None:
+         """Drop and recreate the commitments table."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute("DROP TABLE IF EXISTS commitments")
+             conn.execute(_SCHEMA)
+-            conn.commit()
+-        finally:
+-            conn.close()
++        # Re-run migrations so is_encrypted column etc. exist immediately
++        self._ensure_table()
+diff --git a/otto_v4/src/otto/trails.py b/otto_v4/src/otto/trails.py
+index b39b520..7c038c2 100644
+--- a/otto_v4/src/otto/trails.py
++++ b/otto_v4/src/otto/trails.py
+@@ -66,21 +66,17 @@ class TrailStore:
+     strength and deposit count.
+     """
+ 
+-    def __init__(self, db_path: str) -> None:
+-        self._db_path = db_path
++    def __init__(self, db_path: str = "", *, db: "Database | None" = None) -> None:
++        if db is not None:
++            self._db = db
++        else:
++            from .db import Database
++            self._db = Database(db_path)
+         self._ensure_table()
+ 
+-    def _connect(self) -> sqlite3.Connection:
+-        return sqlite3.connect(self._db_path)
+-
+     def _ensure_table(self) -> None:
+-        conn = self._connect()
+-        try:
+-            conn.execute("PRAGMA journal_mode=WAL")
++        with self._db.connect() as conn:
+             conn.executescript(_TRAIL_SCHEMA)
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+     def deposit(
+         self,
+@@ -99,8 +95,7 @@ class TrailStore:
+             now = datetime.now(timezone.utc)
+         now_iso = now.isoformat()
+ 
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT id, strength, deposit_count FROM trail_deposits "
+                 "WHERE action = ? AND context = ?",
+@@ -123,9 +118,6 @@ class TrailStore:
+                     "VALUES (?, ?, ?, 1, ?, ?)",
+                     (action, context, strength, now_iso, now_iso),
+                 )
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+         _log.debug("Trail deposit: %s/%s strength=%.3f", action, context, strength)
+ 
+@@ -135,8 +127,7 @@ class TrailStore:
+         Returns trails sorted by strength descending, then action
+         ascending for deterministic ordering.
+         """
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT action, context, strength, deposit_count, "
+                 "last_deposited, created_at "
+@@ -145,8 +136,6 @@ class TrailStore:
+                 (context,),
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+ 
+         return [
+             Trail(
+@@ -162,16 +151,13 @@ class TrailStore:
+ 
+     def get_strength(self, action: str, context: str) -> float:
+         """Get current trail strength for an (action, context) pair."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT strength FROM trail_deposits "
+                 "WHERE action = ? AND context = ?",
+                 (action, context),
+             )
+             row = cur.fetchone()
+-        finally:
+-            conn.close()
+ 
+         return row[0] if row else 0.0
+ 
+@@ -193,8 +179,7 @@ class TrailStore:
+         if now is None:
+             now = datetime.now(timezone.utc)
+ 
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT id, strength, last_deposited FROM trail_deposits"
+             )
+@@ -224,26 +209,19 @@ class TrailStore:
+                         (new_strength, trail_id),
+                     )
+ 
+-            conn.commit()
+-        finally:
+-            conn.close()
+-
+         if pruned > 0:
+             _log.info("Trail decay: pruned %d trails below threshold", pruned)
+         return pruned
+ 
+     def all_trails(self) -> list[Trail]:
+         """Return all trails sorted by (context, action) for determinism."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT action, context, strength, deposit_count, "
+                 "last_deposited, created_at "
+                 "FROM trail_deposits ORDER BY context ASC, action ASC"
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+ 
+         return [
+             Trail(
+@@ -259,12 +237,9 @@ class TrailStore:
+ 
+     def count(self) -> int:
+         """Return total number of trails."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute("SELECT COUNT(*) FROM trail_deposits")
+             row = cur.fetchone()
+-        finally:
+-            conn.close()
+         return row[0] if row else 0
+ 
+     # ------------------------------------------------------------------
+@@ -282,30 +257,23 @@ class TrailStore:
+         """Record a mode outcome (success, ignored, mixed, activated)."""
+         if now is None:
+             now = datetime.now(timezone.utc)
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute(
+                 "INSERT INTO mode_outcomes (mode, context, outcome, created_at) "
+                 "VALUES (?, ?, ?, ?)",
+                 (mode, context, outcome, now.isoformat()),
+             )
+-            conn.commit()
+-        finally:
+-            conn.close()
+         _log.debug("Outcome recorded: %s/%s -> %s", mode, context, outcome)
+ 
+     def get_mode_stats(self, mode: str) -> dict[str, int]:
+         """Return {outcome: count, ..., 'total': N} for a mode."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT outcome, COUNT(*) FROM mode_outcomes "
+                 "WHERE mode = ? GROUP BY outcome ORDER BY outcome",
+                 (mode,),
+             )
+             rows = cur.fetchall()
+-        finally:
+-            conn.close()
+ 
+         stats: dict[str, int] = {}
+         total = 0
+@@ -325,24 +293,18 @@ class TrailStore:
+ 
+     def get_total_outcomes(self) -> int:
+         """Return total outcome count across all modes."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute("SELECT COUNT(*) FROM mode_outcomes")
+             row = cur.fetchone()
+-        finally:
+-            conn.close()
+         return row[0] if row else 0
+ 
+     def get_all_modes(self) -> list[str]:
+         """Return all mode names that have recorded outcomes, sorted."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "SELECT DISTINCT mode FROM mode_outcomes ORDER BY mode"
+             )
+             result = [row[0] for row in cur.fetchall()]
+-        finally:
+-            conn.close()
+         return result
+ 
+     def prune_outcomes(
+@@ -360,16 +322,12 @@ class TrailStore:
+         from datetime import timedelta
+         cutoff = (now - timedelta(days=max_age_days)).isoformat()
+ 
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             cur = conn.execute(
+                 "DELETE FROM mode_outcomes WHERE created_at < ?",
+                 (cutoff,),
+             )
+             deleted = cur.rowcount
+-            conn.commit()
+-        finally:
+-            conn.close()
+ 
+         if deleted > 0:
+             _log.info("Outcome pruning: removed %d outcomes older than %d days", deleted, max_age_days)
+@@ -377,13 +335,9 @@ class TrailStore:
+ 
+     def nuke(self) -> None:
+         """Drop and recreate trail_deposits and mode_outcomes tables."""
+-        conn = self._connect()
+-        try:
++        with self._db.connect() as conn:
+             conn.execute("DELETE FROM trail_deposits")
+             conn.execute("DELETE FROM mode_outcomes")
+-            conn.commit()
+-        finally:
+-            conn.close()
+         _log.info("All trail and outcome data deleted")
+ 
+ 

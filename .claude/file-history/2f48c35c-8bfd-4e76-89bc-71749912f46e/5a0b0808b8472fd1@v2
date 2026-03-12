@@ -1,0 +1,30 @@
+"use client";
+
+import { useInView } from "@/lib/hooks";
+import { T } from "@/lib/tokens";
+
+interface AnimatedTextProps {
+  text: string;
+  as?: "p" | "h1" | "h2" | "h3" | "span" | "div";
+  style?: React.CSSProperties;
+  delay?: number;
+}
+
+export function AnimatedText({ text, as: Tag = "p", style = {}, delay = 0 }: AnimatedTextProps) {
+  const [ref, inView] = useInView({ threshold: 0.3 });
+
+  return (
+    <div ref={ref}>
+      <Tag
+        style={{
+          ...style,
+          opacity: inView ? 1 : 0,
+          transform: inView ? "translateY(0)" : "translateY(20px)",
+          transition: `all 700ms ${T.easeOut} ${delay}ms`,
+        }}
+      >
+        {text}
+      </Tag>
+    </div>
+  );
+}

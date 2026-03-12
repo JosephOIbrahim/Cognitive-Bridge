@@ -1,0 +1,134 @@
+# Claude Code Task: Generate Artist-Friendly Setup Guide
+
+## What to do
+
+Create a file called `SETUP_GUIDE.md` in the root of the comfyui-agent repo. This replaces nothing — it lives alongside README.md and QUICKSTART.md as the "I've never done this before" guide.
+
+## Who this is for
+
+- VFX artists, lighters, compositors who use ComfyUI for AI image gen
+- Many have ADHD — walls of text cause immediate bounce
+- Assume they've never used a terminal beyond launching ComfyUI
+- Assume they got the repo link from a coworker on Slack with zero context
+- They're smart but impatient. They don't care how it works, they care that it works
+
+## Voice and tone
+
+- Talk like a friendly senior artist helping a junior on their first day
+- Never condescending, never assume they're dumb — assume they're busy
+- Short sentences. One idea per line.
+- Use "you" constantly. Make it feel like a conversation
+- Celebrate small wins: "Nice. That worked." / "You're in." / "Almost there."
+- No jargon without instant explanation in parentheses
+- Never say "simply", "just", "easy", or "straightforward"
+- If something might go wrong, say so BEFORE they hit the wall, not after
+
+## Structure rules
+
+- Every section starts with a one-line "what you're doing and why"
+- Maximum 3 bullet points before a visual break (horizontal rule, emoji, or header)
+- Every terminal command gets its own code block — never stack multiple commands
+- After every command, say what they should see if it worked
+- After every command, say what to do if it didn't work
+- Use checkboxes (- [ ]) so they can physically track progress
+- Include time estimates per section ("~2 minutes")
+- Use emoji sparingly but strategically — 🟢 for "you're good", 🔴 for "stop and fix", ⏱️ for time estimates
+
+## Content to cover (in this order)
+
+### 0. What is this thing? (30 seconds)
+- One paragraph max explaining what the agent does
+- "It talks to ComfyUI for you. You type what you want in English, it does the clicking."
+- Mention it works through Claude (Anthropic's AI) — they need an API key
+- Link to a 2-min demo video if one exists (placeholder link is fine)
+
+### 1. Before you start — checklist (~1 min)
+- [ ] Python 3.10 or newer installed
+- [ ] ComfyUI installed and working (you've generated at least one image)
+- [ ] An Anthropic API key (link to signup, explain it costs money per use, ballpark $5-20/month for moderate use)
+- For each item: how to check if they have it, what to do if they don't
+- Python check: `python --version` — if it says 3.10+ you're good, if not, link to python.org
+- ComfyUI check: "Can you open ComfyUI and queue a prompt? Yes? You're good."
+- API key: step-by-step with screenshots description (go to console.anthropic.com, sign up, create key, copy it)
+
+### 2. Download the agent (~2 min)
+- `git clone` command
+- "If you don't have git": link to git download, OR say "click the green Code button on GitHub > Download ZIP > unzip it"
+- `cd` into the folder
+- Explain what `cd` means in one line for people who don't use terminals
+
+### 3. Install it (~2 min)
+- `pip install -e .`
+- Explain what this does in one sentence: "This tells Python where the agent lives so you can run it from anywhere"
+- What success looks like: "You should see 'Successfully installed comfyui-agent-0.4.0'"
+- What failure looks like and what to do: "If you see red text about permissions, try: pip install -e . --user"
+- OR: "Run the auto-setup instead: python scripts/deploy.py — it does everything for you"
+
+### 4. Tell it where your stuff is (~2 min)
+- `python scripts/setup.py`
+- Walk through each question the setup asks:
+  - API key (paste it, you won't see it appear — that's normal, it's hidden)
+  - ComfyUI database path (explain what this means: "where your models/ folder lives")
+  - ComfyUI .bat file path (explain: "the thing you double-click to start ComfyUI")
+  - Model choice (explain: "Sonnet is faster and cheaper. Start here. You can upgrade later.")
+- What success looks like: "✓ Created .env"
+
+### 5. Launch everything (~1 min)
+- Option A (recommended): Double-click `scripts\comfyui_with_agent.bat`
+  - Explain what it does: starts ComfyUI, waits for it, then you're ready
+  - What you should see in the terminal window
+- Option B (manual): Start ComfyUI yourself, then run `agent run`
+- First thing to type when it's running: "What models do I have?"
+- Expected response: a list of your installed models
+
+### 6. Now try these (~2 min)
+- 5 example prompts they can copy-paste, ordered from safe to impressive:
+  1. "What models do I have installed?"
+  2. "Load a basic txt2img workflow"
+  3. "Change the steps to 30 and the CFG to 7"  
+  4. "Find me a good anime LoRA on CivitAI"
+  5. "Run this workflow and tell me what you think of the output"
+- After each: one line explaining what happens
+
+### 7. Using with Claude Code (optional, power users)
+- Brief explanation: "Claude Code is a terminal app where Claude can use the agent tools AND write code at the same time"
+- Install Claude Code link
+- `cd comfyui-agent && claude`
+- "That's it. The tools are already configured."
+
+### 8. Troubleshooting (the 5 things that will go wrong)
+- Format as: Problem → Why → Fix
+- "ANTHROPIC_API_KEY not set"
+- "Could not connect to ComfyUI"  
+- "pip is not recognized"
+- "python is not recognized"
+- "The agent is slow / costs too much"
+- End with: "Still stuck? Ask your coworker who sent you this. Or open an issue on GitHub."
+
+### 9. Uninstall (if you hate it)
+- One command: `pip uninstall comfyui-agent`
+- "Delete the folder. That's it. It didn't touch your ComfyUI installation."
+
+## Formatting rules
+
+- Use H2 (##) for main sections, H3 (###) for subsections
+- Never use H1 except for the title
+- Code blocks always specify language (```bash, ```json, etc.)
+- Every section has a time estimate emoji: ⏱️
+- Use blockquotes (>) for "pro tips" — things that aren't required but nice to know
+- Use bold for file paths and important terms on first mention
+- Keep total length under 400 lines — if it's longer, cut explanations not steps
+- End with a single line: "You're set. Go make something cool."
+
+## Files to reference for accuracy
+
+- `scripts/setup.py` — for the exact questions the setup asks
+- `scripts/comfyui_with_agent.bat` — for the exact paths and behavior  
+- `scripts/deploy.py` — for the automated alternative
+- `agent/config.py` — for default values
+- `.env.example` — for config options
+- `QUICKSTART.md` — for Claude Code/Desktop MCP setup details
+
+## After generating
+
+Run `wc -l SETUP_GUIDE.md` and confirm it's under 400 lines. If over, trim explanations (not steps).

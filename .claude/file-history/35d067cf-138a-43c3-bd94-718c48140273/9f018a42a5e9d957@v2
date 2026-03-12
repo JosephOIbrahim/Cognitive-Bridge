@@ -1,0 +1,115 @@
+"""CLI interface for the lossless converter pipeline."""
+
+import argparse
+import sys
+from pathlib import Path
+
+from src.lossless.injection.state import InjectionState
+from src.lossless.integration.pipeline import LosslessPipeline
+from src.lossless.integration.claude_md import write_claude_md, diff_claude_md
+from src.lossless.integration.integrity import verify_integrity_block
+
+
+def get_default_paths():
+    substrate_dir = Path(__file__).resolve().parents[3] / "cognitive_substrate"
+    return {
+        "root": substrate_dir / "lossless_root.usda",
+        "output": substrate_dir.parent / "output_CLAUDE.md",
+    }
+
+
+def cmd_compile(args):
+    paths = get_default_paths()
+    root = Path(args.root) if args.root else paths["root"]
+    output = Path(args.output) if args.output else paths["output"]
+
+    state = InjectionState()
+    if args.profile and args.profile != "none":
+        state.activate(args.profile)
+        for _ in range(5):
+            state.advance_exchange()
+
+    pipeline = LosslessPipeline(root, state)
+    result = pipeline.convert()
+
+    if args.dry_run:
+        sys.stdout.write(result.markdown)
+    else:
+        write_claude_md(result, output)
+        print(f"Generated {output}")
+        print(f"  Profile: {result.profile_name}")
+        print(f"  Clean hash: {result.clean.clean_hash[:16]}...")
+        print(f"  Anchor hash: {result.clean.anchor_hash[:16]}...")
+
+
+def cmd_verify(args):
+    paths = get_default_paths()
+    target = Path(args.file) if args.file else paths["output"]
+
+    if not target.exists():
+        print(f"File not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+    text = target.read_text(encoding='utf-8')
+    result = verify_integrity_block(text)
+
+    if result["valid"]:
+        print("Integrity block: VALID")
+        for k, v in sorted(result["fields"].items()):
+            print(f"  {k}: {v}")
+        if result.get("fidelity_ok"):
+            print("  Fidelity: OK (1.0)")
+        else:
+            print("  Fidelity: FAILED")
+    else:
+        print("Integrity block: NOT FOUND or INVALID")
+        sys.exit(1)
+
+
+def cmd_diff(args):
+    paths = get_default_paths()
+    root = Path(args.root) if args.root else paths["root"]
+    output = Path(args.output) if args.output else paths["output"]
+
+    state = InjectionState()
+    pipeline = LosslessPipeline(root, state)
+    result = pipeline.convert()
+    diff = diff_claude_md(result, output)
+
+    if diff:
+        print(diff)
+    else:
+        print("No changes.")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Lossless converter CLI")
+    sub = ap.add_subparsers(dest="command")
+
+    compile_p = sub.add_parser("compile", help="Compile USDA to CLAUDE.md")
+    compile_p.add_argument("--profile", default="none")
+    compile_p.add_argument("--root", default="")
+    compile_p.add_argument("--output", default="")
+    compile_p.add_argument("--dry-run", action="store_true")
+
+    verify_p = sub.add_parser("verify", help="Verify integrity block")
+    verify_p.add_argument("--file", default="")
+
+    diff_p = sub.add_parser("diff", help="Show diff vs current")
+    diff_p.add_argument("--root", default="")
+    diff_p.add_argument("--output", default="")
+
+    args = ap.parse_args()
+
+    if args.command == "compile":
+        cmd_compile(args)
+    elif args.command == "verify":
+        cmd_verify(args)
+    elif args.command == "diff":
+        cmd_diff(args)
+    else:
+        ap.print_help()
+
+
+if __name__ == "__main__":
+    main()

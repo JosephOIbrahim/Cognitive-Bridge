@@ -1,0 +1,90 @@
+'use client';
+
+import Link from 'next/link';
+import { VideoThumbnail } from './VideoThumbnail';
+import type { Project } from '@/lib/projects';
+
+/**
+ * TENDRIL-STYLE PROJECT CARD
+ *
+ * Design philosophy:
+ * - Titles always visible below thumbnail (scan-friendly)
+ * - Video plays on hover (motion draws attention)
+ * - Clean typography hierarchy: title → description → client
+ * - Description first: leads with thinking, not credits
+ * - Client as footnote: credibility signal, not headline
+ * - No category tags - let the visuals speak
+ */
+
+interface ProjectCardProps {
+  project: Project;
+  isHero?: boolean;
+}
+
+export function ProjectCard({ project }: ProjectCardProps) {
+  const aspectRatio = '16/9';
+
+  return (
+    <article
+      className="group relative w-full project-card"
+      data-project-slug={project.slug}
+    >
+      {/* Video Thumbnail Container - Clean, no overlays */}
+      <Link
+        href={`/projects/${project.slug}`}
+        className="block relative w-full overflow-hidden project-thumbnail"
+        data-project-slug={project.slug}
+        style={{ borderRadius: 'var(--radius-md)' }}
+      >
+        <VideoThumbnail
+          videoId={project.videoId}
+          videoHash={project.videoHash}
+          aspectRatio={aspectRatio}
+          startTime={project.startTime}
+          isCinematic={project.isCinematic}
+          thumbnail={project.thumbnail}
+        />
+      </Link>
+
+      {/* Title + Client - Always visible below thumbnail */}
+      <Link
+        href={`/projects/${project.slug}`}
+        className="block group-hover:opacity-60"
+        style={{
+          paddingTop: 'var(--space-xs)',
+          transition: 'opacity var(--transition-base)'
+        }}
+      >
+        <h3
+          style={{
+            color: 'var(--text-primary)',
+            fontWeight: 400,
+            fontFamily: 'var(--font-display)',
+            letterSpacing: '0.01em',
+            fontSize: 'clamp(18px, 1.8vw, 24px)',
+            lineHeight: 1.25,
+            marginBottom: project.client ? 'var(--space-tiny)' : 0
+          }}
+        >
+          {project.title}
+        </h3>
+
+        {/* Client as footnote - dimmest, true metadata */}
+        {project.client ? (
+          <p
+            style={{
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 500,
+              fontSize: '11px',
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase'
+            }}
+          >
+            {project.client}
+          </p>
+        ) : null}
+      </Link>
+    </article>
+  );
+}

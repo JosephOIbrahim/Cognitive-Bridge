@@ -1,0 +1,30 @@
+"""Core audit engine: fixed tile/split-size verification."""
+
+from src.lossless.constants import (
+    COGNITIVE_TILE_SIZE,
+    EXPERT_COUNT,
+    EXPERTS,
+    PHASE_COUNT,
+    PHASES,
+)
+
+
+def check_fixed_phase_count() -> bool:
+    return len(PHASES) == PHASE_COUNT == 10
+
+
+def check_fixed_expert_count() -> bool:
+    return len(EXPERTS) == EXPERT_COUNT == 7
+
+
+def check_tile_size_positive() -> bool:
+    return COGNITIVE_TILE_SIZE > 0
+
+
+def check_phase_order_stable() -> bool:
+    """Verify PHASES list is the same across 100 reads."""
+    baseline = list(PHASES)
+    for _ in range(100):
+        if list(PHASES) != baseline:
+            return False
+    return True

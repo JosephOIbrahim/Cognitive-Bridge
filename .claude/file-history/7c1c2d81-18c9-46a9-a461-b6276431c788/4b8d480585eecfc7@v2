@@ -1,0 +1,109 @@
+"""Dual-path routing: clean + dissolved parallel routes.
+
+At baseline and microdose, only the clean path runs.
+At classical/dissolved, both paths run and provenance is tracked.
+"""
+
+from dataclasses import dataclass
+
+from src.lossless.constants import PHASES, PROFILES
+from src.lossless.injection.state import InjectionState
+from src.lossless.routing.cascade import (
+    CascadeResult,
+    SignalFingerprint,
+    evaluate_cascade,
+)
+from src.lossless.routing.indexer import LightningIndexer
+from src.lossless.routing.provenance import ProvenanceRecord, ProvenanceTracker
+
+
+@dataclass(frozen=True, slots=True)
+class DualPathResult:
+    """Result of dual-path routing evaluation.
+
+    Always contains clean_route. dissolved_route equals clean_route
+    when routing mode is not 'dissolved'.
+
+    Attributes:
+        clean_route: CascadeResult from the clean (standard) path.
+        dissolved_route: CascadeResult from the dissolved path.
+        blend_alpha: Current pharmacokinetic alpha for blending.
+        routing_mode: Active routing mode string.
+        provenance: Tuple of ProvenanceRecord for all decisions.
+    """
+
+    clean_route: CascadeResult
+    dissolved_route: CascadeResult  # None if not dissolved
+    blend_alpha: float
+    routing_mode: str
+    provenance: tuple  # tuple of ProvenanceRecord
+
+
+def evaluate_dual_path(
+    signal: SignalFingerprint,
+    injection_state: InjectionState,
+    indexer: LightningIndexer = None,
+    provenance_tracker: ProvenanceTracker = None,
+) -> DualPathResult:
+    """Evaluate dual-path routing.
+
+    Clean path always runs (standard thresholds).
+    Dissolved path runs in addition when routing mode is "dissolved".
+
+    Args:
+        signal: Signal fingerprint.
+        injection_state: Current injection state.
+        indexer: Optional Lightning Indexer for sparse routing.
+        provenance_tracker: Optional provenance recorder.
+
+    Returns:
+        DualPathResult with both routes.
+    """
+    if provenance_tracker is None:
+        provenance_tracker = ProvenanceTracker()
+
+    routing_mode = PROFILES[injection_state.profile]["routing"]
+    alpha = injection_state.alpha
+
+    # Determine sparse routing phases
+    active_phases = None
+    if indexer is not None:
+        active_phases = indexer.select_phases(signal, routing_mode)
+
+    # Clean route: always evaluate with standard gains (all 1.0)
+    clean_route = evaluate_cascade(signal, active_phases=active_phases)
+
+    # Dissolved route: evaluate with injection gains
+    dissolved_route = clean_route  # default: same as clean
+    if routing_mode == "dissolved":
+        # Dissolved routing evaluates ALL phases (no sparse)
+        gains = {}
+        for phase in PHASES:
+            gains[phase] = injection_state.get_gain(phase)
+
+        dissolved_route = evaluate_cascade(
+            signal, active_phases=None, gains=gains
+        )
+
+    # Record provenance
+    dominant = "clean"
+    if routing_mode == "dissolved" and alpha > 0.5:
+        dominant = "dissolved"
+
+    record = ProvenanceRecord(
+        signal_hash=signal.to_hash(),
+        clean_selected=clean_route.selected_phases,
+        dissolved_selected=dissolved_route.selected_phases,
+        blend_alpha=alpha,
+        dominant_path=dominant,
+        routing_mode=routing_mode,
+    )
+    provenance_tracker.record(record)
+
+    return DualPathResult(
+        clean_route=clean_route,
+        dissolved_route=dissolved_route,
+        blend_alpha=alpha,
+        routing_mode=routing_mode,
+        provenance=tuple(provenance_tracker.get_records()),
+    )

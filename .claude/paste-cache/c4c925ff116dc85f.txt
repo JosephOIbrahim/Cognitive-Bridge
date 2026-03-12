@@ -1,0 +1,397 @@
+# ComfyUI SUPER DUPER — Claude Code Execution Plan
+
+## Why Claude Code Changes the Plan
+
+Claude Code isn't just the tool you're building with — it's the primary execution context for the agent itself. This matters because Claude Code has capabilities that the generic plan doesn't account for:
+
+- **Bash execution.** Claude Code can run shell commands directly. That means `pip install`, `git clone`, `curl` to download models, filesystem operations — all native. The agent doesn't need to wrap these in tools; Claude Code already has them.
+- **File system access.** Read, write, navigate the real filesystem. No sandbox restrictions beyond what you configure in CLAUDE.md. The agent can inspect ComfyUI's actual directory structure, read workflow files, write patched workflows, and manage sessions — all through Claude Code's native file operations.
+- **CLAUDE.md as system prompt.** Your project's CLAUDE.md is already 28KB of context that Claude Code reads on every session. This is where stable knowledge lives — ComfyUI architecture, API patterns, workflow schemas, model family compatibility. It's the "LEARN" side of ACCESS > LEARN, pre-loaded.
+- **Agentic loops.** Claude Code naturally chains tool calls without user intervention. The 30-turn limit in your custom agent loop is your constraint — Claude Code's limit is much higher. Multi-step operations (discover → download → validate → integrate) can run as a single agentic sequence.
+- **MCP server consumption.** Claude Code can connect to MCP servers natively. Your agent's MCP server becomes a tool provider *to* Claude Code, not a replacement for it.
+
+The strategic implication: **you don't need to build a full agent runtime.** Claude Code already is one. What you're building is the *tool layer* that gives Claude Code ComfyUI-specific capabilities.
+
+---
+
+## Architecture Reframe: Tools, Not Agent
+
+The current codebase has two modes:
+1. **CLI agent** (`agent run`) — your custom agent loop with Anthropic API, streaming, context management
+2. **MCP server** (`agent mcp`) — all 61 tools exposed via MCP
+
+For Claude Code, mode 2 is the product. Mode 1 is a demo/fallback for users who don't have Claude Code.
+
+This means:
+
+| Component | Role in Claude Code Context |
+|-----------|----------------------------|
+| `agent/tools/*` | Core value — MCP tools Claude Code calls |
+| `agent/brain/*` | Core value — higher-order MCP tools |
+| `agent/main.py` | Demo/fallback only — Claude Code replaces this |
+| `agent/cli.py` | Demo/fallback only |
+| `agent/system_prompt.py` | Migrates into CLAUDE.md |
+| `agent/config.py` | Still needed — tool configuration |
+| `agent/knowledge/*.md` | Migrates into CLAUDE.md or stays as MCP resources |
+| `CLAUDE.md` | Becomes the primary "brain" — replaces system_prompt.py |
+
+The agent loop, context compaction, observation masking, streaming — Claude Code handles all of that natively. Your job is to make the tools excellent and CLAUDE.md comprehensive.
+
+---
+
+## Phase 1: Claude Code Native Integration
+
+*Goal: Make the MCP server the primary interface. CLAUDE.md becomes the brain.*
+
+### 1a. MCP Server as First-Class Citizen
+
+Current state: MCP works but is documented as "(Optional)." Flip this. MCP is the primary mode; CLI is the fallback.
+
+**Claude Code config** (what goes in the user's Claude Code MCP settings):
+
+```json
+{
+  "mcpServers": {
+    "comfyui": {
+      "command": "agent",
+      "args": ["mcp"],
+      "env": {
+        "COMFYUI_DATABASE": "/path/to/ComfyUI",
+        "COMFYUI_HOST": "127.0.0.1",
+        "COMFYUI_PORT": "8188"
+      }
+    }
+  }
+}
+```
+
+That's it. Artist installs the package, adds this config, and Claude Code becomes a ComfyUI co-pilot.
+
+### 1b. CLAUDE.md as Knowledge Layer
+
+Move the content from `system_prompt.py` and `knowledge/*.md` into the project's CLAUDE.md. This is where Claude Code reads project context. Structure:
+
+```markdown
+# ComfyUI SUPER DUPER Agent
+
+## What This Project Is
+[Brief — Claude Code reads this every session]
+
+## ComfyUI Architecture (Stable Knowledge)
+[From comfyui_core.md — node types, API patterns, workflow schema]
+[This is the LEARN layer — baked in because it rarely changes]
+
+## Tool Usage Rules
+[From _RULES in system_prompt.py]
+[When to use which tools, preferred patterns]
+
+## Model Family Compatibility
+[From model_compat.py knowledge base — SD1.5/SDXL/Flux/SD3 rules]
+
+## Dynamic Knowledge (Use Tools, Don't Memorize)
+[Explicit instruction: always query /object_info for node interfaces]
+[Always search registries for model availability]
+[Never assume what's installed — use inspection tools]
+[This is the ACCESS layer — enforced by instruction]
+
+## Workflow Patterns
+[From knowledge/*.md — controlnet, video, flux patterns]
+[Loaded contextually based on what the user is working on]
+```
+
+The key insight: Claude Code's CLAUDE.md replaces your entire `build_system_prompt()` function. The dynamic knowledge loading (`_detect_relevant_knowledge`) becomes unnecessary because Claude Code can just call the tools when it encounters those domains — it doesn't need the knowledge pre-loaded.
+
+### 1c. Session Isolation (Same as Before)
+
+This is still the critical infrastructure fix. Replace module-level `_state` with session-scoped `WorkflowSession`. In Claude Code context, each conversation is implicitly a session, but the MCP server may handle concurrent tool calls within a single Claude Code session.
+
+### 1d. Tool Surface Audit
+
+Before adding features, subtract. With Claude Code as the runtime:
+
+**Tools that Claude Code already does natively (candidates for removal):**
+- File reading/writing — Claude Code has `cat`, `view`, bash
+- Directory listing — Claude Code has `ls`, `find`
+- Basic JSON manipulation — Claude Code can do this in bash/python
+
+**Tools that add genuine value over Claude Code's native capabilities:**
+- ComfyUI API queries (live node info, system stats, queue) — Claude Code can't do these without your tools
+- Workflow patching with undo — Claude Code could edit JSON files directly, but your undo history and validation are genuinely better
+- Registry search (ComfyUI Manager, HuggingFace, CivitAI) — this is your core differentiator
+- Execution and progress monitoring — WebSocket integration Claude Code can't replicate easily
+- Vision analysis — your perceptual hashing and structured quality scoring
+- Memory/outcome tracking — structured learning with temporal decay
+
+**Implication:** `comfy_inspect.py` tools like `list_models` and `list_custom_nodes` (filesystem scanning) might be redundant — Claude Code can `find /path/to/models -name "*.safetensors"` natively. But the tools add value through structured output and cross-referencing with registries. Keep them, but note that Claude Code can fall back to native file operations if the MCP server isn't connected.
+
+**Exit criteria:** Artist adds MCP config to Claude Code, opens a conversation, says "what models do I have?" and gets a structured answer. No CLI needed.
+
+---
+
+## Phase 2: Unified Discovery (Claude Code Native)
+
+*Goal: "Find me what I need" as a single conversational act.*
+
+### 2a. Unified `discover` Tool
+
+Merge `search_custom_nodes`, `search_models`, and CivitAI search into one tool. In Claude Code context, the LLM can call multiple tools in sequence natively, but a unified tool is better because:
+
+- Fewer tool descriptions in the MCP manifest = better tool selection
+- Cross-source deduplication and ranking happens server-side, not in LLM reasoning
+- Single tool call = faster round trip
+
+### 2b. Install Pipeline
+
+This is where Claude Code's bash access is transformative. The install flow:
+
+```
+User: "I need a good ControlNet preprocessor for depth maps"
+
+Claude Code:
+  1. Calls discover tool → finds ControlNet Aux Preprocessors pack
+  2. Checks if installed (discover tool cross-references local install)
+  3. If not installed:
+     - For node packs: `cd /path/to/custom_nodes && git clone <repo_url>`
+     - For models: `curl -L -o /path/to/models/controlnet/<filename> <download_url>`
+  4. Calls is_comfyui_running → if running, suggests restart for new nodes
+  5. Confirms installation: "Installed ControlNet Aux Preprocessors. 
+     Restart ComfyUI to load the new nodes."
+```
+
+Steps 3-4 are native Claude Code capabilities (bash). Your tools provide step 1-2 (discovery + cross-referencing). This is the hybrid: your MCP tools for domain intelligence, Claude Code's native tools for system operations.
+
+**New MCP tool needed:** `get_install_instructions` — given a node pack or model from discovery results, returns the exact commands (git clone URL, model download URL + target directory). Claude Code executes those commands natively.
+
+### 2c. Freshness and Update Checking
+
+Claude Code can run `git -C /path/to/custom_nodes/pack log --oneline -1` to check when a node pack was last updated. Your discovery tool can compare against the registry's latest version. Combine: "ComfyUI-IPAdapter is installed but 3 months behind. The latest version adds Flux support. Update? `git -C ... pull`"
+
+**Exit criteria:** "I need IPAdapter for SDXL" → discovers, installs, confirms ready — all in one conversation. No manual steps.
+
+---
+
+## Phase 3: Multi-Workflow Orchestration
+
+*Goal: Systematic experimentation as a single conversational act.*
+
+### 3a. Batch Execution via Tool
+
+New MCP tools:
+
+`parameter_sweep` — takes base workflow (loaded or path), parameter field path, value list. Creates N workflow variants in memory, queues all to ComfyUI, tracks execution, collects outputs.
+
+`compare_outputs` — given a batch ID from parameter_sweep, retrieves all outputs, runs vision analysis on each, returns ranked comparison with scores and explanations.
+
+Claude Code orchestrates the high-level flow; your MCP tools handle the ComfyUI-specific operations (queuing, progress tracking, output retrieval).
+
+### 3b. Claude Code as Orchestrator
+
+The advantage of Claude Code here: it can do things between batch steps that your MCP tools can't:
+
+```
+User: "Compare these 3 checkpoints on my portrait prompt"
+
+Claude Code:
+  1. Calls load_workflow (MCP tool) → loads the base workflow
+  2. For each checkpoint:
+     a. Calls set_input (MCP tool) → swap checkpoint name
+     b. Calls execute_workflow (MCP tool) → queue and wait
+     c. Calls analyze_image (MCP tool) → vision score
+  3. Compares scores (native reasoning — no tool needed)
+  4. Presents ranked results with explanations
+  5. "Want me to iterate on the best one?"
+```
+
+This works today with existing tools. The `parameter_sweep` tool from 3a makes it faster (parallel execution) but the serial version works immediately in Claude Code.
+
+### 3c. Output Management
+
+Claude Code has filesystem access. Batch outputs can be:
+- Organized into comparison directories: `outputs/comparison_2026-02-14/`
+- Accompanied by a `results.json` with scores, parameters, rankings
+- Optionally: generate an HTML contact sheet using a template (Claude Code writes the HTML file)
+
+**Exit criteria:** "Try seeds 1-10 on this workflow and show me the best 3" runs as a single request.
+
+---
+
+## Phase 4: Self-Healing Reinforcement Loop
+
+*Goal: Autonomous quality iteration. The strategic centerpiece.*
+
+### 4a. The Loop as MCP Tool
+
+New MCP tool: `iterative_refine`
+
+```
+Input:
+  intent: str          — "photorealistic portrait, no artifacts"
+  mode: str            — "quick" | "refine" | "deep" | "unlimited"
+  quality_threshold: float  — target score (default: 7.0)
+
+Output:
+  iterations: list     — each iteration's parameters, score, diagnosis
+  best_result: dict    — best output with parameters and score
+  cost_estimate: str   — actual token usage for the loop
+  recommendation: str  — what to try next if threshold wasn't met
+```
+
+Internally, the tool runs the loop:
+1. Execute current workflow
+2. Vision analysis → quality score
+3. Record outcome to memory
+4. If score >= threshold → return best
+5. Query memory for diagnosis ("what typically improves scores in this context?")
+6. Generate and apply patch
+7. Back to 1
+
+The tool itself handles convergence detection (plateau, regression, approach switching). Claude Code sees it as a single tool call that returns a rich result.
+
+### 4b. Claude Code's Role in the Loop
+
+For `unlimited` mode, the tool doesn't run the full loop internally. Instead, it runs one iteration and returns control to Claude Code:
+
+```
+Claude Code:
+  1. Calls iterative_refine(mode="unlimited", ...) → runs 1 iteration
+  2. Presents result to user: "Iteration 1: score 6.2, color banding detected"
+  3. User says "keep going" or gives feedback: "the colors are too warm"
+  4. Claude Code calls iterative_refine again, incorporating user feedback
+  5. Loop continues with human-in-the-loop
+```
+
+This is the `unlimited` mode: Claude Code as the outer loop, the MCP tool as the inner step, the artist as creative director. Each mode maps to a different loop structure:
+
+| Mode | Loop Owner | User Involvement |
+|------|-----------|-----------------|
+| quick | MCP tool (1-2 iters) | None — fire and forget |
+| refine | MCP tool (3-5 iters) | None — autonomous |
+| deep | MCP tool (5-10 iters) | None — autonomous with cost updates |
+| unlimited | Claude Code | Every iteration — artist directs |
+
+### 4c. Memory-Informed Diagnosis
+
+The diagnosis step queries the memory module:
+
+```python
+# Pseudocode for diagnosis
+outcomes = query_memory(
+    model_combo=current_models,
+    similar_params=True,
+    min_quality=7.0
+)
+
+if outcomes:
+    # "47 past outcomes with this model show CFG 6.5-7.5 optimal"
+    recommendation = aggregate_optimal_params(outcomes)
+else:
+    # No local data — use general heuristics from CLAUDE.md knowledge
+    recommendation = general_heuristic(current_params, detected_issues)
+```
+
+Early use: diagnosis is generic ("banding usually means CFG too high").
+After 50+ outcomes: diagnosis is specific ("your DreamShaper v8 portraits score best at CFG 7, Euler a, 30 steps").
+After 500+ outcomes: diagnosis is predictive ("based on your history, switching to SDXL for this prompt style would gain ~1.5 quality points").
+
+### 4d. Artistic Intent Vocabulary
+
+Add a knowledge file (loaded into CLAUDE.md) mapping artistic intent terms to parameter-space directions:
+
+```markdown
+## Artistic Intent → Parameter Translation
+
+These are guidelines, not rules. Context matters — "dreamier" means
+different things for portraits vs. landscapes.
+
+### Dreamier / Softer / More Ethereal
+- Direction: Lower CFG (less rigid prompt adherence)
+- Consider: Stochastic samplers (Euler a, DPM++ SDE)
+- Consider: Slight denoise reduction if img2img
+- Consider: Soft-focus LoRAs if available
+
+### Sharper / Crisper / More Detailed
+- Direction: Higher steps (25-40 range)
+- Consider: Deterministic samplers (Euler, DPM++ 2M)
+- Consider: Detail-enhancing LoRAs
+- Caution: Don't raise CFG above 9 — artifacts likely
+
+### More Photorealistic
+- Direction: Model matters most — check memory for best photorealistic checkpoint
+- Consider: VAE matters — sd-vae-ft-mse for photo
+- Consider: CFG 5-7 range (lower = more natural)
+
+### Something Feels Off (Diagnostic)
+- Check: Model family mismatch (SD1.5 LoRA on SDXL checkpoint)
+- Check: Resolution mismatch (512x512 on SDXL = bad)
+- Check: Prompt conflicts (contradictory terms)
+- Check: CFG too high (>9 on most models = artifacts)
+```
+
+Claude Code reads this from CLAUDE.md and uses it to inform the diagnosis step. As the memory corpus grows, empirical data overrides these heuristics.
+
+**Exit criteria:** Artist says "make it dreamier" → agent runs 3 iterations → quality improves each time → presents result with explanation of what was changed and why.
+
+---
+
+## Phase 5: Collective Intelligence
+
+*Unchanged from generic plan — not Claude Code specific.*
+
+Anonymous opt-in outcome sharing. Community-informed defaults. Recipe sharing. The MCP tools handle data collection and querying; the sharing infrastructure is a backend service independent of the execution context.
+
+---
+
+## Phase 6: Ecosystem Position
+
+### Claude Code as Reference Integration
+
+The Claude Code integration becomes the reference implementation that demonstrates the full capability set. Other MCP clients get the tools; Claude Code users get the complete experience (tools + bash + filesystem + CLAUDE.md knowledge).
+
+**Documentation structure:**
+- README: Quick start for Claude Code (primary), CLI fallback (secondary)
+- CLAUDE.md: The brain — all stable knowledge, tool usage rules, artistic vocabulary
+- MCP manifest: Tool descriptions optimized for LLM tool selection
+
+### Plugin Architecture
+
+New model families, new parameter vocabularies, new workflow patterns — all added as knowledge files that extend CLAUDE.md. Community contributors write markdown, not code. The MCP tools handle the mechanics; the knowledge layer handles the intelligence.
+
+---
+
+## Development Workflow (How You Build This)
+
+Since you're building with Claude Code, the development loop itself uses the architecture:
+
+```
+1. Write/modify MCP tool code
+2. Claude Code tests via bash: pytest tests/ -v
+3. Claude Code starts MCP server: agent mcp
+4. Test tool calls directly via MCP
+5. Update CLAUDE.md with new tool docs and knowledge
+6. Commit via Claude Code: git add . && git commit
+```
+
+CLAUDE.md for the project should include development conventions:
+- Tool modules export TOOLS list + handle() function
+- All tools return JSON strings via to_json()
+- Tests are fully mocked — no live ComfyUI needed
+- Brain tools lazy-load to avoid circular imports
+
+This means Claude Code can develop, test, and iterate on the agent *using itself as the execution context*. The agent improves the agent.
+
+---
+
+## Summary: What Changes for Claude Code
+
+| Generic Plan | Claude Code Plan |
+|-------------|-----------------|
+| Build custom agent loop | Use Claude Code's native agent loop |
+| Build context management | Claude Code handles context natively |
+| Build streaming UI | Claude Code has its own interface |
+| System prompt via code | CLAUDE.md — declarative, version-controlled |
+| 61 tools all custom | Core tools via MCP + Claude Code native for filesystem/bash |
+| CLI as primary interface | MCP as primary, CLI as demo |
+| Knowledge loaded dynamically | CLAUDE.md loaded every session + tools for dynamic data |
+| Reinforcement loop as agent feature | Inner loop as MCP tool, outer loop as Claude Code |
+
+The fundamental shift: **you're not building an agent. You're building a tool belt that makes Claude Code into a ComfyUI expert.**

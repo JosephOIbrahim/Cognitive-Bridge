@@ -1,0 +1,380 @@
+"""Tests for Agent 1: Schema Architect.
+
+Covers constants, phases, prims, composition, and profiles.
+"""
+
+import math
+
+from src.lossless.constants import (
+    ANCHOR_PHASES,
+    COGNITIVE_TILE_SIZE,
+    D_MAP,
+    EXPERT_COUNT,
+    EXPERTS,
+    FLOAT_TOLERANCE,
+    MODULATED_PHASES,
+    PHASE_COUNT,
+    PHASES,
+    PROFILES,
+    ROUTING_MODES,
+)
+from src.lossless.schema.phases import (
+    Phase,
+    build_phase_registry,
+    get_anchor_phases,
+    get_modulated_phases,
+    get_ordered_phases,
+)
+from src.lossless.schema.prims import (
+    AnchorPrim,
+    CognitivePrim,
+    ModulatedPrim,
+    classify_prim,
+)
+from src.lossless.schema.composition import (
+    ConflictRecord,
+    compose_livrps,
+)
+from src.lossless.schema.profiles import (
+    InjectionProfile,
+    gain,
+    gain_with_alpha,
+    load_profile,
+    pharmacokinetic_alpha,
+)
+
+
+# ── Constants Tests ──────────────────────────────────────────────────
+
+
+class TestConstants:
+    def test_all_anchor_phases_in_phases(self):
+        for phase in ANCHOR_PHASES:
+            assert phase in PHASES
+
+    def test_all_modulated_phases_in_phases(self):
+        for phase in MODULATED_PHASES:
+            assert phase in PHASES
+
+    def test_anchor_and_modulated_are_disjoint(self):
+        assert len(ANCHOR_PHASES & MODULATED_PHASES) == 0
+
+    def test_anchor_and_modulated_cover_all_phases(self):
+        assert ANCHOR_PHASES | MODULATED_PHASES == set(PHASES)
+
+    def test_d_map_covers_all_phases(self):
+        for phase in PHASES:
+            assert phase in D_MAP
+
+    def test_d_map_values_in_valid_range(self):
+        for phase, d in sorted(D_MAP.items()):
+            assert 0.0 <= d <= 1.0, f"{phase}: d={d}"
+
+    def test_profiles_none_has_zero_s_nm(self):
+        assert abs(PROFILES["none"]["s_NM"]) < FLOAT_TOLERANCE
+
+    def test_profiles_none_is_standard_routing(self):
+        assert PROFILES["none"]["routing"] == "standard"
+
+    def test_all_profiles_have_required_keys(self):
+        required = {"s_NM", "routing", "cross_expert", "tangent_mult"}
+        for name in sorted(PROFILES.keys()):
+            assert required.issubset(PROFILES[name].keys()), name
+
+    def test_phase_count_matches(self):
+        assert PHASE_COUNT == len(PHASES) == 10
+
+    def test_expert_count_matches(self):
+        assert EXPERT_COUNT == len(EXPERTS) == 7
+
+    def test_cognitive_tile_size_positive(self):
+        assert COGNITIVE_TILE_SIZE > 0
+
+    def test_routing_modes_are_known(self):
+        for profile_data in PROFILES.values():
+            assert profile_data["routing"] in ROUTING_MODES
+
+
+# ── Phase Tests ──────────────────────────────────────────────────────
+
+
+class TestPhases:
+    def test_build_phase_registry_covers_all(self):
+        registry = build_phase_registry()
+        assert set(registry.keys()) == set(PHASES)
+
+    def test_phase_anchor_flag_matches_constants(self):
+        registry = build_phase_registry()
+        for name, phase in sorted(registry.items()):
+            expected = name in ANCHOR_PHASES
+            assert phase.is_anchor == expected, name
+
+    def test_phase_index_matches_order(self):
+        registry = build_phase_registry()
+        for i, name in enumerate(PHASES):
+            assert registry[name].index == i
+
+    def test_get_ordered_phases_preserves_order(self):
+        ordered = get_ordered_phases()
+        assert [p.name for p in ordered] == PHASES
+
+    def test_anchor_modulated_partition(self):
+        anchors = get_anchor_phases()
+        modulated = get_modulated_phases()
+        all_names = {p.name for p in anchors} | {p.name for p in modulated}
+        assert all_names == set(PHASES)
+
+    def test_phase_is_frozen(self):
+        phase = Phase(name="TEST", index=0, is_anchor=True, receptor_density=0.5)
+        try:
+            phase.name = "OTHER"
+            assert False, "Should have raised"
+        except AttributeError:
+            pass
+
+
+# ── Prim Tests ───────────────────────────────────────────────────────
+
+
+class TestPrims:
+    def test_cognitive_prim_default_phase(self):
+        p = CognitivePrim(name="test")
+        assert p.phase == "DEFAULT"
+
+    def test_anchor_prim_rejects_modulated_phase(self):
+        try:
+            AnchorPrim(name="test", phase="COST")
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+    def test_modulated_prim_rejects_anchor_phase(self):
+        try:
+            ModulatedPrim(name="test", phase="SAFETY")
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+    def test_classify_prim_anchor(self):
+        p = CognitivePrim(name="test", phase="SAFETY")
+        classified = classify_prim(p)
+        assert isinstance(classified, AnchorPrim)
+
+    def test_classify_prim_modulated(self):
+        p = CognitivePrim(name="test", phase="COST")
+        classified = classify_prim(p)
+        assert isinstance(classified, ModulatedPrim)
+
+    def test_with_content_returns_new_prim(self):
+        p = CognitivePrim(name="test", markdown_content="old")
+        p2 = p.with_content("new")
+        assert p2.markdown_content == "new"
+        assert p.markdown_content == "old"
+
+    def test_prim_is_frozen(self):
+        p = CognitivePrim(name="test")
+        try:
+            p.name = "other"
+            assert False, "Should have raised"
+        except AttributeError:
+            pass
+
+
+# ── Composition Tests ────────────────────────────────────────────────
+
+
+class TestComposition:
+    def test_compose_empty_layers(self):
+        prims, conflicts = compose_livrps([])
+        assert prims == []
+        assert conflicts == []
+
+    def test_compose_single_layer(self):
+        p1 = CognitivePrim(name="A", phase="KNOWLEDGE", priority=10)
+        p2 = CognitivePrim(name="B", phase="COST", priority=20)
+        prims, conflicts = compose_livrps([("layer1", [p1, p2])])
+        assert len(prims) == 2
+        assert conflicts == []
+
+    def test_stronger_layer_wins(self):
+        weak = CognitivePrim(name="A", phase="COST", markdown_content="weak")
+        strong = CognitivePrim(name="A", phase="COST", markdown_content="strong")
+        prims, conflicts = compose_livrps([
+            ("weak_layer", [weak]),
+            ("strong_layer", [strong]),
+        ])
+        assert len(prims) == 1
+        assert prims[0].markdown_content == "strong"
+        assert len(conflicts) == 1
+
+    def test_deterministic_100x(self):
+        """Run composition 100 times, verify identical results."""
+        p1 = CognitivePrim(name="A", phase="KNOWLEDGE", priority=10, markdown_content="a")
+        p2 = CognitivePrim(name="B", phase="COST", priority=20, markdown_content="b")
+        p3 = CognitivePrim(name="C", phase="SAFETY", priority=5, markdown_content="c")
+
+        layers = [("base", [p1, p2, p3])]
+        baseline_prims, baseline_conflicts = compose_livrps(layers)
+        baseline_names = [p.name for p in baseline_prims]
+
+        for _ in range(100):
+            prims, conflicts = compose_livrps(layers)
+            names = [p.name for p in prims]
+            assert names == baseline_names
+
+    def test_canonical_sort_by_phase_order(self):
+        """Prims sort by PHASES order, not alphabetically."""
+        p_cost = CognitivePrim(name="Z", phase="COST", priority=0)
+        p_knowledge = CognitivePrim(name="A", phase="KNOWLEDGE", priority=0)
+        prims, _ = compose_livrps([("layer", [p_cost, p_knowledge])])
+        assert prims[0].phase == "KNOWLEDGE"
+        assert prims[1].phase == "COST"
+
+
+# ── Profile Tests ────────────────────────────────────────────────────
+
+
+class TestProfiles:
+    def test_load_all_profiles(self):
+        for name in sorted(PROFILES.keys()):
+            profile = load_profile(name)
+            assert profile.name == name
+
+    def test_load_unknown_profile_raises(self):
+        try:
+            load_profile("nonexistent")
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+    def test_invalid_s_nm_negative(self):
+        try:
+            InjectionProfile(
+                name="bad", s_NM=-0.1, routing="standard",
+                cross_expert=0.0, tangent_mult=1.0,
+            )
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+    def test_invalid_s_nm_too_high(self):
+        try:
+            InjectionProfile(
+                name="bad", s_NM=1.5, routing="standard",
+                cross_expert=0.0, tangent_mult=1.0,
+            )
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+    def test_invalid_routing_mode(self):
+        try:
+            InjectionProfile(
+                name="bad", s_NM=0.0, routing="invalid",
+                cross_expert=0.0, tangent_mult=1.0,
+            )
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+
+# ── Gain Tests ───────────────────────────────────────────────────────
+
+
+class TestGain:
+    def test_gain_identity_at_zero(self):
+        """gain(any_phase, 0.0) == 1.0"""
+        for phase in PHASES:
+            assert abs(gain(phase, 0.0) - 1.0) < FLOAT_TOLERANCE
+
+    def test_anchor_invariance(self):
+        """gain(anchor_phase, any_s) == 1.0"""
+        for phase in sorted(ANCHOR_PHASES):
+            for profile_data in PROFILES.values():
+                s = profile_data["s_NM"]
+                assert abs(gain(phase, s) - 1.0) < FLOAT_TOLERANCE
+
+    def test_gain_always_gte_one(self):
+        for phase in PHASES:
+            for s in [0.0, 0.005, 0.01, 0.015, 0.025]:
+                assert gain(phase, s) >= 1.0 - FLOAT_TOLERANCE
+
+    def test_gain_continuity(self):
+        """Small s_NM change -> small gain change."""
+        max_d = max(D_MAP.values())
+        for phase in PHASES:
+            g1 = gain(phase, 0.024)
+            g2 = gain(phase, 0.026)
+            assert abs(g1 - g2) < 0.002 * max_d + FLOAT_TOLERANCE
+
+    def test_gain_with_alpha_identity(self):
+        """alpha=0 -> gain=1.0"""
+        for phase in PHASES:
+            result = gain_with_alpha(phase, 0.025, 0.0)
+            assert abs(result - 1.0) < FLOAT_TOLERANCE
+
+    def test_gain_with_alpha_full(self):
+        """alpha=1 -> gain = gain(phase, s)"""
+        for phase in PHASES:
+            expected = gain(phase, 0.025)
+            result = gain_with_alpha(phase, 0.025, 1.0)
+            assert abs(result - expected) < FLOAT_TOLERANCE
+
+    def test_unknown_phase_raises(self):
+        try:
+            gain("NONEXISTENT", 0.01)
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+
+# ── Pharmacokinetics Tests ───────────────────────────────────────────
+
+
+class TestPharmacokinetics:
+    def test_none_profile_always_zero(self):
+        for t in range(20):
+            assert abs(pharmacokinetic_alpha("none", t, 0, True)) < FLOAT_TOLERANCE
+            assert abs(pharmacokinetic_alpha("none", 0, t, False)) < FLOAT_TOLERANCE
+
+    def test_onset_reaches_high(self):
+        """Alpha reaches >0.95 within onset_exchanges."""
+        for name in sorted(PROFILES.keys()):
+            if name == "none":
+                continue
+            from src.lossless.constants import ONSET_EXCHANGES
+            onset = ONSET_EXCHANGES[name]
+            alpha = pharmacokinetic_alpha(name, onset, 0, True)
+            assert alpha > 0.95 - FLOAT_TOLERANCE, f"{name}: alpha={alpha}"
+
+    def test_offset_drops_low(self):
+        """Alpha drops below 0.05 within offset_exchanges."""
+        for name in sorted(PROFILES.keys()):
+            if name == "none":
+                continue
+            from src.lossless.constants import OFFSET_EXCHANGES
+            offset = OFFSET_EXCHANGES[name]
+            alpha = pharmacokinetic_alpha(name, 0, offset, False)
+            assert alpha < 0.05 + FLOAT_TOLERANCE, f"{name}: alpha={alpha}"
+
+    def test_onset_monotonic(self):
+        """Alpha is monotonically increasing during onset."""
+        for name in sorted(PROFILES.keys()):
+            if name == "none":
+                continue
+            prev = 0.0
+            for t in range(20):
+                a = pharmacokinetic_alpha(name, t, 0, True)
+                assert a >= prev - FLOAT_TOLERANCE, f"{name} t={t}: {a} < {prev}"
+                prev = a
+
+    def test_offset_monotonic(self):
+        """Alpha is monotonically decreasing during offset."""
+        for name in sorted(PROFILES.keys()):
+            if name == "none":
+                continue
+            prev = 1.0
+            for t in range(20):
+                a = pharmacokinetic_alpha(name, 0, t, False)
+                assert a <= prev + FLOAT_TOLERANCE, f"{name} t={t}: {a} > {prev}"
+                prev = a

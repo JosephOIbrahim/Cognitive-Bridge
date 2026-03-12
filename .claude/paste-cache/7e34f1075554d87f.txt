@@ -1,0 +1,524 @@
+# SUPER DUPER UI — 3D Ecosystem Graft
+## Amendment to SUPERDUPER_UI_PLAN_v2.md
+
+> **How to use:** This document adds 3D-specific tasks to the existing execution plan.
+> Each section references the phase it grafts into. Two options:
+> 1. **Inline graft:** Copy-paste these tasks into the relevant phase dispatch prompts
+> 2. **Standalone dispatch:** Run each section as a separate follow-up after the parent phase ships
+>
+> Recommended: Run as standalone follow-ups. Keeps the core phases clean,
+> treats 3D support as an enhancement layer.
+
+---
+
+## Research Source (February 2026)
+
+```
+Signal                              Relevance to Agent
+──────────────────────────────────  ────────────────────────────────
+Partner Nodes (Hunyuan, Meshy,      DISCOVER must treat these as
+Tripo, Rodin)                       first-class category — stable,
+                                    supported, distinct from community
+
+Native VOXEL + MESH data types      UNDERSTAND parser must recognize
+                                    new connection types in 3D workflows
+
+Splat-to-mesh conversion friction   DISCOVER use case — artists stuck
+                                    on 3DGS→GLB export, solutions exist
+                                    but aren't findable
+
+Mesh gen land grab (5+ providers)   DISCOVER needs comparative knowledge
+                                    to recommend the right tool
+
+Viewport tools (VNCCS, Action       Not agent features, but DISCOVER
+Director)                           should surface them for pose/camera
+```
+
+---
+
+## Graft A: UNDERSTAND Layer — 3D Data Type Support
+**Grafts into:** Phase 2 (Backend Bridge)
+**Department:** `/COMFY_LEAD`
+**Duration:** 30-45 minutes
+**When to run:** After Phase 2 ships, before Phase 3
+
+### DISPATCH PROMPT:
+```
+/COMFY_LEAD
+
+SHOW: SUPER DUPER UI — Graft A: 3D Data Types in UNDERSTAND
+You are the Lead TD. Quick enhancement to the UNDERSTAND layer.
+
+CONTEXT: ComfyUI now has native VOXEL and MESH data types alongside
+the traditional IMAGE, LATENT, CONDITIONING, MODEL, CLIP, VAE types.
+3D workflows pass MESH and VOXEL between nodes. If UNDERSTAND doesn't
+recognize these, it will misparse and misexplain 3D workflows.
+
+YOUR DELIVERABLE: UNDERSTAND correctly parses and describes workflows
+that use MESH, VOXEL, and other 3D connection types.
+
+TASKS:
+
+1. AUDIT CURRENT TYPE HANDLING
+   Check agent/tools/ — specifically the workflow parser and the
+   explain/describe functions. Find where connection types are enumerated
+   or handled. Look for:
+   - Hardcoded type lists (IMAGE, LATENT, etc.)
+   - Type-to-description mappings ("this node outputs an image")
+   - Connection validation logic
+
+2. ADD 3D DATA TYPES
+   Add recognition for at minimum:
+   - MESH — 3D mesh geometry (vertices, faces, UVs)
+   - VOXEL — volumetric 3D data
+   - POINT_CLOUD — 3DGS/NeRF point representations
+   - CAMERA — camera position/rotation data (used by 3D control nodes)
+   - POSE — body/hand pose data (used by VNCCS, ControlNet)
+
+   For each type, add a human-readable description the agent can use
+   when explaining a workflow:
+   - MESH: "3D mesh (geometry that can be exported as GLB/OBJ)"
+   - VOXEL: "3D volume (used for volumetric effects and conversion)"
+   - POINT_CLOUD: "3D point cloud (from Gaussian Splatting or NeRF)"
+   - CAMERA: "Camera position and rotation"
+   - POSE: "Body or hand pose skeleton"
+
+3. TEST
+   Create or find a workflow JSON that uses 3D nodes (Hunyuan3D,
+   ComfyUI-3D-Pack, or Action Director). Parse it with UNDERSTAND.
+   Verify the agent describes it correctly:
+
+   BAD: "Node 5 outputs unknown type to Node 6"
+   GOOD: "Node 5 generates a 3D mesh, which Node 6 textures"
+
+   If no 3D workflow is available to test with, create a minimal
+   mock workflow JSON with MESH connections for unit testing.
+
+4. REPORT
+   ```
+   GRAFT A — 3D Data Types
+   Types added: [list]
+   Files modified: [list]
+   Tests: [new tests added / existing tests still passing]
+   ```
+
+SCOPE: This is a 30-minute task. Don't redesign the parser.
+Just add the new types to whatever registry or mapping already exists.
+```
+
+---
+
+## Graft B: DISCOVER — Partner Node Category
+**Grafts into:** Phase 3 (DISCOVER Panel)
+**Department:** `/COMFY_LEAD`
+**Duration:** 45-60 minutes
+**When to run:** During or immediately after Phase 3
+
+### DISPATCH PROMPT:
+```
+/COMFY_LEAD
+
+SHOW: SUPER DUPER UI — Graft B: Partner Node Awareness
+You are the Lead TD. Enhancement to the DISCOVER layer.
+
+CONTEXT: ComfyUI has a formal "Partner Nodes" program. These are
+officially supported, tested, and maintained integrations — a different
+tier from community custom nodes. Current Partner Nodes include:
+
+  Hunyuan 3D 3.0 — text/image/sketch → production 3D assets
+  Meshy — AI mesh generation (stylized assets)
+  Tripo — fast 3D prototyping
+  Rodin 3D Gen-2 — high-quality 3D generation
+  (more may exist — check ComfyUI's official announcements)
+
+Partner Nodes matter because:
+- They're supported by both Comfy-Org and the provider
+- They follow ComfyUI's coding standards
+- They're less likely to break on updates
+- Artists should prefer them over equivalent community alternatives
+
+YOUR DELIVERABLE: DISCOVER distinguishes Partner Nodes from community
+nodes in search results. Artists see a trust signal.
+
+TASKS:
+
+1. ADD PARTNER NODE METADATA
+   In the DISCOVER layer's node/model search logic, add a field:
+   - source_tier: "partner" | "community" | "core"
+   
+   "core" = ships with ComfyUI
+   "partner" = officially supported Partner Node
+   "community" = third-party custom node
+
+   Where this lives depends on how DISCOVER currently stores results.
+   Check agent/tools/comfy_discover.py for the return schema.
+
+2. SURFACE IN DISCOVER PANEL
+   When discover.js renders search results, show the tier:
+   - Partner Nodes get a badge: "🤝 Partner" or "✅ Official"
+   - Community nodes show: "🔧 Community"
+   - Core nodes show: "⚙️ Built-in"
+   
+   This helps artists make informed choices. If Hunyuan3D (partner)
+   and some-random-3d-pack (community) both appear for "mesh generation",
+   the artist sees which one has official backing.
+
+3. PARTNER NODE KNOWLEDGE
+   For the initial launch, hardcode known Partner Nodes:
+   ```python
+   PARTNER_NODES = {
+       "Hunyuan3D": {
+           "provider": "Tencent",
+           "capabilities": "text/image/sketch to 3D mesh",
+           "tier": "partner",
+           "url": "https://github.com/Tencent/Hunyuan3D-2"
+       },
+       # Add others as discovered
+   }
+   ```
+   
+   Long-term: this should be a dynamic lookup (Comfy-Org registry,
+   or the agent's own web search). For now, hardcoded is fine —
+   update quarterly.
+
+4. COMPARATIVE KNOWLEDGE FOR MESH GENERATION
+   When an artist asks "generate a 3D model" or "what's the best
+   mesh generation node", DISCOVER should provide comparison:
+
+   ```
+   Hunyuan 3D 3.0 — Partner Node. Production-quality. Text/image/sketch input.
+                     Best for: final assets. Coming soon: texture editing, UV unwrap.
+   Meshy 6 — Partner Node. Fast stylized generation.
+             Best for: game-ready stylized assets.
+   Tripo v3.0 — Partner Node. Speed-optimized.
+                Best for: rapid prototyping, quick iterations.
+   Rodin 3D Gen-2 — High geometric detail.
+                    Best for: realistic/detailed models.
+   Trellis2 — Community. Open source.
+              Best for: experimentation, custom pipelines.
+   ComfyUI-3D-Pack — Community. Comprehensive 3DGS/NeRF/mesh toolkit.
+                     Best for: splat-to-mesh conversion, NeRF workflows.
+   ```
+
+   This can live in agent/knowledge/ as a static reference file,
+   or in the DISCOVER tool's prompt context. Pick whichever pattern
+   the codebase already uses for domain knowledge.
+
+5. TEST
+   ```
+   1. Ask: "what can I use for 3D mesh generation?"
+      → Should list Partner Nodes first with badges, then community
+   2. Ask: "install Hunyuan 3D"
+      → Should identify it as a Partner Node with official support
+   3. Ask: "what's the difference between Meshy and Tripo?"
+      → Should provide comparative recommendation
+   ```
+
+6. REPORT
+   ```
+   GRAFT B — Partner Node Awareness
+   Partner Nodes cataloged: [list]
+   Source tier field: [added to schema / how surfaced]
+   Discover panel badges: [implemented]
+   Comparative knowledge: [location of reference data]
+   Tests: [list results]
+   ```
+
+SCOPE: The comparative knowledge is the high-value piece. The badges
+are nice UX polish. If you're short on time, ship comparative knowledge
+first, badges second.
+```
+
+---
+
+## Graft C: DISCOVER — Splat-to-Mesh Conversion Path
+**Grafts into:** Phase 3 (DISCOVER Panel) + Phase 5 (Demo Scenarios)
+**Department:** `/COMFY_LEAD`
+**Duration:** 30 minutes
+**When to run:** After Graft B, or bundled with Phase 3
+
+### DISPATCH PROMPT:
+```
+/COMFY_LEAD
+
+SHOW: SUPER DUPER UI — Graft C: Splat-to-Mesh Conversion Discovery
+You are the Lead TD. Targeted DISCOVER enhancement.
+
+CONTEXT: A major friction point in the ComfyUI 3D community is
+converting 3D Gaussian Splatting (3DGS) or NeRF outputs to exportable
+mesh formats (GLB/OBJ). The solutions exist but artists can't find them.
+
+This is EXACTLY the pace problem the agent is built to solve.
+
+YOUR DELIVERABLE: When an artist says "I have a gaussian splat, how do
+I get a mesh?" the agent knows the conversion path and surfaces it.
+
+TASKS:
+
+1. MAP THE CONVERSION PIPELINE
+   Research and document the available splat→mesh conversion paths
+   in ComfyUI. Known starting points:
+   
+   Path A: ComfyUI-3D-Pack marching cubes
+   - 3DGS/NeRF → marching cubes → mesh → GLB export
+   - Most established, part of the 3,641-star 3D-Pack
+   
+   Path B: Trellis2 native mesh output
+   - Some newer models output mesh directly
+   - May not need conversion at all
+   
+   Path C: External tool bridge
+   - Export splat → process in Blender/Houdini → reimport
+   - Houdini-ComfyUI Bridge makes this viable
+   
+   Check what's actually installed/available by querying /object_info
+   for nodes related to: gaussian, splat, nerf, mesh, marching, convert
+
+2. ADD TO DISCOVER KNOWLEDGE
+   Store the conversion path knowledge so DISCOVER can surface it:
+   
+   ```
+   Workflow Pattern: Splat-to-Mesh Conversion
+   Trigger phrases: "convert splat", "gaussian to mesh", "export 3D",
+                    "get GLB from", "NeRF to mesh"
+   
+   Recommended path:
+   1. If ComfyUI-3D-Pack installed → use marching cubes nodes
+   2. If Trellis2 installed → may have native mesh output
+   3. If neither → recommend ComfyUI-3D-Pack install
+   4. For highest quality → Houdini bridge for post-processing
+   
+   Common pitfalls:
+   - Marching cubes resolution affects mesh quality significantly
+   - GLB export may lose UV coordinates without proper unwrapping
+   - Large splats may need downsampling before conversion
+   ```
+
+3. TEST
+   ```
+   1. Ask: "I generated a gaussian splat, how do I get a clean mesh?"
+      → Agent should surface the conversion path with specific nodes
+   2. Ask: "how do I export my 3D generation as GLB?"
+      → Agent should identify available export nodes
+   3. Ask: "the mesh from marching cubes looks blocky"
+      → Agent should suggest resolution adjustment or alternative path
+   ```
+
+4. REPORT
+   ```
+   GRAFT C — Splat-to-Mesh Discovery
+   Conversion paths documented: [list]
+   Knowledge stored: [location]
+   Trigger phrases: [list]
+   Tests: [results]
+   ```
+
+SCOPE: 30 minutes. Document the knowledge, wire it into DISCOVER's
+context. This is not new infrastructure — it's domain knowledge
+that makes existing DISCOVER tools more useful.
+```
+
+---
+
+## Graft D: DISCOVER — Viewport & Control Tools
+**Grafts into:** Phase 3 (DISCOVER Panel)
+**Department:** `/COMFY_LEAD`
+**Duration:** 20 minutes
+**When to run:** Bundled with Phase 3 or any time after
+
+### DISPATCH PROMPT:
+```
+/COMFY_LEAD
+
+SHOW: SUPER DUPER UI — Graft D: Viewport Tool Discovery
+You are the Lead TD. Quick knowledge addition.
+
+CONTEXT: ComfyUI's 3D ecosystem now includes viewport and control tools
+that artists ask about but can't find through node search alone. These
+aren't agent features — the agent doesn't operate them. But DISCOVER
+should know they exist and surface them when relevant.
+
+YOUR DELIVERABLE: When an artist asks about posing, camera control,
+or 3D preview, DISCOVER surfaces the right tools.
+
+ADD TO DISCOVER KNOWLEDGE:
+
+```
+Tool: VNCCS (3D Pose Studio)
+By: @wildmindai
+What: Full character posing, lighting, multi-pose, camera control
+When to recommend: "pose a character", "control body position",
+                   "set up lighting for ControlNet"
+Note: Most popular 3D tool in ComfyUI ecosystem (3,126 likes)
+
+Tool: Action Director
+By: @wildmindai
+What: Interactive 3D viewport, loads FBX/GLB, batch-renders
+      ControlNet passes (OpenPose, Depth, Canny, Normal)
+When to recommend: "camera angle", "render depth map from 3D",
+                   "batch ControlNet from 3D scene"
+Note: Complements VNCCS — posing vs. scene/camera control
+
+Tool: 3DView node (Orion NodeFlow)
+By: @kakachiex
+What: 3D model viewer inside ComfyUI node graph
+When to recommend: "preview 3D model", "view mesh in ComfyUI"
+Note: Prototype stage — may not be production-ready
+
+Tool: vewd (3D model support)
+By: @spiritform  
+What: 3D model loading and display
+When to recommend: "load 3D model", "import GLB"
+```
+
+TEST:
+```
+1. Ask: "how do I control the camera angle for my generation?"
+   → Surface Action Director
+2. Ask: "I want to pose a character for ControlNet"
+   → Surface VNCCS
+3. Ask: "can I preview a 3D model inside ComfyUI?"
+   → Surface 3DView or vewd
+```
+
+SCOPE: 20 minutes. Add to knowledge store. No new code.
+```
+
+---
+
+## Graft E: Phase 5 Demo Enhancement — 3D Scenarios
+**Grafts into:** Phase 5 (Multi-Workflow Chaining) test scenarios
+**Department:** `/VFX_SUPER` + `/COMFY_LEAD`
+**Duration:** Adds to existing Phase 5 scope
+**When to run:** During Phase 5
+
+### ADD TO PHASE 5 DISPATCH PROMPT:
+
+Copy-paste this into the Phase 5 `/COMFY_LEAD` dispatch, under "TEST — THE DEMO SCENARIO":
+
+```
+ADDITIONAL 3D DEMO SCENARIOS (from ecosystem research):
+
+DEMO: "The Splat-to-Mesh Export" (conversion friction killer)
+─────────────────────────────────────────────────────────────
+1. User has generated a 3D Gaussian Splat (from Hunyuan3D or 3D-Pack)
+2. User says: "convert this to a clean mesh and export as GLB"
+3. Agent plans pipeline:
+   Stage 1: Load splat data
+   Stage 2: Marching cubes conversion (suggest resolution)
+   Stage 3: Mesh cleanup (if available)
+   Stage 4: GLB export
+4. Sidebar shows 4-stage plan
+5. After Stage 2, show mesh preview — user says "too blocky"
+6. Agent re-runs Stage 2 with higher resolution (individual stage re-run)
+7. Final GLB export with download link
+
+WHY THIS DEMO WINS:
+- Directly solves the #1 community friction point
+- Shows DISCOVER finding the right conversion nodes
+- Shows individual stage re-run (error recovery)
+- Practical outcome: artist gets a usable file
+
+
+DEMO: "The ControlNet 3D Setup" (viewport tool discovery)
+──────────────────────────────────────────────────────────
+1. User says: "I want to render a character in a specific pose
+   with depth-based ControlNet"
+2. Agent's DISCOVER surfaces: "You'll want VNCCS for posing and
+   Action Director for batch ControlNet renders. Are these installed?"
+3. If installed: agent plans pipeline:
+   Stage 1: Set up pose in VNCCS (manual — agent explains how)
+   Stage 2: Render depth/normal maps via Action Director
+   Stage 3: ControlNet generation using the maps
+4. If not installed: agent offers to install, then proceeds
+
+WHY THIS DEMO WINS:
+- Shows DISCOVER recommending tools the artist didn't know about
+- Shows the agent bridging between manual 3D tools and automated generation
+- Multi-stage pipeline with a human-in-the-loop step (posing)
+
+
+DEMO: "The Partner Node Showdown" (comparative knowledge)
+──────────────────────────────────────────────────────────
+1. User says: "I need a 3D model of a medieval castle"
+2. Agent shows comparison:
+   "For architectural assets, I'd recommend:
+   • Hunyuan 3D (Partner Node) — best detail for structures
+   • Rodin Gen-2 — highest geometric fidelity
+   • Meshy 6 — faster, more stylized result
+   Which approach do you want to try?"
+3. User picks one, agent runs it
+4. User says: "try a different one, this is too stylized"
+5. Agent swaps to alternative without rebuilding the whole pipeline
+
+WHY THIS DEMO WINS:
+- Shows comparative knowledge (DISCOVER's moat)
+- Shows the agent as creative collaborator, not just executor
+- Shows easy iteration across different providers
+```
+
+---
+
+## Graft Integration Map
+
+```
+EXISTING PLAN                     GRAFTS
+────────────────                  ──────────────────────────────────
+Phase 0: Recon                    (no changes)
+
+Phase 1: Sidebar Skeleton         (no changes)
+
+Phase 2: Backend Bridge ────────→ GRAFT A: 3D data types in UNDERSTAND
+                                   Run after Phase 2, before Phase 3.
+
+Phase 3: DISCOVER Panel ────────→ GRAFT B: Partner Node category
+                                   GRAFT C: Splat-to-mesh conversion
+                                   GRAFT D: Viewport tool discovery
+                                   Run during or after Phase 3.
+
+Phase 4: Status + UX              (no changes)
+
+Phase 5: Multi-Pipe ────────────→ GRAFT E: 3D demo scenarios
+                                   Fold into Phase 5 test section.
+```
+
+### Execution Order (Recommended)
+```
+Phase 0 → Phase 1 → Phase 2 → GRAFT A → Phase 3 + GRAFTS B,C,D → Phase 4 → Phase 5 + GRAFT E
+```
+
+### Alternative: Bundle All Grafts as Phase 3.5
+If you prefer one dispatch instead of four small ones:
+```
+/COMFY_LEAD
+
+SHOW: SUPER DUPER UI — Phase 3.5: 3D Ecosystem Intelligence
+Read SUPERDUPER_3D_GRAFT.md. Execute Grafts A through D sequentially.
+Phase 3 (DISCOVER panel) must be complete before starting.
+Report on all four grafts in a single phase report.
+```
+
+---
+
+## What This Connects To
+
+- **SUPERDUPER_UI_PLAN_v2.md** — Parent document. Grafts slot into existing phases.
+- **comfyui-agent-next-phase.md** — Phase B (3D Node Discovery) now has concrete tasks via Grafts B-D.
+- **comfyui-viewport-capsule.md** — PARKED. Viewport tools (VNCCS, Action Director) are surfaced by DISCOVER, not built by us.
+- **Houdini-ComfyUI Bridge** — Referenced as Path C in splat-to-mesh conversion. Relevant to Joe's personal workflow but not agent scope.
+
+---
+
+## Quick Start
+
+Drop this file alongside SUPERDUPER_UI_PLAN_v2.md in the repo. After Phase 2 ships:
+
+```
+Read SUPERDUPER_3D_GRAFT.md. Start Graft A.
+```
+
+Or bundle everything after Phase 3:
+
+```
+Read SUPERDUPER_3D_GRAFT.md. Execute all grafts as Phase 3.5.
+```

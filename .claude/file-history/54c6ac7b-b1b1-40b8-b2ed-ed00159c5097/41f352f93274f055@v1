@@ -1,0 +1,110 @@
+# Plan: Expand UnrealEngine_Bridge Agentic Capabilities
+
+## Context
+
+The UnrealEngine_Bridge MCP server currently has 24 tools across 8 modules. Claude can spawn/delete actors, read/write properties, execute Python, manage assets, and capture viewport screenshots. But it lacks **structured scene understanding**, **material editing**, and **editor utility** operations — the three capabilities that would make Claude a significantly more useful UE5 collaborator.
+
+This plan adds 3 new tool modules (15 tools) and fixes gaps in 3 existing modules (6 tools), bringing the total to **~39 tools across 11 modules**.
+
+## Implementation Phases
+
+### Phase 1: Validation Layer (`_validation.py`)
+
+**File:** `ue_mcp/tools/_validation.py`
+
+Add:
+- `escape_for_fstring(s)` — consolidate the duplicated helper from assets/mograph/blueprints
+- `sanitize_console_command(cmd)` — blocklist (exit, quit, crash, gpf, etc.), safe char regex, max 512
+- `sanitize_filename(name)` — no path separators, max 256
+
+Update `assets.py`, `mograph.py`, `blueprints.py` to import `escape_for_fstring` from `_validation` instead of defining their own copies.
+
+### Phase 2: `scene.py` — Scene Understanding (4 tools)
+
+**New file:** `ue_mcp/tools/scene.py`
+
+| Tool | Purpose | Read-only |
+|------|---------|-----------|
+| `ue_get_actor_details(actor_path)` | Full actor info: class, transform, components list, visibility, tags, parent | Yes |
+| `ue_query_scene(class_filter, tag_filter, name_pattern, near_x/y/z, radius, max_results)` | Filtered scene queries with spatial search, returns up to 100 matches | Yes |
+| `ue_get_component_details(actor_path, component_name)` | Deep component inspection: mesh asset, material slots, light params | Yes |
+| `ue_get_actor_hierarchy(actor_path)` | Parent-child attachment tree (max depth 10) | Yes |
+
+All generate UE5 Python using `EditorActorSubsystem`, `get_components_by_class()`, `get_attached_actors()`. All read-only.
+
+### Phase 3: Fix Existing Modules
+
+**`assets.py`** — Fix + add:
+- Fix `create_material`: actually wire BaseColor/Roughness/Metallic expression nodes via `MaterialEditingLibrary`
+- Add `ue_delete_asset(asset_path)` — `EditorAssetLibrary.delete_asset()` (destructive)
+
+**`level.py`** — Add:
+- `ue_load_level(level_path)` — `EditorLevelLibrary.load_level()` (destructive)
+- `ue_get_world_info()` — streaming levels, world settings, game mode
+
+**`actors.py`** — Add:
+- `ue_duplicate_actor(actor_path, offset_x/y/z)` — duplicate with offset
+- `ue_get_actor_bounds(actor_path)` — axis-aligned bounding box
+
+### Phase 4: `materials.py` — Material Editing (4 tools)
+
+**New file:** `ue_mcp/tools/materials.py`
+
+| Tool | Purpose |
+|------|---------|
+| `ue_create_material_instance(name, parent_material, folder)` | Create MaterialInstanceConstant from parent |
+| `ue_set_material_parameter(material_path, param_name, value, param_type)` | Set scalar/vector/texture parameter |
+| `ue_get_material_parameters(material_path)` | List all exposed parameters with values |
+| `ue_assign_material(actor_path, material_path, slot_index)` | Apply material to mesh component |
+
+Uses `MaterialEditingLibrary` and `MaterialInstanceConstantFactoryNew`.
+
+### Phase 5: `editor.py` — Editor Utilities (5 tools)
+
+**New file:** `ue_mcp/tools/editor.py`
+
+| Tool | Purpose |
+|------|---------|
+| `ue_console_command(command)` | Execute console command with output capture |
+| `ue_undo()` | Undo last editor action |
+| `ue_redo()` | Redo last undone action |
+| `ue_focus_actor(actor_path)` | Focus viewport on actor (like pressing F) |
+| `ue_select_actors(actor_paths_json)` | Set editor selection to specified actors |
+
+### Phase 6: Registration + Tests
+
+**`ue_mcp/tools/__init__.py`** — Import and register scene, materials, editor modules.
+
+**Tests** (extend existing + new files):
+- `tests/test_validation.py` — Add ~15 tests for new sanitizers
+- `tests/test_scene.py` — Code generation syntax checks, validation integration
+- `tests/test_materials.py` — Same pattern
+- `tests/test_editor.py` — Same pattern
+- `tests/conftest.py` — Add `mock_ue` fixture for testing tools without running UE5
+
+## Files Changed
+
+| File | Action |
+|------|--------|
+| `ue_mcp/tools/_validation.py` | Modify — add 3 sanitizers + `escape_for_fstring` |
+| `ue_mcp/tools/scene.py` | **Create** — 4 read-only scene query tools |
+| `ue_mcp/tools/materials.py` | **Create** — 4 material editing tools |
+| `ue_mcp/tools/editor.py` | **Create** — 5 editor utility tools |
+| `ue_mcp/tools/__init__.py` | Modify — register 3 new modules |
+| `ue_mcp/tools/assets.py` | Modify — fix create_material, add delete_asset |
+| `ue_mcp/tools/level.py` | Modify — add load_level, get_world_info |
+| `ue_mcp/tools/actors.py` | Modify — add duplicate_actor, get_actor_bounds |
+| `ue_mcp/tools/mograph.py` | Modify — import escape_for_fstring from _validation |
+| `ue_mcp/tools/blueprints.py` | Modify — import escape_for_fstring from _validation |
+| `tests/test_validation.py` | Modify — new sanitizer tests |
+| `tests/test_scene.py` | **Create** |
+| `tests/test_materials.py` | **Create** |
+| `tests/test_editor.py` | **Create** |
+| `tests/conftest.py` | Modify — add mock_ue fixture |
+
+## Verification
+
+1. `python -m pytest tests/ -v` — all existing + new tests pass
+2. Code generation check: every generated UE5 Python string parses via `ast.parse()`
+3. Validation check: every tool rejects malicious inputs (path traversal, blocked commands)
+4. Registration check: `python -c "from ue_mcp.tools import register_all_tools; print('OK')"` imports cleanly

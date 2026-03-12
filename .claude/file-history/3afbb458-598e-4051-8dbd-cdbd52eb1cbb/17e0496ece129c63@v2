@@ -1,0 +1,37 @@
+"""Query karmarendersettings + karma ROP parms for resolution and output."""
+import asyncio, sys, os
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+CODE = r'''
+import hou
+
+# karmarendersettings parms
+rs = hou.node("/stage/karma_settings")
+rs_parms = [(p.name(), p.description(), str(p.eval())) for p in rs.parms()
+    if any(k in p.name().lower() or k in p.description().lower()
+    for k in ["res", "pixel", "sample", "output", "picture", "image", "frame", "overrideres"])]
+
+# karma ROP parms
+rop = hou.node("/out/cinema_karma")
+rop_parms = [(p.name(), p.description(), str(p.eval())) for p in rop.parms()
+    if any(k in p.name().lower() or k in p.description().lower()
+    for k in ["res", "pixel", "sample", "output", "picture", "image", "frame", "override", "lop", "render"])]
+
+result = {"rs": rs_parms, "rop": rop_parms}
+'''
+
+async def main():
+    async with SynapseClient() as client:
+        r = await client.execute_python(CODE, timeout=15.0)
+        if isinstance(r, str):
+            import ast
+            r = ast.literal_eval(r)
+        print("=== karmarendersettings ===")
+        for item in r.get("rs", []):
+            print(f"  {item}")
+        print("\n=== karma ROP ===")
+        for item in r.get("rop", []):
+            print(f"  {item}")
+
+asyncio.run(main())

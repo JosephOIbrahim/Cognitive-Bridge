@@ -1,0 +1,44 @@
+/** Image path helpers for project assets in public/images/ */
+
+/** Number of detail images available per project slug */
+const DETAIL_COUNTS: Record<string, number> = {
+  battlebank: 13,
+  bloomberg: 2,
+  construction: 4,
+  "employee-brand": 8,
+  "glg-brand": 26,
+  "glg-explainer": 2,
+  "glg-video": 0,
+  liquidstock: 18,
+  tiaa: 7,
+  "year-ahead": 13,
+};
+
+export function heroImage(slug: string): string | null {
+  if (slug in DETAIL_COUNTS || hasHero(slug)) {
+    return `/images/${slug}/hero.jpg`;
+  }
+  return null;
+}
+
+function hasHero(slug: string): boolean {
+  return slug in DETAIL_COUNTS;
+}
+
+export function detailImage(slug: string, index: number): string {
+  const num = String(index).padStart(2, "0");
+  return `/images/${slug}/detail-${num}.jpg`;
+}
+
+export function detailCount(slug: string): number {
+  return DETAIL_COUNTS[slug] ?? 0;
+}
+
+export function detailImages(slug: string): string[] {
+  const count = detailCount(slug);
+  const images: string[] = [];
+  for (let i = 1; i <= count; i++) {
+    images.push(detailImage(slug, i));
+  }
+  return images;
+}

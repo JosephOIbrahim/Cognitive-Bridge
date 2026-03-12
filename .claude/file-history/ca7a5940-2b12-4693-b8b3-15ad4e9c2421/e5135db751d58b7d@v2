@@ -1,0 +1,159 @@
+"""Synapse Hooks — Houdini-side event writer.
+
+Registers hou callbacks and writes events to a JSONL file that the
+Claude Code-side bridge (synapse_hooks_bridge.py) reads on each prompt.
+
+Usage from Houdini Python Shell or startup script:
+    import sys
+    sys.path.insert(0, "C:/Users/User/SYNAPSE/synapse")
+    from hooks.synapse_hooks_houdini import register_scene_callbacks
+    register_scene_callbacks()
+
+To unregister:
+    from hooks.synapse_hooks_houdini import unregister_scene_callbacks
+    unregister_scene_callbacks()
+"""
+
+import json
+import os
+import time
+
+EVENTS_DIR = os.path.join(os.environ.get("TEMP", "/tmp"), "synapse_hooks")
+EVENTS_FILE = os.path.join(EVENTS_DIR, "houdini_events.jsonl")
+
+# Max events to keep in the file (rotate when exceeded)
+MAX_EVENTS = 200
+
+# Track registered callbacks so we can unregister cleanly
+_registered_callbacks = {}
+
+
+def _write_event(event_type, detail=""):
+    """Append a timestamped event to the JSONL file."""
+    os.makedirs(EVENTS_DIR, exist_ok=True)
+    event = {
+        "type": event_type,
+        "detail": detail,
+        "timestamp": time.time(),
+    }
+    line = json.dumps(event, sort_keys=True) + "\n"
+
+    try:
+        with open(EVENTS_FILE, "a", encoding="utf-8") as f:
+            f.write(line)
+    except OSError:
+        return
+
+    # Rotate if file gets too long
+    _maybe_rotate()
+
+
+def _maybe_rotate():
+    """Keep only the last MAX_EVENTS lines."""
+    try:
+        with open(EVENTS_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > MAX_EVENTS:
+            with open(EVENTS_FILE, "w", encoding="utf-8") as f:
+                f.writelines(lines[-MAX_EVENTS:])
+    except OSError:
+        pass
+
+
+def _on_hip_file_event(event_type):
+    """Callback for hou.hipFile events."""
+    import hou
+
+    name = str(event_type)
+    # Strip the enum prefix if present (e.g. "hipFileEventType.AfterSave" -> "AfterSave")
+    if "." in name:
+        name = name.split(".")[-1]
+
+    detail = ""
+    try:
+        detail = hou.hipFile.name()
+    except Exception:
+        pass
+
+    _write_event(f"hip_{name}", detail)
+
+
+def _on_node_event(node, event_type, **kwargs):
+    """Callback for node-level events. Registered on /obj and /stage."""
+    name = str(event_type)
+    if "." in name:
+        name = name.split(".")[-1]
+
+    try:
+        path = node.path()
+    except Exception:
+        path = "unknown"
+
+    _write_event(f"node_{name}", path)
+
+
+def register_scene_callbacks():
+    """Register Houdini callbacks that feed the Claude Code bridge.
+
+    Safe to call multiple times — skips if already registered.
+    """
+    import hou
+
+    if _registered_callbacks:
+        print("[synapse hooks] Callbacks already registered, skipping.")
+        return
+
+    # Hip file events (save, load, clear, etc.)
+    try:
+        hou.hipFile.addEventCallback(_on_hip_file_event)
+        _registered_callbacks["hipFile"] = _on_hip_file_event
+        print("[synapse hooks] Registered hipFile event callback.")
+    except Exception as e:
+        print(f"[synapse hooks] Could not register hipFile callback: {e}")
+
+    # Node events on key network roots
+    for root_path in ("/obj", "/stage", "/out"):
+        try:
+            node = hou.node(root_path)
+            if node is not None:
+                node.addEventCallback(
+                    (hou.nodeEventType.ChildCreated, hou.nodeEventType.ChildDeleted),
+                    _on_node_event,
+                )
+                _registered_callbacks[root_path] = _on_node_event
+                print(f"[synapse hooks] Registered node callback on {root_path}.")
+        except Exception as e:
+            print(f"[synapse hooks] Could not register callback on {root_path}: {e}")
+
+    # Write a startup event so the bridge knows we're alive
+    _write_event("hooks_registered", f"Houdini {hou.applicationVersionString()}")
+    print(f"[synapse hooks] Bridge active. Events -> {EVENTS_FILE}")
+
+
+def unregister_scene_callbacks():
+    """Remove all registered callbacks."""
+    import hou
+
+    if "hipFile" in _registered_callbacks:
+        try:
+            hou.hipFile.removeEventCallback(_registered_callbacks["hipFile"])
+            print("[synapse hooks] Removed hipFile callback.")
+        except Exception:
+            pass
+
+    for root_path in ("/obj", "/stage", "/out"):
+        if root_path in _registered_callbacks:
+            try:
+                node = hou.node(root_path)
+                if node is not None:
+                    node.removeEventCallback(
+                        (hou.nodeEventType.ChildCreated, hou.nodeEventType.ChildDeleted),
+                        _registered_callbacks[root_path],
+                    )
+                    print(f"[synapse hooks] Removed callback on {root_path}.")
+            except Exception:
+                pass
+
+    _registered_callbacks.clear()
+    _write_event("hooks_unregistered")
+    print("[synapse hooks] All callbacks removed.")

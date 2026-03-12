@@ -1,0 +1,472 @@
+# josephibrahim.com — Deep Review Sprint
+# Sprint: MOE Codebase Audit
+# Date: 2026-02-22
+# Status: READY TO EXECUTE
+
+---
+
+## PRE-FLIGHT: Read Before Anything
+
+Before ANY analysis, read these files and internalize the project:
+
+```bash
+cat CLAUDE.md                        # Project conventions
+cat app/globals.css                  # Design system tokens
+cat lib/projects.ts                  # Project data model
+ls components/                       # Component inventory
+ls app/                              # Route structure
+```
+
+Report what you find. Do NOT proceed until you understand:
+- The design token system (Fibonacci spacing, grey scale, font stack)
+- The component architecture (which components own which concerns)
+- The project data model (what fields exist, what's used vs unused)
+- The routing structure (all pages and their relationships)
+
+---
+
+## STATUS REPORTING PROTOCOL
+
+**MANDATORY:** After completing each task, print the status bar in this EXACT format.
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  josephibrahim.com — Deep Review STATUS                     ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: PARALLEL AUDIT     [░░░░░░░░░░] 0%                ║
+║    DESIGN    ◆ D1 ○  D2 ○  D3 ○                             ║
+║    DEBUG     ⟡ B1 ○  B2 ○  B3 ○                             ║
+║    SUGGEST   ◈ S1 ○  S2 ○  S3 ○                             ║
+║    REFERENCE ⬡ R1 ○  R2 ○  R3 ○                             ║
+║                                                              ║
+║  Phase 2: SYNTHESIZE         [░░░░░░░░░░] 0%                ║
+║    SYNTH     ◉ Y1 ○  Y2 ○                                   ║
+║                                                              ║
+║  Overall: [░░░░░░░░░░░░░░░░░░░░] 0%  (0/14 tasks)          ║
+║                                                              ║
+║  Legend: ✓ done  ▶ active  ○ pending  ✗ failed              ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## ARCHITECTURE CONTEXT
+
+This is a **review-only sprint** — NO CODE CHANGES. Every agent produces a findings document. The synthesis agent merges all findings into a single prioritized report.
+
+```
+                    ┌─────────────────────┐
+                    │    PRE-FLIGHT       │
+                    │  Read CLAUDE.md,    │
+                    │  globals.css, etc.  │
+                    └─────────┬───────────┘
+                              │
+            ┌─────────────────┼─────────────────┐
+            │                 │                 │
+    ┌───────▼──────┐ ┌───────▼──────┐ ┌───────▼──────┐
+    │   DESIGN ◆   │ │  DEBUG ⟡    │ │ SUGGEST ◈   │
+    │  Visual      │ │  Perf +     │ │  UX +       │
+    │  Fidelity    │ │  Correctness│ │  Features   │
+    └───────┬──────┘ └───────┬──────┘ └───────┬──────┘
+            │                │                 │
+            │        ┌───────▼──────┐          │
+            │        │ REFERENCE ⬡  │          │
+            │        │  5 sites     │          │
+            │        │  deep-dive   │          │
+            │        └───────┬──────┘          │
+            │                │                 │
+            └────────────────┼─────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   SYNTH ◉      │
+                    │  Merge +       │
+                    │  Prioritize    │
+                    └────────────────┘
+```
+
+---
+
+## FILE OWNERSHIP TABLE
+
+**This is a review sprint — agents produce FINDINGS, not code changes.**
+
+| Agent | Role (MOE) | Produces | Reads |
+|-------|------------|----------|-------|
+| DESIGN ◆ | Visual Design Critic | Design findings | All components, globals.css, all pages |
+| DEBUG ⟡ | Performance & Bug Hunter | Bug/perf findings | All source files, lib/, hooks/ |
+| SUGGEST ◈ | UX & Feature Strategist | Feature suggestions | All pages, components, project data |
+| REFERENCE ⬡ | Reference Site Analyst | Reference patterns | 5 reference URLs (web fetch) |
+| SYNTH ◉ | Editorial Synthesizer | Final prioritized report | All 4 agent findings |
+
+---
+
+## PHASE 1: PARALLEL AUDIT
+
+Run these 4 agents **in parallel** via Task tool. Each agent produces findings — no code changes.
+
+### ═══ Agent DESIGN ◆ — Visual Design Critic ═══
+
+**MOE Expertise:** Typography systems, spacing rhythm, color hierarchy, component polish. Thinks like a Pentagram designer reviewing a junior's portfolio site. Evaluates visual consistency, whitespace, type scale, and interaction quality.
+
+**Task D1: Typography & Color Audit**
+
+Read every component and page file. For each, evaluate:
+- Is the font stack consistent? (Should be `--font-display` everywhere except homepage hero Lora italic)
+- Are grey scale tokens used consistently? (e.g., `--text-primary` for titles, `--grey-500` for body, `--text-dim` for metadata)
+- Are there any hardcoded color values that should use tokens?
+- Is the type scale consistent? (font sizes, weights, letter-spacing)
+- Does the COLOR HIERARCHY MANTRA hold everywhere? (brighter = more important)
+
+Files to read:
+```
+app/globals.css
+app/page.tsx
+app/info/page.tsx
+app/process/page.tsx
+app/process/[slug]/page.tsx
+app/photo/page.tsx
+app/gen-ai/page.tsx
+components/Navigation.tsx
+components/Footer.tsx
+components/ProjectCard.tsx
+components/ProjectDetailContent.tsx
+components/LadderGrid.tsx
+components/VideoThumbnail.tsx
+components/ChatBot.tsx
+components/EmbeddedVideoPlayer.tsx
+components/HeroReel.tsx
+```
+
+Report: List every inconsistency with file:line and what it should be.
+
+**Task D2: Spacing & Layout Audit**
+
+Evaluate spacing across all pages:
+- Are Fibonacci tokens (`--space-xs` through `--space-2xl`) used consistently?
+- Are there hardcoded px values that should use tokens?
+- Is `--side-padding` and `--max-content-width` applied uniformly?
+- Do section gaps follow `--space-section` (120px)?
+- Is the responsive behavior consistent? (clamp values, breakpoints)
+- Does mobile spacing feel right? (not too cramped, not too loose)
+
+Report: List spacing inconsistencies and hardcoded values that should be tokenized.
+
+**Task D3: Interaction & Animation Quality**
+
+Audit all hover states, transitions, and animations:
+- Are transition durations consistent? (`--transition-fast`, `--transition-base`, `--transition-smooth`)
+- Do hover states follow the same pattern? (opacity dim vs color shift vs scale)
+- Are `will-change` and `transform: translateZ(0)` used appropriately (not over-applied)?
+- Does `prefers-reduced-motion` work correctly on all animated elements?
+- Are there any janky scroll-driven animations?
+- Is the view transition system (page crossfades) working correctly?
+
+Report: List interaction inconsistencies and improvement opportunities.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent DEBUG ⟡ — Performance & Bug Hunter ═══
+
+**MOE Expertise:** React performance patterns, bundle analysis, memory leaks, hydration issues, accessibility. Thinks like a senior frontend engineer doing a pre-launch audit. Looks for things that cause CLS, LCP regressions, or runtime errors.
+
+**Task B1: React Performance Audit**
+
+Read all components and evaluate:
+- Are there unnecessary re-renders? (state in wrong component, missing memo boundaries)
+- Are expensive computations properly memoized? (useMemo, useCallback used correctly)
+- Are there effects that should be event handlers instead?
+- Are scroll listeners properly passive and throttled/debounced?
+- Are refs used appropriately for DOM manipulation vs state?
+- Is there any state that should be derived instead of stored?
+- Are there memory leaks? (missing cleanup in useEffect, dangling event listeners)
+
+Files to audit:
+```
+app/page.tsx
+components/HeroReel.tsx
+components/LadderGrid.tsx
+components/VideoThumbnail.tsx
+components/ChatBot.tsx
+components/Navigation.tsx
+components/ProjectCard.tsx
+components/EmbeddedVideoPlayer.tsx
+lib/hooks/useIsMobile.ts
+lib/hooks/usePrefersReducedMotion.ts
+lib/perception/context.tsx
+lib/perception/sensor.ts
+```
+
+Report: List each issue with severity (CRITICAL/HIGH/MEDIUM/LOW), file:line, and suggested fix.
+
+**Task B2: Bundle & Loading Audit**
+
+Evaluate loading performance:
+- Which components use `'use client'`? Are any unnecessarily client-side?
+- Are heavy dependencies (Vimeo player) lazy-loaded properly?
+- Are images using proper loading attributes? (`loading="lazy"`, proper sizes)
+- Is the Vimeo SDK loaded efficiently? (dynamic import, not blocking)
+- Are there any barrel imports that could be tree-shaken?
+- Could any components be server components instead?
+
+Report: List optimization opportunities ranked by impact.
+
+**Task B3: Accessibility & SEO Audit**
+
+Check:
+- Are all interactive elements keyboard-accessible?
+- Do images have meaningful alt text?
+- Is the heading hierarchy correct on each page? (h1 → h2 → h3, no skips)
+- Are ARIA attributes used correctly? (aria-label, aria-expanded, aria-hidden)
+- Is the Schema.org structured data complete and correct?
+- Are the Open Graph and Twitter meta tags working for all pages?
+- Does the sitemap.xml include all routes?
+- Is there a proper 404 page?
+
+Files to check:
+```
+app/layout.tsx
+app/sitemap.xml (route)
+app/robots.txt (route)
+components/Navigation.tsx
+app/page.tsx
+app/info/page.tsx
+app/process/page.tsx
+```
+
+Report: List each a11y/SEO issue with severity and fix.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent SUGGEST ◈ — UX & Feature Strategist ═══
+
+**MOE Expertise:** User experience design, conversion optimization, portfolio strategy. Thinks like a creative director evaluating how a VFX artist's portfolio positions them for senior roles at top studios. Evaluates information architecture, user journeys, and content strategy.
+
+**Task S1: Information Architecture Review**
+
+Map the full user journey through the site:
+- Homepage → what can you do? Where do you go?
+- Navigation → is the menu clear? Are labels intuitive?
+- Project detail → does the narrative flow make sense?
+- Process page → does it position Joseph as a technical artist or just a lighter?
+- Info page → does it tell a compelling story?
+
+Evaluate:
+- Are there dead ends? (pages with no clear next action)
+- Is the hierarchy of pages clear?
+- Does the filter system on the homepage work intuitively?
+- Is the chatbot discoverable and useful?
+
+Report: User journey map with friction points and improvement opportunities.
+
+**Task S2: Content Strategy Gaps**
+
+Analyze the project data and content:
+- Read `lib/projects.ts` completely — what fields are defined vs actually used?
+- Read `lib/process-posts.ts` — is the content compelling enough?
+- Are there missing pages or features that the references have?
+  - Tendril has a "Careers" page — relevant?
+  - Found has "Perspectives" (blog) — relevant?
+  - Pentagram has discipline/sector filtering — relevant?
+- Is the project count sufficient for a senior portfolio? (how many projects?)
+- Are the project descriptions written at the right level?
+- Is the hero statement on each page doing its job?
+
+Report: Content gaps ranked by impact on visitor impression.
+
+**Task S3: Mobile Experience Audit**
+
+Evaluate the mobile UX (read code, don't test in browser):
+- Are touch targets at least 44px?
+- Is the mobile navigation usable?
+- Does the homepage hero work on mobile? (50vh, no video, static thumbnail)
+- Does the filter bar scroll horizontally if needed?
+- Are the project cards readable on small screens?
+- Does the chatbot work on mobile?
+- Is the footer usable on mobile?
+
+Report: Mobile-specific issues and improvement opportunities.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent REFERENCE ⬡ — Reference Site Analyst ═══
+
+**MOE Expertise:** Competitive analysis, design pattern extraction, benchmark identification. Systematically deconstructs reference sites to extract actionable patterns. Compares patterns against current implementation.
+
+**Task R1: Fetch & Analyze All 5 Reference Sites**
+
+Fetch each URL and extract their patterns:
+
+1. **Pentagram Rivian** — `https://www.pentagram.com/work/rivian`
+2. **Pentagram Cohere** — `https://www.pentagram.com/work/cohere`
+3. **Electric Theatre** — `https://electrictheatre.tv/electric/work-category-featured`
+4. **Future Deluxe** — `https://futuredeluxe.com/`
+5. **Tendril Studio** — `https://tendril.studio/`
+6. **Found Studio** — `https://www.found-studio.com/`
+
+For each, document:
+- Navigation structure (items, style, behavior)
+- Homepage layout pattern (grid, hero, content flow)
+- Project card style (what info shown, thumbnail treatment)
+- Project detail page structure (sections, metadata, narrative)
+- Typography approach (how many typefaces, weight usage)
+- Color palette (bg, text, accent)
+- Unique differentiating features
+
+Report: Pattern matrix showing what each reference does vs what josephibrahim.com does.
+
+**Task R2: Gap Analysis**
+
+Compare the pattern matrix against josephibrahim.com's current implementation:
+- What do ALL references do that josephibrahim.com doesn't?
+- What do 3+ references do that could be adopted?
+- What does josephibrahim.com do that NO reference does? (unique value or unnecessary?)
+- Where is josephibrahim.com already aligned?
+
+Categorize gaps as:
+- **MUST HAVE** — All 5 references do this, we don't
+- **SHOULD HAVE** — 3-4 references do this, high impact
+- **NICE TO HAVE** — 1-2 references do this, medium impact
+- **ALREADY ALIGNED** — We match the references
+
+Report: Prioritized gap list with specific implementation suggestions.
+
+**Task R3: Project Detail Page Deep Comparison**
+
+The user specifically admires Tendril and Found project pages. Do a detailed comparison:
+
+Read `components/ProjectDetailContent.tsx` and compare its structure against Tendril and Found project page patterns:
+- Section ordering (what comes first, second, third)
+- Visual weight distribution (how much space for video vs text vs metadata)
+- Narrative structure (how the story unfolds)
+- Credits presentation
+- Related work / next project navigation
+- Call-to-action patterns
+
+Report: Specific structural recommendations for project detail pages.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 1 GATE ═══
+
+**Run BEFORE starting Phase 2. Gate is HARD — no skip.**
+
+```bash
+# Verify no files were modified (review-only sprint)
+cd /c/Users/User/josephibrahim && git diff --stat
+# Should show NO changes — if anything changed, an agent violated review-only rules
+```
+
+**ALL checks must pass. If ANY fail, fix before proceeding.**
+
+Print status bar after gate check.
+
+---
+
+## PHASE 2: SYNTHESIZE
+
+Run this agent **sequentially** after Phase 1 completes. It reads all 4 agents' findings and produces the final report.
+
+### ═══ Agent SYNTH ◉ — Editorial Synthesizer ═══
+
+**MOE Expertise:** Information synthesis, editorial judgment, prioritization frameworks. Takes 4 specialist reports and produces a single actionable document. Resolves conflicts between agents (e.g., DESIGN wants something SUGGEST opposes). Applies effort/impact scoring.
+
+**Task Y1: Merge & Deduplicate Findings**
+
+Read all 4 agent reports from Phase 1. For each finding:
+- Deduplicate (multiple agents may flag the same issue)
+- Assign an effort/impact score:
+  - **Impact:** How much does fixing this improve the site? (1-5)
+  - **Effort:** How much work to implement? (1-5, where 1 = easy)
+  - **Priority = Impact / Effort** (higher = do first)
+- Categorize: DESIGN | PERFORMANCE | UX | CONTENT | A11Y | MOBILE
+- Mark any conflicts between agents and resolve with editorial judgment
+
+**Task Y2: Produce Final Report**
+
+Create a structured report with these sections:
+
+```
+## Quick Wins (Impact ≥ 3, Effort ≤ 2)
+[Things that are easy to fix and high impact — do these first]
+
+## Strategic Improvements (Impact ≥ 4, Effort 3-4)
+[Significant improvements worth the effort]
+
+## Nice to Have (Impact ≤ 2 or Effort ≥ 4)
+[Good ideas but lower priority]
+
+## Already Strong
+[What the site does well — don't break these]
+
+## Reference Alignment Score
+[How well josephibrahim.com aligns with the 5 references, scored by category]
+```
+
+Format each finding as:
+```
+### [CATEGORY] Finding Title
+**Impact:** X/5 | **Effort:** X/5 | **Priority:** X.X
+**Source:** Agent(s) that flagged this
+**Current:** What it does now
+**Recommended:** What it should do
+**Files:** Specific files to change
+```
+
+Print the final status bar after completing.
+
+---
+
+### ═══ PHASE 2 GATE (FINAL) ═══
+
+```bash
+# Verify no files were modified
+cd /c/Users/User/josephibrahim && git diff --stat
+# Should show NO changes
+```
+
+---
+
+## FINAL STATUS BAR
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  josephibrahim.com — Deep Review — COMPLETE                 ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: PARALLEL AUDIT     [██████████] 100% ✓            ║
+║    DESIGN    ◆ D1 ✓  D2 ✓  D3 ✓                             ║
+║    DEBUG     ⟡ B1 ✓  B2 ✓  B3 ✓                             ║
+║    SUGGEST   ◈ S1 ✓  S2 ✓  S3 ✓                             ║
+║    REFERENCE ⬡ R1 ✓  R2 ✓  R3 ✓                             ║
+║                                                              ║
+║  Phase 2: SYNTHESIZE         [██████████] 100% ✓            ║
+║    SYNTH     ◉ Y1 ✓  Y2 ✓                                   ║
+║                                                              ║
+║  Overall: [████████████████████] 100%  (14/14 tasks)        ║
+║                                                              ║
+║  New files:    0                                             ║
+║  Modified:     0                                             ║
+║  Findings:     (see report)                                  ║
+║  Regressions:  0                                             ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## SAFETY RULES (ALL AGENTS — NON-NEGOTIABLE)
+
+1. **Review only:** This is a READ-ONLY sprint. Do NOT modify any source files. If `git diff` shows changes, the sprint has failed.
+2. **Read before judging:** Always read the full file before flagging issues. Context matters.
+3. **Be specific:** Every finding must include file:line references. No vague "the typography could be better."
+4. **Status reporting:** Print status bar after EVERY task completion.
+5. **No hallucinated references:** When comparing against reference sites, only cite patterns you actually observed from fetching the URL. Don't guess what a site looks like.
+6. **Respect existing decisions:** The CLAUDE.md documents design decisions. If something looks "wrong" but is documented as intentional, note it but don't flag it as a bug.

@@ -1,0 +1,88 @@
+# Plan: Add Test Suite to comfyui_3D_viewport
+
+## Context
+
+The viewport project has 0 tests across 23 source files. The sibling project comfyui-agent has 573 fully-mocked tests. This plan adds a pytest test suite targeting ~145 tests across 14 modules, all runnable without GL context, USD files, or ComfyUI connection.
+
+## Structure
+
+```
+comfyui_3D_viewport/
+  tests/
+    __init__.py
+    conftest.py              # sys.path, shared fixtures
+    test_math_utils.py       # 22 tests - foundation
+    test_config.py           # 10 tests - constants + env overrides
+    test_undo.py             # 14 tests - command pattern + stack
+    test_animation.py        # 15 tests - lerp, turntable, keyframes
+    test_selection.py        # 14 tests - ray-AABB, picking
+    test_camera.py           # 13 tests - orbit/pan/dolly/export
+    test_projection.py       # 10 tests - physical camera math
+    test_lighting.py         # 12 tests - Light clamping, LightRig, uniforms
+    test_usd_loader.py       # 10 tests - triangulation, bounds, normals
+    test_mesh_importers.py   # 8 tests - dispatch, color extraction
+    test_file_drop.py        # 8 tests - path normalization, format detection
+    test_shading.py          # 6 tests - mode enum, cycling
+    test_hud.py              # 3 tests - toggle, enabled default
+  pytest.ini
+```
+
+## Implementation Order (by dependency)
+
+1. **conftest.py + pytest.ini** - sys.path injection, matrix fixtures, geometry fixtures, mock helpers
+2. **test_math_utils.py** - Zero deps. vec3_normalize, mat4_multiply, mat4_inverse roundtrip, look_at, compute_vertex_normals
+3. **test_config.py** - Test defaults, env overrides via monkeypatch + importlib.reload
+4. **test_undo.py** - UndoStack push/undo/redo/clear, all 4 Command subclasses via mock callbacks
+5. **test_animation.py** - _lerp, _lerp_angle (360 wrapping), CameraAnimator turntable + keyframe interpolation
+6. **test_selection.py** - ray_aabb_intersect, compute_world_aabb, SelectionManager register/select/cycle
+7. **test_camera.py** - OrbitCamera construction, orbit clamp, pan, dolly clamp, to_load3d_camera export
+8. **test_projection.py** - SensorGate aspect, Lens squeeze, PhysicalProjection FOV, uses camera_lens_database.json
+9. **test_lighting.py** - Light.__post_init__ clamps intensity to [0,1], effective_intensity = intensity * 2^exposure, LightRig preset cycling, get_uniform_data structure
+10. **test_usd_loader.py** - Mock pxr in sys.modules, test _triangulate (quad/pentagon/degenerate), compute_scene_bounds, MeshData defaults
+11. **test_mesh_importers.py** - Mock trimesh + pxr, test dispatch, _extract_color, vertex color averaging
+12. **test_file_drop.py** - normalize_path (file:// URLs, percent-encoded), detect_format for all extensions
+13. **test_shading.py** - Mock OpenGL.GL, ShadingMode enum, ShadingManager cycle/needs_second_pass
+14. **test_hud.py** - HUD toggle/enabled (mock PySide6.QtGui)
+
+## Key Design Decisions
+
+### sys.path in conftest.py
+`src/` has no `__init__.py` - modules use bare imports (`from math_utils import ...`). conftest.py inserts `src/` at front of `sys.path`.
+
+### Mocking strategy
+- **pxr**: Inject mock into `sys.modules` before importing usd_loader. Internal functions (`_triangulate`, `compute_scene_bounds`) accept plain Python types.
+- **trimesh**: Mock `trimesh.load()` return values. Use `spec=trimesh.Trimesh` for isinstance checks.
+- **OpenGL.GL**: Mock entire module in sys.modules for shading.py tests.
+- **PySide6**: Only needed for hud.py toggle test - minimal mock.
+
+### Config env override testing
+config.py evaluates at import time. Tests use `monkeypatch.setenv()` + `importlib.reload(config)` to test overrides.
+
+### Float comparison
+Use `pytest.approx(val, rel=1e-6)` throughout. Matrix roundtrip tests (M * M_inv = I) use `abs=1e-10`.
+
+## Critical Files to Read During Implementation
+
+| File | Why |
+|------|-----|
+| `src/math_utils.py` | All function signatures for test_math_utils |
+| `src/config.py` | Constant names and env var keys |
+| `src/undo.py` | Command ABC, 4 subclasses, UndoStack API |
+| `src/animation.py` | _lerp/_lerp_angle, CameraAnimator, CameraKeyframe |
+| `src/selection.py` | ray_aabb_intersect, SelectionManager, SceneObject |
+| `src/camera.py` | OrbitCamera API, clamp values, to_load3d_camera |
+| `src/projection.py` | SensorGate, Lens, PhysicalProjection, database helpers |
+| `src/lighting.py` | Light dataclass, LightRig, get_uniform_data |
+| `src/usd_loader.py` | _triangulate, compute_scene_bounds, MeshData |
+| `src/mesh_importers.py` | load_mesh_file, _extract_color |
+| `src/file_drop.py` | normalize_path, detect_format |
+| `src/shading.py` | ShadingMode, ShadingManager |
+| `src/hud.py` | HUD class |
+
+## Verification
+
+```bash
+cd C:\Users\User\comfyui_3D_viewport && .venv\Scripts\python -m pytest tests/ -v
+```
+
+All ~145 tests should pass with 0 failures. No GL context, no USD files, no network connections required.

@@ -1,0 +1,121 @@
+# SYNAPSE Performance Optimization Plan
+
+## Context
+
+Analysis identified 18 latency bottlenecks across the SYNAPSE hot path (MCP tool call -> WebSocket -> handler -> response). Current framework overhead is ~80-1250us per call. These fixes target a 5-10x reduction to ~15-100us by eliminating redundant serialization, deep copies, and lock contention. All changes are zero-behavioral-change optimizations — tests should pass unchanged.
+
+## Files to Modify (11 files)
+
+### 1. `python/synapse/core/protocol.py` — Fixes #1, #3
+
+**Fix #1: Replace `asdict()` with manual dict in `to_json()`** (both classes)
+
+- `SynapseCommand.to_json()` line 124-125: Replace `_to_json_str(asdict(self))` with manual dict
+- `SynapseResponse.to_json()` line 161-162: Same change
+- Savings: 50-500us per response (eliminates recursive deep copy)
+
+**Fix #3: Add `_from_json` using orjson when available**
+
+- Add module-level `_from_json` alongside existing `_to_json_str` (lines 14-20)
+- Use in `SynapseCommand.from_json()` line 129 and `SynapseResponse.from_json()` line 166
+- Savings: 2-4x faster deserialization
+
+Also: remove `asdict` from the import on line 10 (no longer needed)
+
+### 2. `mcp_server.py` — Fixes #2, #4, #14
+
+**Fix #2: Simplify `_cmd_id()`** (lines 128-132)
+
+- Replace SHA-256 + `_dumps(payload)` with `f"{cmd_type}-{_cmd_seq}"`
+- Remove `import hashlib` from line 6 (if unused elsewhere in file)
+- Savings: 5-200us per call (eliminates redundant serialization)
+
+**Fix #4: Replace identity-copy lambdas** (lines 1355-1399)
+
+- Change all 19 `lambda a: {k: a[k] for k in a}` to `lambda a: a`
+- Savings: eliminates 19 unnecessary dict copies
+
+**Fix #14: `_is_connected()` enum comparison** (lines 169-174)
+
+- Replace `.state.name == "OPEN"` with `.state == websockets.connection.State.OPEN`
+- Need to check the correct import path for the State enum
+
+### 3. `python/synapse/server/handlers.py` — Fixes #7, #11
+
+**Fix #7: Normalize command type once**
+
+- In `handle()` (line 206): normalize once, pass normalized type to `registry.get()`
+- In `CommandHandlerRegistry.get()` (lines 148-155): remove redundant normalization, do direct lookup only
+
+**Fix #11: Batch log submissions** (lines 219-239)
+
+- Combine bridge.log_action + audit_log().log into a single `_log_executor.submit()` call
+- Create a helper function that does both
+
+### 4. `python/synapse/server/resilience.py` — Fix #12
+
+**Fix #12: Single `time.time()` in `acquire()`** (lines 67-138)
+
+- Add `now` parameter to `_refill_global()` and `_refill_client()`
+- Call `time.time()` once in `acquire()`, pass to both methods
+
+### 5. `python/synapse/server/websocket.py` — Fix #15
+
+**Fix #15: Use `_to_json_str` for auth messages** (lines 274-306)
+
+- Import `_to_json_str` from protocol or create local equivalent
+- Replace 4 instances of `json.dumps({...}, sort_keys=True)` with `_to_json_str({...})`
+
+### 6. `python/synapse/routing/cache.py` — Fix #8
+
+**Fix #8: Replace O(n log n) eviction with O(n) scan**
+
+- In `_evict_one()` (lines 166-182): replace `sorted()` with simple iteration to find first expired
+- Use `next()` with generator expression for expired check, fallback to `min()` for LRU
+
+### 7. `python/synapse/routing/router.py` — Fix #9
+
+**Fix #9: Use orjson in `_hash_context()`** (lines 786-791)
+
+- Add orjson conditional for serialization (same pattern as protocol.py)
+- Keep stdlib json as fallback
+
+### 8. `python/synapse/routing/knowledge.py` — Fix #5
+
+**Fix #5: Pre-index section headers at load time** (lines 91-104, 227-272)
+
+- In `_load_reference_files()`: after loading each file, split into lines and build a `_section_index` dict mapping words to `(file_stem, line_index, lines)` tuples
+- In `_match_reference_sections()`: query the pre-built index instead of scanning all files
+
+### 9. `python/synapse/memory/store.py` — Fixes #10, #16
+
+**Fix #10: Convert index from lists to sets** (lines 270-300)
+
+- In `_index_memory()`: use `set.add()` instead of `list.append()` with O(n) membership check
+- Initialize index values as sets: `self._index["by_type"][key] = set()`
+- Convert sets back to lists in `_save_index()` for JSON serialization
+
+**Fix #16: No-op `_wait_loaded` after load completes** (lines 230-268, 301-305)
+
+- After `self._loaded.set()` in `_load()`, replace `_wait_loaded` with a lambda no-op
+
+### 10. `python/synapse/core/aliases.py` — Fix #13
+
+**Fix #13: Remove dead `_REVERSE_ALIASES`** (lines 136-142)
+
+- Delete the entire block — it's never referenced anywhere in the codebase
+
+### 11. `python/synapse/__init__.py` — Fix #17
+
+**Fix #17: Defer agent and context imports**
+
+- Move lines 108-145 (memory.context, memory.markdown, session.tracker, agent.*) into `__getattr__` lazy loading
+- These modules aren't needed until a session starts
+
+## Verification
+
+1. Run full test suite: `python -m pytest tests/ -v`
+2. Run specifically affected test files:
+   - `python -m pytest tests/test_core.py tests/test_routing.py tests/test_render.py tests/test_introspection.py tests/test_materials.py -v`
+3. If Houdini is available: `synapse_ping` to verify connection still works
+4. Verify no import errors: `python -c "import synapse; print(synapse.__version__)"`

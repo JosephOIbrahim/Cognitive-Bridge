@@ -1,0 +1,595 @@
+# SYNAPSE Tool Parity — Claude Code MOE Implementation
+
+> **Repo:** `C:\Users\User\SYNAPSE`
+> **Goal:** Give the SYNAPSE Houdini panel full tool-calling parity (102 tools) with Claude Code/Desktop
+> **Method:** 5 MOE agents with exclusive file ownership, phased execution
+
+---
+
+## What We're Building
+
+The panel currently calls the Anthropic API for chat but has NO tool definitions.
+Claude can only *describe* what to do. After this implementation, Claude will
+*execute* Houdini operations directly — creating nodes, setting parameters,
+building networks, rendering — all from natural language in the panel.
+
+**Architecture:** Panel calls `SynapseHandler.handle()` directly on Houdini's
+main thread. No WebSocket needed for tool execution — the panel IS inside Houdini.
+
+```
+User types "build a solaris network"
+  → ClaudeWorker streams to Anthropic API (102 tool defs attached)
+  → API returns tool_use blocks (create_node, set_parm, connect_nodes...)
+  → ToolExecutor runs each on main thread via SynapseHandler
+  → Results sent back to API as tool_result
+  → API returns more tool_use or final text
+  → Panel displays: tool indicators + Claude's summary
+```
+
+---
+
+## File Map
+
+```
+NEW FILES (4):
+  python/synapse/panel/tool_bridge.py       ALPHA   Schema converter
+  python/synapse/panel/tool_executor.py     BRAVO   Main-thread executor
+  python/synapse/panel/claude_worker.py     CHARLIE Streaming + tool loop
+  python/synapse/panel/system_prompt.py     DELTA   System prompt builder
+
+MODIFIED FILES (1):
+  houdini/python_panels/synapse_panel.pypanel  ECHO  Wire everything together
+```
+
+---
+
+## Dependency Graph
+
+```
+ALPHA (tool_bridge) ──┬──→ CHARLIE (claude_worker) ──┐
+                      │                               │
+                      └──→ BRAVO (tool_executor)  ────┼──→ ECHO (panel wiring)
+                                                      │
+DELTA (system_prompt) ────────────────────────────────┘
+```
+
+**Phase 1** (parallel, no deps): ALPHA + DELTA
+**Phase 2** (needs ALPHA): BRAVO + CHARLIE
+**Phase 3** (needs all): ECHO
+
+---
+
+## Existing Code Context
+
+**Key files agents need to know about (READ ONLY — do not modify):**
+
+| File | What It Contains |
+|------|-----------------|
+| `python/synapse/mcp/_tool_registry.py` | 102 tool definitions as `TOOL_DEFS` list. Each entry: `(name, command_type, payload_builder, description, inputSchema, read_only, destructive, idempotent)`. Also exports `TOOL_DISPATCH` dict mapping `name → (command_type, payload_builder)`. |
+| `python/synapse/server/handlers.py` | `SynapseHandler` class with `.handle(SynapseCommand) → SynapseResponse` method. Mixins: Node, USD, Render, TOPS, Material, Memory, HDA, COPS. |
+| `python/synapse/core/protocol.py` | `SynapseCommand` dataclass: `type`, `id`, `payload`, `sequence`, `timestamp`. `SynapseResponse` dataclass: `id`, `success`, `data`, `error`. |
+| `python/synapse/server/main_thread.py` | `run_on_main(fn, timeout)` — executes fn via `hdefereval.executeDeferred()` with threading.Event sync. |
+| `python/synapse/panel/` | Existing panel package with `__init__.py`, `ws_bridge.py`, `styles.py`, `tokens.py`, etc. New files go here. |
+| `TONE.md` | Voice/personality guide for the co-pilot (at repo root). |
+| `houdini/python_panels/synapse_panel.pypanel` | Current v6.1 panel — single-file, self-contained. Has inline `ClaudeWorker` that needs replacing. |
+
+---
+
+## PHASE 1 — Parallel Agents (No Dependencies)
+
+---
+
+### AGENT ALPHA — Tool Schema Bridge
+
+Copy this entire block into Claude Code:
+
+```
+I need you to create a tool schema bridge module for the SYNAPSE project.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- The file python/synapse/mcp/_tool_registry.py contains 102 MCP tool definitions
+  in a list called TOOL_DEFS. Each entry is a tuple:
+  (name, command_type, payload_builder, description, inputSchema, read_only, destructive, idempotent)
+- It also exports TOOL_DISPATCH: dict mapping name → (command_type, payload_builder)
+- The Anthropic API expects tools in a different format than MCP
+
+YOUR TASK:
+Create python/synapse/panel/tool_bridge.py
+
+This module converts TOOL_DEFS to Anthropic API tool format. Pure data transform,
+no Houdini dependency, no hou imports.
+
+REQUIREMENTS:
+
+1. Function get_anthropic_tools() -> list[dict]
+   Returns tool definitions in Anthropic format:
+   {
+       "name": "houdini_create_node",
+       "description": "Create a new node...",
+       "input_schema": {  # NOTE: Anthropic uses input_schema, NOT inputSchema
+           "type": "object",
+           "properties": {...},
+           "required": [...]
+       }
+   }
+   Cache the result at module level since TOOL_DEFS is immutable.
+
+2. Function get_tool_dispatch(tool_name: str) -> tuple | None
+   Returns (command_type, payload_builder) from TOOL_DISPATCH, or None.
+
+3. Function get_tool_count() -> int
+   Returns total number of tools (for health checks).
+
+4. Import from synapse.mcp._tool_registry only. No other synapse imports.
+   No hou import. No Qt import.
+
+5. Build the cache at import time (module-level code).
+   Make the cache a tuple (immutable) after building.
+
+6. Add the group-info tools too. Read mcp_server.py lines 480-488 —
+   there are 6 additional "synapse_group_*" tools that return knowledge
+   preambles. Include them with empty input_schema:
+   {"type": "object", "properties": {}, "required": []}
+   Their descriptions should start with "[TOOL GROUP]".
+   You'll need to import the group knowledge from mcp_tools_scene,
+   mcp_tools_render, mcp_tools_usd, mcp_tools_tops, mcp_tools_memory,
+   mcp_tools_cops modules (each has a GROUP_KNOWLEDGE string).
+   Handle ImportError gracefully — if any module is missing, skip that group tool.
+
+VERIFY:
+- Read python/synapse/mcp/_tool_registry.py to understand TOOL_DEFS format
+- Run: python -c "from synapse.panel.tool_bridge import get_anthropic_tools; t=get_anthropic_tools(); print(f'{len(t)} tools'); print(t[0])"
+  Expected: 102+ tools, first tool should have name/description/input_schema keys
+- Verify input_schema (not inputSchema) is used in output
+
+DO NOT modify any existing files. Only create python/synapse/panel/tool_bridge.py
+```
+
+---
+
+### AGENT DELTA — System Prompt Builder
+
+Copy this entire block into Claude Code:
+
+```
+I need you to create a system prompt builder for the SYNAPSE Houdini panel.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- TONE.md at repo root contains the voice/personality guide for the co-pilot
+- The panel calls the Anthropic API directly and needs a system prompt that
+  includes: identity, TONE.md content, tool usage guidance, and scene context
+- The panel gathers context: network path, selected nodes, frame number, hip file
+
+YOUR TASK:
+Create python/synapse/panel/system_prompt.py
+
+REQUIREMENTS:
+
+1. Function build_system_prompt(context: dict) -> str
+   Args: context dict with keys: network, selection (list), frame (int), hip (str)
+   Returns: Complete system prompt string.
+
+2. The prompt MUST include these sections (joined with double newlines):
+
+   a) IDENTITY — Tell Claude it IS SYNAPSE, embedded inside Houdini 21, with
+      FULL tool access. Emphasize: "When asked to BUILD something, USE TOOLS.
+      Don't describe steps — execute them." This is the most important part.
+      Artists expect action, not documentation.
+
+   b) TONE — Load TONE.md content. Search for it at:
+      - {repo_root}/TONE.md (relative to this file: ../../../TONE.md)
+      - C:/Users/User/SYNAPSE/TONE.md
+      - ~/.synapse/TONE.md
+      Cache after first load. If not found, skip this section (don't error).
+
+   c) TOOL GUIDANCE — Rules for tool usage:
+      - When asked to create/build/setup → USE TOOLS immediately
+      - When asked to explain/teach → respond with text
+      - After creating nodes → briefly confirm what was built
+      - If a tool fails → explain what happened, suggest fix
+      - Chain multiple tools for complex requests
+      - Use houdini_inspect_node to discover parameter names before setting them
+        (especially for USD/Solaris nodes with encoded names like xn__inputsintensity_i0a)
+      - Always set the display/render flag on the last node in a chain
+      - For Solaris networks: prefer creating standard LOP nodes over execute_python
+
+   d) SCENE CONTEXT — Current state: network, selection, frame, file.
+      Format cleanly. If selection is >5 nodes, truncate with "+N more".
+
+3. No hou import. No Qt import. Pure Python + file I/O.
+
+4. Use _load_tone() as a cached helper. Load once, return cached string after.
+
+VERIFY:
+- Read TONE.md to understand the voice guide content
+- Run: python -c "from synapse.panel.system_prompt import build_system_prompt; p=build_system_prompt({'network':'/stage','selection':[],'frame':1,'hip':'test.hip'}); print(p[:500])"
+- Verify the output starts with identity, includes tool guidance, ends with context
+
+DO NOT modify any existing files. Only create python/synapse/panel/system_prompt.py
+```
+
+---
+
+## PHASE 2 — After Phase 1 Complete
+
+---
+
+### AGENT BRAVO — Main-Thread Tool Executor
+
+Copy this entire block into Claude Code:
+
+```
+I need you to create a main-thread tool executor for the SYNAPSE Houdini panel.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- The panel runs inside Houdini. hou.* calls MUST happen on the main thread.
+- The Claude API worker runs on a QThread and cannot call hou.* directly.
+- We need a Qt signal/slot bridge: worker emits signal → executor runs on main thread.
+- python/synapse/panel/tool_bridge.py (already created) provides:
+    get_tool_dispatch(name) → (command_type, payload_builder) or None
+- python/synapse/server/handlers.py provides:
+    SynapseHandler class with .handle(SynapseCommand) → SynapseResponse
+- python/synapse/core/protocol.py provides:
+    SynapseCommand(type, id, payload, sequence, timestamp)
+    SynapseResponse(id, success, data, error)
+
+YOUR TASK:
+Create python/synapse/panel/tool_executor.py
+
+REQUIREMENTS:
+
+1. Class ToolExecutor(QtCore.QObject) — lives on the main thread (created by panel).
+
+2. A ToolRequest class (or use a simple namespace) with fields:
+   - tool_use_id: str (from Anthropic API tool_use block)
+   - tool_name: str
+   - tool_input: dict
+   - result: Any (set by executor)
+   - error: str or None (set by executor)
+   - done: threading.Event() (set by executor when complete)
+
+   The worker thread creates a ToolRequest, emits a signal, then calls
+   request.done.wait(timeout=30.0) to block until the main thread finishes.
+
+3. Slot execute_tool(self, request: ToolRequest):
+   Decorated with @QtCore.Slot(object)
+   This runs on the main thread (via Qt's AutoConnection from QThread signal).
+
+   Steps:
+   a) Call get_tool_dispatch(request.tool_name) to get (cmd_type, payload_builder)
+   b) Build payload: payload = payload_builder(request.tool_input)
+   c) Create SynapseCommand(type=cmd_type, id="panel-{name}-{timestamp}", payload=payload)
+   d) Call self._handler.handle(command) → SynapseResponse
+   e) If response.success: set request.result = response.data
+      If not: set request.error = response.error
+   f) ALWAYS call request.done.set() in a finally block
+
+4. Lazy-load SynapseHandler in _get_handler(). Don't import at module level
+   because hou may not be available yet. Cache after first successful import.
+   If import fails, set request.error and return.
+
+5. Handle exceptions gracefully. Log with logging module. Never let an
+   exception escape without calling request.done.set() — the worker thread
+   would hang forever.
+
+6. Import Qt from PySide6 with PySide2 fallback (try/except pattern).
+   Import threading for Event.
+
+VERIFY:
+- Read python/synapse/panel/tool_bridge.py to see get_tool_dispatch API
+- Read python/synapse/server/handlers.py lines 217-317 to see SynapseHandler.handle()
+- Read python/synapse/core/protocol.py lines 196-276 to see SynapseCommand/SynapseResponse
+- Run: python -c "from synapse.panel.tool_executor import ToolExecutor, ToolRequest; print('Import OK')"
+  (This will work outside Houdini since hou import is lazy)
+
+DO NOT modify any existing files. Only create python/synapse/panel/tool_executor.py
+```
+
+---
+
+### AGENT CHARLIE — Claude Worker v2 (Streaming + Tool Loop)
+
+Copy this entire block into Claude Code:
+
+```
+I need you to create a Claude API streaming worker with full tool-use loop support.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- python/synapse/panel/tool_bridge.py (already created) provides:
+    get_anthropic_tools() → list[dict] (102 tool definitions in Anthropic format)
+- python/synapse/panel/tool_executor.py (already created) provides:
+    ToolRequest class with: tool_use_id, tool_name, tool_input, result, error, done (Event)
+    ToolExecutor class with: execute_tool(request) slot
+- The panel connects: worker.tool_requested → executor.execute_tool
+- The worker runs on a QThread. It CANNOT call hou.* directly.
+- Communication with main thread is via: emit signal with ToolRequest, then
+  call request.done.wait(timeout=30) to block until executor completes.
+
+YOUR TASK:
+Create python/synapse/panel/claude_worker.py
+
+This replaces the simple streaming worker in the panel with a full
+tool-use conversation loop.
+
+REQUIREMENTS:
+
+1. Class ClaudeWorker(QThread) with signals:
+   - token_received(str)     — text tokens for streaming display
+   - stream_done()           — conversation complete
+   - stream_error(str)       — error message
+   - tool_requested(object)  — emits ToolRequest for main-thread execution
+   - tool_status(str, str)   — (tool_name, status) where status is "running"/"done"/"error"
+
+2. Constructor: __init__(self, messages, system_prompt="", parent=None)
+   - Copy messages list (we'll mutate during tool loop)
+   - Load tools via get_anthropic_tools()
+   - Store abort flag
+
+3. Method abort(self) — sets self._abort = True
+
+4. Method run(self) — entry point:
+   - Get API key from os.environ["ANTHROPIC_API_KEY"]
+   - Call _conversation_loop(api_key)
+   - Emit stream_done on success, stream_error on exception
+
+5. Method _conversation_loop(self, api_key):
+   THE CORE LOOP. Repeats until stop_reason != "tool_use" or max 25 iterations:
+
+   a) Call _stream_request(api_key) → (stop_reason, content_blocks)
+   b) If stop_reason == "tool_use":
+      - Append {"role": "assistant", "content": content_blocks} to messages
+      - For each tool_use block in content_blocks:
+        * Create ToolRequest from block's id, name, input
+        * Emit tool_status(name, "running")
+        * Emit tool_requested(request)
+        * Call request.done.wait(timeout=30.0)
+        * If timed out: set request.error = "timed out"
+        * Emit tool_status(name, "done" or "error")
+        * Build tool_result dict: {type, tool_use_id, content, is_error}
+        * Content should be JSON string if result is dict, else str
+      - Append {"role": "user", "content": [tool_result_1, tool_result_2, ...]}
+      - Continue loop (make another API call)
+   c) If stop_reason is "end_turn" or "max_tokens": return (done)
+
+6. Method _stream_request(self, api_key) → (stop_reason, content_blocks):
+   Makes ONE streaming API call. Returns all content blocks accumulated.
+
+   - Build request body with model="claude-sonnet-4-20250514", max_tokens=4096,
+     stream=True, messages=self._messages, tools=self._tools
+   - If self._system: add "system" field
+   - Use http.client.HTTPSConnection (stdlib, no dependencies)
+   - POST to api.anthropic.com /v1/messages with headers:
+     Content-Type: application/json
+     x-api-key: {api_key}
+     anthropic-version: 2023-06-01
+   - Parse SSE stream. Track state:
+     * content_blocks: list accumulating all blocks
+     * current_block: the block being built (text or tool_use)
+     * current_text: accumulator for text content or JSON input
+     * stop_reason: from message_delta event
+
+   - SSE event handling:
+     "content_block_start" → start new block (text or tool_use)
+       For tool_use: capture id and name from content_block
+     "content_block_delta" →
+       text_delta: emit token_received, append to current text block
+       input_json_delta: append partial_json to current_text (tool input accumulator)
+     "content_block_stop" → finalize block:
+       For tool_use: parse accumulated current_text as JSON → block["input"]
+       Append to content_blocks
+     "message_delta" → capture stop_reason
+
+   - Return (stop_reason, content_blocks)
+
+7. Method get_messages(self) → list:
+   Returns copy of current messages (for panel to sync history after tool loops).
+
+8. Use timeout=60 on HTTPSConnection (tool-use responses take longer).
+
+9. Check self._abort at every loop iteration and in the SSE read loop.
+
+IMPORTANT DETAILS:
+- The Anthropic streaming format for tool_use accumulates the input JSON
+  across multiple "input_json_delta" events. You must concatenate all
+  partial_json strings, then JSON.parse the full string at content_block_stop.
+- Multiple tool_use blocks can appear in a single response (parallel tool use).
+  Process ALL of them before sending tool_results back.
+- tool_result messages go in the "user" role, not "assistant".
+- The tool_results for multiple tools go in a SINGLE user message as a list.
+
+VERIFY:
+- Read python/synapse/panel/tool_bridge.py to see get_anthropic_tools() output format
+- Read python/synapse/panel/tool_executor.py to see ToolRequest class fields
+- Run: python -c "from synapse.panel.claude_worker import ClaudeWorker; print('Import OK')"
+- To test streaming without tools: set ANTHROPIC_API_KEY and send a simple message
+  that shouldn't trigger tool use (like "what is VEX?")
+
+DO NOT modify any existing files. Only create python/synapse/panel/claude_worker.py
+```
+
+---
+
+## PHASE 3 — After All Agents Complete
+
+---
+
+### AGENT ECHO — Panel Wiring
+
+Copy this entire block into Claude Code:
+
+```
+I need you to modify the SYNAPSE Houdini panel to wire in the new tool execution system.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- The file houdini/python_panels/synapse_panel.pypanel is a single-file Qt panel (v6.1)
+- It currently has an INLINE ClaudeWorker class that only streams text (no tools)
+- Three new modules have been created:
+    python/synapse/panel/tool_bridge.py — get_anthropic_tools(), get_tool_dispatch()
+    python/synapse/panel/tool_executor.py — ToolExecutor (QObject), ToolRequest
+    python/synapse/panel/claude_worker.py — ClaudeWorker (QThread) with tool loop
+    python/synapse/panel/system_prompt.py — build_system_prompt(context)
+
+YOUR TASK:
+Modify houdini/python_panels/synapse_panel.pypanel to use the new modules.
+
+CHANGES REQUIRED:
+
+1. REMOVE the inline ClaudeWorker class (the entire class definition).
+   It's replaced by synapse.panel.claude_worker.ClaudeWorker.
+
+2. In SynapsePanel.__init__, ADD after existing init code:
+   ```python
+   # Tool executor lives on main thread
+   self._tool_executor = None  # lazy init
+   ```
+
+3. ADD a method _ensure_tool_executor(self):
+   ```python
+   def _ensure_tool_executor(self):
+       if self._tool_executor is None:
+           try:
+               from synapse.panel.tool_executor import ToolExecutor
+               self._tool_executor = ToolExecutor(parent=self)
+           except ImportError as e:
+               self._sys("Tool executor not available: " + str(e))
+       return self._tool_executor
+   ```
+
+4. REPLACE the _chat() method. The new version:
+   - Displays user message (same as before)
+   - Imports ClaudeWorker from synapse.panel.claude_worker
+   - Imports build_system_prompt from synapse.panel.system_prompt
+   - Builds system prompt with _gather_context()
+   - Creates ClaudeWorker with messages + system + tools
+   - Connects EXISTING signals: token_received, stream_done, stream_error
+   - Connects NEW signals:
+     worker.tool_requested → self._ensure_tool_executor().execute_tool
+     worker.tool_status → self._on_tool_status
+   - Starts the worker
+
+   IMPORTANT: The import of ClaudeWorker must be INSIDE _chat(), not at module top.
+   The panel is a self-contained .pypanel — it can't have top-level imports from
+   synapse.panel.* because the module might not be on sys.path at parse time.
+   Add the path at runtime:
+   ```python
+   import sys
+   _synapse_python = os.path.join(os.path.expanduser("~"), "SYNAPSE", "python")
+   if _synapse_python not in sys.path:
+       sys.path.insert(0, _synapse_python)
+   ```
+   Put this path setup near the top of the script (after the existing imports),
+   not inside _chat(). Also check for the path relative to HIP and SYNAPSE_ROOT env var.
+
+5. ADD _on_tool_status(self, tool_name, status) method:
+   Displays a compact inline indicator in the chat showing what tool is running.
+   Use this HTML template:
+   ```python
+   def _html_tool_status(tool_name, status):
+       icons = {"running": "\u2699\ufe0f", "done": "\u2713", "error": "\u2717"}
+       colors = {"running": FIRE, "done": GROW, "error": ERROR}
+       display = tool_name.replace("houdini_", "").replace("synapse_", "")
+       display = display.replace("_", " ").title()
+       color = colors.get(status, TEXT_SECONDARY)
+       icon = icons.get(status, "")
+       return (
+           '<div style="margin:2px 0 2px 20px; padding:3px 10px; '
+           'font-size:{sz}pt; color:{c}; '
+           'border-left:2px solid {c};">'
+           '{icon} {name}'
+           '</div>'
+       ).format(sz=SZ_SMALL, c=color, icon=icon, name=display)
+   ```
+
+6. UPDATE _on_done() method:
+   After re-enabling the send button, sync conversation history from the worker:
+   ```python
+   if self._worker:
+       self._messages = self._worker.get_messages()
+   ```
+   This is critical — the worker may have added multiple assistant/user turns
+   during the tool loop that the panel needs to know about for conversation continuity.
+
+7. ADD a fallback: if importing the new ClaudeWorker fails, keep the old inline
+   behavior (text-only streaming, no tools). Print a warning to the chat.
+   This ensures the panel doesn't break if the synapse package isn't installed.
+
+8. DO NOT change any of the existing slash commands (/search, /inspect, /scene, etc.)
+   DO NOT change the visual design (styles, colors, layout, fonts)
+   DO NOT change the server connect/disconnect behavior
+   DO NOT change the context chips or health polling
+
+VERIFY:
+- Read the current synapse_panel.pypanel to understand the full structure
+- Read python/synapse/panel/claude_worker.py for the new ClaudeWorker API
+- Read python/synapse/panel/tool_executor.py for ToolExecutor and ToolRequest
+- Read python/synapse/panel/system_prompt.py for build_system_prompt
+- Validate XML: python -c "import xml.etree.ElementTree as ET; ET.parse('houdini/python_panels/synapse_panel.pypanel'); print('XML OK')"
+- Validate Python: extract the script from CDATA and compile() it
+
+ONLY modify houdini/python_panels/synapse_panel.pypanel. Do not touch any other file.
+```
+
+---
+
+## Post-Implementation Verification
+
+Run these in order after all agents complete:
+
+```bash
+# 1. Import check (outside Houdini, from repo root)
+cd C:\Users\User\SYNAPSE
+set PYTHONPATH=python
+python -c "from synapse.panel.tool_bridge import get_anthropic_tools; print(f'{len(get_anthropic_tools())} tools')"
+python -c "from synapse.panel.system_prompt import build_system_prompt; print(build_system_prompt({'network':'/stage','selection':[],'frame':1,'hip':'test.hip'})[:200])"
+python -c "from synapse.panel.tool_executor import ToolExecutor, ToolRequest; print('Executor OK')"
+python -c "from synapse.panel.claude_worker import ClaudeWorker; print('Worker OK')"
+
+# 2. XML validation
+python -c "import xml.etree.ElementTree as ET; ET.parse('houdini/python_panels/synapse_panel.pypanel'); print('Panel XML OK')"
+
+# 3. In Houdini: reload panel, type "hi" → should stream text (no tools)
+# 4. In Houdini: type "create a null node in /obj" → should use houdini_create_node tool
+# 5. In Houdini: type "build a simple solaris network" → should chain multiple tools
+```
+
+---
+
+## Risk Mitigations
+
+| Risk | Mitigation |
+|------|-----------|
+| **102 tool schemas too large for API context** | Test first. If >50K tokens, implement context-aware filtering: only send tools matching current network (/obj→SOP tools, /stage→USD tools). Add this as a follow-up, not Phase 1. |
+| **Tool loop runs forever** | 25-iteration hard cap in worker. 30s per-tool timeout. |
+| **Main thread blocks on slow tool** | 30s timeout on `request.done.wait()`. Worker emits error, continues. |
+| **hou not available at import** | All hou imports are lazy (inside functions, not module-level). |
+| **Worker thread hangs if executor crashes** | `finally: request.done.set()` in executor — always signals completion. |
+| **Panel killed mid-loop** | Worker checks `self._abort` every iteration. |
+| **sys.path not set for synapse imports** | Panel adds path at runtime before first import attempt. |
+| **Anthropic API errors** | Worker catches all exceptions, emits stream_error, never hangs. |
+
+---
+
+## Execution Checklist
+
+```
+[ ] Phase 1: Run ALPHA and DELTA agents (parallel)
+[ ] Verify: tool_bridge imports and returns 102+ tools
+[ ] Verify: system_prompt builds correctly
+[ ] Phase 2: Run BRAVO and CHARLIE agents (parallel)
+[ ] Verify: tool_executor imports cleanly
+[ ] Verify: claude_worker imports cleanly
+[ ] Phase 3: Run ECHO agent
+[ ] Verify: panel XML validates
+[ ] Verify: panel loads in Houdini
+[ ] Test: "hi" → text response (no tools)
+[ ] Test: "create a null in /obj" → node created
+[ ] Test: "build a solaris network" → multiple tools chained
+[ ] Test: /scene still works (local command)
+[ ] Test: /inspect still works
+[ ] Test: tool status indicators appear in chat
+```

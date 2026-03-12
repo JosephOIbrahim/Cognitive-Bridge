@@ -1,0 +1,125 @@
+"""Injection delta computation.
+
+Takes a CleanConversionResult and an injection profile,
+produces deltas. Deltas are ADDITIVE, not replacements.
+final = clean + alpha * delta
+
+For anchor phases: delta is EMPTY STRING (no modification).
+For modulated phases: delta contains gain-annotated metadata.
+"""
+
+from dataclasses import dataclass
+
+from src.lossless.constants import ANCHOR_PHASES, PHASES, PROFILES
+from src.lossless.injection.gain import compute_gain
+
+
+@dataclass(frozen=True, slots=True)
+class InjectionDelta:
+    """Result of injection delta computation.
+
+    Attributes:
+        section_deltas: Phase-name -> markdown delta string.
+        gains_applied: Phase-name -> gain value used.
+        is_anchor: Phase-name -> whether this phase is anchor.
+        profile_name: Which profile was used.
+        s_NM: Signal strength used.
+    """
+
+    section_deltas: tuple  # tuple of (key, value) pairs
+    gains_applied: tuple   # tuple of (key, value) pairs
+    is_anchor: tuple       # tuple of (key, value) pairs
+    profile_name: str
+    s_NM: float
+
+    def get_deltas_dict(self) -> dict:
+        """Return section deltas as a regular dict."""
+        return dict(self.section_deltas)
+
+    def get_gains_dict(self) -> dict:
+        """Return gains applied as a regular dict."""
+        return dict(self.gains_applied)
+
+    def get_anchor_flags(self) -> dict:
+        """Return anchor flags as a regular dict."""
+        return dict(self.is_anchor)
+
+    @staticmethod
+    def empty() -> "InjectionDelta":
+        """Create an empty delta (no injection)."""
+        deltas = tuple((p, "") for p in PHASES)
+        gains = tuple((p, 1.0) for p in PHASES)
+        anchors = tuple((p, p in ANCHOR_PHASES) for p in PHASES)
+        return InjectionDelta(
+            section_deltas=deltas,
+            gains_applied=gains,
+            is_anchor=anchors,
+            profile_name="none",
+            s_NM=0.0,
+        )
+
+
+def compute_delta(
+    sections: dict,
+    profile_name: str,
+) -> InjectionDelta:
+    """Compute injection deltas for all sections.
+
+    Args:
+        sections: Phase-name -> markdown mapping (from clean conversion).
+        profile_name: Injection profile to use.
+
+    Returns:
+        InjectionDelta with per-phase deltas.
+    """
+    if profile_name not in PROFILES:
+        raise ValueError(f"Unknown profile: {profile_name}")
+
+    s_NM = PROFILES[profile_name]["s_NM"]
+
+    section_deltas = {}
+    gains_applied = {}
+    is_anchor_map = {}
+
+    for phase in PHASES:
+        is_anchor = phase in ANCHOR_PHASES
+        is_anchor_map[phase] = is_anchor
+        g = compute_gain(phase, s_NM)
+        gains_applied[phase] = g
+
+        if is_anchor or phase not in sections:
+            # Anchor phases or missing phases: empty delta
+            section_deltas[phase] = ""
+        else:
+            # Modulated phases: compute delta content
+            section_deltas[phase] = _compute_section_delta(
+                sections[phase], g, phase, profile_name
+            )
+
+    return InjectionDelta(
+        section_deltas=tuple(sorted(section_deltas.items())),
+        gains_applied=tuple(sorted(gains_applied.items())),
+        is_anchor=tuple(sorted(is_anchor_map.items())),
+        profile_name=profile_name,
+        s_NM=s_NM,
+    )
+
+
+def _compute_section_delta(
+    clean_content: str, gain_value: float, phase: str, profile_name: str
+) -> str:
+    """Compute the delta for a single modulated section.
+
+    The delta is metadata that records how the section should be
+    annotated under injection. It does NOT modify the clean content
+    directly - that's the combiner's job (Agent 6).
+
+    For now, deltas are injection metadata comments that get appended.
+    """
+    if abs(gain_value - 1.0) < 1e-12:
+        return ""  # No modulation at gain=1.0
+
+    return (
+        f"\n<!-- injection: profile={profile_name} "
+        f"phase={phase} gain={gain_value:.6f} -->"
+    )

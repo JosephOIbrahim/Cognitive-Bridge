@@ -1,0 +1,1959 @@
+     1→# SYNAPSE AGENT SDK BLUEPRINT
+     2→## Autonomous VFX Co-Pilot — Claude Agent SDK + Opus 4.6
+     3→
+     4→> **Architecture shift:** Synapse evolves from a reactive MCP bridge (Claude Desktop → WebSocket → Houdini)
+     5→> into an autonomous agent that plans, executes, verifies, and iterates against a live Houdini scene.
+     6→>
+     7→> **Blueprint origin:** Designed in Claude Desktop (with full project memory and conversation context).
+     8→> **Execution target:** Claude Code with Opus 4.6 Extended Thinking.
+     9→
+    10→---
+    11→
+    12→## Table of Contents
+    13→
+    14→1. [Context & Current State](#1-context--current-state)
+    15→2. [Architecture Overview](#2-architecture-overview)
+    16→3. [File Structure](#3-file-structure)
+    17→4. [Phase 0: WebSocket Client](#4-phase-0-websocket-client)
+    18→5. [Phase 1: Custom Tools](#5-phase-1-custom-tools)
+    19→6. [Phase 2: Safety Hooks](#6-phase-2-safety-hooks)
+    20→7. [Phase 3: Agent Entry Point](#7-phase-3-agent-entry-point)
+    21→8. [Phase 4: CLAUDE.md — Agent Personality](#8-phase-4-claudemd--agent-personality)
+    22→9. [Phase 5: Skills — Reusable VFX Recipes](#9-phase-5-skills--reusable-vfx-recipes)
+    23→10. [Phase 6: Test Protocol](#10-phase-6-test-protocol)
+    24→11. [Phase 7: Advanced Patterns](#11-phase-7-advanced-patterns)
+    25→12. [Consistency Checklist](#12-consistency-checklist)
+    26→13. [Execution Instructions for Claude Code](#13-execution-instructions-for-claude-code)
+    27→
+    28→---
+    29→
+    30→## 1. Context & Current State
+    31→
+    32→### What Synapse Is Today
+    33→
+    34→Synapse is a WebSocket bridge between Claude and SideFX Houdini 21. It runs as a
+    35→Python server inside Houdini's process, exposing the full `hou` module to Claude
+    36→via JSON-over-WebSocket at `ws://localhost:9999`.
+    37→
+    38→**Protocol:** v4.0.0
+    39→**Existing MCP Tools:**
+    40→- `synapse_ping` — connectivity check, returns protocol version
+    41→- `houdini_execute_python` — executes arbitrary Python in Houdini, returns `result` variable
+    42→- `houdini_scene_info` — returns HIP file path, frame range, FPS
+    43→- `houdini_capture_viewport` — screenshots the viewport
+    44→
+    45→**Safety Layers (implemented or in-progress):**
+    46→- **Atomic scripts:** One mutation per `houdini_execute_python` call
+    47→- **Idempotent guards:** `guards.py` module with `ensure_node()`, `ensure_connection()`,
+    48→  `ensure_parm()`, `node_exists()`, etc. — auto-injected into exec namespace
+    49→- **Transaction wrapper:** `hou.undos.group("synapse_operation")` with `hou.undos.performUndo()`
+    50→  on exception — wraps all execute_python calls in the server handler
+    51→
+    52→**Tone System (designed, implementation in progress):**
+    53→- Server-side message rewrites (errors → coaching language)
+    54→- MCP tool description tone guidance
+    55→- `TONE.md` voice guide for LLM context
+    56→- Smart error enrichment (fuzzy node type matching, parameter discovery)
+    57→
+    58→**Planned MCP Tools (from roadmap, not yet built):**
+    59→- `synapse_inspect_selection` — structured data on selected nodes
+    60→- `synapse_inspect_scene` — hierarchical scene overview
+    61→- `synapse_inspect_node` — deep single-node analysis
+    62→
+    63→**Known Houdini 21 Conventions:**
+    64→- USD/Solaris nodes live at `/stage/`
+    65→- USD light parameter names use encoded form: `xn__inputsintensity_i0a` (not `intensity`)
+    66→- MaterialX shading via `mtlxstandard_surface` nodes
+    67→- Karma renderer (CPU and XPU) for final output
+    68→- Scene graph connections flow through merge nodes (e.g., `/stage/scene_merge`)
+    69→
+    70→**File System:**
+    71→- Synapse source: `C:/Users/User/.synapse/`
+    72→- Shared transfer dir: `C:/Users/User/.synapse/` (also used for render output)
+    73→- Houdini projects: `D:/HOUDINI_PROJECTS_2025/`
+    74→
+    75→### What We're Building
+    76→
+    77→An **autonomous agent** using the Claude Agent SDK (Python) that:
+    78→1. Receives high-level VFX goals from the artist
+    79→2. Plans multi-step approaches using extended thinking
+    80→3. Executes against live Houdini via WebSocket (Synapse)
+    81→4. Verifies its own work via scene inspection
+    82→5. Iterates until the result matches intent
+    83→6. Communicates progress in encouraging, coaching language
+    84→
+    85→### Why the Agent SDK
+    86→
+    87→| Capability | MCP Bridge (current) | Agent SDK (new) |
+    88→|------------|---------------------|-----------------|
+    89→| Thinking depth | Standard | Extended thinking (Opus 4.6) |
+    90→| Autonomy | Reactive (user drives each step) | Autonomous (agent drives loops) |
+    91→| Tool chaining | LLM decides per-turn | Agent plans multi-step sequences |
+    92→| Error recovery | Manual retry | Hooks auto-rollback + retry |
+    93→| Verification | User checks result | Agent self-verifies |
+    94→| Context mgmt | Manual | Compaction (infinite conversation) |
+    95→| Parallelism | Sequential only | Subagents for concurrent work |
+    96→| File access | None | Full filesystem (read specs, write logs) |
+    97→
+    98→---
+    99→
+   100→## 2. Architecture Overview
+   101→
+   102→```
+   103→┌─────────────────────────────────────────────────────────────┐
+   104→│                    ARTIST (Joe)                              │
+   105→│                                                             │
+   106→│  Claude Desktop          Claude Code                        │
+   107→│  ┌─────────────┐        ┌──────────────────────────────┐   │
+   108→│  │ Memory      │        │ synapse_agent.py              │   │
+   109→│  │ Conversation│───────>│   ┌──────────────────────┐   │   │
+   110→│  │ Intent      │ paste  │   │ Claude Agent SDK      │   │   │
+   111→│  │ Blueprint   │ prompt │   │ (Opus 4.6 Extended)   │   │   │
+   112→│  └─────────────┘        │   │                        │   │   │
+   113→│                          │   │ Custom Tools:          │   │   │
+   114→│                          │   │  ├─ synapse_execute    │   │   │
+   115→│                          │   │  ├─ synapse_inspect    │   │   │
+   116→│                          │   │  ├─ synapse_scene      │   │   │
+   117→│                          │   │  └─ synapse_ping       │   │   │
+   118→│                          │   │                        │   │   │
+   119→│                          │   │ Hooks:                 │   │   │
+   120→│                          │   │  ├─ pre_execution      │   │   │
+   121→│                          │   │  ├─ post_verify        │   │   │
+   122→│                          │   │  └─ error_recovery     │   │   │
+   123→│                          │   └──────────┬─────────────┘   │   │
+   124→│                          │              │ WebSocket        │   │
+   125→│                          └──────────────┼──────────────────┘   │
+   126→│                                         │                      │
+   127→└─────────────────────────────────────────┼──────────────────────┘
+   128→                                          │
+   129→                                          ▼
+   130→                              ┌──────────────────────┐
+   131→                              │   Houdini 21         │
+   132→                              │   ┌────────────────┐ │
+   133→                              │   │ Synapse Server │ │
+   134→                              │   │ ws://localhost  │ │
+   135→                              │   │     :9999       │ │
+   136→                              │   │                │ │
+   137→                              │   │ guards.py      │ │
+   138→                              │   │ undo groups    │ │
+   139→                              │   │ hou module     │ │
+   140→                              │   └────────────────┘ │
+   141→                              │                      │
+   142→                              │   /stage/            │
+   143→                              │   ├─ hero_sphere     │
+   144→                              │   ├─ ground_plane    │
+   145→                              │   ├─ key_light       │
+   146→                              │   ├─ scene_merge     │
+   147→                              │   └─ karma_rop       │
+   148→                              └──────────────────────┘
+   149→```
+   150→
+   151→**Data Flow:**
+   152→1. Artist describes intent in Claude Desktop (memory + conversation)
+   153→2. Artist pastes goal into Claude Code as a prompt
+   154→3. Agent SDK spawns Opus 4.6 with extended thinking
+   155→4. Agent calls custom tools → WebSocket → Synapse → Houdini
+   156→5. Agent inspects results → reasons about them → iterates
+   157→6. Agent reports completion with coaching tone
+   158→
+   159→---
+   160→
+   161→## 3. File Structure
+   162→
+   163→Create this structure at `C:/Users/User/.synapse/agent/`:
+   164→
+   165→```
+   166→C:/Users/User/.synapse/agent/
+   167→├── CLAUDE.md                          # Agent personality, tone, conventions
+   168→├── .claude/
+   169→│   ├── settings.json                  # Agent SDK settings
+   170→│   └── skills/
+   171→│       ├── three_point_lighting.md    # Reusable VFX recipe
+   172→│       ├── karma_render_preview.md    # Quick render workflow
+   173→│       └── scene_health_check.md      # Diagnostic workflow
+   174→├── synapse_agent.py                   # Main entry point
+   175→├── synapse_ws.py                      # WebSocket client (async)
+   176→├── synapse_tools.py                   # Custom tool definitions
+   177→├── synapse_hooks.py                   # Safety & verification hooks
+   178→├── synapse_tone.py                    # Message formatting & coaching language
+   179→├── requirements.txt                   # Dependencies
+   180→└── logs/                              # Agent execution logs
+   181→    └── .gitkeep
+   182→```
+   183→
+   184→---
+   185→
+   186→## 4. Phase 0: WebSocket Client
+   187→
+   188→### `synapse_ws.py`
+   189→
+   190→This is the low-level async WebSocket client that talks to Synapse.
+   191→It replaces the MCP protocol hop with a direct connection.
+   192→
+   193→```python
+   194→"""
+   195→synapse_ws.py — Async WebSocket client for Synapse/Houdini bridge.
+   196→
+   197→Connects directly to the Synapse server running inside Houdini at ws://localhost:9999.
+   198→All calls are async and return parsed JSON responses.
+   199→
+   200→This module is the ONLY place that touches the WebSocket connection.
+   201→All other modules call functions from here.
+   202→"""
+   203→
+   204→import asyncio
+   205→import json
+   206→import logging
+   207→from typing import Any, Optional
+   208→from contextlib import asynccontextmanager
+   209→
+   210→logger = logging.getLogger("synapse.ws")
+   211→
+   212→# --- Configuration ---
+   213→SYNAPSE_HOST = "localhost"
+   214→SYNAPSE_PORT = 9999
+   215→SYNAPSE_URI = f"ws://{SYNAPSE_HOST}:{SYNAPSE_PORT}"
+   216→CONNECT_TIMEOUT = 10.0
+   217→CALL_TIMEOUT = 120.0  # Houdini operations can take time (renders, cooks)
+   218→RENDER_TIMEOUT = 600.0  # 10 min for render calls
+   219→
+   220→
+   221→class SynapseConnectionError(Exception):
+   222→    """Raised when we can't reach Synapse."""
+   223→    pass
+   224→
+   225→
+   226→class SynapseExecutionError(Exception):
+   227→    """Raised when Houdini-side execution fails."""
+   228→    def __init__(self, message: str, partial_result: Any = None):
+   229→        super().__init__(message)
+   230→        self.partial_result = partial_result
+   231→
+   232→
+   233→class SynapseClient:
+   234→    """
+   235→    Async WebSocket client for Synapse.
+   236→
+   237→    Usage:
+   238→        client = SynapseClient()
+   239→        await client.connect()
+   240→        result = await client.execute_python("result = hou.node('/stage').children()")
+   241→        await client.disconnect()
+   242→
+   243→    Or as context manager:
+   244→        async with SynapseClient() as client:
+   245→            result = await client.ping()
+   246→    """
+   247→
+   248→    def __init__(self, uri: str = SYNAPSE_URI):
+   249→        self.uri = uri
+   250→        self._ws = None
+   251→        self._connected = False
+   252→        self._lock = asyncio.Lock()  # Serialize WebSocket calls
+   253→
+   254→    async def connect(self) -> bool:
+   255→        """Establish WebSocket connection to Synapse."""
+   256→        try:
+   257→            import websockets
+   258→            self._ws = await asyncio.wait_for(
+   259→                websockets.connect(self.uri),
+   260→                timeout=CONNECT_TIMEOUT
+   261→            )
+   262→            self._connected = True
+   263→            logger.info(f"Connected to Synapse at {self.uri}")
+   264→            return True
+   265→        except asyncio.TimeoutError:
+   266→            raise SynapseConnectionError(
+   267→                f"Couldn't reach Synapse at {self.uri} — is Houdini running with the Synapse server active?"
+   268→            )
+   269→        except Exception as e:
+   270→            raise SynapseConnectionError(
+   271→                f"Connection to Synapse failed: {e}. Check that Houdini is running and Synapse is loaded."
+   272→            )
+   273→
+   274→    async def disconnect(self):
+   275→        """Close the WebSocket connection."""
+   276→        if self._ws:
+   277→            await self._ws.close()
+   278→            self._connected = False
+   279→            logger.info("Disconnected from Synapse")
+   280→
+   281→    async def __aenter__(self):
+   282→        await self.connect()
+   283→        return self
+   284→
+   285→    async def __aexit__(self, exc_type, exc_val, exc_tb):
+   286→        await self.disconnect()
+   287→
+   288→    async def _send_and_receive(self, message: dict, timeout: float = CALL_TIMEOUT) -> dict:
+   289→        """
+   290→        Send a JSON message and wait for the response.
+   291→        Serialized via lock to prevent interleaved WebSocket frames.
+   292→        """
+   293→        if not self._connected or not self._ws:
+   294→            raise SynapseConnectionError("Not connected to Synapse. Call connect() first.")
+   295→
+   296→        async with self._lock:
+   297→            try:
+   298→                await self._ws.send(json.dumps(message))
+   299→                raw = await asyncio.wait_for(self._ws.recv(), timeout=timeout)
+   300→                return json.loads(raw)
+   301→            except asyncio.TimeoutError:
+   302→                raise SynapseExecutionError(
+   303→                    f"Synapse didn't respond within {timeout}s — the operation might still be running in Houdini. "
+   304→                    f"Check the Houdini viewport."
+   305→                )
+   306→            except Exception as e:
+   307→                raise SynapseExecutionError(f"Communication error: {e}")
+   308→
+   309→    # --- High-Level API ---
+   310→
+   311→    async def ping(self) -> dict:
+   312→        """Check Synapse connectivity. Returns protocol version info."""
+   313→        response = await self._send_and_receive(
+   314→            {"tool": "synapse_ping"},
+   315→            timeout=5.0
+   316→        )
+   317→        return response
+   318→
+   319→    async def scene_info(self) -> dict:
+   320→        """Get current scene metadata (HIP path, frame range, FPS)."""
+   321→        response = await self._send_and_receive(
+   322→            {"tool": "houdini_scene_info"}
+   323→        )
+   324→        return response
+   325→
+   326→    async def execute_python(self, code: str, timeout: float = CALL_TIMEOUT) -> Any:
+   327→        """
+   328→        Execute Python code inside Houdini. Returns the value of the `result` variable.
+   329→
+   330→        The Synapse server handler wraps execution in hou.undos.group() and auto-injects
+   331→        guard functions (ensure_node, ensure_connection, etc.) into the namespace.
+   332→
+   333→        Args:
+   334→            code: Python source code to execute. Set a `result` variable for return value.
+   335→            timeout: Max seconds to wait (default 120, use RENDER_TIMEOUT for renders).
+   336→
+   337→        Returns:
+   338→            The value of `result` from the executed code, or None.
+   339→
+   340→        Raises:
+   341→            SynapseExecutionError: If the code throws an exception (scene is auto-rolled-back).
+   342→        """
+   343→        response = await self._send_and_receive(
+   344→            {"tool": "houdini_execute_python", "code": code},
+   345→            timeout=timeout
+   346→        )
+   347→
+   348→        # Handle Synapse response format
+   349→        if isinstance(response, dict):
+   350→            if response.get("error"):
+   351→                raise SynapseExecutionError(
+   352→                    response.get("error", "Unknown execution error"),
+   353→                    partial_result=response.get("result")
+   354→                )
+   355→            return response.get("result")
+   356→        return response
+   357→
+   358→    async def capture_viewport(self, output_path: Optional[str] = None) -> str:
+   359→        """
+   360→        Capture a viewport screenshot.
+   361→
+   362→        Args:
+   363→            output_path: Where to save. Defaults to .synapse/viewport_capture.png
+   364→
+   365→        Returns:
+   366→            Path to the saved screenshot.
+   367→        """
+   368→        msg = {"tool": "houdini_capture_viewport"}
+   369→        if output_path:
+   370→            msg["output_path"] = output_path
+   371→        response = await self._send_and_receive(msg, timeout=30.0)
+   372→        return response
+   373→
+   374→    # --- Convenience Methods ---
+   375→
+   376→    async def execute_read(self, code: str) -> Any:
+   377→        """Execute read-only code (no mutations). Same as execute_python but semantic."""
+   378→        return await self.execute_python(code)
+   379→
+   380→    async def execute_render(self, code: str) -> Any:
+   381→        """Execute render-triggering code with extended timeout."""
+   382→        return await self.execute_python(code, timeout=RENDER_TIMEOUT)
+   383→```
+   384→
+   385→### `requirements.txt`
+   386→
+   387→```
+   388→claude-agent-sdk>=0.1.30
+   389→websockets>=12.0
+   390→anyio>=4.0
+   391→```
+   392→
+   393→---
+   394→
+   395→## 5. Phase 1: Custom Tools
+   396→
+   397→### `synapse_tools.py`
+   398→
+   399→Custom tools registered with `ClaudeSDKClient`. These are what Opus 4.6 calls
+   400→during the agent loop. Each tool is an in-process MCP server — no separate process needed.
+   401→
+   402→**Design Principles:**
+   403→- Each tool does ONE thing clearly
+   404→- Read tools are separate from mutation tools
+   405→- Every mutation tool returns verification data
+   406→- Tool docstrings are written in coaching tone (these become tool descriptions in the LLM context)
+   407→
+   408→```python
+   409→"""
+   410→synapse_tools.py — Custom tools for the Synapse Agent.
+   411→
+   412→These tools are registered with ClaudeSDKClient and become available
+   413→to Opus 4.6 during the agent loop. They wrap WebSocket calls to Synapse
+   414→running inside Houdini 21.
+   415→
+   416→Tool docstrings are important — they appear in the LLM context and shape
+   417→how the agent describes operations to the artist.
+   418→"""
+   419→
+   420→import json
+   421→import logging
+   422→from typing import Optional
+   423→from synapse_ws import SynapseClient, SynapseExecutionError
+   424→
+   425→logger = logging.getLogger("synapse.tools")
+   426→
+   427→# Global client instance — initialized in synapse_agent.py
+   428→_client: Optional[SynapseClient] = None
+   429→
+   430→
+   431→def set_client(client: SynapseClient):
+   432→    """Set the shared WebSocket client. Called once during agent init."""
+   433→    global _client
+   434→    _client = client
+   435→
+   436→
+   437→def get_client() -> SynapseClient:
+   438→    if _client is None:
+   439→        raise RuntimeError("Synapse client not initialized. Call set_client() first.")
+   440→    return _client
+   441→
+   442→
+   443→# ─────────────────────────────────────────────────────────────
+   444→# CONNECTIVITY
+   445→# ─────────────────────────────────────────────────────────────
+   446→
+   447→async def synapse_ping() -> str:
+   448→    """
+   449→    Check if Synapse and Houdini are reachable.
+   450→    Call this first to verify the connection before doing any scene work.
+   451→    Returns protocol version and connection status.
+   452→    """
+   453→    client = get_client()
+   454→    try:
+   455→        result = await client.ping()
+   456→        return json.dumps({"status": "connected", "details": result})
+   457→    except Exception as e:
+   458→        return json.dumps({
+   459→            "status": "disconnected",
+   460→            "message": f"Can't reach Synapse — {e}. Is Houdini running?"
+   461→        })
+   462→
+   463→
+   464→async def synapse_scene_info() -> str:
+   465→    """
+   466→    Get an overview of the current Houdini scene.
+   467→    Returns the HIP file path, current frame, frame range, and FPS.
+   468→    Good for orientation — call this early to understand what we're working with.
+   469→    """
+   470→    client = get_client()
+   471→    result = await client.scene_info()
+   472→    return json.dumps(result, indent=2)
+   473→
+   474→
+   475→# ─────────────────────────────────────────────────────────────
+   476→# SCENE INTROSPECTION (READ-ONLY — safe to call anytime)
+   477→# ─────────────────────────────────────────────────────────────
+   478→
+   479→async def synapse_inspect_scene(
+   480→    root_path: str = "/",
+   481→    max_depth: int = 3,
+   482→    context_filter: str = ""
+   483→) -> str:
+   484→    """
+   485→    Walk the Houdini scene graph and return a structured overview.
+   486→    Shows network topology, node counts, flagged nodes, errors, and warnings.
+   487→    This is a quick orientation tool — not a full parameter dump.
+   488→
+   489→    Use this when you need to understand what's in the scene before making changes.
+   490→
+   491→    Args:
+   492→        root_path: Where to start walking (default "/" for everything).
+   493→        max_depth: How deep to recurse (default 3).
+   494→        context_filter: Limit to a specific context like "Lop" or "Sop" (empty = all).
+   495→    """
+   496→    client = get_client()
+   497→    code = f'''
+   498→import hou
+   499→import json
+   500→from collections import defaultdict
+   501→
+   502→def inspect_network(parent, depth=0, max_depth={max_depth}, context_filter="{context_filter}"):
+   503→    if depth > max_depth:
+   504→        return None
+   505→
+   506→    children = parent.children()
+   507→    if not children:
+   508→        return None
+   509→
+   510→    network = {{
+   511→        "path": parent.path(),
+   512→        "node_count": len(children),
+   513→        "types": defaultdict(int),
+   514→        "flagged": [],
+   515→        "issues": [],
+   516→        "children": []
+   517→    }}
+   518→
+   519→    for node in children:
+   520→        cat = node.type().category().name()
+   521→        if context_filter and cat.lower() != context_filter.lower():
+   522→            continue
+   523→
+   524→        network["types"][node.type().name()] += 1
+   525→
+   526→        # Check flags
+   527→        flags = []
+   528→        try:
+   529→            if node.isDisplayFlagSet(): flags.append("display")
+   530→        except: pass
+   531→        try:
+   532→            if node.isRenderFlagSet(): flags.append("render")
+   533→        except: pass
+   534→        try:
+   535→            if node.isBypassed(): flags.append("bypass")
+   536→        except: pass
+   537→        if flags:
+   538→            network["flagged"].append({{"path": node.path(), "flags": flags}})
+   539→
+   540→        # Check issues
+   541→        errors = node.errors()
+   542→        warnings = node.warnings()
+   543→        if errors:
+   544→            network["issues"].append({{"path": node.path(), "errors": errors}})
+   545→        if warnings:
+   546→            network["issues"].append({{"path": node.path(), "warnings": warnings}})
+   547→
+   548→        # Recurse
+   549→        child_network = inspect_network(node, depth + 1, max_depth, context_filter)
+   550→        if child_network:
+   551→            network["children"].append(child_network)
+   552→
+   553→    network["types"] = dict(network["types"])
+   554→    return network
+   555→
+   556→root = hou.node("{root_path}")
+   557→if root:
+   558→    result = json.dumps(inspect_network(root), indent=2)
+   559→else:
+   560→    result = json.dumps({{"error": "Root path not found", "path": "{root_path}"}})
+   561→'''
+   562→    return await client.execute_read(code)
+   563→
+   564→
+   565→async def synapse_inspect_selection(depth: int = 1) -> str:
+   566→    """
+   567→    Analyze all currently selected nodes in Houdini.
+   568→    Returns detailed info: paths, types, modified parameters, connections,
+   569→    geometry attributes (for SOPs), errors, and warnings.
+   570→
+   571→    Use this when the artist says "look at what I have selected" or when you
+   572→    need to understand the current working context.
+   573→
+   574→    Args:
+   575→        depth: How many levels of input nodes to also inspect (default 1).
+   576→    """
+   577→    client = get_client()
+   578→    code = f'''
+   579→import hou
+   580→import json
+   581→
+   582→def inspect_node(node, depth=0, max_depth={depth}):
+   583→    data = {{
+   584→        "path": node.path(),
+   585→        "type": node.type().name(),
+   586→        "category": node.type().category().name(),
+   587→        "modified_parms": {{}},
+   588→        "inputs": [],
+   589→        "outputs": [],
+   590→        "errors": node.errors(),
+   591→        "warnings": node.warnings()
+   592→    }}
+   593→
+   594→    # Modified parameters only (skip defaults)
+   595→    for p in node.parms():
+   596→        try:
+   597→            if not p.isAtDefault():
+   598→                val = p.eval()
+   599→                # Handle non-serializable types
+   600→                if isinstance(val, (hou.Vector3, hou.Vector4)):
+   601→                    val = list(val)
+   602→                elif isinstance(val, hou.Matrix4):
+   603→                    val = str(val)
+   604→                data["modified_parms"][p.name()] = val
+   605→        except:
+   606→            pass
+   607→
+   608→    # Connections
+   609→    for i, inp in enumerate(node.inputs()):
+   610→        if inp:
+   611→            data["inputs"].append({{"index": i, "path": inp.path(), "type": inp.type().name()}})
+   612→    for out in node.outputs():
+   613→        data["outputs"].append({{"path": out.path(), "type": out.type().name()}})
+   614→
+   615→    # Geometry attributes (SOP context)
+   616→    if node.type().category().name() == "Sop":
+   617→        try:
+   618→            geo = node.geometry()
+   619→            if geo:
+   620→                data["geometry"] = {{
+   621→                    "points": geo.intrinsicValue("pointcount"),
+   622→                    "prims": geo.intrinsicValue("primitivecount"),
+   623→                    "attribs": {{}}
+   624→                }}
+   625→                for context, method in [("point", geo.pointAttribs),
+   626→                                         ("prim", geo.primAttribs),
+   627→                                         ("vertex", geo.vertexAttribs),
+   628→                                         ("detail", geo.globalAttribs)]:
+   629→                    data["geometry"]["attribs"][context] = [
+   630→                        {{"name": a.name(), "type": str(a.dataType()), "size": a.size()}}
+   631→                        for a in method()
+   632→                    ]
+   633→        except:
+   634→            pass
+   635→
+   636→    # Recurse into inputs
+   637→    if depth < max_depth:
+   638→        data["input_nodes"] = []
+   639→        for inp in node.inputs():
+   640→            if inp:
+   641→                data["input_nodes"].append(inspect_node(inp, depth + 1, max_depth))
+   642→
+   643→    return data
+   644→
+   645→selected = hou.selectedNodes()
+   646→if not selected:
+   647→    result = json.dumps({{"message": "No nodes selected — select some nodes in Houdini and try again", "count": 0}})
+   648→else:
+   649→    nodes_data = [inspect_node(n) for n in selected]
+   650→    result = json.dumps({{
+   651→        "count": len(nodes_data),
+   652→        "nodes": nodes_data
+   653→    }}, indent=2)
+   654→'''
+   655→    return await client.execute_read(code)
+   656→
+   657→
+   658→async def synapse_inspect_node(
+   659→    node_path: str,
+   660→    include_code: bool = True,
+   661→    include_geometry: bool = True,
+   662→    include_expressions: bool = True
+   663→) -> str:
+   664→    """
+   665→    Deep inspection of a single node — gets EVERYTHING.
+   666→    All parameters (including defaults), expressions, code content for wrangles,
+   667→    geometry attributes with value ranges, HDA info, and cook dependencies.
+   668→
+   669→    Use this when you need to fully understand one specific node before modifying it.
+   670→
+   671→    Args:
+   672→        node_path: Absolute path to the node (e.g., "/stage/key_light").
+   673→        include_code: Include VEX/Python code from wrangle nodes (default true).
+   674→        include_geometry: Include geometry attribute summary (default true).
+   675→        include_expressions: Include parameter expressions and references (default true).
+   676→    """
+   677→    client = get_client()
+   678→    code = f'''
+   679→import hou
+   680→import json
+   681→
+   682→node = hou.node("{node_path}")
+   683→if not node:
+   684→    result = json.dumps({{"error": "Node not found", "path": "{node_path}",
+   685→        "hint": "Check the path — try synapse_inspect_scene to see what's available"}})
+   686→else:
+   687→    data = {{
+   688→        "path": node.path(),
+   689→        "type": node.type().name(),
+   690→        "category": node.type().category().name(),
+   691→        "label": node.type().description(),
+   692→        "parameters": {{}},
+   693→        "inputs": [],
+   694→        "outputs": [],
+   695→        "flags": {{}},
+   696→        "errors": node.errors(),
+   697→        "warnings": node.warnings(),
+   698→        "cook_time": None
+   699→    }}
+   700→
+   701→    # All parameters grouped by folder
+   702→    for parm_tuple in node.parmTuples():
+   703→        folder = parm_tuple.containingFolders()
+   704→        folder_key = " > ".join(folder) if folder else "Main"
+   705→        if folder_key not in data["parameters"]:
+   706→            data["parameters"][folder_key] = {{}}
+   707→        for p in parm_tuple:
+   708→            parm_data = {{
+   709→                "value": None,
+   710→                "is_default": p.isAtDefault(),
+   711→            }}
+   712→            try:
+   713→                parm_data["value"] = p.eval()
+   714→                if isinstance(parm_data["value"], (hou.Vector3, hou.Vector4)):
+   715→                    parm_data["value"] = list(parm_data["value"])
+   716→            except:
+   717→                parm_data["value"] = "<unevaluable>"
+   718→
+   719→            if {str(include_expressions).lower()}:
+   720→                try:
+   721→                    expr = p.expression()
+   722→                    if expr:
+   723→                        parm_data["expression"] = expr
+   724→                        parm_data["expression_language"] = str(p.expressionLanguage())
+   725→                except:
+   726→                    pass
+   727→                # Channel references
+   728→                try:
+   729→                    ref = p.getReferencedParm()
+   730→                    if ref and ref != p:
+   731→                        parm_data["references"] = ref.path()
+   732→                except:
+   733→                    pass
+   734→
+   735→            data["parameters"][folder_key][p.name()] = parm_data
+   736→
+   737→    # Connections
+   738→    for i, inp in enumerate(node.inputs()):
+   739→        if inp:
+   740→            data["inputs"].append({{"index": i, "path": inp.path()}})
+   741→    for out in node.outputs():
+   742→        data["outputs"].append({{"path": out.path()}})
+   743→
+   744→    # Flags
+   745→    try: data["flags"]["display"] = node.isDisplayFlagSet()
+   746→    except: pass
+   747→    try: data["flags"]["render"] = node.isRenderFlagSet()
+   748→    except: pass
+   749→    try: data["flags"]["bypass"] = node.isBypassed()
+   750→    except: pass
+   751→
+   752→    # Code content (wrangles, python nodes)
+   753→    if {str(include_code).lower()}:
+   754→        for parm_name in ["snippet", "python", "code", "script", "vexcode"]:
+   755→            parm = node.parm(parm_name)
+   756→            if parm:
+   757→                try:
+   758→                    data["code_content"] = {{
+   759→                        "parameter": parm_name,
+   760→                        "code": parm.eval()
+   761→                    }}
+   762→                    break
+   763→                except:
+   764→                    pass
+   765→
+   766→    # HDA info
+   767→    definition = node.type().definition()
+   768→    if definition:
+   769→        data["hda"] = {{
+   770→            "library_path": definition.libraryFilePath(),
+   771→            "embedded": definition.isEmbedded(),
+   772→            "sections": list(definition.sections().keys())[:10]
+   773→        }}
+   774→
+   775→    # Geometry
+   776→    if {str(include_geometry).lower()} and node.type().category().name() == "Sop":
+   777→        try:
+   778→            geo = node.geometry()
+   779→            if geo:
+   780→                data["geometry"] = {{
+   781→                    "points": geo.intrinsicValue("pointcount"),
+   782→                    "prims": geo.intrinsicValue("primitivecount"),
+   783→                    "bounds": list(geo.boundingBox().minvec()) + list(geo.boundingBox().maxvec()),
+   784→                    "attribs": {{}}
+   785→                }}
+   786→                for ctx_name, method in [("point", geo.pointAttribs),
+   787→                                          ("prim", geo.primAttribs),
+   788→                                          ("vertex", geo.vertexAttribs),
+   789→                                          ("detail", geo.globalAttribs)]:
+   790→                    attribs = []
+   791→                    for a in method():
+   792→                        attr_data = {{"name": a.name(), "type": str(a.dataType()), "size": a.size()}}
+   793→                        # Sample first few values for numeric types
+   794→                        try:
+   795→                            if a.dataType() in (hou.attribData.Float, hou.attribData.Int):
+   796→                                if ctx_name == "point" and geo.intrinsicValue("pointcount") > 0:
+   797→                                    samples = [geo.point(i).attribValue(a) for i in range(min(3, geo.intrinsicValue("pointcount")))]
+   798→                                    attr_data["samples"] = samples
+   799→                        except:
+   800→                            pass
+   801→                        attribs.append(attr_data)
+   802→                    data["geometry"]["attribs"][ctx_name] = attribs
+   803→        except:
+   804→            pass
+   805→
+   806→    # Cook time
+   807→    try:
+   808→        profile = node.cookProfile()
+   809→        if profile:
+   810→            data["cook_time"] = profile.cookTime()
+   811→    except:
+   812→        pass
+   813→
+   814→    result = json.dumps(data, indent=2, default=str)
+   815→'''
+   816→    return await client.execute_read(code)
+   817→
+   818→
+   819→# ─────────────────────────────────────────────────────────────
+   820→# EXECUTION (MUTATIONS — these change the scene)
+   821→# ─────────────────────────────────────────────────────────────
+   822→
+   823→async def synapse_execute(
+   824→    code: str,
+   825→    description: str = "",
+   826→    verify_paths: str = ""
+   827→) -> str:
+   828→    """
+   829→    Execute Python code in Houdini. Use this to create nodes, set parameters,
+   830→    connect wires, and modify the scene.
+   831→
+   832→    SAFETY: The Synapse server automatically wraps all execution in an undo group.
+   833→    If anything fails, all changes are rolled back — the scene won't be left in a
+   834→    broken state.
+   835→
+   836→    IMPORTANT CONVENTIONS:
+   837→    - One mutation per call. Don't create + connect + set parms in one script.
+   838→    - Use guard functions for idempotency: ensure_node(), ensure_connection(), ensure_parm()
+   839→    - These guards are auto-available in the namespace (no import needed).
+   840→    - Set a `result` variable to return data to the agent.
+   841→
+   842→    Args:
+   843→        code: Python code to execute. Has access to `hou` module and guard functions.
+   844→        description: Human-readable description of what this operation does.
+   845→        verify_paths: Comma-separated node paths to verify after execution.
+   846→
+   847→    When things go well, you'll get the result back. When they don't, you'll get a
+   848→    clear error explaining what happened and the scene will be rolled back to its
+   849→    previous state.
+   850→    """
+   851→    client = get_client()
+   852→    logger.info(f"Executing: {description or 'unlabeled operation'}")
+   853→
+   854→    try:
+   855→        result = await client.execute_python(code)
+   856→
+   857→        # If verify_paths provided, check they exist
+   858→        if verify_paths:
+   859→            paths = [p.strip() for p in verify_paths.split(",") if p.strip()]
+   860→            verify_code = f"""
+   861→import hou
+   862→import json
+   863→checks = {{}}
+   864→for path in {paths}:
+   865→    node = hou.node(path)
+   866→    checks[path] = {{
+   867→        "exists": node is not None,
+   868→        "type": node.type().name() if node else None,
+   869→        "errors": node.errors() if node else None
+   870→    }}
+   871→result = json.dumps(checks, indent=2)
+   872→"""
+   873→            verification = await client.execute_read(verify_code)
+   874→            return json.dumps({
+   875→                "executed": True,
+   876→                "result": result,
+   877→                "verification": json.loads(verification) if isinstance(verification, str) else verification,
+   878→                "description": description
+   879→            }, indent=2, default=str)
+   880→
+   881→        return json.dumps({
+   882→            "executed": True,
+   883→            "result": result,
+   884→            "description": description
+   885→        }, indent=2, default=str)
+   886→
+   887→    except SynapseExecutionError as e:
+   888→        return json.dumps({
+   889→            "executed": False,
+   890→            "error": str(e),
+   891→            "rolled_back": True,
+   892→            "description": description,
+   893→            "hint": "The scene was rolled back to its previous state. Check the code and try again."
+   894→        }, indent=2)
+   895→
+   896→
+   897→async def synapse_render_preview(
+   898→    rop_path: str = "/stage/karma_rop",
+   899→    output_path: str = "C:/Users/User/.synapse/renders/preview.exr",
+   900→    resolution_x: int = 512,
+   901→    resolution_y: int = 512,
+   902→    samples: int = 32
+   903→) -> str:
+   904→    """
+   905→    Trigger a quick render preview via Karma. Uses low resolution and samples
+   906→    for fast iteration. The rendered image is saved to disk for review.
+   907→
+   908→    This is for rapid visual feedback during lighting/shading work — not final renders.
+   909→
+   910→    Args:
+   911→        rop_path: Path to the Karma ROP node.
+   912→        output_path: Where to save the render.
+   913→        resolution_x: Width in pixels (default 512 for speed).
+   914→        resolution_y: Height in pixels (default 512 for speed).
+   915→        samples: Pixel samples (default 32 for speed, increase for quality).
+   916→    """
+   917→    client = get_client()
+   918→    code = f'''
+   919→import hou
+   920→import os
+   921→
+   922→rop = hou.node("{rop_path}")
+   923→if not rop:
+   924→    result = "Karma ROP not found at {rop_path} — check the path"
+   925→else:
+   926→    # Ensure output directory exists
+   927→    os.makedirs(os.path.dirname(r"{output_path}"), exist_ok=True)
+   928→
+   929→    # Set preview render settings
+   930→    # These use encoded USD parameter names for H21
+   931→    try:
+   932→        if rop.parm("resolutionx"): rop.parm("resolutionx").set({resolution_x})
+   933→        if rop.parm("resolutiony"): rop.parm("resolutiony").set({resolution_y})
+   934→    except:
+   935→        pass
+   936→
+   937→    try:
+   938→        if rop.parm("picture"): rop.parm("picture").set(r"{output_path}")
+   939→    except:
+   940→        pass
+   941→
+   942→    # Render
+   943→    try:
+   944→        rop.render()
+   945→        if os.path.exists(r"{output_path}"):
+   946→            size = os.path.getsize(r"{output_path}")
+   947→            result = f"Render complete — saved to {output_path} ({{size}} bytes)"
+   948→        else:
+   949→            result = "Render ran but output file wasn't created — check Karma settings"
+   950→    except Exception as e:
+   951→        result = f"Render encountered an issue: {{e}}"
+   952→'''
+   953→    return await client.execute_render(code)
+   954→
+   955→
+   956→# ─────────────────────────────────────────────────────────────
+   957→# TOOL REGISTRY — maps tool names to functions for ClaudeSDKClient
+   958→# ─────────────────────────────────────────────────────────────
+   959→
+   960→TOOL_REGISTRY = {
+   961→    "synapse_ping": synapse_ping,
+   962→    "synapse_scene_info": synapse_scene_info,
+   963→    "synapse_inspect_scene": synapse_inspect_scene,
+   964→    "synapse_inspect_selection": synapse_inspect_selection,
+   965→    "synapse_inspect_node": synapse_inspect_node,
+   966→    "synapse_execute": synapse_execute,
+   967→    "synapse_render_preview": synapse_render_preview,
+   968→}
+   969→```
+   970→
+   971→---
+   972→
+   973→## 6. Phase 2: Safety Hooks
+   974→
+   975→### `synapse_hooks.py`
+   976→
+   977→Hooks fire on agent lifecycle events. These implement the three safety layers
+   978→at the agent level (complementing the server-side undo-group).
+   979→
+   980→```python
+   981→"""
+   982→synapse_hooks.py — Safety and verification hooks for the Synapse Agent.
+   983→
+   984→These hooks fire automatically during the agent loop:
+   985→- pre_tool_call: Validates tool calls before execution
+   986→- post_tool_call: Auto-verifies mutations after execution
+   987→- on_error: Enriches error messages with coaching tone and suggestions
+   988→
+   989→The hooks complement the server-side safety (undo groups, guards.py) with
+   990→agent-side intelligence.
+   991→"""
+   992→
+   993→import json
+   994→import logging
+   995→import re
+   996→from typing import Any, Optional
+   997→from synapse_tone import enrich_error_message, format_success_message
+   998→
+   999→logger = logging.getLogger("synapse.hooks")
+  1000→
+  1001→
+  1002→# ─────────────────────────────────────────────────────────────
+  1003→# PRE-EXECUTION VALIDATION
+  1004→# ─────────────────────────────────────────────────────────────
+  1005→
+  1006→def validate_atomic_convention(code: str) -> tuple[bool, str]:
+  1007→    """
+  1008→    Check if a code block follows the atomic convention (one mutation per call).
+  1009→
+  1010→    Heuristic: count mutation keywords. If >1 distinct mutation type, flag it.
+  1011→    This is advisory — doesn't block execution, but warns the agent.
+  1012→    """
+  1013→    mutation_patterns = [
+  1014→        (r'\.createNode\(', 'node creation'),
+  1015→        (r'\.setInput\(', 'connection'),
+  1016→        (r'\.set\(', 'parameter set'),  # parm.set()
+  1017→        (r'\.destroy\(', 'node deletion'),
+  1018→        (r'\.move\(', 'node move'),
+  1019→    ]
+  1020→
+  1021→    found_mutations = set()
+  1022→    for pattern, label in mutation_patterns:
+  1023→        if re.search(pattern, code):
+  1024→            found_mutations.add(label)
+  1025→
+  1026→    if len(found_mutations) > 1:
+  1027→        return False, (
+  1028→            f"This script has multiple mutation types ({', '.join(found_mutations)}). "
+  1029→            f"For safety, split into separate calls — one mutation per execute. "
+  1030→            f"Read operations can stay combined."
+  1031→        )
+  1032→
+  1033→    return True, "Looks good — single mutation type."
+  1034→
+  1035→
+  1036→def validate_guard_usage(code: str) -> tuple[bool, str]:
+  1037→    """
+  1038→    Check if mutations use guard functions for idempotency.
+  1039→    Advisory — encourages but doesn't block.
+  1040→    """
+  1041→    has_raw_create = bool(re.search(r'\.createNode\(', code))
+  1042→    has_guard_create = bool(re.search(r'ensure_node\(', code))
+  1043→
+  1044→    has_raw_connect = bool(re.search(r'\.setInput\(', code))
+  1045→    has_guard_connect = bool(re.search(r'ensure_connection\(', code))
+  1046→
+  1047→    warnings = []
+  1048→    if has_raw_create and not has_guard_create:
+  1049→        warnings.append(
+  1050→            "Using raw createNode() — consider ensure_node() to prevent duplicates on retry."
+  1051→        )
+  1052→    if has_raw_connect and not has_guard_connect:
+  1053→        warnings.append(
+  1054→            "Using raw setInput() — consider ensure_connection() to prevent duplicate wiring."
+  1055→        )
+  1056→
+  1057→    if warnings:
+  1058→        return False, " ".join(warnings)
+  1059→    return True, "Guard functions used appropriately."
+  1060→
+  1061→
+  1062→# ─────────────────────────────────────────────────────────────
+  1063→# HOOK FUNCTIONS (for ClaudeSDKClient registration)
+  1064→# ─────────────────────────────────────────────────────────────
+  1065→
+  1066→async def pre_tool_call_hook(tool_name: str, tool_input: dict) -> Optional[str]:
+  1067→    """
+  1068→    Called before each tool invocation. Returns None to proceed, or a string
+  1069→    message that gets injected into the agent's context as a warning.
+  1070→    """
+  1071→    if tool_name == "synapse_execute":
+  1072→        code = tool_input.get("code", "")
+  1073→
+  1074→        # Check atomic convention
+  1075→        is_atomic, atomic_msg = validate_atomic_convention(code)
+  1076→        if not is_atomic:
+  1077→            logger.warning(f"Atomic convention violation: {atomic_msg}")
+  1078→            return f"⚠️ Safety note: {atomic_msg}"
+  1079→
+  1080→        # Check guard usage
+  1081→        uses_guards, guard_msg = validate_guard_usage(code)
+  1082→        if not uses_guards:
+  1083→            logger.info(f"Guard suggestion: {guard_msg}")
+  1084→            # Don't block, just log — guards are a best practice, not a hard rule
+  1085→
+  1086→    return None  # Proceed normally
+  1087→
+  1088→
+  1089→async def post_tool_call_hook(tool_name: str, tool_input: dict, tool_result: Any) -> Optional[str]:
+  1090→    """
+  1091→    Called after each tool invocation. Can inject follow-up context.
+  1092→    Used here to auto-verify mutations.
+  1093→    """
+  1094→    if tool_name == "synapse_execute":
+  1095→        try:
+  1096→            result_data = json.loads(tool_result) if isinstance(tool_result, str) else tool_result
+  1097→            if result_data.get("executed"):
+  1098→                return format_success_message(
+  1099→                    tool_input.get("description", "operation"),
+  1100→                    result_data
+  1101→                )
+  1102→            elif result_data.get("error"):
+  1103→                return enrich_error_message(
+  1104→                    result_data.get("error", ""),
+  1105→                    tool_input.get("code", "")
+  1106→                )
+  1107→        except (json.JSONDecodeError, AttributeError):
+  1108→            pass
+  1109→
+  1110→    return None
+  1111→
+  1112→
+  1113→async def on_error_hook(error: Exception) -> Optional[str]:
+  1114→    """
+  1115→    Called when an unhandled error occurs. Enriches error messages
+  1116→    with coaching tone and recovery suggestions.
+  1117→    """
+  1118→    error_msg = str(error)
+  1119→    return enrich_error_message(error_msg, "")
+  1120→```
+  1121→
+  1122→### `synapse_tone.py`
+  1123→
+  1124→The coaching language formatter used by hooks and tools.
+  1125→
+  1126→```python
+  1127→"""
+  1128→synapse_tone.py — Coaching language for Synapse communications.
+  1129→
+  1130→Every message the artist sees should pass the validation test:
+  1131→"Would this message make an artist having a rough day want to keep going
+  1132→ or close the application?"
+  1133→
+  1134→Principles:
+  1135→1. Never blame — "I couldn't find" not "you gave wrong path"
+  1136→2. Plain language first — technical details can follow
+  1137→3. Always offer a next step — every error suggests what to try
+  1138→4. "We/I" framing — collaborative, not diagnostic
+  1139→5. Forward momentum — success messages imply "what's next"
+  1140→"""
+  1141→
+  1142→import re
+  1143→from typing import Any
+  1144→
+  1145→
+  1146→def enrich_error_message(error: str, code: str) -> str:
+  1147→    """
+  1148→    Transform a raw error into coaching language with suggestions.
+  1149→    """
+  1150→    enriched = error
+  1151→
+  1152→    # Node not found
+  1153→    if "not found" in error.lower() or "none" in error.lower():
+  1154→        path_match = re.search(r"['\"]?(/[a-zA-Z0-9_/]+)['\"]?", error)
+  1155→        if path_match:
+  1156→            path = path_match.group(1)
+  1157→            enriched = (
+  1158→                f"Couldn't find a node at `{path}` — it might have been renamed or "
+  1159→                f"might not exist yet. I can search the scene to find the right path."
+  1160→            )
+  1161→        else:
+  1162→            enriched = (
+  1163→                f"Something I expected to find wasn't there. Let me inspect the "
+  1164→                f"scene to get re-oriented."
+  1165→            )
+  1166→
+  1167→    # Parameter errors
+  1168→    elif "parameter" in error.lower() or "parm" in error.lower():
+  1169→        enriched = (
+  1170→            f"Hit a parameter issue: {error}. H21 USD nodes use encoded parameter names "
+  1171→            f"(like `xn__inputsintensity_i0a` instead of `intensity`). "
+  1172→            f"I can inspect the node to find the exact parameter names."
+  1173→        )
+  1174→
+  1175→    # Permission / path errors
+  1176→    elif "permission" in error.lower() or "writable" in error.lower():
+  1177→        enriched = (
+  1178→            f"Couldn't write to the output path — might be a permissions issue. "
+  1179→            f"I'll try using C:/Users/User/.synapse/ instead."
+  1180→        )
+  1181→
+  1182→    # Type errors
+  1183→    elif "NoneType" in error or "AttributeError" in error:
+  1184→        enriched = (
+  1185→            f"Something I expected to exist wasn't there yet — likely a node or "
+  1186→            f"parameter that wasn't created in a previous step. Let me check "
+  1187→            f"the scene state and try a different approach."
+  1188→        )
+  1189→
+  1190→    # Generic fallback
+  1191→    elif not any(phrase in enriched for phrase in ["I can", "I'll", "Let me"]):
+  1192→        enriched = f"{error}. Let me take a different approach."
+  1193→
+  1194→    return f"🔧 {enriched}"
+  1195→
+  1196→
+  1197→def format_success_message(description: str, result_data: Any) -> str:
+  1198→    """
+  1199→    Format a success result with forward momentum.
+  1200→    """
+  1201→    result = result_data.get("result", "")
+  1202→    verification = result_data.get("verification", {})
+  1203→
+  1204→    parts = [f"✓ {description} — done."]
+  1205→
+  1206→    if verification:
+  1207→        all_ok = all(v.get("exists", False) for v in verification.values())
+  1208→        error_count = sum(1 for v in verification.values() if v.get("errors"))
+  1209→        if all_ok and error_count == 0:
+  1210→            parts.append("Verified — everything checks out.")
+  1211→        elif not all_ok:
+  1212→            missing = [k for k, v in verification.items() if not v.get("exists")]
+  1213→            parts.append(f"Heads up: {', '.join(missing)} didn't make it. Let me investigate.")
+  1214→
+  1215→    return " ".join(parts)
+  1216→```
+  1217→
+  1218→---
+  1219→
+  1220→## 7. Phase 3: Agent Entry Point
+  1221→
+  1222→### `synapse_agent.py`
+  1223→
+  1224→The main script that Claude Code executes. This wires everything together
+  1225→and starts the agent loop.
+  1226→
+  1227→```python
+  1228→"""
+  1229→synapse_agent.py — Synapse VFX Co-Pilot Agent
+  1230→
+  1231→Entry point for the Claude Agent SDK. Connects to Houdini via Synapse,
+  1232→registers custom tools and safety hooks, then starts an autonomous agent
+  1233→loop that can inspect, execute, verify, and iterate on VFX tasks.
+  1234→
+  1235→USAGE (from Claude Code):
+  1236→    cd C:/Users/User/.synapse/agent
+  1237→    python synapse_agent.py "Set up three-point lighting for the cave scene"
+  1238→
+  1239→Or from Claude Code directly:
+  1240→    "Read C:/Users/User/.synapse/agent/CLAUDE.md, then run synapse_agent.py
+  1241→     with the goal: set up dramatic top lighting with blue rim accents"
+  1242→"""
+  1243→
+  1244→import asyncio
+  1245→import sys
+  1246→import os
+  1247→import logging
+  1248→from pathlib import Path
+  1249→
+  1250→# Setup logging
+  1251→logging.basicConfig(
+  1252→    level=logging.INFO,
+  1253→    format='%(asctime)s [%(name)s] %(message)s',
+  1254→    handlers=[
+  1255→        logging.StreamHandler(),
+  1256→        logging.FileHandler(
+  1257→            Path(__file__).parent / "logs" / "agent.log",
+  1258→            mode='a'
+  1259→        )
+  1260→    ]
+  1261→)
+  1262→logger = logging.getLogger("synapse.agent")
+  1263→
+  1264→
+  1265→async def run_agent(goal: str):
+  1266→    """
+  1267→    Initialize Synapse connection, register tools and hooks, and run the agent.
+  1268→    """
+  1269→    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
+  1270→    from synapse_ws import SynapseClient
+  1271→    from synapse_tools import (
+  1272→        set_client,
+  1273→        synapse_ping,
+  1274→        synapse_scene_info,
+  1275→        synapse_inspect_scene,
+  1276→        synapse_inspect_selection,
+  1277→        synapse_inspect_node,
+  1278→        synapse_execute,
+  1279→        synapse_render_preview,
+  1280→    )
+  1281→    from synapse_hooks import pre_tool_call_hook, post_tool_call_hook
+  1282→
+  1283→    # --- Step 1: Connect to Houdini ---
+  1284→    logger.info("Connecting to Synapse...")
+  1285→    synapse = SynapseClient()
+  1286→    await synapse.connect()
+  1287→    set_client(synapse)
+  1288→
+  1289→    # Verify connection
+  1290→    ping_result = await synapse.ping()
+  1291→    logger.info(f"Synapse connected: {ping_result}")
+  1292→
+  1293→    scene = await synapse.scene_info()
+  1294→    logger.info(f"Scene: {scene}")
+  1295→
+  1296→    # --- Step 2: Create Agent ---
+  1297→    client = ClaudeSDKClient()
+  1298→
+  1299→    # Register custom tools
+  1300→    # Each tool gets the @client.tool() decorator equivalent
+  1301→    client.register_tool(
+  1302→        name="synapse_ping",
+  1303→        description="Check if Synapse and Houdini are reachable. Call first to verify connection.",
+  1304→        func=synapse_ping
+  1305→    )
+  1306→
+  1307→    client.register_tool(
+  1308→        name="synapse_scene_info",
+  1309→        description="Get current Houdini scene overview — HIP file, frame range, FPS.",
+  1310→        func=synapse_scene_info
+  1311→    )
+  1312→
+  1313→    client.register_tool(
+  1314→        name="synapse_inspect_scene",
+  1315→        description=(
+  1316→            "Walk the Houdini scene graph and return topology overview. "
+  1317→            "Shows node counts, types, flags, errors, warnings. "
+  1318→            "Use this to orient yourself before making changes."
+  1319→        ),
+  1320→        func=synapse_inspect_scene
+  1321→    )
+  1322→
+  1323→    client.register_tool(
+  1324→        name="synapse_inspect_selection",
+  1325→        description=(
+  1326→            "Analyze currently selected nodes in Houdini. "
+  1327→            "Returns paths, types, modified parameters, connections, "
+  1328→            "geometry attributes, errors, warnings."
+  1329→        ),
+  1330→        func=synapse_inspect_selection
+  1331→    )
+  1332→
+  1333→    client.register_tool(
+  1334→        name="synapse_inspect_node",
+  1335→        description=(
+  1336→            "Deep-inspect a single node — ALL parameters, expressions, "
+  1337→            "code content, geometry, HDA info, cook time. "
+  1338→            "The 'tell me everything' tool for understanding one node."
+  1339→        ),
+  1340→        func=synapse_inspect_node
+  1341→    )
+  1342→
+  1343→    client.register_tool(
+  1344→        name="synapse_execute",
+  1345→        description=(
+  1346→            "Execute Python code in Houdini. Creates nodes, sets parameters, "
+  1347→            "connects wires. Auto-wrapped in undo group for safety. "
+  1348→            "ONE mutation per call. Use guard functions (ensure_node, etc.) "
+  1349→            "for idempotency. Set `result` variable to return data."
+  1350→        ),
+  1351→        func=synapse_execute
+  1352→    )
+  1353→
+  1354→    client.register_tool(
+  1355→        name="synapse_render_preview",
+  1356→        description=(
+  1357→            "Trigger a quick Karma render preview. Low-res by default for "
+  1358→            "fast iteration. Saves to disk for review."
+  1359→        ),
+  1360→        func=synapse_render_preview
+  1361→    )
+  1362→
+  1363→    # --- Step 3: Configure Agent Options ---
+  1364→    agent_dir = Path(__file__).parent
+  1365→
+  1366→    options = ClaudeAgentOptions(
+  1367→        # Use all registered custom tools + filesystem tools for reading specs
+  1368→        allowed_tools=[
+  1369→            "synapse_ping",
+  1370→            "synapse_scene_info",
+  1371→            "synapse_inspect_scene",
+  1372→            "synapse_inspect_selection",
+  1373→            "synapse_inspect_node",
+  1374→            "synapse_execute",
+  1375→            "synapse_render_preview",
+  1376→            "Read",       # Read files (specs, CLAUDE.md)
+  1377→            "Glob",       # Find files
+  1378→        ],
+  1379→        # System prompt points to CLAUDE.md for full personality/conventions
+  1380→        system_prompt=(
+  1381→            "You are the Synapse VFX Co-Pilot — an AI assistant embedded in a "
+  1382→            "professional VFX artist's Houdini workflow. You have direct access to "
+  1383→            "their live Houdini scene via custom tools. Your communication style "
+  1384→            "is that of a supportive senior artist — encouraging, specific, and "
+  1385→            "forward-looking. Never blame. Always suggest next steps.\n\n"
+  1386→            "WORKFLOW: Inspect scene → Plan approach → Execute (one mutation at a time) "
+  1387→            "→ Verify result → Iterate until goal is met.\n\n"
+  1388→            "SAFETY: Every execute call is wrapped in an undo group. If something fails, "
+  1389→            "the scene rolls back. Use guard functions (ensure_node, ensure_connection, "
+  1390→            "ensure_parm) for idempotent operations.\n\n"
+  1391→            f"Read {agent_dir / 'CLAUDE.md'} for full conventions and personality guide."
+  1392→        ),
+  1393→        cwd=str(agent_dir),
+  1394→        # Auto-accept file reads (agent needs to read its own specs)
+  1395→        permission_mode='acceptEdits',
+  1396→    )
+  1397→
+  1398→    # --- Step 4: Run the Agent Loop ---
+  1399→    prompt = (
+  1400→        f"GOAL: {goal}\n\n"
+  1401→        f"SCENE CONTEXT: Connected to Synapse at ws://localhost:9999. "
+  1402→        f"Scene info: {scene}\n\n"
+  1403→        f"START by reading CLAUDE.md for your personality and conventions guide, "
+  1404→        f"then inspect the scene to understand what you're working with. "
+  1405→        f"Plan your approach, then execute step by step with verification."
+  1406→    )
+  1407→
+  1408→    logger.info(f"Starting agent with goal: {goal}")
+  1409→
+  1410→    try:
+  1411→        response = await client.send_message(prompt, options=options)
+  1412→
+  1413→        # Process the full agent conversation
+  1414→        if hasattr(response, 'content'):
+  1415→            for block in response.content:
+  1416→                if hasattr(block, 'text'):
+  1417→                    print(block.text)
+  1418→
+  1419→        logger.info("Agent completed successfully")
+  1420→
+  1421→    except Exception as e:
+  1422→        logger.error(f"Agent error: {e}")
+  1423→        raise
+  1424→
+  1425→    finally:
+  1426→        await synapse.disconnect()
+  1427→        logger.info("Disconnected from Synapse")
+  1428→
+  1429→
+  1430→def main():
+  1431→    """CLI entry point."""
+  1432→    if len(sys.argv) < 2:
+  1433→        print("Usage: python synapse_agent.py \"<goal>\"")
+  1434→        print("Example: python synapse_agent.py \"Set up three-point lighting\"")
+  1435→        sys.exit(1)
+  1436→
+  1437→    goal = " ".join(sys.argv[1:])
+  1438→    asyncio.run(run_agent(goal))
+  1439→
+  1440→
+  1441→if __name__ == "__main__":
+  1442→    main()
+  1443→```
+  1444→
+  1445→**IMPORTANT NOTE ON SDK API:** The `ClaudeSDKClient` API is evolving rapidly
+  1446→(v0.1.33 as of Feb 7, 2026). The `register_tool()` method shown above is
+  1447→conceptual — when implementing, Claude Code should:
+  1448→
+  1449→1. Check the actual SDK API by reading `claude_agent_sdk/client.py` source
+  1450→2. Use `@client.tool()` decorator if that's the current pattern
+  1451→3. Or define tools via `ClaudeAgentOptions` if that's the pattern
+  1452→4. Fall back to `query()` with custom tools dict if `ClaudeSDKClient` API differs
+  1453→
+  1454→The tool functions themselves (in `synapse_tools.py`) are the stable part.
+  1455→The registration mechanism may need adaptation to the current SDK version.
+  1456→
+  1457→---
+  1458→
+  1459→## 8. Phase 4: CLAUDE.md — Agent Personality
+  1460→
+  1461→### `CLAUDE.md`
+  1462→
+  1463→This file is automatically loaded by the Claude Agent SDK when the agent runs.
+  1464→It defines who Synapse is, how it communicates, and what conventions it follows.
+  1465→
+  1466→```markdown
+  1467→# SYNAPSE — VFX Co-Pilot
+  1468→
+  1469→## Identity
+  1470→
+  1471→You are Synapse, a VFX co-pilot that works alongside professional artists
+  1472→in SideFX Houdini 21. You have direct access to their live scene through
+  1473→custom tools. You're not a chatbot — you're a creative collaborator with
+  1474→the ability to inspect, build, and verify VFX work in real time.
+  1475→
+  1476→## Voice & Tone
+  1477→
+  1478→**You sound like a supportive senior artist who has the artist's back.**
+  1479→
+  1480→### The Validation Test
+  1481→Before sending any message, ask yourself:
+  1482→> "Would this message make an artist having a rough day want to keep going
+  1483→>  or close the application?"
+  1484→
+  1485→If the answer isn't clearly "keep going," rewrite it.
+  1486→
+  1487→### Communication Principles
+  1488→- **Never blame.** "I couldn't find" not "you gave me a wrong path"
+  1489→- **Plain language first.** Technical details can follow, not lead
+  1490→- **Always offer a next step.** Every error should suggest what to try
+  1491→- **"I/we" framing.** Collaborative, not diagnostic
+  1492→- **Forward momentum.** Success messages imply "ready for the next thing"
+  1493→- **Celebrate wins.** Even small ones. "Nice — that's looking solid."
+  1494→- **Normalize difficulty.** "This is a tricky one" not "this is simple"
+  1495→
+  1496→### Never Say
+  1497→- "Error:" as a prefix (use context-specific language)
+  1498→- "Invalid" (use "didn't match" or "unexpected")
+  1499→- "Failed" alone (always add what we're doing about it)
+  1500→- "You need to" (use "we can" or "try")
+  1501→- "Obviously" or "simply" (nothing is obvious when you're stuck)
+  1502→
+  1503→### Always Say
+  1504→- "Let me check..." (before investigating)
+  1505→- "That worked — " (on success, then what's next)
+  1506→- "Heads up:" (for non-blocking warnings)
+  1507→- "I'll try a different approach" (on failure recovery)
+  1508→- "Nice." / "Clean." / "Looking good." (genuine micro-affirmations)
+  1509→
+  1510→## Workflow Protocol
+  1511→
+  1512→### The Agent Loop
+  1513→1. **Orient** — Inspect the scene before touching anything
+  1514→2. **Plan** — Think through the approach (use extended thinking)
+  1515→3. **Execute** — One mutation per call, always
+  1516→4. **Verify** — Inspect the result of every mutation
+  1517→5. **Iterate** — If verification fails, adjust and retry
+  1518→6. **Report** — Tell the artist what was done and what's next
+  1519→
+  1520→### Safety Rules (Non-Negotiable)
+  1521→1. **Atomic:** ONE mutation per `synapse_execute` call. Never combine
+  1522→   node creation + connection + parameter setting in one script.
+  1523→2. **Idempotent:** Use guard functions for every mutation:
+  1524→   - `ensure_node(parent_path, node_type, node_name)` — creates only if missing
+  1525→   - `ensure_connection(source_path, target_path, target_input)` — connects only if not already
+  1526→   - `ensure_parm(node_path, parm_name, value)` — sets only if different
+  1527→   - `ensure_node_deleted(path)` — deletes only if exists
+  1528→3. **Verified:** After every mutation, inspect the result. Don't assume success.
+  1529→4. **Recoverable:** If something goes wrong, the undo group rolls back.
+  1530→   Tell the artist what happened and what you'll try instead.
+  1531→
+  1532→### Read Operations (Safe, Combine Freely)
+  1533→- `synapse_inspect_scene` — get the lay of the land
+  1534→- `synapse_inspect_selection` — understand what the artist is looking at
+  1535→- `synapse_inspect_node` — deep-dive on a single node
+  1536→- `synapse_scene_info` — basic scene metadata
+  1537→- These never modify the scene. Call them as often as needed.
+  1538→
+  1539→## Houdini 21 Conventions
+  1540→
+  1541→### Scene Graph
+  1542→- USD/Solaris nodes live at `/stage/`
+  1543→- OBJ-level geometry at `/obj/`
+  1544→- Render outputs at `/out/`
+  1545→- Connections flow through merge nodes (e.g., `/stage/scene_merge`)
+  1546→
+  1547→### USD Light Parameters (CRITICAL)
+  1548→H21 USD light nodes use **encoded parameter names**, not human-readable ones:
+  1549→- Intensity: `xn__inputsintensity_i0a` (not `intensity`)
+  1550→- Color: `xn__inputscolor_vya` (not `color`)
+  1551→- Exposure: `xn__inputsexposure_f1a` (not `exposure`)
+  1552→
+  1553→**When in doubt, inspect the node first** using `synapse_inspect_node` to see
+  1554→exact parameter names. This is the #1 source of errors.
+  1555→
+  1556→### Node Type Names
+  1557→Common USD node types in Solaris/LOPs:
+  1558→- `distantlight::2.0` — directional light
+  1559→- `domelight::2.0` — environment/dome light
+  1560→- `rectlight::2.0` — rectangular area light
+  1561→- `spherelight::2.0` — point/sphere light
+  1562→- `materiallibrary` — MaterialX material container
+  1563→- `karmarendersettings` — Karma render configuration
+  1564→- `merge` — combines multiple LOP inputs
+  1565→
+  1566→### MaterialX Shading
+  1567→- Surface shader: `mtlxstandard_surface`
+  1568→- Use `materiallibrary` node to contain shading networks
+  1569→- Bind materials via `materialbindings` LOP
+  1570→
+  1571→### Karma Rendering
+  1572→- ROP node: typically at `/stage/karma_rop` or `/out/karma`
+  1573→- Supports CPU and XPU (GPU) backends
+  1574→- Preview renders: 512x512, 32 samples for speed
+  1575→- Final renders: scene resolution, 128+ samples
+  1576→
+  1577→### File Paths
+  1578→- Synapse home: `C:/Users/User/.synapse/`
+  1579→- Render output: `C:/Users/User/.synapse/renders/`
+  1580→- Houdini projects: `D:/HOUDINI_PROJECTS_2025/`
+  1581→- Use forward slashes in Houdini Python, or raw strings with backslashes
+  1582→
+  1583→## Error Recovery Patterns
+  1584→
+  1585→### "Node not found"
+  1586→→ Inspect the scene. The node may have been renamed or may not exist yet.
+  1587→   Check the path, search for similar names.
+  1588→
+  1589→### "Parameter doesn't exist"
+  1590→→ Encoded parameter name issue. Inspect the node to get exact parameter names.
+  1591→   H21 USD parameters use `xn__` prefix encoding.
+  1592→
+  1593→### "Duplicate inputs on merge node"
+  1594→→ Idempotent guard wasn't used. Use `ensure_connection()` which checks
+  1595→   existing connections before wiring.
+  1596→
+  1597→### "Render produced no output"
+  1598→→ Check: Is the output path writable? Is the camera set? Is there geometry
+  1599→   in the scene? Inspect the ROP node for configuration issues.
+  1600→
+  1601→### "Script partially executed"
+  1602→→ The undo group should have rolled back. Verify by inspecting the scene.
+  1603→   If partial state persists, investigate the undo system.
+  1604→```
+  1605→
+  1606→### `.claude/settings.json`
+  1607→
+  1608→```json
+  1609→{
+  1610→  "permissions": {
+  1611→    "allow": [
+  1612→      "Read(*)",
+  1613→      "Glob(*)",
+  1614→      "synapse_ping",
+  1615→      "synapse_scene_info",
+  1616→      "synapse_inspect_scene",
+  1617→      "synapse_inspect_selection",
+  1618→      "synapse_inspect_node",
+  1619→      "synapse_execute",
+  1620→      "synapse_render_preview"
+  1621→    ]
+  1622→  }
+  1623→}
+  1624→```
+  1625→
+  1626→---
+  1627→
+  1628→## 9. Phase 5: Skills — Reusable VFX Recipes
+  1629→
+  1630→### `.claude/skills/three_point_lighting.md`
+  1631→
+  1632→```markdown
+  1633→# Skill: Three-Point Lighting Setup
+  1634→
+  1635→## When to Use
+  1636→When the artist asks for a lighting rig, standard lighting, or three-point setup.
+  1637→
+  1638→## Steps
+  1639→1. Inspect the scene to find existing lights and the main subject
+  1640→2. Create or configure a KEY light (warm, main illumination, 45° above-right)
+  1641→3. Create or configure a FILL light (cool, softer, from the left)
+  1642→4. Create or configure a RIM/BACK light (accent, behind the subject)
+  1643→5. Wire all lights into the scene merge
+  1644→6. Verify each light exists and has correct parameters
+  1645→7. Offer a preview render
+  1646→
+  1647→## Parameter Guidelines
+  1648→- Key: warm (2800-4000K equivalent), intensity 1.0-2.0
+  1649→- Fill: cool (6500-8000K equivalent), intensity 0.3-0.5
+  1650→- Rim: accent color matching scene mood, intensity 0.6-1.0
+  1651→
+  1652→## H21 Notes
+  1653→- Use `distantlight::2.0` for key and rim
+  1654→- Use `rectlight::2.0` for fill (softer falloff)
+  1655→- Or `domelight::2.0` for ambient fill
+  1656→- Parameter names are encoded: inspect nodes to confirm exact names
+  1657→```
+  1658→
+  1659→### `.claude/skills/karma_render_preview.md`
+  1660→
+  1661→```markdown
+  1662→# Skill: Karma Render Preview
+  1663→
+  1664→## When to Use
+  1665→When the artist wants to see a quick render of the current scene state.
+  1666→
+  1667→## Steps
+  1668→1. Find the Karma ROP (typically /stage/karma_rop or /out/karma)
+  1669→2. If no ROP exists, create one
+  1670→3. Set preview resolution (512x512)
+  1671→4. Set low samples (32) for speed
+  1672→5. Set output path to C:/Users/User/.synapse/renders/preview.exr
+  1673→6. Trigger render
+  1674→7. Report completion and file path
+  1675→
+  1676→## Iteration Pattern
+  1677→If the artist wants adjustments:
+  1678→1. Adjust the scene (lights, materials, camera)
+  1679→2. Re-render preview
+  1680→3. Compare results
+  1681→4. Repeat until satisfied
+  1682→5. Offer final render at full resolution
+  1683→```
+  1684→
+  1685→### `.claude/skills/scene_health_check.md`
+  1686→
+  1687→```markdown
+  1688→# Skill: Scene Health Check
+  1689→
+  1690→## When to Use
+  1691→When the artist asks for a diagnostic, or when starting work on an unfamiliar scene.
+  1692→
+  1693→## Steps
+  1694→1. Inspect full scene graph at max_depth=3
+  1695→2. Check for: nodes with errors, nodes with warnings, unconnected inputs,
+  1696→   deprecated node types, bypass flags that might be accidental
+  1697→3. Report findings in priority order:
+  1698→   - 🔴 Errors (blocking)
+  1699→   - 🟡 Warnings (may affect output)
+  1700→   - 🔵 Suggestions (optimization)
+  1701→4. Offer to fix issues that have clear solutions
+  1702→
+  1703→## Report Format
+  1704→Keep it scannable:
+  1705→- Lead with the headline: "Scene looks healthy" or "Found 3 issues to look at"
+  1706→- Group by severity
+  1707→- Each issue: what, where, suggested fix
+  1708→```
+  1709→
+  1710→---
+  1711→
+  1712→## 10. Phase 6: Test Protocol
+  1713→
+  1714→Execute these tests in order. Each must pass before proceeding.
+  1715→
+  1716→### Test 0: Dependencies
+  1717→```bash
+  1718→cd C:/Users/User/.synapse/agent
+  1719→pip install -r requirements.txt
+  1720→python -c "from claude_agent_sdk import ClaudeSDKClient; print('SDK OK')"
+  1721→python -c "import websockets; print('WebSocket OK')"
+  1722→```
+  1723→
+  1724→### Test 1: WebSocket Connection
+  1725→```python
+  1726→# test_connection.py
+  1727→import asyncio
+  1728→from synapse_ws import SynapseClient
+  1729→
+  1730→async def test():
+  1731→    async with SynapseClient() as client:
+  1732→        result = await client.ping()
+  1733→        print(f"Ping: {result}")
+  1734→        scene = await client.scene_info()
+  1735→        print(f"Scene: {scene}")
+  1736→        print("✓ Connection test passed")
+  1737→
+  1738→asyncio.run(test())
+  1739→```
+  1740→**Expected:** Protocol version returned, scene info returned.
+  1741→
+  1742→### Test 2: Read Operations
+  1743→```python
+  1744→# test_reads.py
+  1745→import asyncio
+  1746→from synapse_ws import SynapseClient
+  1747→from synapse_tools import set_client, synapse_inspect_scene, synapse_inspect_selection
+  1748→
+  1749→async def test():
+  1750→    async with SynapseClient() as client:
+  1751→        set_client(client)
+  1752→        scene = await synapse_inspect_scene(root_path="/stage", max_depth=2)
+  1753→        print(f"Scene inspection:\n{scene[:500]}...")
+  1754→        print("✓ Read operations test passed")
+  1755→
+  1756→asyncio.run(test())
+  1757→```
+  1758→**Expected:** JSON with node counts, types, and hierarchy.
+  1759→
+  1760→### Test 3: Execute with Guards
+  1761→```python
+  1762→# test_execute.py
+  1763→import asyncio
+  1764→from synapse_ws import SynapseClient
+  1765→from synapse_tools import set_client, synapse_execute
+  1766→
+  1767→async def test():
+  1768→    async with SynapseClient() as client:
+  1769→        set_client(client)
+  1770→
+  1771→        # Create with guard
+  1772→        r1 = await synapse_execute(
+  1773→            code="node = ensure_node('/stage', 'null', 'agent_test_null')\nresult = node.path()",
+  1774→            description="Create test null node"
+  1775→        )
+  1776→        print(f"Create: {r1}")
+  1777→
+  1778→        # Run again — should be idempotent
+  1779→        r2 = await synapse_execute(
+  1780→            code="node = ensure_node('/stage', 'null', 'agent_test_null')\nresult = node.path()",
+  1781→            description="Create test null node (idempotent)"
+  1782→        )
+  1783→        print(f"Idempotent: {r2}")
+  1784→
+  1785→        # Cleanup
+  1786→        r3 = await synapse_execute(
+  1787→            code="ensure_node_deleted('/stage/agent_test_null')\nresult = 'cleaned'",
+  1788→            description="Clean up test node"
+  1789→        )
+  1790→        print(f"Cleanup: {r3}")
+  1791→        print("✓ Execute test passed")
+  1792→
+  1793→asyncio.run(test())
+  1794→```
+  1795→**Expected:** Same path both times, clean deletion.
+  1796→
+  1797→### Test 4: Transaction Rollback
+  1798→```python
+  1799→# test_rollback.py
+  1800→import asyncio
+  1801→from synapse_ws import SynapseClient
+  1802→from synapse_tools import set_client, synapse_execute, synapse_inspect_node
+  1803→
+  1804→async def test():
+  1805→    async with SynapseClient() as client:
+  1806→        set_client(client)
+  1807→
+  1808→        # Execute code that will error midway
+  1809→        r = await synapse_execute(
+  1810→            code="node = ensure_node('/stage', 'null', 'rollback_test')\nx = undefined_var",
+  1811→            description="Test rollback on error"
+  1812→        )
+  1813→        print(f"Result: {r}")
+  1814→
+  1815→        # Verify rollback — node should NOT exist
+  1816→        check = await synapse_inspect_node("/stage/rollback_test")
+  1817→        print(f"Node exists after rollback: {check}")
+  1818→        print("✓ Rollback test passed (node should show 'not found')")
+  1819→
+  1820→asyncio.run(test())
+  1821→```
+  1822→**Expected:** Error returned, node does NOT exist (undo rolled it back).
+  1823→
+  1824→### Test 5: Full Agent Loop (Integration)
+  1825→```bash
+  1826→cd C:/Users/User/.synapse/agent
+  1827→python synapse_agent.py "Inspect the current scene and tell me what you see"
+  1828→```
+  1829→**Expected:** Agent connects, reads CLAUDE.md, calls inspect_scene, reports findings.
+  1830→
+  1831→---
+  1832→
+  1833→## 11. Phase 7: Advanced Patterns
+  1834→
+  1835→### Subagent: Parallel Scene Analysis
+  1836→```python
+  1837→# Use subagents for concurrent inspection tasks
+  1838→# The agent can spin up subagents with isolated context:
+  1839→# - Subagent A: Analyze lighting setup
+  1840→# - Subagent B: Analyze material assignments
+  1841→# - Subagent C: Check scene health
+  1842→# Each returns a focused summary to the orchestrator
+  1843→```
+  1844→
+  1845→### Compaction: Long Render Sessions
+  1846→```python
+  1847→# For render iteration loops (configure → render → review → adjust),
+  1848→# enable compaction in agent options:
+  1849→# options.compact = True
+  1850→# This auto-summarizes history when context gets long
+  1851→```
+  1852→
+  1853→### Recipe Runner Pattern
+  1854→```python
+  1855→# Agent reads a skill file → plans execution → adapts to current scene
+  1856→# "Read the three_point_lighting skill, then set up lighting
+  1857→#  adapted to what's currently in the scene"
+  1858→```
+  1859→
+  1860→### Desktop-to-Code Handoff Protocol
+  1861→```
+  1862→1. Artist works in Claude Desktop (has memory, conversation context)
+  1863→2. Desktop generates a goal description with scene context
+  1864→3. Artist copies goal to Claude Code
+  1865→4. Claude Code runs: python synapse_agent.py "<goal>"
+  1866→5. Agent executes autonomously
+  1867→6. Results appear in Houdini
+  1868→7. Artist evaluates visually
+  1869→8. If adjustments needed, new goal → repeat
+  1870→```
+  1871→
+  1872→---
+  1873→
+  1874→## 12. Consistency Checklist
+  1875→
+  1876→Before executing, verify these match the existing Synapse codebase:
+  1877→
+  1878→- [ ] WebSocket URI: `ws://localhost:9999` (confirmed in synapse_ws.py)
+  1879→- [ ] Protocol version: v4.0.0 (confirmed in multiple sessions)
+  1880→- [ ] Tool names match existing MCP tools: `synapse_ping`, `houdini_execute_python`
+  1881→- [ ] Guard functions match guards.py: `ensure_node`, `ensure_connection`, `ensure_parm`,
+  1882→      `ensure_node_deleted`, `node_exists`, `deduplicate_inputs`, `describe_inputs`
+  1883→- [ ] H21 parameter encoding: `xn__` prefix pattern (confirmed in lighting sessions)
+  1884→- [ ] File paths: `C:/Users/User/.synapse/` (confirmed across all sessions)
+  1885→- [ ] Render output: `C:/Users/User/.synapse/renders/` (from roadmap)
+  1886→- [ ] Houdini project path: `D:/HOUDINI_PROJECTS_2025/` (from scene info)
+  1887→- [ ] Tone principles match TONE_IMPLEMENTATION.md (validated against all conversations)
+  1888→- [ ] Safety protocol: atomic + idempotent + transaction (from SAFE_EXEC_SPEC.md)
+  1889→- [ ] Karma ROP patterns: `/stage/karma_rop` or `/out/karma`
+  1890→- [ ] USD light types: `distantlight::2.0`, `domelight::2.0`, `rectlight::2.0`
+  1891→
+  1892→---
+  1893→
+  1894→## 13. Execution Instructions for Claude Code
+  1895→
+  1896→### Quick Start
+  1897→```
+  1898→Read C:/Users/User/.synapse/agent/CLAUDE.md for context.
+  1899→
+  1900→Then:
+  1901→1. cd C:/Users/User/.synapse/agent/
+  1902→2. pip install -r requirements.txt
+  1903→3. Read the existing Synapse server source at C:/Users/User/.synapse/
+  1904→   to understand the WebSocket message format (the synapse_ws.py client
+  1905→   must match what the server expects)
+  1906→4. Adapt synapse_ws.py if the server's JSON message format differs from
+  1907→   what's shown here
+  1908→5. Run tests in order: test_connection → test_reads → test_execute →
+  1909→   test_rollback → test_agent
+  1910→6. Fix any issues before proceeding to the full agent
+  1911→```
+  1912→
+  1913→### Critical First Step
+  1914→**Before writing any code, read the Synapse server source.** The WebSocket
+  1915→message format in `synapse_ws.py` is based on the pattern observed in
+  1916→conversations (e.g., `{"tool": "houdini_execute_python", "code": "..."}`),
+  1917→but the actual server may use a different format. Adapt accordingly.
+  1918→
+  1919→### SDK API Verification
+  1920→The Claude Agent SDK is evolving rapidly. Before implementing `synapse_agent.py`:
+  1921→1. Read `claude_agent_sdk/client.py` source to understand the current API
+  1922→2. Check if `register_tool()` is the method, or if `@client.tool()` decorator is used
+  1923→3. Check the `ClaudeAgentOptions` signature for current parameter names
+  1924→4. Adapt the registration pattern to match the actual SDK version
+  1925→
+  1926→### What Success Looks Like
+  1927→```
+  1928→$ python synapse_agent.py "Set up three-point lighting for this scene"
+  1929→
+  1930→[synapse.agent] Connecting to Synapse...
+  1931→[synapse.agent] Synapse connected: {"protocol": "4.0.0", ...}
+  1932→[synapse.agent] Scene: synapse_demo_2026.hip
+  1933→[synapse.agent] Starting agent with goal: Set up three-point lighting...
+  1934→
+  1935→[Agent reads CLAUDE.md]
+  1936→[Agent calls synapse_inspect_scene → understands current state]
+  1937→[Agent plans: 3 lights needed, identifies merge node]
+  1938→[Agent calls synapse_execute → creates key light with ensure_node]
+  1939→[Agent calls synapse_inspect_node → verifies key light params]
+  1940→[Agent calls synapse_execute → creates fill light with ensure_node]
+  1941→[Agent calls synapse_inspect_node → verifies fill light params]
+  1942→[Agent calls synapse_execute → creates rim light with ensure_node]
+  1943→[Agent calls synapse_execute → wires all to merge with ensure_connection]
+  1944→[Agent calls synapse_inspect_scene → final verification]
+  1945→[Agent reports: "Three-point lighting is set up. Key at 45° warm,
+  1946→ fill from left cool, rim accent from behind. Want a preview render?"]
+  1947→```
+  1948→
+  1949→The artist sees the lights appear in their Houdini viewport in real time.
+  1950→The agent operated autonomously through the full inspect → plan → execute →
+  1951→verify → report loop.
+  1952→
+  1953→---
+  1954→
+  1955→*Blueprint: Synapse Agent SDK v1.0*
+  1956→*Origin: Claude Desktop Project (Synapse + VFX)*
+  1957→*Target: Claude Code + Opus 4.6 Extended Thinking*
+  1958→*Author: Joe (Creative Director) + Claude (Implementation Partner)*
+  1959→

@@ -1,0 +1,90 @@
+"""Spawn a cube, verify it exists, then clean up."""
+import httpx
+import json
+import os
+import time
+
+TEMP_DIR = "C:/Users/User/AppData/Local/Temp/ue_mcp_scripts"
+RESULT_FILE = f"{TEMP_DIR}/spawn_result.json"
+
+def run_in_editor(code, label=""):
+    script_file = f"{TEMP_DIR}/cmd_{label}.py"
+    if os.path.exists(RESULT_FILE):
+        os.remove(RESULT_FILE)
+    with open(script_file, "w", encoding="utf-8") as f:
+        f.write(code)
+    r = httpx.put("http://localhost:30010/remote/object/call", json={
+        "objectPath": "/Script/Engine.Default__KismetSystemLibrary",
+        "functionName": "ExecuteConsoleCommand",
+        "parameters": {"WorldContextObject": "", "Command": f"py {script_file}"},
+    })
+    # Wait for result file
+    for _ in range(10):
+        if os.path.exists(RESULT_FILE):
+            with open(RESULT_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        time.sleep(0.5)
+    return None
+
+# 1. Spawn cube
+print("1. Spawning cube...")
+result = run_in_editor(f'''
+import unreal, json
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actor = subsystem.spawn_actor_from_class(
+    unreal.StaticMeshActor,
+    unreal.Vector(200, 200, 100),
+    unreal.Rotator(0, 0, 0)
+)
+data = {{"success": False}}
+if actor:
+    actor.set_actor_label("BridgeTestCube")
+    mesh_comp = actor.get_component_by_class(unreal.StaticMeshComponent)
+    cube = unreal.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Cube")
+    if cube and mesh_comp:
+        mesh_comp.set_static_mesh(cube)
+    data = {{"success": True, "path": actor.get_path_name(), "label": "BridgeTestCube"}}
+with open("{RESULT_FILE}", "w", encoding="utf-8") as f:
+    json.dump(data, f)
+''', "spawn")
+print(f"   Result: {result}")
+
+# 2. List actors to confirm
+print("2. Listing actors...")
+result = run_in_editor(f'''
+import unreal, json
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+data = []
+for a in actors:
+    data.append({{
+        "name": a.get_actor_label(),
+        "class": a.get_class().get_name(),
+        "loc": [a.get_actor_location().x, a.get_actor_location().y, a.get_actor_location().z]
+    }})
+with open("{RESULT_FILE}", "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+''', "list")
+if result:
+    print(f"   {len(result)} actors:")
+    for a in result:
+        print(f"     - {a['name']} ({a['class']}) @ {a['loc']}")
+
+# 3. Cleanup
+print("3. Cleaning up...")
+result = run_in_editor(f'''
+import unreal, json
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+deleted = False
+for a in actors:
+    if a.get_actor_label() == "BridgeTestCube":
+        subsystem.destroy_actor(a)
+        deleted = True
+        break
+with open("{RESULT_FILE}", "w", encoding="utf-8") as f:
+    json.dump({{"deleted": deleted}}, f)
+''', "cleanup")
+print(f"   Result: {result}")
+
+print("\nAll checks passed!" if result and result.get("deleted") else "\nSomething went wrong.")

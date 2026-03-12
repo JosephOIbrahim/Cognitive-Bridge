@@ -1,0 +1,132 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Workspace Overview
+
+This is a home directory workspace containing multiple projects. It is **not** a single repository. Each major project has its own `CLAUDE.md` — always read the project-specific CLAUDE.md before working in that project.
+
+The global cognitive substrate instructions live at `~/.claude/CLAUDE.md` and are always loaded automatically. This file covers **cross-project navigation and shared patterns**.
+
+## Project Map
+
+### Active Projects (with test commands)
+
+| Project | Path | Tests | Test Command |
+|---------|------|-------|-------------|
+| **Orchestra** v7.1.0 | `Orchestra/` | ~1,551 | `python -m pytest` |
+| **Synapse** v5.2.1 | `Synapse/` + `~/.synapse/` | ~973 | `python -m pytest tests/ -v` |
+| **OTTO OS** v5.0.0-dev | `OTTO_OS/otto_v4/` | 93+4 | `cd otto_v4 && python -m pytest tests/ -v -m "not integration"` |
+| **OTTO Agents** v0.1.0 | `OTTO_OS/OTTO_Agents/` | — | `python -m pytest tests/ -v` |
+| **comfyui-agent** v0.2.0 | `comfyui-agent/` | 134+ | `python -m pytest tests/ -v` |
+| **RadiantSuite** | `RadiantSuite/` | 7 | `python -m pytest tests/ -v` |
+| **Optimizer V8** | `Optimizer_V7_G3/` | — | `python -m pytest tests/ -v` |
+| **RTXRemixCommandCenter** | `RTXRemixCommandCenter/` | — | `python -m pytest tests/ -v` |
+| **vex-corpus** v0.1.0 | `vex-corpus/` | — | `python -m pytest tests/ -v` |
+| **usd-security** v0.1.0 | `usd-security/` | — | `python -m pytest tests/ -v` |
+| **Substrate Tools** | `~/.claude/substrate/tools/` | 293 | `python -m pytest tests/ -v` |
+
+### Shipped / Parked
+
+| Project | Path | Notes |
+|---------|------|-------|
+| **houdini-connector** | `houdini-connector/` | Shipped, C++/Python HDK plugin |
+| **usd-cognitive-substrate** | `usd-cognitive-substrate/` | Merged into Orchestra |
+| **cognitive-orchestrator** | `cognitive-orchestrator/` | Merged into Orchestra |
+| **persistent-state-hypothesis** | `persistent-state-hypothesis/` | Published paper (DOI: 10.5281/zenodo.18332346) |
+
+### Utilities (not full projects)
+
+- `dylan-fit-sync/` — Push running workouts to NordicTrack X24 via iFit
+- `career-check/` — Single-script career utility
+- `browser-test/` — Node.js browser testing (JavaScript)
+- `claude-code-mobile/` — Mobile workspace for GitHub @claude mentions
+- `comfyui-deterministic-toolkit/` — JetBlock deterministic ComfyUI workflows
+- `Context-Engineering/` — Context engineering reference library (templates, schemas, curriculum)
+
+### Top-Level Scripts
+
+Dozens of one-off VFX Python scripts (`check_*.py`, `fix_*.py`, `setup_*.py`, `configure_*.py`) for Houdini/USD tasks. These are standalone — no shared module.
+
+## Cross-Project Patterns
+
+### He2025 Determinism
+
+All major projects follow ThinkingMachines [He2025] patterns for defeating nondeterminism:
+- `sort_keys=True` in all JSON serialization
+- Sorted dict iterations before aggregation
+- Stable tiebreakers (no `uuid.uuid4()` in hot paths, use deterministic IDs)
+- `time.time()` not used in seeds or hashing
+- Orchestra: `COGNITIVE_TILE_SIZE=32` + Kahan summation (batch invariance)
+
+### Testing
+
+- All Python projects use **pytest** (no unittest)
+- Orchestra uses `pytest.ini` (not pyproject.toml for pytest config); has `asyncio_mode=auto`
+- `--timeout` flag unavailable (pytest-timeout not installed)
+- Python 3.14 gotcha: `asyncio.get_event_loop()` raises RuntimeError — use `@pytest.mark.asyncio`
+- Orchestra CI excludes: `test_integration.py`, `test_performance.py`, `test_chaos.py`
+
+### Installation Pattern
+
+All major projects: `pip install -e ".[dev]"` for development. Optional features via extras (e.g., `".[dev,websocket,mcp]"`).
+
+### Windows Gotchas
+
+- **Encoding**: Use ASCII arrows (`<-`) not Unicode — cp1252 breaks in many contexts
+- **Imports for mocking**: `httpx`, `websockets` must be module-level for `mock.patch` to work
+- **Platform**: Windows, AMD Threadripper PRO 7965WX (24C/48T), RTX 4090 (24GB), 128GB DDR5
+- **Prefer PowerShell over Git Bash** for environment variable changes (`setx`), elevated commands, registry edits, and path-sensitive operations. Git Bash has escaping issues with `setx` and UAC interactions that cause silent failures.
+- **App Execution Aliases**: Windows ships zero-byte stubs in `WindowsApps/` that shadow real binaries. When a CLI tool fails mysteriously, check `where <tool>` and `Get-Command <tool>` in PowerShell.
+
+### Validate Before Scaling Up
+
+Before running any render or system-level command, first do a minimal dry-run version:
+- **Renders**: Use 320x240, no displacement, no SSS. Confirm output before increasing quality.
+- **Environment changes** (`setx`, registry): Echo the command and verify syntax before executing.
+- **Elevated commands**: Test in a non-elevated subprocess first when possible.
+
+### Language & Style
+
+- **Primary language**: Python. All major projects (Orchestra, Synapse, OTTO, comfyui-agent) are Python.
+- **Secondary**: TypeScript/React (jaimeibrahim.com portfolio site)
+- **He2025 compliance** is required for all Houdini-related and AI framework code (see He2025 Determinism above)
+- **Coaching tone** for Synapse error messages (see project CLAUDE.md)
+
+## Shared Infrastructure
+
+### `~/.claude/` — Global Config
+
+- `CLAUDE.md` — Cognitive substrate: reasoning protocols, workflow scaffolds, code patterns (always auto-loaded)
+- `commands/` — 16 slash-command agents from [Context-Engineering](https://github.com/davidkimai/Context-Engineering) (`/research`, `/test`, `/security`, `/optimize`, `/deploy`, `/monitor`, `/cli`, `/doc`, `/data`, `/meta`, `/alignment`, `/diligence`, `/legal`, `/lit`, `/marketing`, `/comms`)
+- `substrate/tools/` — Substrate tool suite (293 tests, 86% coverage)
+- `substrate/knowledge/` — Knowledge prims (89 prims, 340+ triggers)
+- `projects/_index.md` — Project orchestration (FOCUS/HOLDING/PARKED status)
+- `session_state.json` — Cross-session state tracking
+
+### `~/.synapse/` — Synapse Companion
+
+- `agent/` — Autonomous Agent SDK (`anthropic` 0.75.0, `ws://localhost:9999/synapse`)
+- `design/` — Complete design system (tokens, 21 SVGs, Qt styles)
+- `houdini/` — Shelf and panel integration for Houdini
+- `install.py` — Installer with `--dry-run`, `--verify`, `--uninstall`
+
+### `~/.orchestra/` — Orchestra Runtime State
+
+- `bcm/` — BCM learning trails (2-hour decay half-life)
+- `state/` — Session state
+
+## Lighting Law (VFX — Never Violate)
+
+When working with any PBR renderer (Karma, Arnold, RenderMan, V-Ray):
+- **Intensity is ALWAYS 1.0 or below** — never set intensity > 1
+- **Brightness controlled by EXPOSURE** (logarithmic, in stops)
+- Key:fill ratio 3:1 = 1.585 stops difference; 4:1 = 2.0 stops
+- USD exposure parm: `xn__inputsexposure_vya`, control: `xn__inputsexposure_control_wcb` = `"set"`
+
+## Key External Paths
+
+- **ComfyUI**: `G:\COMFYUI_Database` (note: `Custom_Nodes` with capital C, N)
+- **Houdini Projects**: `D:\HOUDINI_PROJECTS_2025\`
+- **Vercel Portfolio**: `G:\VERCEL_BACKUP\my-vercel-website\` (Next.js/React)
+- **AI Framework R&D**: `H:\My Drive\AI_Framework_RnD_2025\Frameworks` (parked)

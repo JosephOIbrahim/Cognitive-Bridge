@@ -1,0 +1,41 @@
+# Plan: Resizable multi-line input with QSplitter
+
+## Context
+The Pentagram panel's chat input is a single-line `QLineEdit` with no resize handle. The user wants a draggable splitter between the chat display and the input area — matching Houdini 21's native panel behavior — so the input can grow for multi-line messages.
+
+## File
+`SYNAPSE/houdini/python_panels/synapse_panel.pypanel`
+
+## Changes
+
+### 1. `_build_chat_area()` (lines 430-474) — Replace layout with QSplitter
+
+- Replace the `QVBoxLayout` that holds `_chat_display` + `input_row` with a **`QSplitter(Qt.Vertical)`**
+- Top widget: `_chat_display` (QTextEdit, read-only) — same as now
+- Bottom widget: a small QWidget containing the input row (text area + send button)
+- Convert `_chat_input` from `QLineEdit` → `QPlainTextEdit`
+  - Set `setTabChangesFocus(True)` so Tab still moves focus
+  - Set minimum height ~40px, maximum height ~200px (prevents taking over the whole panel)
+  - Style to match the existing pill look (dark bg, border-radius, same font)
+  - Placeholder text preserved
+- Set splitter initial sizes: `[700, 80]` (chat dominant, input compact)
+- Style the splitter handle to be subtle (2-3px, Houdini-dark color)
+
+### 2. `_on_send_chat()` (line 966-978) — Adapt for QPlainTextEdit
+
+- Change `self._chat_input.text()` → `self._chat_input.toPlainText()`
+- Change `self._chat_input.clear()` stays the same (works on both)
+- Remove `returnPressed.connect` (QPlainTextEdit doesn't have it)
+- Instead, install a key event filter: **Enter sends**, **Shift+Enter inserts newline**
+
+### 3. Key event filter
+
+- Add a small `_InputKeyFilter(QObject)` class (or override `keyPressEvent`)
+- Enter/Return → call `_on_send_chat()`
+- Shift+Enter → insert newline (default behavior)
+- Keep it minimal — ~15 lines
+
+## Verification
+- Sync to `~/.synapse/houdini/` and `~/houdini21.0/python_panels/`
+- Reload panel in Houdini via `houdini_execute_python` → `hou.pypanel.installFile()`
+- Test: drag splitter handle, type multi-line with Shift+Enter, send with Enter

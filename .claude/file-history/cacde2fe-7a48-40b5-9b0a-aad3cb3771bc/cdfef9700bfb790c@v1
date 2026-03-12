@@ -1,0 +1,197 @@
+# Phase 1: MCP-First Transformation
+
+## Context
+
+The ComfyUI SUPER DUPER Agent (v0.3.0, 61 tools, 429 tests) is currently a standalone CLI agent with MCP as an optional transport. The strategic shift: Claude Code **is** the agent runtime; we're building the tool belt, not the agent. Phase 1 makes MCP the primary interface and CLAUDE.md the brain.
+
+## Scope: Two PRs
+
+### PR 1: MCP First-Class + Knowledge Layer (zero behavioral change)
+### PR 2: Session Isolation (behavioral refactor)
+
+---
+
+## PR 1: MCP First-Class + Knowledge Layer
+
+### 1. Move `mcp` to core dependency
+
+**File: `pyproject.toml`**
+- Move `"mcp>=1.2.0"` from `[project.optional-dependencies].mcp` into `dependencies` list
+- Remove the `[project.optional-dependencies].mcp` section
+
+**File: `agent/mcp_server.py`**
+- Remove `try/except ImportError` guard (lines 24-30), import `mcp` unconditionally
+- Remove `_HAS_MCP` flag and all conditionals (lines 56-60 in `create_mcp_server`, lines 129-136 in `main`)
+- Keep all functional logic identical
+
+**File: `agent/cli.py`**
+- Update `mcp()` command docstring: "Primary integration — exposes all tools via MCP for Claude Code"
+
+### 2. CLAUDE.md as Knowledge Layer
+
+**File: `CLAUDE.md`** — Add these sections (total ~150 lines):
+
+**a) "Claude Code MCP Setup"** (~15 lines)
+- MCP config JSON snippet for `.claude/settings.json`
+- One-line install: `pip install -e .`
+
+**b) "Tool Usage Rules"** (~45 lines)
+- Migrate the 15 `_RULES` from `system_prompt.py` (lines 6-55)
+- These rules tell Claude Code *how* to use the tools (always query, never assume, validate first, etc.)
+
+**c) "Artistic Intent to Parameter Translation"** (~35 lines)
+- New content: dreamier/sharper/photorealistic/diagnostic → ComfyUI parameter directions
+- Gives Claude Code the vocabulary to translate artist intent
+
+**d) "Model Family Quick Reference"** (~20 lines)
+- Table: SD1.5 / SDXL / Flux / SD3 key differences (CFG, steps, resolution, negative prompts)
+- Condensed from `flux_specifics.md` + general knowledge
+
+**e) "Workflow JSON Schema"** (~10 lines)
+- API format structure from `comfyui_core.md`
+
+**NOT modified:** `system_prompt.py`, `knowledge/*.md` — CLI fallback path preserved
+
+### 3. New tool: `get_install_instructions`
+
+**File: `agent/tools/comfy_discover.py`**
+- Add 1 tool to `TOOLS` list + handler in `handle()`
+- Input: `{"query": str, "source": "registry"|"civitai"|"huggingface"}`
+- Output: install commands (git clone for nodes, download path for models)
+- Fills the gap between discovery and installation
+
+**File: `tests/test_comfy_discover.py`**
+- Add ~5 tests for the new tool (mocked, no network)
+
+### 4. Tool audit documentation
+
+**File: `CLAUDE.md`** — Add "Tool Redundancy Notes" section (~15 lines)
+- Document which tools are core domain value vs overlapping with Claude Code natives
+- All tools kept; this is informational for future pruning
+
+---
+
+## PR 2: Session Isolation
+
+### 1. Create `WorkflowSession` class
+
+**New file: `agent/workflow_session.py`** (~60 lines)
+
+```python
+class WorkflowSession:
+    """Dict-like workflow state container with per-session locking."""
+    def __init__(self, session_id="default"):
+        self.session_id = session_id
+        self._data = {
+            "loaded_path": None,
+            "base_workflow": None,
+            "current_workflow": None,
+            "history": [],
+            "format": None,
+        }
+        self._lock = threading.Lock()
+
+    def __getitem__(self, key): return self._data[key]
+    def __setitem__(self, key, value): self._data[key] = value
+    def get(self, key, default=None): return self._data.get(key, default)
+```
+
+Plus session registry:
+```python
+_sessions: dict[str, WorkflowSession] = {}
+_registry_lock = threading.Lock()
+
+def get_session(session_id="default") -> WorkflowSession:
+    with _registry_lock:
+        if session_id not in _sessions:
+            _sessions[session_id] = WorkflowSession(session_id)
+        return _sessions[session_id]
+```
+
+### 2. Refactor `workflow_patch.py`
+
+**File: `agent/tools/workflow_patch.py`**
+- Replace the module-level `_state` dict (lines 24-30) with:
+  ```python
+  from ..workflow_session import get_session
+  _state = get_session("default")  # Dict-like, all _state["key"] patterns work
+  _state_lock = _state._lock
+  ```
+- **All 36 `_state[...]` references inside this file continue working unchanged** because `WorkflowSession` implements `__getitem__`, `__setitem__`, `.get()`
+- The `_state_lock` reference also continues working
+
+**Why this is safe:** The 53 test references across 8 files do things like:
+- `workflow_patch._state["loaded_path"] = None` → works via `__setitem__`
+- `workflow_patch._state["current_workflow"]` → works via `__getitem__`
+- `workflow_patch._state["history"].append(...)` → works because `__getitem__` returns the mutable list
+
+### 3. Update session_tools.py
+
+**File: `agent/tools/session_tools.py`** (2 import sites: lines 108, 131)
+- Change `from .workflow_patch import _state as wf_state` to `from ..workflow_session import get_session`
+- Use `wf_state = get_session("default")` in both handlers
+- Functionally identical for now; enables future per-session routing
+
+### 4. Add session_id to MCP dispatch
+
+**File: `agent/mcp_server.py`**
+- In `call_tool()`, extract optional `_session_id` from arguments dict
+- Pass to `handle_tool(name, arguments, session_id=session_id)` if present
+- Enables future multi-session MCP usage
+
+**File: `agent/tools/__init__.py`**
+- Add optional `session_id` kwarg to `handle()`, forward to `workflow_patch.handle()`
+
+### 5. New tests
+
+**New file: `tests/test_workflow_session.py`** (~20 tests)
+- WorkflowSession dict-like access
+- Session registry isolation (session "a" independent of "b")
+- Thread safety (concurrent access with lock)
+- `copy.deepcopy()` on session data
+
+---
+
+## Critical Files
+
+| File | PR | Change Type |
+|------|-----|-------------|
+| `pyproject.toml` | 1 | Edit (move dep) |
+| `agent/mcp_server.py` | 1+2 | Edit (remove guard; add session) |
+| `agent/cli.py` | 1 | Edit (docstring) |
+| `CLAUDE.md` | 1 | Edit (add ~150 lines) |
+| `agent/tools/comfy_discover.py` | 1 | Edit (add 1 tool) |
+| `tests/test_comfy_discover.py` | 1 | Edit (add tests) |
+| `agent/workflow_session.py` | 2 | New file |
+| `agent/tools/workflow_patch.py` | 2 | Edit (swap _state) |
+| `agent/tools/session_tools.py` | 2 | Edit (2 import lines) |
+| `agent/tools/__init__.py` | 2 | Edit (add session_id kwarg) |
+| `tests/test_workflow_session.py` | 2 | New file |
+
+## Reusable Patterns
+
+- `_util.to_json()` — all new tool results use this (He2025 determinism)
+- `_util.validate_path()` — any new file-touching code
+- `TOOLS` list + `handle()` pattern — new `get_install_instructions` follows existing module pattern
+- Atomic writes in `memory/session.py` — reference for any new persistence
+
+## Verification
+
+### After PR 1
+```bash
+pip install -e "."                    # mcp now core (no [mcp] extra needed)
+python -m pytest tests/ -v            # all 429 + new tests pass
+agent mcp                             # starts without ImportError guard
+```
+
+### After PR 2
+```bash
+python -m pytest tests/ -v            # all 429 + ~20 new session tests pass
+python -c "from agent.workflow_session import get_session; s = get_session(); print(s['loaded_path'])"
+```
+
+### End-to-end (both PRs merged)
+- Add MCP config to Claude Code settings
+- Open Claude Code conversation in the project
+- Say "what models do I have?" — should get structured response via MCP tools
+- Say "load this workflow" — workflow state isolated to session

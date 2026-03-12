@@ -1,0 +1,122 @@
+"""Injection state management across exchanges.
+
+Tracks current injection state including profile, exchange count,
+pharmacokinetic alpha, and mixing tracker.
+"""
+
+from src.lossless.constants import PROFILES
+from src.lossless.injection.gain import compute_gain
+from src.lossless.injection.mixing import MixingTracker
+from src.lossless.injection.pharmacokinetics import compute_alpha
+
+
+class InjectionState:
+    """Tracks current injection state across exchanges.
+
+    Attributes:
+        profile: Current profile name.
+        exchange_count: Exchanges since injection activated.
+        exchanges_since_off: Exchanges since injection deactivated.
+        alpha: Current pharmacokinetic alpha [0.0, 1.0].
+        active: Whether injection is currently active.
+        mixing_tracker: MixingTracker for cross-expert bleeding.
+    """
+
+    def __init__(self):
+        self.profile = "none"
+        self.exchange_count = 0
+        self.exchanges_since_off = 0
+        self.alpha = 0.0
+        self.active = False
+        self.mixing_tracker = MixingTracker()
+
+    def activate(self, profile: str) -> None:
+        """Activate injection with a named profile.
+
+        Args:
+            profile: Profile name (must be in PROFILES).
+
+        Raises:
+            ValueError: If profile is unknown.
+        """
+        if profile not in PROFILES:
+            valid = sorted(PROFILES.keys())
+            raise ValueError(f"Unknown profile '{profile}'. Valid: {valid}")
+
+        self.profile = profile
+        self.exchange_count = 0
+        self.exchanges_since_off = 0
+        self.active = True
+        self.mixing_tracker = MixingTracker()
+        self._update_alpha()
+
+        # Set up cross-expert bleeding based on profile
+        cross_expert = PROFILES[profile]["cross_expert"]
+        if cross_expert > 0.0:
+            self._setup_bleeding(cross_expert)
+
+    def deactivate(self) -> None:
+        """Deactivate injection (begin offset ramp)."""
+        self.active = False
+        self.exchanges_since_off = 0
+        self._update_alpha()
+
+    def advance_exchange(self) -> None:
+        """Advance one exchange and update alpha."""
+        if self.active:
+            self.exchange_count += 1
+        else:
+            self.exchanges_since_off += 1
+        self._update_alpha()
+
+    def get_gain(self, phase: str) -> float:
+        """Get alpha-weighted gain for a phase.
+
+        Returns 1.0 + alpha * (gain(phase, s_NM) - 1.0)
+        """
+        if not self.active and abs(self.alpha) < 1e-12:
+            return 1.0
+
+        s_NM = PROFILES[self.profile]["s_NM"]
+        base_gain = compute_gain(phase, s_NM)
+        return 1.0 + self.alpha * (base_gain - 1.0)
+
+    def get_s_NM(self) -> float:
+        """Get the current profile's s_NM value."""
+        return PROFILES[self.profile]["s_NM"]
+
+    def to_dict(self) -> dict:
+        """Serialize state for integrity block."""
+        return {
+            "active": self.active,
+            "alpha": self.alpha,
+            "exchange_count": self.exchange_count,
+            "exchanges_since_off": self.exchanges_since_off,
+            "mixing": self.mixing_tracker.to_dict(),
+            "profile": self.profile,
+        }
+
+    def _update_alpha(self) -> None:
+        """Recalculate alpha from pharmacokinetic model."""
+        self.alpha = compute_alpha(
+            self.profile,
+            self.exchange_count,
+            self.exchanges_since_off,
+            self.active,
+        )
+
+    def _setup_bleeding(self, cross_expert: float) -> None:
+        """Configure cross-expert bleeding in the mixing tracker.
+
+        Bleeds are symmetric between adjacent modulated phases
+        in canonical order.
+        """
+        from src.lossless.constants import MODULATED_PHASES
+        mod_phases = sorted(MODULATED_PHASES)
+
+        for i in range(len(mod_phases) - 1):
+            src = mod_phases[i]
+            tgt = mod_phases[i + 1]
+            # Symmetric bleeding between adjacent phases
+            self.mixing_tracker.record_bleed(src, tgt, cross_expert)
+            self.mixing_tracker.record_bleed(tgt, src, cross_expert)

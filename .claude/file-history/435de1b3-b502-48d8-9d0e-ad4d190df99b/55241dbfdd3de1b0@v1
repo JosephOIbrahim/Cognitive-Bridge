@@ -1,0 +1,181 @@
+# TOPS Phase 4: Autonomous Operations + Item 15 (Self-Healing Pipelines)
+
+## Context
+
+TOPS Phase 1-3 is complete (11 tools, ~65 tests). This plan adds **three higher-order handlers** that compose existing TOPS primitives into autonomous self-healing operations, **three TOPS recipes** for natural language triggering, and **two resource templates** for state discovery. This is "Item 15" from the insights matrix — the deploy-validate-fix loop applied to PDG pipelines.
+
+**Why this matters:** The user understands TOPS at 30,000 feet but not on the ground. These tools let Claude autonomously cook, diagnose failures, retry, and report back — no manual PDG debugging needed.
+
+---
+
+## Step 1: Three Autonomous Handlers
+
+All three go in `handlers_render.py` after the Phase 3 handlers (after `_handle_tops_query_items`). Each uses a single `hdefereval.executeInMainThreadWithResult(_run)` call with direct `hou.*` / `pdg_node.*` API access internally — **never calls other `_handle_tops_*` methods** to avoid nested main-thread dispatch deadlock.
+
+### 1a. `_handle_tops_cook_and_validate` — The core Item 15 tool
+
+| Param | Type | Default | Aliases |
+|-------|------|---------|---------|
+| `node` | str | required | existing |
+| `max_retries` | int | 0 | `max_retries`, `retries`, `retry_count` |
+| `validate_states` | bool | True | `validate_states`, `validate`, `check_states` |
+
+**Flow:** cook(blocking) → collect work item states → if failures AND retries left → dirty → re-cook → repeat
+
+**Return shape:**
+```json
+{
+  "node": "/obj/topnet1/gen1",
+  "status": "success" | "failed",
+  "attempts": [{"attempt": 1, "cook_time": 1.23, "work_items": 10, "by_state": {...}, "status": "retry", "failed_items": 2}],
+  "total_attempts": 2,
+  "total_cook_time": 3.58,     // kahan_sum
+  "total_elapsed": 3.61,       // round_float
+  "final_by_state": {...}      // dict(sorted())
+}
+```
+
+### 1b. `_handle_tops_diagnose` — Failure inspector
+
+| Param | Type | Default | Aliases |
+|-------|------|---------|---------|
+| `node` | str | required | existing |
+| `include_scheduler` | bool | True | `include_scheduler`, `check_scheduler` |
+| `include_dependencies` | bool | True | `include_dependencies`, `deps`, `check_deps` |
+
+**Flow:** get work items → collect errors → check scheduler config → check upstream nodes → generate suggestions
+
+**Return shape:**
+```json
+{
+  "node": "/obj/topnet1/gen1",
+  "node_type": "genericgenerator",
+  "total_items": 10,
+  "by_state": {"CookedFail": 2, "CookedSuccess": 8},
+  "failed_items": 2,
+  "failed_details": [{"id": 3, "name": "item_3", "state": "CookedFail"}],
+  "total_cook_time": 12.35,
+  "scheduler": {"path": "...", "type": "localscheduler", "max_procs": 4},
+  "upstream": [{"path": "...", "type": "...", "by_state": {...}, "has_failures": false}],
+  "suggestions": ["2 work item(s) failed -- check error messages in failed_details"]
+}
+```
+
+### 1c. `_handle_tops_pipeline_status` — Full topnet health check
+
+| Param | Type | Default | Aliases |
+|-------|------|---------|---------|
+| `topnet_path` | str | required | existing |
+| `include_items` | bool | False | `include_items`, `show_items` |
+
+**Flow:** walk all child nodes (skip schedulers) → per-node: get work item counts, check states → aggregate health → generate issues/suggestions
+
+**Return shape:**
+```json
+{
+  "topnet": "/obj/topnet1",
+  "overall_health": "error" | "healthy" | "empty",
+  "node_count": 3,
+  "total_items": 25,
+  "by_state": {"CookedFail": 2, "CookedSuccess": 23},
+  "total_cook_time": 45.68,
+  "nodes": [{"path": "...", "name": "...", "type": "...", "health": "healthy", "by_state": {...}, "total_items": 10, "cook_time": 15.0}],
+  "issues": ["/obj/topnet1/process1: 2 failed work item(s)"],
+  "suggestions": ["2 total failed work item(s) -- use tops_diagnose for details"]
+}
+```
+
+---
+
+## Step 2: Registration (8 files)
+
+| File | Changes |
+|------|---------|
+| `core/protocol.py` | 3 enums: `TOPS_COOK_AND_VALIDATE`, `TOPS_DIAGNOSE`, `TOPS_PIPELINE_STATUS` |
+| `core/aliases.py` | 5 new: `max_retries`, `validate_states`, `include_scheduler`, `include_dependencies`, `include_items` |
+| `server/handlers.py` | 3 registrations + 3 audit categories (PIPELINE) + 2 read-only (`tops_diagnose`, `tops_pipeline_status`) |
+| `mcp/tools.py` | 3 tool defs. cook_and_validate: `destructive=True`. diagnose + pipeline_status: `readOnly=True` |
+| `mcp_server.py` | 3 Tool() + 3 TOOL_DISPATCH + 3 slow: cook_and_validate 600s, diagnose 30s, pipeline_status 60s |
+
+**Alias note:** Do NOT add `"scheduler"` as alias for `include_scheduler` — it collides with the existing `scheduler_type` alias. Use only `"include_scheduler"`, `"check_scheduler"`.
+
+---
+
+## Step 3: Three TOPS Recipes
+
+Add to `_register_builtins()` in `recipes.py` after existing recipes.
+
+### 3a. `tops_parameter_sweep`
+- **Trigger:** `r"^sweep\s+(?P<attr_name>\w+)\s+from\s+(?P<start>[\d.]+)\s+to\s+(?P<end>[\d.]+)(?:\s+in\s+(?P<steps>\d+)\s+steps?)?(?:\s+(?:in|on|at)\s+(?P<topnet>[\w\-./]+))?$"`
+- **Steps:** `tops_setup_wedge` (output_var="wedge") → `tops_cook_and_validate` (node=$wedge.wedge_node, max_retries=1) → `tops_get_cook_stats`
+- **Note:** `steps` defaults to fixed integer 10 in payload (not `{steps}` — empty string would break `int()`)
+
+### 3b. `tops_quick_cook`
+- **Trigger:** `r"^(?:cook\s+and\s+check|quick\s+cook)\s+(?P<node>[\w\-./]+)$"`
+- **Steps:** `tops_cook_and_validate` (node={node}, max_retries=1)
+
+### 3c. `tops_diagnose_recipe`
+- **Trigger:** `r"^diagnose\s+(?P<node>[\w\-./]+)$"` + `r"^what(?:'s|\s+is)\s+wrong\s+with\s+(?P<node>[\w\-./]+)$"`
+- **Steps:** `tops_diagnose` (node={node})
+
+---
+
+## Step 4: Two Resource Templates
+
+Add to `_RESOURCE_TEMPLATES` in `resources.py`:
+
+| URI Template | Handler | Description |
+|-------------|---------|-------------|
+| `houdini://tops/{topnet_path}/status` | `tops_pipeline_status` | Full health check |
+| `houdini://tops/{node_path}/diagnosis` | `tops_diagnose` | Failure analysis |
+
+---
+
+## Step 5: Tests
+
+Add to existing `test_tops.py` (matches Phase 1-3 pattern, reuses mock helpers):
+
+| Class | Tests | Key Patterns |
+|-------|-------|-------------|
+| `TestCookAndValidate` | 8 | Success, failures no retry, retry success, retry exhausted, validate disabled, kahan_sum, sorted by_state, node not found |
+| `TestDiagnose` | 7 | Mixed states, uncooked items, no items, upstream failures, scheduler info, suggestions sorted, node not found |
+| `TestPipelineStatus` | 7 | Healthy, errors, empty, include_items, nodes sorted, skips schedulers, not-topnet error |
+| MCP tests (test_mcp_protocol.py) | 4 | 3 tools in list, annotations correct |
+
+**Retry mock pattern:** Use `node.cook` side_effect to mutate `pdg_node.workItems` between attempts (not PropertyMock side_effect which counts each access).
+
+Update existing count tests: 11→14 enums, 11→14 handler registrations, 11→14 MCP tools.
+
+---
+
+## He2025 Checklist
+
+| Pattern | Applied In |
+|---------|-----------|
+| `round_float()` | cook_time per attempt, total_elapsed, per-node cook_time, per-item cook_time |
+| `kahan_sum()` | total_cook_time in all three handlers |
+| `dict(sorted())` | by_state, final_by_state in all handlers |
+| `sorted()` lists | suggestions, failed_details (by id), upstream (by path), nodes (by path), issues |
+| `time.monotonic()` | cook timing in cook_and_validate |
+| No `uuid4()` | Clean |
+
+---
+
+## Files Modified
+
+| # | File | Changes |
+|---|------|---------|
+| 1 | `python/synapse/core/protocol.py` | 3 enums |
+| 2 | `python/synapse/core/aliases.py` | 5 aliases |
+| 3 | `python/synapse/server/handlers_render.py` | 3 handlers (~180 lines) |
+| 4 | `python/synapse/server/handlers.py` | 3 registrations + audit + read-only |
+| 5 | `python/synapse/mcp/tools.py` | 3 tool defs |
+| 6 | `mcp_server.py` | 3 Tools + 3 dispatch + 3 timeouts |
+| 7 | `python/synapse/routing/recipes.py` | 3 recipes (~80 lines) |
+| 8 | `python/synapse/mcp/resources.py` | 2 resource templates |
+| 9 | `tests/test_tops.py` | ~26 tests + updated counts |
+| 10 | `tests/test_mcp_protocol.py` | 4 MCP tests |
+
+## Verification
+
+After implementation: `python -m pytest tests/ -v` (full suite, 0 failures)

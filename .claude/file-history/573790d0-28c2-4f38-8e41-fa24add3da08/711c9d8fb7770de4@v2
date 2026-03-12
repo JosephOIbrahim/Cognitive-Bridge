@@ -1,0 +1,203 @@
+"""
+Stage 4b: Extract VEX code from frames using Claude Vision.
+
+Replaces tesseract for code extraction -- Claude Vision can:
+1. Identify the VEX editor region within the full Houdini UI
+2. Read code accurately despite small font size
+3. Distinguish code from UI elements
+
+Usage: python scripts/04b_vision_ocr.py [--sample]
+
+  --sample   Only process the _sample.json aligned file (for testing)
+
+Set ANTHROPIC_API_KEY environment variable.
+
+Output: data/ocr/{episode}.json (same format as Stage 4)
+"""
+
+import base64
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+from anthropic import Anthropic
+
+DATA_DIR = Path("data")
+CODE_DIR = DATA_DIR / "code_frames"
+ALIGNED_DIR = DATA_DIR / "aligned"
+OCR_DIR = DATA_DIR / "ocr"
+OCR_DIR.mkdir(parents=True, exist_ok=True)
+
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+if not api_key:
+    print("ERROR: Set ANTHROPIC_API_KEY")
+    sys.exit(1)
+
+client = Anthropic(api_key=api_key)
+
+USE_SAMPLE = "--sample" in sys.argv
+
+VISION_PROMPT = """Look at this screenshot of Houdini (3D software).
+
+Your task: Extract any VEX code visible in the image. VEX code appears in:
+1. The VEX/expression editor (dark panel with monospaced text, usually syntax-highlighted)
+2. Web browser panels showing code snippets (in <pre> or <code> blocks)
+3. Parameter fields containing VEX expressions
+
+Rules:
+- Extract ONLY the VEX code, not menu text, button labels, or other UI elements
+- Preserve exact formatting (line breaks, indentation)
+- If multiple code snippets are visible, separate them with ---
+- If NO VEX code is visible in the image, respond with exactly: NO_CODE
+- Include attribute bindings (@P, @Cd, @N, etc.) as they appear
+- Include comments (// or /* */) if present
+
+Respond with ONLY the extracted code (or NO_CODE). No explanation."""
+
+
+def extract_code_from_frame(frame_path):
+    """Use Claude Vision to extract VEX code from a frame."""
+    with open(frame_path, "rb") as f:
+        image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=1000,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": image_data,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": VISION_PROMPT,
+                    },
+                ],
+            }],
+        )
+
+        text = response.content[0].text.strip()
+        if text == "NO_CODE":
+            return None, 0.0
+
+        # Vision-extracted code gets high confidence
+        return text, 0.85
+
+    except Exception as e:
+        print(f"    Vision API error: {e}")
+        time.sleep(5)
+        return None, 0.0
+
+
+def main():
+    if USE_SAMPLE:
+        # Process only frames referenced in the sample aligned file
+        sample_files = sorted(ALIGNED_DIR.glob("*_sample.json"))
+        if not sample_files:
+            print("No *_sample.json files found in data/aligned/")
+            sys.exit(1)
+
+        for sample_file in sample_files:
+            episode_name = sample_file.stem.replace("_sample", "")
+            with open(sample_file) as f:
+                aligned = json.load(f)
+
+            episode_dir = CODE_DIR / episode_name
+            results = []
+
+            for pair in aligned:
+                frame_path = episode_dir / pair["frame"] if "frame" in pair else None
+
+                # Find the frame from detections.json
+                det_file = episode_dir / "detections.json"
+                if det_file.exists() and "sequence" in pair:
+                    with open(det_file) as f:
+                        dets = json.load(f)
+                    # Match by timestamp
+                    matching = [
+                        d for d in dets
+                        if abs(d["timestamp_sec"] - pair["timestamp_sec"]) < 4
+                    ]
+                    if matching:
+                        frame_path = episode_dir / matching[0]["frame"]
+
+                if not frame_path or not frame_path.exists():
+                    print(f"    Frame not found for seq={pair['sequence']}")
+                    continue
+
+                print(f"  Processing seq={pair['sequence']} @ {pair['timestamp_fmt']}...")
+                code_text, confidence = extract_code_from_frame(frame_path)
+
+                if code_text:
+                    results.append({
+                        "frame": frame_path.name,
+                        "timestamp_sec": pair["timestamp_sec"],
+                        "timestamp_fmt": pair["timestamp_fmt"],
+                        "code_text": code_text,
+                        "ocr_confidence": confidence,
+                        "detection_confidence": 0.5,
+                        "needs_review": confidence < 0.7,
+                        "extraction_method": "claude_vision",
+                    })
+
+                time.sleep(1.0)  # Rate limit
+
+            output_file = OCR_DIR / f"{episode_name}.json"
+            with open(output_file, "w") as f:
+                json.dump(results, f, indent=2, sort_keys=False)
+
+            no_code = len(aligned) - len(results)
+            print(f"\n  {episode_name}: {len(results)} code blocks extracted, "
+                  f"{no_code} frames had no visible code")
+    else:
+        # Process all code frames (expensive!)
+        episodes = sorted([d for d in CODE_DIR.iterdir() if d.is_dir()])
+        for episode_dir in episodes:
+            det_file = episode_dir / "detections.json"
+            if not det_file.exists():
+                continue
+
+            with open(det_file) as f:
+                dets = json.load(f)
+
+            results = []
+            for i, det in enumerate(dets):
+                frame_path = episode_dir / det["frame"]
+                if not frame_path.exists():
+                    continue
+
+                print(f"  [{i+1}/{len(dets)}] {det['frame']} @ {det['timestamp_fmt']}...")
+                code_text, confidence = extract_code_from_frame(frame_path)
+
+                if code_text:
+                    results.append({
+                        "frame": det["frame"],
+                        "timestamp_sec": det["timestamp_sec"],
+                        "timestamp_fmt": det["timestamp_fmt"],
+                        "code_text": code_text,
+                        "ocr_confidence": confidence,
+                        "detection_confidence": det["confidence"],
+                        "needs_review": confidence < 0.7,
+                        "extraction_method": "claude_vision",
+                    })
+
+                time.sleep(1.0)
+
+            output_file = OCR_DIR / f"{episode_dir.name}.json"
+            with open(output_file, "w") as f:
+                json.dump(results, f, indent=2, sort_keys=False)
+
+            print(f"\n  {episode_dir.name}: {len(results)} code blocks extracted")
+
+
+if __name__ == "__main__":
+    main()

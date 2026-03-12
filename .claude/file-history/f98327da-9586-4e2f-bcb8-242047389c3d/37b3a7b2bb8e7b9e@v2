@@ -1,0 +1,33 @@
+"""Debug: test just the CHOPS builder."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        await client.execute_python(r"""
+import os
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+result = "ok"
+""")
+        code = r"""
+import sys, traceback
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+import importlib
+import cinema_camera.builders.build_chops_biomechanics as mod
+importlib.reload(mod)
+try:
+    path = mod.build_chops_biomechanics_hda(save_dir=r"C:\Users\User\OneDrive\Documents\houdini21.0\otls")
+    result = {"success": True, "path": path}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+"""
+        r = await client.execute_python(code, timeout=60)
+        if isinstance(r, dict) and not r.get("success"):
+            print("FAIL:", r["error"][:200])
+            print("TB:", r["tb"])
+        else:
+            print("OK:", r)
+
+asyncio.run(main())

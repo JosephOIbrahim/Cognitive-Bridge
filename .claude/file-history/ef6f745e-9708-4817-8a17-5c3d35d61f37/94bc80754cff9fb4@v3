@@ -1,0 +1,49 @@
+# Session Handover
+**Date:** 2026-02-13 11:15
+**Project:** multi-project (global Claude Code skills infrastructure)
+**Working directory:** C:\Users\User
+
+## What Was Done
+- Installed `/last30days` v2.0.0 skill from github.com/mvanhorn/last30days-skill by cloning into `~/.claude/skills/last30days/`
+- Fixed Windows cp1252 encoding crash in `last30days` render.py -- added `encoding='utf-8'` to all 6 `open()` write calls
+- Ran `/last30days Claude Code skills` successfully -- gathered 6 Reddit threads + 20 X posts (23,410 likes total) + 20 web pages
+- Synthesized research findings: session persistence, agent teams, meta-skills (Claudeception), and curated skill collections are the dominant community themes
+- Built `/handover` skill from scratch at `~/.claude/skills/handover/SKILL.md`, inspired by @zarazhangrui's viral /handover concept (3.2K likes on X)
+- Created `~/.claude/handovers/` directory and ran /handover successfully twice (this is the second run, first archived as 20260213_105000.md)
+- Updated auto-memory (MEMORY.md) with skills infrastructure section and Windows encoding gotcha
+- Context Engineering commands expanded earlier in session: 9 new workflow protocol commands added (conversation, document, creative, research-wf, knowledge, meta-recursive, interpretability, collaborative, cross-modal) -- total now 36 commands
+
+## Decisions Made
+| Decision | Why | Alternatives Considered |
+|----------|-----|------------------------|
+| Clone last30days repo into `~/.claude/skills/last30days/` | SKILL.md references `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/last30days}/scripts/last30days.py` so cloning there makes the fallback path resolve without config | Clone elsewhere and symlink; copy files individually |
+| Fix render.py encoding in-place | `open()` calls lacked `encoding='utf-8'`, causing cp1252 crash on Unicode arrows. In-place fix is immediate | Set PYTHONIOENCODING env var globally (doesn't fix file writes) |
+| Handover output at `~/.claude/handovers/latest.md` | Central location, not project-specific, with auto-archiving by timestamp | Per-project `.claude/` dirs (but handovers often span projects) |
+| Named workflow protocol `/research-wf` | Avoids collision with existing `/research` domain agent | Could have renamed the domain agent instead |
+
+## Blockers / Issues
+- last30days script crashed on first run due to Windows cp1252 encoding (RESOLVED -- patched render.py)
+- Reddit supplemental search got HTTP 403 for r/local (non-blocking, likely not a real target subreddit)
+- render.py fix will be overwritten on `git pull` of last30days repo (OPEN -- could fork or PR upstream)
+
+## Open Threads
+- [ ] Submit PR to mvanhorn/last30days-skill for the Windows encoding fix
+- [ ] Add auto-load of latest.md on session start (hook or CLAUDE.md instruction)
+- [ ] Fix last30days cache.py `open()` calls (lines 99, 135) -- no `encoding='utf-8'`, could crash on Unicode cache data
+- [ ] Explore installing awesome-claude-skills collections (travisvn, VoltAgent 300+, hesreallyhim)
+- [ ] The skill list now shows 36+ commands -- consider auditing for overlap or pruning unused ones
+
+## Key Files
+- `~/.claude/skills/last30days/` - Full last30days v2.0.0 skill (cloned repo)
+- `~/.claude/skills/last30days/scripts/lib/render.py` - Patched with encoding='utf-8' on all file writes
+- `~/.claude/skills/handover/SKILL.md` - Session handover skill definition
+- `~/.claude/handovers/latest.md` - This file; handover output location
+- `~/.claude/handovers/20260213_105000.md` - Archived first handover from this session
+- `~/.claude/projects/C--Users-User/memory/MEMORY.md` - Updated with skills infrastructure and encoding gotcha
+- `~/.claude/CLAUDE.md` - Updated with 36-command table (16 domain + 11 context eng + 9 workflow protocols)
+
+## Session Notes
+- The last30days skill has a full Python research engine (scripts/last30days.py + scripts/lib/) calling OpenAI and xAI APIs. No external pip dependencies.
+- Research on "Claude Code skills" found top X voices: @milesdeutscher (5,153 likes), @lydiahallie (5,023), @zarazhangrui (3,222), @blader (2,543). Top subreddits: r/ClaudeAI, r/ClaudeCode.
+- User confirmed /last30days is v2 before running it -- they care about version correctness.
+- /handover skill was tested live in this session and works end-to-end including archiving.

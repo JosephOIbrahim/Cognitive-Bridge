@@ -1,0 +1,22 @@
+{
+  "enabledPlugins": {
+    "superpowers-developing-for-claude-code@superpowers-developing-for-claude-code-dev": true,
+    "last30days@last30days": true,
+    "image-generator@dair-academy-plugins": true,
+    "llm-council@dair-academy-plugins": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/User/.claude/hooks/guard-deployed-files.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

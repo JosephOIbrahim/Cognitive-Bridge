@@ -1,0 +1,574 @@
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-7-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:8:The USD Cognitive Substrate achieves deterministic behavior through batch-invariant design principles. This document explains how determinism is enforced and its relationship to the ThinkingMachines research on defeating nondeterminism in LLM inference.
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-9-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-10-**v7.0.0 Extensions:**
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:11:- BCM stigmergic learning with queued updates (batch-invariant)
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-12-- Grounding layer determinism (oracle queries are bit-identical)
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-18-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:19:**Reality**: Even at temperature=0, LLMs produce different outputs. ThinkingMachines (2025) demonstrated **80 unique completions from 1000 identical requests** at temperature=0.
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-20-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:21:### Root Cause: Batch Invariance Failure
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-22-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:23:The primary source of nondeterminism is **batch-size variance affecting kernel outputs**:
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-24-
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-35-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:36:## The Solution: Batch-Invariant Design
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-37-
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-72-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:73:### What Requires ThinkingMachines Kernels
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-74-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:75:| Component | Without TM | With ThinkingMachines |
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-76-|-----------|------------|----------------------|
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-104-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:105:REQUIRES ThinkingMachines:
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-106-  ✓ Identical LLM response
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-147-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:148:## ThinkingMachines Integration
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-149-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:150:### What ThinkingMachines Provides
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-151-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:152:Batch-invariant kernels for:
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-153-- **RMSNorm**: Data-parallel strategies (one batch element per core)
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-169-```python
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:170:# Hypothetical ThinkingMachines integration
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:171:from thinkingmachines import BatchInvariantEngine
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-172-
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-214-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:215:1. He, Horace and Thinking Machines Lab. (2025). "Defeating Nondeterminism in LLM Inference." *Thinking Machines Lab: Connectionism*, September 2025. https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-216-
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-224-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:225:## BCM Batch-Invariance (v7.0.0)
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-226-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:227:BCM stigmergic learning is designed to be fully batch-invariant:
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-228-
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-233-- Learning state would affect current routing decision
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:234:- Batch-invariance would be violated
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-235-
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-248-```
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:249:THEOREM: BCM learning does not affect batch-invariance.
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-250-
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-304-|------|-------------|---------------|
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:305:| LEARN | No | Requires ThinkingMachines |
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-306-| ACCESS | Yes | **Always deterministic** |
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:307:| HYBRID | Yes + LLM | Requires ThinkingMachines for LLM portion |
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-308-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:309:ACCESS mode provides full determinism without ThinkingMachines (oracle results are authoritative).
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-310-
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-341-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:342:| Aspect | USD Cognitive Substrate | With ThinkingMachines |
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-343-|--------|------------------------|----------------------|
+--
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md-352-
+C:\Users\User\usd-cognitive-substrate\DETERMINISM.md:353:The USD Cognitive Substrate guarantees deterministic *routing, state management, BCM learning, and grounded queries*. Full end-to-end determinism (including LLM generation) requires ThinkingMachines batch-invariant kernels.
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-17-1. **Grounding Layer (L7.5)** — The "ACCESS over LEARN" paradigm: route queries to deterministic oracles (physics simulators, knowledge graphs) when ground truth exists
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:18:2. **BCM Stigmergic Learning** — Bienenstock-Cooper-Munro learning with trail-based expert confidence as *metadata annotation only*, preserving ThinkingMachines batch-invariance
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-19-3. **Signal Reliability Tracking** — Fingerprint-outcome correlation for routing confidence prediction
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-20-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:21:When integrated with batch-invariant inference engines (ThinkingMachines), the architecture guarantees: **same user input + same state → same response + same state update**. This enables reproducible sessions, behavioral unit testing, complete audit trails, and formally verifiable cognitive systems.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-22-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:23:**Keywords:** Universal Scene Description, cognitive architecture, deterministic AI, state management, neuroplasticity, batch invariance, LIVRPS composition, grounded world models, BCM learning
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-24-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-70-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:71:5. **Integration with Batch-Invariant Inference** — When combined with ThinkingMachines kernels, the architecture achieves full determinism except for irreducible human I/O
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-72-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-76-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:77:7. **BCM Stigmergic Learning** — Trail-based expert confidence with Bienenstock-Cooper-Munro saturation, providing learning capability while maintaining batch-invariance through queued updates
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-78-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-107-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:108:**The Key Insight**: Individual LLM forward passes are run-to-run deterministic. The source of user-visible nondeterminism is that **batch size varies with server load**, and most kernels lack batch-invariance.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-109-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:110:ThinkingMachines (2025) demonstrated this empirically: **80 unique completions from 1000 identical requests** at temperature=0. The variation occurs because:
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-111-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-116-**What doesn't fully explain it** (common misconceptions):
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:117:- Floating-point non-associativity alone (individual kernels can be deterministic)
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-118-- GPU thread scheduling (can be controlled)
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-120-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:121:ThinkingMachines batch-invariant kernels eliminate these sources at a cost of ~1.6-2.1x performance overhead (1.6x with optimized attention kernel, 2.1x unoptimized).
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-122-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-393-┌───────────────────────────────────────────────────────────────────────┐
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:394:│  [POST] FLUSH (v7.0.0 - BCM Batch-Invariance)                         │
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-395-│  Batch apply all queued trail updates AFTER processing completes     │
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-402-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:403:**Determinism Guarantee:** Each phase is individually deterministic. Given identical input signal and state, the routing produces identical expert selection. BCM trail updates are QUEUED and applied AFTER processing, ensuring batch-invariance.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-404-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-457-  Happens AFTER response delivered
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:458:  Ensures batch-invariance: same inputs → same routing
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-459-```
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-686-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:687:BCM (Bienenstock-Cooper-Munro) learning provides metadata about expert effectiveness but NEVER changes the deterministic routing order. This maintains ThinkingMachines batch-invariance.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-688-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-724-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:725:**ThinkingMachines Compliance (CRITICAL):**
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-726-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-731-✓ BCM confidence annotates decisions, does NOT affect selection order
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:732:✓ Batch-invariant: routing identical regardless of trail state
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-733-```
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1024-┌───────────────────────────────────────────────────────────────────────────┐
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1025:│                    DETERMINISTIC (With ThinkingMachines)                   │
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1026-│  ┌─────────────────────────────────────────────────────────────────────┐  │
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1043-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1044:The architecture isolates all stochasticity to human agency boundaries. Everything between user input and user response is deterministic when using ThinkingMachines batch-invariant kernels.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1045-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1047-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1048:Without batch-invariant inference:
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1049-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1060-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1061:### 8.2 With ThinkingMachines
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1062-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1063:ThinkingMachines provides batch-invariant kernels that guarantee identical outputs regardless of batch size:
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1064-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1065:| Operation | Batch-Invariant Strategy | Performance Cost |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1066-|-----------|-------------------------|------------------|
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1077-| 1 | User input | NO (human - irreducible) |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1078:| 2 | Signal detection | YES (batch-invariant) |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1079-| 3-6 | Routing core | YES |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1080:| 7 | LLM generation | YES (batch-invariant) |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1081-| 8 | User response | NO (human - irreducible) |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1082:| 9 | Outcome detection | YES (batch-invariant) |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1083-| 10 | State update | YES |
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1113-| Fixed Model Version | Model updates change behavior |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1114:| Fixed Hardware Config | Per ThinkingMachines limitation |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1115-| Canonical State Serialization | Deterministic USD → string |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1116:| ThinkingMachines Kernels | Batch-invariant inference (~1.6x overhead) |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1117-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1126-| **FM3: Weight Explosion** | Extreme outcomes without decay | Any w_i > 0.95 | Apply decay, re-normalize |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1127:| **FM4: ThinkingMachines Unavailable** | Fallback to standard inference | Batch-invariance check fails | Mark session non-reproducible, increase logging |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1128-| **FM5: Cold Start** | New user, no history | Uniform weights detected | Calibration wizard for initial preferences |
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1247-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1248:**Target:** 100% with ThinkingMachines; <100% without.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1249-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1326-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1327:- **ThinkingMachines**: Batch-invariant kernels; we build upon this
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1328-- **vLLM**: Optimized serving; not deterministic
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1362-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1363:4. **Memory vs. Compute Tradeoff**: ThinkingMachines batch-invariance has performance cost: 2.1x slowdown with unoptimized kernels, 1.6x with optimized attention. MatMul specifically costs ~20% vs cuBLAS. For latency-sensitive applications, this may require hybrid mode (deterministic for routing, probabilistic for generation).
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1364-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1378-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1379:4. **Determinism Failure**: With ThinkingMachines, identical inputs produce different outputs in >0.01% of cases.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1380-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1397-3. **The Mycelium Arc** enables multi-agent state composition
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1398:4. **Integration with batch-invariant inference** achieves full determinism
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1399-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1400:When deployed with ThinkingMachines kernels, the system provides a formally verifiable guarantee: **same input + same state → same output**. This transforms LLM applications from probabilistic systems into deterministic functions, enabling reproducibility, testing, auditing, and accountability.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1401-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1405-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1406:## 13. Cognitive Batch Invariance (v7.1.0 Extension)
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1407-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1408:Version 7.1.0 extends the architecture with formal guarantees for memory-level determinism, applying ThinkingMachines principles from LLM inference to cognitive state operations.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1409-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1411-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1412:ThinkingMachines identified that LLM non-determinism stems from batch-size-dependent reduction order. We observe an identical problem in cognitive state:
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1413-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1421-| ↓ | ↓ |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1422:| **NONDETERMINISM** | **NONDETERMINISM** |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1423-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1475-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1476:From ThinkingMachines: "To achieve batch invariance, we must adopt a fixed split-size strategy."
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1477-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1485-```python
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1486:# WRONG: Adaptive batch size (causes nondeterminism)
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1487-def expand_memories(memories, system_load):
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1548-    elif strategy == "mean":
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1549:        # Kahan summation for batch-invariant accumulation
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1550-        return kahan_sum([i.confidence for i in sorted_instances]) / len(sorted_instances)
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1562-def kahan_sum(values):
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1563:    """Kahan summation for numerical stability (batch-invariant)."""
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1564-    total = 0.0
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1579-    description: |
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1580:      Batch-invariant memory retrieval.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1581-      Same query always returns same results.
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1604-          Fixed tile size for retrieval batching.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1605:          From ThinkingMachines: "fixed split-size preserves batch invariance"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1606-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1608-      query_invariance: "Same query + same memory bank = same results"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1609:      batch_invariance: "Result independent of concurrent queries"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1610-      order_invariance: "Results in consistent order regardless of retrieval batch size"
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1695-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1696:def verify_batch_invariance(memories):
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1697-    """Verify results don't depend on tile size."""
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1790-```
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1791:# Batch Invariance Fields
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1792-cognitive:tileSize            = 32 (fixed)
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1849-        rule: "Same temporalEpoch + same memories = same order"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:1850:        guarantee: "Batch-invariant temporal sorting"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-1851-```
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2050-        assembly: "str"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:2051:        test_type: "Literal['round_trip', 'batch_invariance', 'temporal_coherence']"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2052-      output_schema:
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2056-    cognitive_query:
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:2057:      description: "Query memory bank (batch-invariant)"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2058-      input_schema:
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2096-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:2097:Migration from v6 (flat memories) to v7.1 (cognitive assembly with batch invariance).
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2098-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2145-  v7_to_v71:
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:2146:    description: "Add batch invariance fields to v7.0 assembly"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2147-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2162-      4_verify:
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:2163:        - "Run batch_invariance_test"
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2164-        - "Run determinism_test"
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2189-```
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:2190:# Batch Invariance (8 fields) - Section 13.11
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2191-cognitive:tileSize            = 32 (fixed)
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2291-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:2292:The author thanks Pixar Animation Studios for creating and open-sourcing Universal Scene Description (USD), whose composition semantics inspired this architecture. The author also acknowledges the ThinkingMachines Lab for their foundational work on batch-invariant LLM inference, which enables the determinism guarantees central to this system.
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2293-
+--
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2327-
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md:2328:2. He, Horace and Thinking Machines Lab. (2025). "Defeating Nondeterminism in LLM Inference." *Thinking Machines Lab: Connectionism*, September 2025. https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+C:\Users\User\usd-cognitive-substrate\USD_COGNITIVE_SUBSTRATE.md-2329-
+--
+C:\Users\User\usd-cognitive-substrate\CLAUDE.md-104-
+C:\Users\User\usd-cognitive-substrate\CLAUDE.md:105:Inspired by the batch-invariance *principle* from ThinkingMachines (Horace He, 2025), which shows that individual GPU kernels are run-to-run deterministic but system-level nondeterminism arises from batch-size variance changing reduction order. Orchestra additionally implements kernel-level patterns: `COGNITIVE_TILE_SIZE=32` + Kahan summation for numerically stable aggregation.
+C:\Users\User\usd-cognitive-substrate\CLAUDE.md-106-
+--
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-21-
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:22:**Keywords:** Universal Scene Description, cognitive architecture, deterministic AI, state management, neuroplasticity, batch invariance, LIVRPS composition
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-23-
+--
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-50-
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:51:### 2.2 Batch Invariance and Deterministic Inference
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-52-
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:53:Recent work on defeating nondeterminism in LLM inference provides critical infrastructure. The key insight: LLM inference nondeterminism stems not from "concurrency + floating point" as commonly assumed, but from *batch invariance failures*—the reduction order for each element depends on batch size, which varies with server load.
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-54-
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:55:This finding validates a core premise: **the apparent randomness in LLM outputs is architectural, not fundamental**. Given identical inputs, the forward pass is deterministic; nondeterminism emerges from system-level choices about batching (He & Thinking Machines Lab, 2025).
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-56-
+--
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-212-| Layered Opinions | Hebbian weight updates preserve baseline | **Demonstrated** |
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:213:| Deterministic Routing | Batch-invariant inference integration | **Demonstrated** |
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-214-| Temporal Compilation | Session → daily → weekly → calibration | **Demonstrated** |
+--
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-267-| Energy (relative) | 1 | 168,000 | **168,000×** |
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:268:| Determinism | 100% | Requires ThinkingMachines | N/A |
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-269-
+--
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-400-
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:401:The author thanks Pixar Animation Studios for the USD framework that inspired this architecture, and the ThinkingMachines Lab for demonstrating that LLM determinism is achievable through batch-invariant design.
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-402-
+--
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-419-- **Grounding Layer** with oracle integration (730/730 determinism)
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:420:- **BCM stigmergic learning** with batch-invariant updates
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-421-
+--
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-427-
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md:428:2. He, Horace and Thinking Machines Lab. (2025). "Defeating Nondeterminism in LLM Inference." *Thinking Machines Lab: Connectionism*, September 2025. https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+C:\Users\User\usd-cognitive-substrate\PERSISTENT_STATE_HYPOTHESIS.md-429-
+--
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md-1-# Cognitive Substrate v7.1.0 | Desktop Edition
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md:2:## ADHD-Native Cognitive Architecture + AlphaProof Search + DeepSeek Sparse Routing + Cognitive Batch Invariance
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md-3-
+--
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md-5-> Combines v6.0.0 Grounding Layer with AlphaProof's tree search architecture and DeepSeek-V3.2's sparse activation patterns.
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md:6:> v7.1.0 adds cognitive batch invariance (fixed tile operations, deterministic aggregation).
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md-7-
+--
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md-897-
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md:898:*Batch-invariance principle from ThinkingMachines (Horace He, 2025): individual GPU kernels are run-to-run deterministic; system-level nondeterminism arises from batch-size variance changing reduction order. Applied here at the cognitive architecture level -- fixed evaluation order, fixed expert priority, queued updates.*
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md-899-
+C:\Users\User\usd-cognitive-substrate\claude_desktop_preferences_v7.1.md:900:*ThinkingMachines compliant | ADHD-native | AlphaProof-informed | DeepSeek-optimized | v7.1.0*
+--
+C:\Users\User\usd-cognitive-substrate\README.md-91-| **Grounding Layer (L7.5)** | ACCESS over LEARN—route to oracles when ground truth exists | 730/730 (100%) |
+C:\Users\User\usd-cognitive-substrate\README.md:92:| **BCM Stigmergic Learning** | Trail-based confidence with batch-invariance | Queued updates |
+C:\Users\User\usd-cognitive-substrate\README.md-93-| **Plasticity Auto-Triggers** | Adaptive learning windows on crash/recovery | State-driven |
+--
+C:\Users\User\usd-cognitive-substrate\README.md-95-
+C:\Users\User\usd-cognitive-substrate\README.md:96:### v7.1.0 Extensions (Cognitive Batch Invariance)
+C:\Users\User\usd-cognitive-substrate\README.md-97-
+C:\Users\User\usd-cognitive-substrate\README.md:98:| Feature | Description | ThinkingMachines Compliance |
+C:\Users\User\usd-cognitive-substrate\README.md-99-|---------|-------------|----------------------------|
+C:\Users\User\usd-cognitive-substrate\README.md-100-| **Fixed Tile Size** | `COGNITIVE_TILE_SIZE=32` for all memory operations | ✅ Fixed split-size strategy |
+C:\Users\User\usd-cognitive-substrate\README.md:101:| **Aggregation Strategies** | 5 deterministic strategies with Kahan summation | ✅ Batch-invariant accumulation |
+C:\Users\User\usd-cognitive-substrate\README.md-102-| **Retrieval Invariance** | Same query → same results regardless of batch | ✅ Fixed reduction order |
+--
+C:\Users\User\usd-cognitive-substrate\README.md-104-| **Compression Profiles** | context_injection, persistent_storage, api_transport, archive | Optimized for use case |
+C:\Users\User\usd-cognitive-substrate\README.md:105:| **Verification Tools** | round_trip_test, determinism_test, batch_invariance_test | Formal verification |
+C:\Users\User\usd-cognitive-substrate\README.md-106-
+--
+C:\Users\User\usd-cognitive-substrate\README.md-175-| **Grounding Determinism** | 730/730 | Oracle queries bit-identical |
+C:\Users\User\usd-cognitive-substrate\README.md:176:| **BCM Batch-Invariance** | 100% | Queued updates preserve determinism |
+C:\Users\User\usd-cognitive-substrate\README.md-177-| **CogRoute-Bench** | 94.6% accuracy | 37 routing tasks, 8 categories |
+--
+C:\Users\User\usd-cognitive-substrate\README.md-197-
+C:\Users\User\usd-cognitive-substrate\README.md:198:Theorem 3 (BCM Batch-Invariance)
+C:\Users\User\usd-cognitive-substrate\README.md-199-  Same inputs → Same routing
+--
+C:\Users\User\usd-cognitive-substrate\README.md-269-| [**USD_COGNITIVE_SUBSTRATE.md**](USD_COGNITIVE_SUBSTRATE.md) | Complete specification (1800+ lines) |
+C:\Users\User\usd-cognitive-substrate\README.md:270:| [**COGNITIVE_BATCH_INVARIANCE.md**](COGNITIVE_BATCH_INVARIANCE.md) | v7.1.0 batch invariance extension |
+C:\Users\User\usd-cognitive-substrate\README.md-271-| [**DETERMINISM.md**](DETERMINISM.md) | Determinism analysis and proofs |
+--
+C:\Users\User\usd-cognitive-substrate\README.md-328-
+C:\Users\User\usd-cognitive-substrate\README.md:329:### ThinkingMachines Compliance
+C:\Users\User\usd-cognitive-substrate\README.md-330-
+C:\Users\User\usd-cognitive-substrate\README.md:331:This architecture implements batch-invariant design principles from [He2025]:
+C:\Users\User\usd-cognitive-substrate\README.md-332-
+C:\Users\User\usd-cognitive-substrate\README.md:333:> "The source of user-visible nondeterminism is that batch size varies with server load, and most kernels lack batch-invariance."
+C:\Users\User\usd-cognitive-substrate\README.md-334-
+--
+C:\Users\User\usd-cognitive-substrate\README.md-393-| [**Pixar USD**](https://graphics.pixar.com/usd/) | Composition semantics source |
+C:\Users\User\usd-cognitive-substrate\README.md:394:| [**ThinkingMachines**](https://thinkingmachines.ai/) | Batch-invariance research |
+C:\Users\User\usd-cognitive-substrate\README.md-395-
+--
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-20-
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md:21:**ThinkingMachines (2025)**: 80 unique completions from 1,000 identical requests at temperature=0.
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-22-
+--
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-26-
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md:27:## Batch Invariance Failure
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-28-
+--
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-275-| Grounding Determinism | **730/730** | Oracle queries bit-identical |
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md:276:| BCM Batch-Invariance | **100%** | Queued updates preserve determinism |
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-277-| CogRoute-Bench | **94.6%** | 37 routing tasks, 8 categories |
+--
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-314-
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md:315:Theorem 2 (BCM Batch-Invariance)
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-316-────────────────────────────────────────────────────────
+--
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-403-
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md:404:# Learning (queued, batch-invariant)
+C:\Users\User\usd-cognitive-substrate\PRESENTATION.md-405-engine.outcome(expert=expert, result=0.8)
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-9-
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:10:## ThinkingMachines [He2025] Compliance as Source of Truth
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-11-
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:12:**Reference:** He, Horace and Thinking Machines Lab. "Defeating Nondeterminism in LLM Inference."
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-13-Thinking Machines Lab: Connectionism, Sep 2025.
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:14:https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-15-
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-17-
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:18:## Core Determinism Invariants (From ThinkingMachines)
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-19-
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-23-|-----------|------------|-------------|
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:24:| **Batch Invariance** | `output[i] == output[i]` regardless of batch context | Same signal → Same routing |
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-25-| **Run-to-Run Determinism** | Identical inputs → Bitwise identical outputs | Reproducible checksums |
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-45-| Deterministic Routing | ✓ | ✓ | **YES** |
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:46:| ThinkingMachines Compliance | ✓ | ✓ | **YES** |
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-47-| Expert Names | ✓ | ✓ | **YES** (aligned) |
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-76-
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:77:For ThinkingMachines compliance, we use priority-indexed identifiers:
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-78-
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-98-
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:99:### Canonical Mapping (ThinkingMachines-Aligned)
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-100-
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-160-
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:161:Both are valid. For ThinkingMachines compliance, the key constraint is:
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-162-**LIVRPS resolution order must be deterministic.**
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-219-
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:220:## ThinkingMachines Compliance Checklist
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-221-
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-233-
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:234:**Both implementations are ThinkingMachines [He2025] compliant.**
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-235-
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-271-Trail-based expert confidence:
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:272:- Queued updates (batch-invariant)
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-273-- BCM saturation (homeostasis)
+--
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-304-- Mycelium learning algorithm
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md:305:- ThinkingMachines [He2025] determinism compliance
+C:\Users\User\usd-cognitive-substrate\RECONCILIATION.md-306-- 7 intervention experts + 4 grounding experts
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:1:# Cognitive Batch Invariance: v7.1.0 Extension
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-2-
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-10-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:11:USD Cognitive Substrate v7.1.0 extends the architecture with **Cognitive Batch Invariance**—applying ThinkingMachines fixed-tile-size principles from LLM inference to cognitive state operations.
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-12-
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-18-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:19:### LLM Inference (ThinkingMachines Finding)
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-20-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:21:> "The source of user-visible nondeterminism is that batch size varies with server load, and most kernels lack batch-invariance."
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-22-
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-31-| Different logits | Different context injection |
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:32:| **NONDETERMINISM** | **NONDETERMINISM** |
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-33-
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-48-```python
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:49:# WRONG: Adaptive batch size (causes nondeterminism)
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-50-def expand_memories(memories, system_load):
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-92-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:93:Batch-invariant memory retrieval.
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-94-
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-97-| Query Invariance | Same query + same bank = same results |
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:98:| Batch Invariance | Result independent of concurrent queries |
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-99-| Order Invariance | Consistent order regardless of batch size |
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-131-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:132:def verify_batch_invariance(memories):
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-133-    """Result independent of tile size"""
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-186-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:187:**Proof:** Kahan summation + deterministic sort → batch-invariant accumulation.
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-188-
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-205-```
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:206:# Batch Invariance (8 fields)
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-207-cognitive:tileSize            = 32 (fixed)
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-257-cognitive_verify    → Verify determinism guarantees
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:258:cognitive_query     → Query memory bank (batch-invariant)
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-259-```
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-271-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:272:## ThinkingMachines Compliance
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-273-
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-277-| Fixed reduction order | Deterministic sort before aggregation | ✅ |
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:278:| Batch-invariant accumulation | Kahan summation | ✅ |
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-279-| Verification tools | Round-trip, determinism, batch tests | ✅ |
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-290-cognitive_assembly_schema.yaml  # USD schema definitions
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:291:batch_invariance_layer.py       # Batch invariance layer (ThinkingMachines-compliant)
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-292-```
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-326-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:327:**Current Status:** None observed. Batch invariance verified across tile sizes [1, 8, 32, 128, 1024].
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-328-
+--
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-332-
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md:333:1. He, Horace and Thinking Machines Lab. (2025). "Defeating Nondeterminism in LLM Inference." *Thinking Machines Lab: Connectionism*, September 2025.
+C:\Users\User\usd-cognitive-substrate\COGNITIVE_BATCH_INVARIANCE.md-334-
+--
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-10-
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:11:This document describes the BCM (Bienenstock-Cooper-Munro) stigmergic learning mechanism introduced in USD Cognitive Substrate v7.0.0. The key innovation is learning from experience while maintaining ThinkingMachines batch-invariance through **queued updates** and **metadata-only confidence**.
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-12-
+--
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-153-
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:154:## 4. Batch-Invariance Compliance
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-155-
+--
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-160-```
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:161:# WRONG - violates batch-invariance
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-162-outcome = process(input)
+--
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-173-```
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:174:# CORRECT - batch-invariant
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-175-outcome = process(input)  # Uses FIXED weights
+--
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-199-```
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:200:THEOREM: BCM learning is batch-invariant.
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-201-
+--
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-372-class BCMUpdateQueue:
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:373:    """Queued updates for batch-invariance."""
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-374-
+--
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-393-
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:394:# Verify batch-invariance
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:395:pytest tests/test_bcm.py::test_batch_invariance -v
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-396-
+--
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-406-
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md:407:2. He, Horace and Thinking Machines Lab. (2025). "Defeating Nondeterminism in LLM Inference." *Thinking Machines Lab: Connectionism*, September 2025.
+C:\Users\User\usd-cognitive-substrate\BCM_LEARNING.md-408-
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-175-┌───────────────────────────────────────────────────────────────────────────┐
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md:176:│                    DETERMINISTIC (With ThinkingMachines)                   │
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-177-│  ┌─────────────────────────────────────────────────────────────────────┐  │
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-346-
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md:347:### ThinkingMachines Consistency
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md:348:When depicting ThinkingMachines claims, use EXACT values:
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-349-- 80 unique completions from 1000 at temp=0
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-362-- [ ] Figure references (\ref{fig:xxx}) work
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md:363:- [ ] ThinkingMachines claims match source exactly
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-364-- [ ] Colors are accessible (colorblind-friendly)
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-392-**Key Citation:**
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md:393:He, Horace and Thinking Machines Lab. (2025). "Defeating Nondeterminism in LLM Inference."
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-394-DOI: 10.64434/tml.20250910
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md:395:URL: https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS.md-396-
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md-164-┌───────────────────────────────────────────────────────────────────────────┐
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md:165:│                    DETERMINISTIC (With ThinkingMachines)                   │
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md-166-│                                                                           │
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md-458-
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md:459:## PART 6: THINKINGMACHINES VERIFICATION
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md-460-
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md:461:When creating figures that reference ThinkingMachines, use EXACT values:
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md-462-
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md-471-
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md:472:**Source:** https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+C:\Users\User\usd-cognitive-substrate\arxiv\HANDOFF_GRAPHICS_UNIFIED.md-473-**DOI:** 10.64434/tml.20250910
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\README.md-114-
+C:\Users\User\usd-cognitive-substrate\arxiv\README.md:115:1. **ThinkingMachines (2025)** - Batch-invariant LLM inference
+C:\Users\User\usd-cognitive-substrate\arxiv\README.md-116-   - DOI: 10.64434/tml.20250910
+C:\Users\User\usd-cognitive-substrate\arxiv\README.md:117:   - URL: https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+C:\Users\User\usd-cognitive-substrate\arxiv\README.md-118-
+--
+C:\Users\User\usd-cognitive-substrate\arxiv\README.md-125-
+C:\Users\User\usd-cognitive-substrate\arxiv\README.md:126:All ThinkingMachines claims have been verified against the source:
+C:\Users\User\usd-cognitive-substrate\arxiv\README.md-127-

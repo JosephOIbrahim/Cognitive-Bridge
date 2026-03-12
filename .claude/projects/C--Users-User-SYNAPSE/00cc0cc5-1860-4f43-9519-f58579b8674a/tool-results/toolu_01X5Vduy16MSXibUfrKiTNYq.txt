@@ -1,0 +1,2247 @@
+     1→<?xml version="1.0" encoding="UTF-8"?>
+     2→<pythonPanelDocument>
+     3→  <interface name="synapse_panel" label="Synapse" icon="SYNAPSE_synapse"
+     4→             help_url="">
+     5→    <script><![CDATA[
+     6→"""
+     7→Synapse AI Co-Pilot — Houdini Python Panel
+     8→
+     9→PySide6/PySide2 panel providing:
+    10→  - Title bar with branding
+    11→  - Status indicator with animated dot
+    12→  - Tool grid (Inspect Selection, Inspect Scene, Last Result, Health Check, Project Setup)
+    13→  - Chat interface with Claude API streaming + tool execution
+    14→  - Scrolling activity log
+    15→  - Connection controls (connect/disconnect + port display)
+    16→"""
+    17→
+    18→import hou
+    19→import gc
+    20→import json
+    21→import time
+    22→import os
+    23→import sys
+    24→import threading
+    25→import copy
+    26→import http.client
+    27→import ssl
+    28→
+    29→
+    30→# ── Bootstrap SYNAPSE Python path ─────────────────────────
+    31→
+    32→import sys as _sys_mod
+    33→import os as _os_mod
+    34→_synapse_python = _os_mod.environ.get(
+    35→    "SYNAPSE_ROOT",
+    36→    _os_mod.path.join(_os_mod.path.expanduser("~"), "SYNAPSE"),
+    37→)
+    38→_synapse_python = _os_mod.path.join(_synapse_python, "python")
+    39→if _synapse_python not in _sys_mod.path:
+    40→    _sys_mod.path.insert(0, _synapse_python)
+    41→
+    42→
+    43→# ── Bootstrap Design System imports ───────────────────────
+    44→
+    45→_SYNAPSE_HOME = os.path.join(os.path.expanduser("~"), ".synapse")
+    46→_DESIGN_DIR = os.path.join(_SYNAPSE_HOME, "design")
+    47→
+    48→if _DESIGN_DIR not in sys.path:
+    49→    sys.path.insert(0, _DESIGN_DIR)
+    50→
+    51→try:
+    52→    from tokens import (
+    53→        SIGNAL, VOID, NEAR_BLACK, CARBON, GRAPHITE, SLATE, SILVER,
+    54→        BONE, WHITE, FIRE, GROW, WARN, ERROR, STATES,
+    55→        FONT_MONO, SIZE_SMALL, SIZE_LABEL, SIZE_UI, SIZE_BODY,
+    56→        SIZE_TITLE, SIZE_HERO,
+    57→        SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG,
+    58→        PANEL_MIN_WIDTH, PANEL_PREF_WIDTH, PANEL_MIN_HEIGHT,
+    59→    )
+    60→    from synapse_styles import generate_stylesheet, STATUS_STYLES
+    61→    _HAS_DESIGN = True
+    62→except ImportError:
+    63→    _HAS_DESIGN = False
+    64→
+    65→
+    66→try:
+    67→    from PySide6 import QtWidgets, QtCore, QtGui
+    68→except ImportError:
+    69→    from PySide2 import QtWidgets, QtCore, QtGui
+    70→
+    71→
+    72→# ── Constants ─────────────────────────────────────────────
+    73→
+    74→_VERSION = "6.1.0"
+    75→_STATUS_DOT = "\u25CF"  # Filled circle
+    76→_STATUS_DOT_EMPTY = "\u25CB"  # Empty circle
+    77→_ACTIVITY_MAX_LINES = 200
+    78→
+    79→_PORT = int(os.environ.get("SYNAPSE_PORT", "9999"))
+    80→_PATH = os.environ.get("SYNAPSE_PATH", "/synapse")
+    81→_WS_URL = "ws://localhost:{}{}".format(_PORT, _PATH)
+    82→_HEALTH_POLL_MS = 3000  # Check server health every 3 seconds
+    83→
+    84→
+    85→# ── Server Singleton ─────────────────────────────────────
+    86→
+    87→def _find_running_server():
+    88→    """Find an existing SynapseServer instance via gc (handles zombie servers)."""
+    89→    for obj in gc.get_objects():
+    90→        if type(obj).__name__ == "SynapseServer" and getattr(obj, "_running", False):
+    91→            return obj
+    92→    return None
+    93→
+    94→
+    95→def _get_server_module():
+    96→    """Import SynapseServer lazily to avoid import-time issues."""
+    97→    try:
+    98→        from synapse.server.websocket import SynapseServer
+    99→        return SynapseServer
+   100→    except ImportError:
+   101→        return None
+   102→
+   103→
+   104→# ── Status Dot Animation ─────────────────────────────────
+   105→
+   106→class StatusDotAnimator(QtCore.QObject):
+   107→    """Pulses the status dot opacity for 'executing' state."""
+   108→
+   109→    color_changed = QtCore.Signal(str)
+   110→
+   111→    def __init__(self, parent=None):
+   112→        super().__init__(parent)
+   113→        self._timer = QtCore.QTimer(self)
+   114→        self._timer.setInterval(600)
+   115→        self._timer.timeout.connect(self._tick)
+   116→        self._on = True
+   117→        self._color = SIGNAL if _HAS_DESIGN else "#00D4FF"
+   118→        self._active = False
+   119→
+   120→    def start(self, color):
+   121→        self._color = color
+   122→        self._active = True
+   123→        self._on = True
+   124→        self._timer.start()
+   125→
+   126→    def stop(self, color):
+   127→        self._timer.stop()
+   128→        self._active = False
+   129→        self._color = color
+   130→        self.color_changed.emit(color)
+   131→
+   132→    def _tick(self):
+   133→        self._on = not self._on
+   134→        if self._on:
+   135→            self.color_changed.emit(self._color)
+   136→        else:
+   137→            alpha_color = SLATE if _HAS_DESIGN else "#555555"
+   138→            self.color_changed.emit(alpha_color)
+   139→
+   140→
+   141→# ── Fallback ClaudeWorker (text-only, no tools) ──────────
+   142→
+   143→class _FallbackClaudeWorker(QtCore.QThread):
+   144→    """Minimal text-only Claude streaming worker.
+   145→
+   146→    Used when synapse.panel.claude_worker cannot be imported.
+   147→    Streams text tokens but does NOT support tool use.
+   148→    """
+   149→
+   150→    token_received = QtCore.Signal(str)
+   151→    stream_done = QtCore.Signal()
+   152→    stream_error = QtCore.Signal(str)
+   153→    # Stubs -- never emitted, but wired so the panel doesn't crash
+   154→    tool_requested = QtCore.Signal(object)
+   155→    tool_status = QtCore.Signal(str, str)
+   156→
+   157→    _API_HOST = "api.anthropic.com"
+   158→    _API_PATH = "/v1/messages"
+   159→    _API_VERSION = "2023-06-01"
+   160→    _MODEL = "claude-sonnet-4-20250514"
+   161→    _MAX_TOKENS = 4096
+   162→
+   163→    def __init__(self, messages, system_prompt="", parent=None):
+   164→        super().__init__(parent)
+   165→        self._messages = copy.deepcopy(messages)
+   166→        self._system = system_prompt
+   167→        self._abort = False
+   168→
+   169→    def abort(self):
+   170→        self._abort = True
+   171→
+   172→    def get_messages(self):
+   173→        return copy.deepcopy(self._messages)
+   174→
+   175→    def run(self):
+   176→        try:
+   177→            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+   178→            if not api_key:
+   179→                self.stream_error.emit("ANTHROPIC_API_KEY not set in environment")
+   180→                return
+   181→
+   182→            body = {
+   183→                "model": self._MODEL,
+   184→                "max_tokens": self._MAX_TOKENS,
+   185→                "stream": True,
+   186→                "messages": self._messages,
+   187→            }
+   188→            if self._system:
+   189→                body["system"] = self._system
+   190→
+   191→            payload = json.dumps(body).encode("utf-8")
+   192→            ctx = ssl.create_default_context()
+   193→            conn = http.client.HTTPSConnection(
+   194→                self._API_HOST, timeout=60, context=ctx
+   195→            )
+   196→
+   197→            try:
+   198→                conn.request(
+   199→                    "POST", self._API_PATH, body=payload,
+   200→                    headers={
+   201→                        "Content-Type": "application/json",
+   202→                        "x-api-key": api_key,
+   203→                        "anthropic-version": self._API_VERSION,
+   204→                    },
+   205→                )
+   206→                response = conn.getresponse()
+   207→                if response.status != 200:
+   208→                    error_body = response.read().decode("utf-8", errors="replace")
+   209→                    self.stream_error.emit(
+   210→                        "API error {}: {}".format(response.status, error_body[:200])
+   211→                    )
+   212→                    return
+   213→
+   214→                self._parse_stream(response)
+   215→                if not self._abort:
+   216→                    self.stream_done.emit()
+   217→            finally:
+   218→                conn.close()
+   219→
+   220→        except Exception as exc:
+   221→            self.stream_error.emit(str(exc))
+   222→
+   223→    def _parse_stream(self, response):
+   224→        buf = ""
+   225→        while True:
+   226→            if self._abort:
+   227→                return
+   228→            chunk = response.read(4096)
+   229→            if not chunk:
+   230→                break
+   231→            buf += chunk.decode("utf-8", errors="replace")
+   232→            while "\n" in buf:
+   233→                line, buf = buf.split("\n", 1)
+   234→                line = line.strip()
+   235→                if line.startswith("data:"):
+   236→                    data_str = line[5:].strip()
+   237→                    if data_str and data_str != "[DONE]":
+   238→                        try:
+   239→                            data = json.loads(data_str)
+   240→                            delta = data.get("delta", {})
+   241→                            text = delta.get("text", "")
+   242→                            if text:
+   243→                                self.token_received.emit(text)
+   244→                        except (json.JSONDecodeError, KeyError):
+   245→                            pass
+   246→
+   247→
+   248→# ── Main Panel Widget ────────────────────────────────────
+   249→
+   250→class SynapsePanel(QtWidgets.QWidget):
+   251→    """Main Synapse panel widget for Houdini's Python Panel system."""
+   252→
+   253→    def __init__(self):
+   254→        super().__init__()
+   255→        self.setObjectName("synapse_panel")
+   256→        self.setMinimumWidth(PANEL_MIN_WIDTH if _HAS_DESIGN else 280)
+   257→        self.setMinimumHeight(PANEL_MIN_HEIGHT if _HAS_DESIGN else 400)
+   258→
+   259→        self._status = "disconnected"
+   260→        self._server = None
+   261→        self._dot_animator = StatusDotAnimator(self)
+   262→        self._dot_animator.color_changed.connect(self._on_dot_color)
+   263→
+   264→        # Chat state
+   265→        self._messages = []
+   266→        self._worker = None
+   267→        self._tool_executor = None  # lazy init
+   268→        self._streaming_text = ""
+   269→        self._login_data = None     # shot login context
+   270→        self._last_hip = ""         # track hip changes for re-login
+   271→        self._last_diagnosis = None # last scene doctor report
+   272→
+   273→        # Sprint 5: UI Evolution state
+   274→        self._context_bar_widget = None
+   275→        self._context_bar_state = None
+   276→        self._palette = None  # lazy init on Ctrl+K
+   277→        self._results_display = None  # lazy split-view results panel
+   278→
+   279→        self._build_ui()
+   280→
+   281→        if _HAS_DESIGN:
+   282→            self.setStyleSheet(generate_stylesheet())
+   283→
+   284→        # Health poll timer -- checks if server is actually listening
+   285→        self._health_timer = QtCore.QTimer(self)
+   286→        self._health_timer.setInterval(_HEALTH_POLL_MS)
+   287→        self._health_timer.timeout.connect(self._poll_server_health)
+   288→
+   289→        # Sprint 5: Ctrl+K command palette shortcut
+   290→        try:
+   291→            from PySide6.QtGui import QShortcut, QKeySequence
+   292→        except ImportError:
+   293→            try:
+   294→                from PySide2.QtGui import QShortcut, QKeySequence
+   295→            except ImportError:
+   296→                QShortcut = None
+   297→                QKeySequence = None
+   298→        if QShortcut is not None:
+   299→            _palette_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+   300→            _palette_shortcut.activated.connect(self._show_palette)
+   301→            self._palette_shortcut = _palette_shortcut  # prevent GC
+   302→
+   303→        # Check for an already-running server (e.g. from a previous panel instance)
+   304→        existing = _find_running_server()
+   305→        if existing:
+   306→            self._server = existing
+   307→            port = getattr(existing, "_actual_port", _PORT)
+   308→            self._set_status("connected", "port {}".format(port))
+   309→            self._log_activity("Found running server on port {}".format(port), "success")
+   310→            self._health_timer.start()
+   311→        else:
+   312→            self._set_status("disconnected")
+   313→            self._log_activity("Server not running -- click Connect to start", "info")
+   314→
+   315→        # Initial shot login
+   316→        self._do_shot_login()
+   317→
+   318→        # Show welcome on first launch (no memory loaded)
+   319→        if not self._login_data or not self._login_data.get("logged_in"):
+   320→            self._show_welcome()
+   321→
+   322→    def _build_ui(self):
+   323→        """Construct the panel layout."""
+   324→        layout = QtWidgets.QVBoxLayout(self)
+   325→        layout.setContentsMargins(0, 0, 0, 0)
+   326→        layout.setSpacing(0)
+   327→
+   328→        # Title bar
+   329→        layout.addWidget(self._build_title_bar())
+   330→
+   331→        # Status bar
+   332→        layout.addWidget(self._build_status_bar())
+   333→
+   334→        # Tool grid
+   335→        layout.addWidget(self._build_tool_grid())
+   336→
+   337→        # Context Bar v2 (Sprint 5)
+   338→        try:
+   339→            from synapse.panel.context_bar import (
+   340→                build_context_bar_widget, update_context, ContextBarState,
+   341→            )
+   342→            self._context_bar_state = update_context(
+   343→                self._login_data, self._last_diagnosis,
+   344→            )
+   345→            self._context_bar_widget = build_context_bar_widget(
+   346→                self._context_bar_state, self,
+   347→            )
+   348→            layout.addWidget(self._context_bar_widget)
+   349→            # Wire quick-action buttons to _route_cmd
+   350→            for btn in self._context_bar_widget.findChildren(
+   351→                QtWidgets.QPushButton,
+   352→            ):
+   353→                cmd = btn.property("command")
+   354→                if cmd:
+   355→                    btn.clicked.connect(
+   356→                        lambda checked=False, c=cmd: self._route_cmd(c)
+   357→                    )
+   358→        except Exception:
+   359→            pass  # context bar not available, panel still works
+   360→
+   361→        # Chat area (display + input + send)
+   362→        layout.addWidget(self._build_chat_area(), stretch=1)
+   363→
+   364→        # Activity log (compact, below chat)
+   365→        layout.addWidget(self._build_activity_log())
+   366→
+   367→        # Connection controls
+   368→        layout.addWidget(self._build_connection_bar())
+   369→
+   370→    def _build_title_bar(self):
+   371→        """Build the title bar with branding."""
+   372→        frame = QtWidgets.QFrame()
+   373→        frame.setObjectName("title_bar")
+   374→        layout = QtWidgets.QHBoxLayout(frame)
+   375→        layout.setContentsMargins(
+   376→            SPACE_MD if _HAS_DESIGN else 16,
+   377→            SPACE_SM if _HAS_DESIGN else 8,
+   378→            SPACE_MD if _HAS_DESIGN else 16,
+   379→            SPACE_SM if _HAS_DESIGN else 8,
+   380→        )
+   381→
+   382→        title = QtWidgets.QLabel("SYNAPSE")
+   383→        title.setObjectName("title_label")
+   384→        layout.addWidget(title)
+   385→
+   386→        layout.addStretch()
+   387→
+   388→        version = QtWidgets.QLabel("v" + _VERSION)
+   389→        version.setObjectName("version_label")
+   390→        layout.addWidget(version)
+   391→
+   392→        return frame
+   393→
+   394→    def _build_status_bar(self):
+   395→        """Build the status bar with animated dot."""
+   396→        frame = QtWidgets.QFrame()
+   397→        frame.setObjectName("status_bar")
+   398→        layout = QtWidgets.QHBoxLayout(frame)
+   399→        layout.setContentsMargins(
+   400→            SPACE_MD if _HAS_DESIGN else 16,
+   401→            SPACE_XS if _HAS_DESIGN else 4,
+   402→            SPACE_MD if _HAS_DESIGN else 16,
+   403→            SPACE_XS if _HAS_DESIGN else 4,
+   404→        )
+   405→        layout.setSpacing(SPACE_SM if _HAS_DESIGN else 8)
+   406→
+   407→        self._dot_label = QtWidgets.QLabel(_STATUS_DOT)
+   408→        self._dot_label.setObjectName("status_dot")
+   409→        layout.addWidget(self._dot_label)
+   410→
+   411→        self._status_label = QtWidgets.QLabel("Idle")
+   412→        self._status_label.setObjectName("status_label")
+   413→        layout.addWidget(self._status_label)
+   414→
+   415→        layout.addStretch()
+   416→
+   417→        self._status_detail = QtWidgets.QLabel("")
+   418→        self._status_detail.setObjectName("status_detail")
+   419→        layout.addWidget(self._status_detail)
+   420→
+   421→        return frame
+   422→
+   423→    def _build_tool_grid(self):
+   424→        """Build the tool grid."""
+   425→        frame = QtWidgets.QFrame()
+   426→        frame.setObjectName("tool_grid")
+   427→        grid = QtWidgets.QGridLayout(frame)
+   428→        grid.setSpacing(SPACE_SM if _HAS_DESIGN else 8)
+   429→        margin = SPACE_SM if _HAS_DESIGN else 8
+   430→        grid.setContentsMargins(margin, margin, margin, margin)
+   431→
+   432→        tools = [
+   433→            ("Project\nSetup", "Initialize project memory", self._on_project_setup),
+   434→            ("RAG\nFolder", "Set RAG knowledge folder", self._on_rag_folder),
+   435→            ("Inspect\nSelection", "Analyze selected nodes", self._on_inspect_selection),
+   436→            ("Inspect\nScene", "Analyze full scene", self._on_inspect_scene),
+   437→            ("Health\nCheck", "Run scene check", self._on_health_check),
+   438→            ("Last\nResult", "Copy last result", self._on_last_result),
+   439→        ]
+   440→
+   441→        cols = 2
+   442→        for i, (label, tooltip, callback) in enumerate(tools):
+   443→            btn = QtWidgets.QPushButton(label)
+   444→            btn.setProperty("class", "tool_button")
+   445→            btn.setToolTip(tooltip)
+   446→            btn.clicked.connect(callback)
+   447→            grid.addWidget(btn, i // cols, i % cols)
+   448→
+   449→        return frame
+   450→
+   451→    def _build_chat_area(self):
+   452→        """Build the chat display, input field, and send button."""
+   453→        frame = QtWidgets.QFrame()
+   454→        frame.setObjectName("chat_frame")
+   455→        layout = QtWidgets.QVBoxLayout(frame)
+   456→        margin = SPACE_SM if _HAS_DESIGN else 8
+   457→        layout.setContentsMargins(margin, margin, margin, 0)
+   458→        layout.setSpacing(SPACE_XS if _HAS_DESIGN else 4)
+   459→
+   460→        # Chat display (read-only HTML area)
+   461→        self._chat_display = QtWidgets.QTextEdit()
+   462→        self._chat_display.setObjectName("chat_display")
+   463→        self._chat_display.setReadOnly(True)
+   464→        self._chat_display.setPlaceholderText("Chat with SYNAPSE...")
+   465→        font_size = SIZE_BODY if _HAS_DESIGN else 13
+   466→        bg = VOID if _HAS_DESIGN else "#252525"
+   467→        fg = BONE if _HAS_DESIGN else "#CCCCCC"
+   468→        self._chat_display.setStyleSheet(
+   469→            "QTextEdit {{ background: {}; color: {}; border: none; "
+   470→            "font-size: {}pt; font-family: {}; }}".format(
+   471→                bg, fg, font_size,
+   472→                FONT_MONO if _HAS_DESIGN else "Consolas, monospace",
+   473→            )
+   474→        )
+   475→        layout.addWidget(self._chat_display, stretch=1)
+   476→
+   477→        # Input row: text field + send button
+   478→        input_row = QtWidgets.QHBoxLayout()
+   479→        input_row.setSpacing(SPACE_SM if _HAS_DESIGN else 8)
+   480→
+   481→        self._chat_input = QtWidgets.QLineEdit()
+   482→        self._chat_input.setObjectName("chat_input")
+   483→        self._chat_input.setPlaceholderText("Type a message or /help for commands...")
+   484→        self._chat_input.returnPressed.connect(self._on_send_chat)
+   485→        input_row.addWidget(self._chat_input, stretch=1)
+   486→
+   487→        self._send_btn = QtWidgets.QPushButton("Send")
+   488→        self._send_btn.setObjectName("send_button")
+   489→        self._send_btn.clicked.connect(self._on_send_chat)
+   490→        input_row.addWidget(self._send_btn)
+   491→
+   492→        layout.addLayout(input_row)
+   493→
+   494→        return frame
+   495→
+   496→    def _build_activity_log(self):
+   497→        """Build the scrolling activity log."""
+   498→        frame = QtWidgets.QFrame()
+   499→        frame.setObjectName("activity_frame")
+   500→        layout = QtWidgets.QVBoxLayout(frame)
+   501→        layout.setContentsMargins(
+   502→            SPACE_SM if _HAS_DESIGN else 8, 0,
+   503→            SPACE_SM if _HAS_DESIGN else 8, SPACE_SM if _HAS_DESIGN else 8,
+   504→        )
+   505→        layout.setSpacing(SPACE_XS if _HAS_DESIGN else 4)
+   506→
+   507→        header = QtWidgets.QLabel("ACTIVITY")
+   508→        header.setObjectName("activity_header")
+   509→        layout.addWidget(header)
+   510→
+   511→        self._log = QtWidgets.QTextEdit()
+   512→        self._log.setObjectName("activity_log")
+   513→        self._log.setReadOnly(True)
+   514→        self._log.setPlaceholderText("Synapse activity will appear here...")
+   515→        layout.addWidget(self._log)
+   516→
+   517→        return frame
+   518→
+   519→    def _build_connection_bar(self):
+   520→        """Build the bottom connection controls."""
+   521→        frame = QtWidgets.QFrame()
+   522→        frame.setObjectName("connection_frame")
+   523→        layout = QtWidgets.QHBoxLayout(frame)
+   524→        margin_h = SPACE_MD if _HAS_DESIGN else 16
+   525→        margin_v = SPACE_SM if _HAS_DESIGN else 8
+   526→        layout.setContentsMargins(margin_h, margin_v, margin_h, margin_v)
+   527→        layout.setSpacing(SPACE_SM if _HAS_DESIGN else 8)
+   528→
+   529→        self._connect_btn = QtWidgets.QPushButton("Connect")
+   530→        self._connect_btn.setObjectName("connect_button")
+   531→        self._connect_btn.clicked.connect(self._on_connect_toggle)
+   532→        layout.addWidget(self._connect_btn)
+   533→
+   534→        layout.addStretch()
+   535→
+   536→        self._ws_path_btn = QtWidgets.QPushButton(_WS_URL)
+   537→        self._ws_path_btn.setObjectName("ws_path_button")
+   538→        self._ws_path_btn.setToolTip("Copy WebSocket URL to clipboard")
+   539→        self._ws_path_btn.clicked.connect(self._on_copy_ws_path)
+   540→        layout.addWidget(self._ws_path_btn)
+   541→
+   542→        return frame
+   543→
+   544→    # ── Status Management ────────────────────────────────
+   545→
+   546→    def _set_status(self, state, detail=""):
+   547→        """Update the status bar to reflect a new state."""
+   548→        self._status = state
+   549→
+   550→        if _HAS_DESIGN and state in STATES:
+   551→            state_info = STATES[state]
+   552→            color = state_info["color"]
+   553→            label = state_info["label"]
+   554→        else:
+   555→            color = "#00D4FF"
+   556→            label = state.capitalize()
+   557→
+   558→        self._status_label.setText(label)
+   559→        self._status_detail.setText(detail)
+   560→
+   561→        if state == "executing":
+   562→            self._dot_animator.start(color)
+   563→        else:
+   564→            self._dot_animator.stop(color)
+   565→            self._dot_label.setStyleSheet(f"color: {color};")
+   566→            self._status_label.setStyleSheet(f"color: {color};")
+   567→
+   568→        # Update connect button text
+   569→        if state in ("connected", "idle", "executing"):
+   570→            self._connect_btn.setText("Disconnect")
+   571→        else:
+   572→            self._connect_btn.setText("Connect")
+   573→
+   574→    def _on_dot_color(self, color):
+   575→        """Handle animated dot color change."""
+   576→        self._dot_label.setStyleSheet(f"color: {color};")
+   577→
+   578→    # ── WS Path Copy ─────────────────────────────────────
+   579→
+   580→    def _on_copy_ws_path(self):
+   581→        """Copy the WebSocket URL to clipboard."""
+   582→        if self._copy_text(_WS_URL):
+   583→            self._log_activity("Copied: {}".format(_WS_URL), "success")
+   584→        else:
+   585→            self._log_activity("Couldn't copy WS path to clipboard", "error")
+   586→
+   587→    @staticmethod
+   588→    def _copy_text(text):
+   589→        """Copy text to clipboard via clip.exe (Windows) or Qt fallback."""
+   590→        import platform, subprocess
+   591→        if platform.system() == "Windows":
+   592→            try:
+   593→                p = subprocess.run(
+   594→                    ["clip"], input=text.encode("utf-8"),
+   595→                    creationflags=0x08000000, timeout=5,
+   596→                )
+   597→                return p.returncode == 0
+   598→            except Exception:
+   599→                pass
+   600→        try:
+   601→            app = QtWidgets.QApplication.instance() or QtGui.QGuiApplication.instance()
+   602→            if app:
+   603→                app.clipboard().setText(text)
+   604→                return True
+   605→        except Exception:
+   606→            pass
+   607→        return False
+   608→
+   609→    # ── Activity Log ─────────────────────────────────────
+   610→
+   611→    def _log_activity(self, message, level="info"):
+   612→        """Add a timestamped entry to the activity log."""
+   613→        timestamp = time.strftime("%H:%M:%S")
+   614→
+   615→        color_map = {
+   616→            "info": SILVER if _HAS_DESIGN else "#999999",
+   617→            "success": GROW if _HAS_DESIGN else "#00E676",
+   618→            "warning": WARN if _HAS_DESIGN else "#FFAB00",
+   619→            "error": ERROR if _HAS_DESIGN else "#FF3D71",
+   620→            "action": SIGNAL if _HAS_DESIGN else "#00D4FF",
+   621→        }
+   622→        color = color_map.get(level, color_map["info"])
+   623→
+   624→        html = (
+   625→            f'<span style="color: {SLATE if _HAS_DESIGN else "#555555"};">'
+   626→            f'{timestamp}</span> '
+   627→            f'<span style="color: {color};">{message}</span>'
+   628→        )
+   629→        self._log.append(html)
+   630→
+   631→        # Trim if too long
+   632→        doc = self._log.document()
+   633→        if doc.blockCount() > _ACTIVITY_MAX_LINES:
+   634→            cursor = self._log.textCursor()
+   635→            cursor.movePosition(QtGui.QTextCursor.Start)
+   636→            cursor.movePosition(
+   637→                QtGui.QTextCursor.Down,
+   638→                QtGui.QTextCursor.KeepAnchor,
+   639→                doc.blockCount() - _ACTIVITY_MAX_LINES,
+   640→            )
+   641→            cursor.removeSelectedText()
+   642→
+   643→    # ── Tool Callbacks ───────────────────────────────────
+   644→
+   645→    def _on_project_setup(self):
+   646→        """Initialize project memory via shelf callback."""
+   647→        self._log_activity("Setting up project...", "action")
+   648→        self._set_status("executing", "Project setup")
+   649→        try:
+   650→            import synapse_shelf
+   651→            synapse_shelf.project_setup()
+   652→            self._log_activity("Project structure ready", "success")
+   653→            self._set_status("idle")
+   654→        except Exception as e:
+   655→            self._log_activity(f"Project setup hit a snag: {e}", "error")
+   656→            self._set_status("warning", str(e)[:40])
+   657→
+   658→    def _on_rag_folder(self):
+   659→        """Set RAG knowledge folder via shelf callback."""
+   660→        self._log_activity("Opening RAG folder picker...", "action")
+   661→        try:
+   662→            import synapse_shelf
+   663→            synapse_shelf.rag_folder()
+   664→            import os
+   665→            rag = os.environ.get("SYNAPSE_RAG_ROOT", "")
+   666→            if rag:
+   667→                self._log_activity("RAG folder: {}".format(rag), "success")
+   668→            else:
+   669→                self._log_activity("RAG folder cleared", "info")
+   670→        except Exception as e:
+   671→            self._log_activity("RAG folder setup: {}".format(e), "error")
+   672→
+   673→    def _on_inspect_selection(self):
+   674→        """Run inspect selection via shelf callback."""
+   675→        self._log_activity("Inspecting selection...", "action")
+   676→        try:
+   677→            import synapse_shelf
+   678→            synapse_shelf.inspect_selection()
+   679→            self._log_activity("Selection copied to clipboard", "success")
+   680→        except Exception as e:
+   681→            self._log_activity(f"Inspect failed: {e}", "error")
+   682→
+   683→    def _on_inspect_scene(self):
+   684→        """Run inspect scene via shelf callback."""
+   685→        self._log_activity("Inspecting scene...", "action")
+   686→        try:
+   687→            import synapse_shelf
+   688→            synapse_shelf.inspect_scene()
+   689→            self._log_activity("Scene overview copied to clipboard", "success")
+   690→        except Exception as e:
+   691→            self._log_activity(f"Inspect failed: {e}", "error")
+   692→
+   693→    def _on_last_result(self):
+   694→        """Copy last result via shelf callback."""
+   695→        self._log_activity("Copying last result...", "action")
+   696→        try:
+   697→            import synapse_shelf
+   698→            synapse_shelf.copy_last_result()
+   699→            self._log_activity("Result copied to clipboard", "success")
+   700→        except Exception as e:
+   701→            self._log_activity(f"Copy failed: {e}", "error")
+   702→
+   703→    def _on_health_check(self):
+   704→        """Run health check via shelf callback."""
+   705→        self._log_activity("Running health check...", "action")
+   706→        self._set_status("executing", "Health check")
+   707→        try:
+   708→            import synapse_shelf
+   709→            synapse_shelf.health_check()
+   710→            self._log_activity("Health check complete", "success")
+   711→            self._set_status("idle")
+   712→        except Exception as e:
+   713→            self._log_activity(f"Health check failed: {e}", "error")
+   714→            self._set_status("warning", str(e)[:40])
+   715→
+   716→    # ── Shot Login & HDA ────────────────────────────────────
+   717→
+   718→    def _do_shot_login(self):
+   719→        """Load memory context from all layers (shot login)."""
+   720→        try:
+   721→            from synapse.panel.shot_login import shot_login, format_memory_for_prompt
+   722→            hip = ""
+   723→            try:
+   724→                import hou as _hou
+   725→                hip = _hou.hipFile.path()
+   726→            except Exception:
+   727→                pass
+   728→            self._login_data = shot_login(hip)
+   729→            self._last_hip = hip
+   730→            if self._login_data.get("logged_in"):
+   731→                stage_info = "project={}, scene={}".format(
+   732→                    self._login_data.get("project_evolution", "?"),
+   733→                    self._login_data.get("scene_evolution", "?"),
+   734→                )
+   735→                self._sys("Shot login: " + stage_info)
+   736→                try:
+   737→                    from synapse.panel.session_journal import get_journal
+   738→                    get_journal().log_event("LOGIN", stage_info)
+   739→                except Exception:
+   740→                    pass
+   741→                # Gather cross-scene project context
+   742→                try:
+   743→                    from synapse.panel.cross_scene import gather_project_context, format_project_context_for_prompt
+   744→                    project_dir = self._login_data.get("project_dir", "")
+   745→                    if project_dir:
+   746→                        insights = gather_project_context(project_dir, hip)
+   747→                        if insights:
+   748→                            self._login_data["project_insights"] = format_project_context_for_prompt(insights)
+   749→                            self._sys("Project context: {} insights from other scenes".format(len(insights)))
+   750→                except ImportError:
+   751→                    pass
+   752→                except Exception:
+   753→                    pass
+   754→            else:
+   755→                self._sys("Shot login: no memory loaded (outside project)")
+   756→        except ImportError:
+   757→            self._login_data = None
+   758→            self._sys("Shot login unavailable (synapse.panel.shot_login not found)")
+   759→        except Exception as e:
+   760→            self._login_data = None
+   761→            self._sys("Shot login error: " + str(e))
+   762→
+   763→    def _do_diagnose(self, scope=""):
+   764→        """Run scene doctor and display results."""
+   765→        scope = scope.strip() or "all"
+   766→        self._log_activity("Running scene doctor ({})...".format(scope), "action")
+   767→        try:
+   768→            from synapse.panel.scene_doctor import diagnose_scene, format_report_html
+   769→            report = diagnose_scene(scope)
+   770→            self._chat_display.append(format_report_html(report))
+   771→            sb = self._chat_display.verticalScrollBar()
+   772→            sb.setValue(sb.maximum())
+   773→            self._last_diagnosis = report
+   774→            self._log_activity(report.summary, "info")
+   775→            # Log to journal
+   776→            try:
+   777→                from synapse.panel.session_journal import get_journal
+   778→                get_journal().log_command("/diagnose", report.summary)
+   779→            except Exception:
+   780→                pass
+   781→            # Hint about /fix if fixable issues exist
+   782→            fixable = sum(1 for i in report.issues if i.fix_available)
+   783→            if fixable:
+   784→                self._sys(
+   785→                    "{} issue{} can be auto-fixed. Type /fix to apply.".format(
+   786→                        fixable, "s" if fixable != 1 else ""
+   787→                    )
+   788→                )
+   789→        except ImportError:
+   790→            self._sys("Scene doctor unavailable (synapse.panel.scene_doctor not found)")
+   791→        except Exception as e:
+   792→            self._sys("Scene doctor error: " + str(e))
+   793→
+   794→    def _do_fix(self):
+   795→        """Apply auto-fixes from the last /diagnose run."""
+   796→        if self._last_diagnosis is None:
+   797→            self._sys("No diagnosis to fix. Run /diagnose first.")
+   798→            return
+   799→        fixable = [i for i in self._last_diagnosis.issues if i.fix_available and i.fix_fn is not None]
+   800→        if not fixable:
+   801→            self._sys("No fixable issues in the last diagnosis.")
+   802→            self._last_diagnosis = None
+   803→            return
+   804→        self._log_activity("Applying {} auto-fix(es)...".format(len(fixable)), "action")
+   805→        try:
+   806→            from synapse.panel.scene_doctor import apply_fixes
+   807→            result = apply_fixes(self._last_diagnosis.issues)
+   808→            msg = "Fixed {}, failed {}, skipped {}".format(
+   809→                result["fixed"], result["failed"], result["skipped"]
+   810→            )
+   811→            self._sys(msg)
+   812→            self._log_activity(msg, "success" if result["failed"] == 0 else "warning")
+   813→            # Log to journal
+   814→            try:
+   815→                from synapse.panel.session_journal import get_journal
+   816→                get_journal().log_command("/fix", msg)
+   817→            except Exception:
+   818→                pass
+   819→            self._last_diagnosis = None
+   820→            # Re-run diagnose to show remaining issues
+   821→            self._do_diagnose("")
+   822→        except ImportError:
+   823→            self._sys("Scene doctor unavailable (synapse.panel.scene_doctor not found)")
+   824→        except Exception as e:
+   825→            self._sys("Fix error: " + str(e))
+   826→
+   827→    def _do_preflight(self, render_node=""):
+   828→        """Run render preflight checks."""
+   829→        render_node = render_node.strip()
+   830→        label = render_node if render_node else "auto-detect"
+   831→        self._log_activity("Running preflight ({})...".format(label), "action")
+   832→        try:
+   833→            from synapse.panel.render_preflight import run_preflight, format_preflight_html
+   834→            report = run_preflight(render_node)
+   835→            self._chat_display.append(format_preflight_html(report))
+   836→            sb = self._chat_display.verticalScrollBar()
+   837→            sb.setValue(sb.maximum())
+   838→            self._log_activity(report.summary, "success" if report.ready else "warning")
+   839→            # Log to journal
+   840→            try:
+   841→                from synapse.panel.session_journal import get_journal
+   842→                get_journal().log_command("/preflight", report.summary)
+   843→            except Exception:
+   844→                pass
+   845→        except ImportError:
+   846→            self._sys("Preflight unavailable (synapse.panel.render_preflight not found)")
+   847→        except Exception as e:
+   848→            self._sys("Preflight error: " + str(e))
+   849→
+   850→    def _do_journal(self, query=""):
+   851→        """Display session journal entries."""
+   852→        query = query.strip()
+   853→        try:
+   854→            from synapse.panel.session_journal import get_journal, format_journal_html
+   855→            journal = get_journal()
+   856→            if query:
+   857→                entries = journal.search(query)
+   858→            else:
+   859→                entries = journal.get_entries(50)
+   860→            self._chat_display.append(format_journal_html(entries, query))
+   861→            sb = self._chat_display.verticalScrollBar()
+   862→            sb.setValue(sb.maximum())
+   863→        except ImportError:
+   864→            self._sys("Journal unavailable (synapse.panel.session_journal not found)")
+   865→        except Exception as e:
+   866→            self._sys("Journal error: " + str(e))
+   867→
+   868→    def _do_hda(self, description):
+   869→        """Launch HDA design conversation with Claude."""
+   870→        try:
+   871→            from synapse.panel.prompt_to_hda import (
+   872→                HDA_DESIGN_PROMPT, parse_hda_command, build_hda_messages,
+   873→            )
+   874→            from synapse.panel.system_prompt import build_system_prompt
+   875→        except ImportError as e:
+   876→            self._sys("HDA workflow unavailable: " + str(e))
+   877→            return
+   878→
+   879→        # Build HDA-specific system prompt
+   880→        context = self._gather_context()
+   881→        system_prompt = build_system_prompt(context)
+   882→        system_prompt += "\n\n" + HDA_DESIGN_PROMPT
+   883→        system_prompt = self._build_memory_system_prompt(system_prompt)
+   884→
+   885→        # Build messages
+   886→        parsed = parse_hda_command("/hda " + description)
+   887→        messages = build_hda_messages(parsed["description"], context)
+   888→
+   889→        self._launch_worker(messages, system_prompt)
+   890→
+   891→    # ── Chat Methods ───────────────────────────────────────
+   892→
+   893→    def _sys(self, msg):
+   894→        """Append a system-level message to the chat display."""
+   895→        color = SILVER if _HAS_DESIGN else "#999999"
+   896→        html = '<div style="color: {}; font-size: {}pt; margin: 4px 0;">{}</div>'.format(
+   897→            color, SIZE_SMALL if _HAS_DESIGN else 11, msg,
+   898→        )
+   899→        self._chat_display.append(html)
+   900→        sb = self._chat_display.verticalScrollBar()
+   901→        sb.setValue(sb.maximum())
+   902→
+   903→    def _gather_context(self):
+   904→        """Gather current Houdini scene context for the system prompt."""
+   905→        ctx = {
+   906→            "network": "/obj",
+   907→            "selection": [],
+   908→            "frame": 1,
+   909→            "hip": "untitled.hip",
+   910→        }
+   911→        try:
+   912→            ctx["network"] = hou.ui.paneTabOfType(
+   913→                hou.paneTabType.NetworkEditor
+   914→            ).pwd().path()
+   915→        except Exception:
+   916→            pass
+   917→        try:
+   918→            ctx["selection"] = [n.path() for n in hou.selectedNodes()]
+   919→        except Exception:
+   920→            pass
+   921→        try:
+   922→            ctx["frame"] = int(hou.frame())
+   923→        except Exception:
+   924→            pass
+   925→        try:
+   926→            ctx["hip"] = hou.hipFile.name()
+   927→        except Exception:
+   928→            pass
+   929→        return ctx
+   930→
+   931→    def _ensure_tool_executor(self):
+   932→        """Lazily create the main-thread ToolExecutor."""
+   933→        if self._tool_executor is None:
+   934→            try:
+   935→                from synapse.panel.tool_executor import ToolExecutor
+   936→                self._tool_executor = ToolExecutor(parent=self)
+   937→            except ImportError as e:
+   938→                self._sys("Tool executor not available: " + str(e))
+   939→        return self._tool_executor
+   940→
+   941→    def _on_send_chat(self):
+   942→        """Handle send button click or Enter key in chat input."""
+   943→        text = self._chat_input.text().strip()
+   944→        if not text:
+   945→            return
+   946→        self._chat_input.clear()
+   947→
+   948→        # Route slash commands
+   949→        if text.startswith("/"):
+   950→            self._route_cmd(text)
+   951→            return
+   952→
+   953→        self._chat(text)
+   954→
+   955→    def _route_cmd(self, text):
+   956→        """Route slash commands to their handlers."""
+   957→        parts = text.split(None, 1)
+   958→        cmd = parts[0].lower()
+   959→        arg = parts[1].strip() if len(parts) > 1 else ""
+   960→
+   961→        if cmd == "/hda":
+   962→            if not arg:
+   963→                self._sys("Usage: /hda &lt;describe what you want to build&gt;")
+   964→                return
+   965→            # Display user message
+   966→            user_color = SIGNAL if _HAS_DESIGN else "#00D4FF"
+   967→            user_html = (
+   968→                '<div style="margin: 8px 0 4px 0;">'
+   969→                '<b style="color: {};">You</b></div>'
+   970→                '<div style="margin: 0 0 8px 10px;">{}</div>'
+   971→            ).format(user_color, arg.replace("\n", "<br>"))
+   972→            self._chat_display.append(user_html)
+   973→            self._do_hda(arg)
+   974→        elif cmd == "/diagnose":
+   975→            self._do_diagnose(arg)
+   976→        elif cmd == "/fix":
+   977→            self._do_fix()
+   978→        elif cmd == "/preflight":
+   979→            self._do_preflight(arg)
+   980→        elif cmd == "/journal":
+   981→            self._do_journal(arg)
+   982→        elif cmd == "/login":
+   983→            self._do_shot_login()
+   984→        elif cmd == "/explain":
+   985→            self._do_explain(arg)
+   986→        elif cmd == "/trace":
+   987→            self._do_trace(arg)
+   988→        elif cmd == "/vex":
+   989→            self._do_vex(arg)
+   990→        elif cmd == "/recipes" or cmd == "/recipe":
+   991→            self._do_recipes(arg)
+   992→        elif cmd == "/apex":
+   993→            self._do_apex(arg)
+   994→        elif cmd == "/help":
+   995→            self._show_help()
+   996→        elif cmd == "/deps":
+   997→            self._do_deps(arg)
+   998→        elif cmd == "/profile":
+   999→            self._do_profile(arg)
+  1000→        elif cmd in ("/save-shot", "/save"):
+  1001→            self._do_save_shot(arg)
+  1002→        elif cmd == "/shots":
+  1003→            self._do_shots(arg)
+  1004→        elif cmd in ("/bookmark", "/bookmarks"):
+  1005→            self._do_bookmark(arg)
+  1006→        elif cmd == "/palette":
+  1007→            self._show_palette()
+  1008→        else:
+  1009→            self._sys("Unknown command: {}. Type /help for available commands.".format(cmd))
+  1010→
+  1011→    def _show_help(self):
+  1012→        """Display available slash commands in the chat."""
+  1013→        help_lines = [
+  1014→            "<b>Available commands:</b>",
+  1015→            "",
+  1016→            "  <b>Build</b>",
+  1017→            "  /hda &lt;description&gt; -- Design and build an HDA from a description",
+  1018→            "  /recipes [category] [recipe] -- Browse and build network recipes",
+  1019→            "",
+  1020→            "  <b>Learn</b>",
+  1021→            "  /explain [node_path] -- Explain selected node or network data flow",
+  1022→            "  /vex explain -- Explain VEX code in selected wrangle",
+  1023→            "  /vex help &lt;function&gt; -- VEX function reference and tutorial",
+  1024→            "  /vex write &lt;description&gt; -- Generate VEX code from description",
+  1025→            "  /trace [network_path] -- Trace data flow through a network",
+  1026→            "",
+  1027→            "  <b>Rigging</b>",
+  1028→            "  /apex -- APEX rigging tools (explain, trace, recipes, migrate)",
+  1029→            "",
+  1030→            "  <b>Check</b>",
+  1031→            "  /diagnose [scope] -- Run scene doctor (scope: all, render, materials, current_network)",
+  1032→            "  /fix -- Apply auto-fixes from last /diagnose",
+  1033→            "  /preflight [node] -- Render preflight check (auto-detects render node)",
+  1034→            "",
+  1035→            "  <b>Production</b>",
+  1036→            "  /deps [scope] -- Scan scene dependencies (scope: all, textures, geo, hda, usd)",
+  1037→            "  /profile [network] -- Profile network cook times and find bottlenecks",
+  1038→            "  /save-shot [note] -- Save session snapshot (conversation + scene state)",
+  1039→            "  /shots [search query] -- List or search saved session snapshots",
+  1040→            "",
+  1041→            "  <b>Session</b>",
+  1042→            "  /journal [query] -- View session journal (optional search query)",
+  1043→            "  /bookmark [label] -- Save and find conversation bookmarks",
+  1044→            "  /login -- Re-run shot login (reload memory context)",
+  1045→            "  /help -- Show this help message",
+  1046→            "",
+  1047→            "  <b>Shortcuts</b>",
+  1048→            "  Ctrl+K -- Open command palette (fuzzy search all commands)",
+  1049→        ]
+  1050→        color = SILVER if _HAS_DESIGN else "#999999"
+  1051→        sz = SIZE_SMALL if _HAS_DESIGN else 11
+  1052→        html = '<div style="color: {}; font-size: {}pt; margin: 4px 0;">{}</div>'.format(
+  1053→            color, sz, "<br>".join(help_lines),
+  1054→        )
+  1055→        self._chat_display.append(html)
+  1056→        sb = self._chat_display.verticalScrollBar()
+  1057→        sb.setValue(sb.maximum())
+  1058→
+  1059→    def _html_assistant_start(self):
+  1060→        """Return the HTML header for an assistant (SYNAPSE) message block."""
+  1061→        synapse_color = GROW if _HAS_DESIGN else "#00E676"
+  1062→        return (
+  1063→            '<div style="margin: 8px 0 4px 0;">'
+  1064→            '<b style="color: {};">SYNAPSE</b></div>'
+  1065→            '<div id="stream_target" style="margin: 0 0 8px 10px;">'.format(
+  1066→                synapse_color
+  1067→            )
+  1068→        )
+  1069→
+  1070→    def _launch_worker(self, messages, system_prompt):
+  1071→        """Launch a ClaudeWorker with standard signal wiring."""
+  1072→        self._send_btn.setEnabled(False)
+  1073→        self._streaming_text = ""
+  1074→        self._chat_display.append(self._html_assistant_start())
+  1075→
+  1076→        try:
+  1077→            from synapse.panel.claude_worker import ClaudeWorker as NewWorker
+  1078→            WorkerClass = NewWorker
+  1079→            _has_tools = True
+  1080→        except ImportError:
+  1081→            WorkerClass = _FallbackClaudeWorker
+  1082→            _has_tools = False
+  1083→
+  1084→        self._worker = WorkerClass(
+  1085→            messages=messages,
+  1086→            system_prompt=system_prompt,
+  1087→            parent=self,
+  1088→        )
+  1089→        self._worker.token_received.connect(self._on_token)
+  1090→        self._worker.stream_done.connect(self._on_done)
+  1091→        self._worker.stream_error.connect(self._on_error)
+  1092→
+  1093→        if _has_tools:
+  1094→            executor = self._ensure_tool_executor()
+  1095→            if executor is not None:
+  1096→                self._worker.tool_requested.connect(executor.execute_tool)
+  1097→            self._worker.tool_status.connect(self._on_tool_status)
+  1098→
+  1099→        self._worker.start()
+  1100→
+  1101→    def _build_memory_system_prompt(self, base_prompt):
+  1102→        """Append memory context from shot login to a base system prompt."""
+  1103→        system_prompt = base_prompt
+  1104→        if self._login_data and self._login_data.get("logged_in"):
+  1105→            try:
+  1106→                from synapse.panel.shot_login import format_memory_for_prompt
+  1107→                memory_ctx = format_memory_for_prompt(self._login_data)
+  1108→                if memory_ctx:
+  1109→                    system_prompt += "\n\n" + memory_ctx
+  1110→            except ImportError:
+  1111→                pass
+  1112→        # Append cross-scene project insights if available
+  1113→        if self._login_data and self._login_data.get("project_insights"):
+  1114→            system_prompt += "\n\n" + self._login_data["project_insights"]
+  1115→        return system_prompt
+  1116→
+  1117→    # ── Production Pipeline ────────────────────────────────
+  1118→
+  1119→    def _do_deps(self, scope=""):
+  1120→        """Scan scene dependencies and display results."""
+  1121→        scope = scope.strip() or "all"
+  1122→        self._log_activity("Scanning dependencies ({})...".format(scope), "action")
+  1123→        try:
+  1124→            from synapse.panel.dependency_map import scan_dependencies, format_deps_html
+  1125→            report = scan_dependencies(scope)
+  1126→            self._chat_display.append(format_deps_html(report))
+  1127→            sb = self._chat_display.verticalScrollBar()
+  1128→            sb.setValue(sb.maximum())
+  1129→            self._log_activity(report.summary, "info")
+  1130→            # Log to journal
+  1131→            try:
+  1132→                from synapse.panel.session_journal import get_journal
+  1133→                get_journal().log_command("/deps", report.summary)
+  1134→            except Exception:
+  1135→                pass
+  1136→            # Offer Claude analysis if missing deps found
+  1137→            if report.missing_count:
+  1138→                self._sys(
+  1139→                    "{} missing file{}. Ask me to help resolve them.".format(
+  1140→                        report.missing_count,
+  1141→                        "s" if report.missing_count != 1 else "",
+  1142→                    )
+  1143→                )
+  1144→        except ImportError:
+  1145→            self._sys("Dependency scanner unavailable (synapse.panel.dependency_map not found)")
+  1146→        except Exception as e:
+  1147→            self._sys("Dependency scan error: " + str(e))
+  1148→
+  1149→    def _do_profile(self, network=""):
+  1150→        """Profile a network for cook-time bottlenecks."""
+  1151→        network = network.strip()
+  1152→        label = network if network else "current network"
+  1153→        self._log_activity("Profiling {}...".format(label), "action")
+  1154→        try:
+  1155→            from synapse.panel.performance_profiler import (
+  1156→                profile_network, format_profile_html, build_profile_messages,
+  1157→            )
+  1158→            report = profile_network(network)
+  1159→            self._chat_display.append(format_profile_html(report))
+  1160→            sb = self._chat_display.verticalScrollBar()
+  1161→            sb.setValue(sb.maximum())
+  1162→            self._log_activity(report.summary, "info")
+  1163→            # Log to journal
+  1164→            try:
+  1165→                from synapse.panel.session_journal import get_journal
+  1166→                get_journal().log_command("/profile", report.summary)
+  1167→            except Exception:
+  1168→                pass
+  1169→            # If bottlenecks found, launch Claude worker for deeper analysis
+  1170→            if report.bottlenecks:
+  1171→                messages = build_profile_messages(report)
+  1172→                system_prompt = self._build_memory_system_prompt(
+  1173→                    "You are SYNAPSE, a Houdini performance advisor."
+  1174→                )
+  1175→                self._launch_worker(messages, system_prompt)
+  1176→        except ImportError:
+  1177→            self._sys("Profiler unavailable (synapse.panel.performance_profiler not found)")
+  1178→        except Exception as e:
+  1179→            self._sys("Profile error: " + str(e))
+  1180→
+  1181→    def _do_save_shot(self, note=""):
+  1182→        """Save a session snapshot to disk."""
+  1183→        self._log_activity("Saving session snapshot...", "action")
+  1184→        try:
+  1185→            from synapse.panel.save_shot import save_shot, format_save_html
+  1186→            snapshot = save_shot(note, self._messages, self._login_data)
+  1187→            self._chat_display.append(format_save_html(snapshot))
+  1188→            sb = self._chat_display.verticalScrollBar()
+  1189→            sb.setValue(sb.maximum())
+  1190→            self._log_activity("Snapshot saved: " + snapshot.save_path, "success")
+  1191→            # Log to journal
+  1192→            try:
+  1193→                from synapse.panel.session_journal import get_journal
+  1194→                get_journal().log_command("/save-shot", "saved to " + snapshot.save_path)
+  1195→            except Exception:
+  1196→                pass
+  1197→        except ImportError:
+  1198→            self._sys("Save-shot unavailable (synapse.panel.save_shot not found)")
+  1199→        except Exception as e:
+  1200→            self._sys("Save-shot error: " + str(e))
+  1201→
+  1202→    def _do_shots(self, arg=""):
+  1203→        """List or search saved session snapshots."""
+  1204→        try:
+  1205→            from synapse.panel.save_shot import (
+  1206→                parse_save_command, list_snapshots, format_snapshots_html,
+  1207→            )
+  1208→            parsed = parse_save_command("/shots " + arg)
+  1209→            if parsed.get("action") == "search":
+  1210→                query = parsed.get("query", "").lower()
+  1211→                snapshots = list_snapshots()
+  1212→                snapshots = [
+  1213→                    s for s in snapshots
+  1214→                    if query in s.get("note_preview", "").lower()
+  1215→                    or query in s.get("filename", "").lower()
+  1216→                ]
+  1217→            else:
+  1218→                snapshots = list_snapshots()
+  1219→            self._chat_display.append(format_snapshots_html(snapshots))
+  1220→            sb = self._chat_display.verticalScrollBar()
+  1221→            sb.setValue(sb.maximum())
+  1222→            self._log_activity("{} snapshot(s) found".format(len(snapshots)), "info")
+  1223→            # Log to journal
+  1224→            try:
+  1225→                from synapse.panel.session_journal import get_journal
+  1226→                get_journal().log_command("/shots", "{} snapshots".format(len(snapshots)))
+  1227→            except Exception:
+  1228→                pass
+  1229→        except ImportError:
+  1230→            self._sys("Shots unavailable (synapse.panel.save_shot not found)")
+  1231→        except Exception as e:
+  1232→            self._sys("Shots error: " + str(e))
+  1233→
+  1234→    # ── Explain Mode ─────────────────────────────────────────
+  1235→
+  1236→    def _do_explain(self, arg=""):
+  1237→        """Explain a selected node or network data flow via Claude."""
+  1238→        try:
+  1239→            from synapse.panel.explain_mode import (
+  1240→                gather_node_context, gather_network_context,
+  1241→                build_explain_prompt, build_explain_messages,
+  1242→            )
+  1243→        except ImportError as e:
+  1244→            self._sys("Explain mode unavailable: " + str(e))
+  1245→            return
+  1246→
+  1247→        arg = arg.strip()
+  1248→
+  1249→        # Determine mode: network path (starts with /) or node
+  1250→        is_network = False
+  1251→        if arg.startswith("/"):
+  1252→            # Check if this resolves to a network (container with children)
+  1253→            try:
+  1254→                node = hou.node(arg)
+  1255→                if node is not None and len(node.children()) > 0:
+  1256→                    is_network = True
+  1257→            except Exception:
+  1258→                pass
+  1259→
+  1260→        if is_network:
+  1261→            context = gather_network_context(arg)
+  1262→            mode = "network"
+  1263→        else:
+  1264→            # Node mode: use arg as path, or fall back to selection
+  1265→            node_path = arg
+  1266→            if not node_path:
+  1267→                try:
+  1268→                    sel = hou.selectedNodes()
+  1269→                    if sel:
+  1270→                        node_path = sel[0].path()
+  1271→                except Exception:
+  1272→                    pass
+  1273→            if not node_path:
+  1274→                self._sys("Select a node first, or type /explain &lt;node_path&gt;")
+  1275→                return
+  1276→            context = gather_node_context(node_path)
+  1277→            mode = "node"
+  1278→
+  1279→        if context.get("error"):
+  1280→            self._sys(context["error"])
+  1281→            return
+  1282→
+  1283→        # Display user intent
+  1284→        user_color = SIGNAL if _HAS_DESIGN else "#00D4FF"
+  1285→        target = context.get("network_path") or context.get("node_path", "")
+  1286→        self._chat_display.append(
+  1287→            '<div style="margin: 8px 0 4px 0;">'
+  1288→            '<b style="color: {};">You</b></div>'
+  1289→            '<div style="margin: 0 0 8px 10px;">/explain {}</div>'.format(
+  1290→                user_color, target,
+  1291→            )
+  1292→        )
+  1293→
+  1294→        # Build prompts and launch worker
+  1295→        explain_prompt = build_explain_prompt(context, mode)
+  1296→        messages = build_explain_messages(context, mode)
+  1297→
+  1298→        # Separate system message from user messages
+  1299→        sys_content = explain_prompt
+  1300→        user_messages = [m for m in messages if m["role"] != "system"]
+  1301→
+  1302→        try:
+  1303→            from synapse.panel.system_prompt import build_system_prompt
+  1304→            base = build_system_prompt(self._gather_context())
+  1305→        except ImportError:
+  1306→            base = "You are SYNAPSE, an AI co-pilot inside Houdini 21."
+  1307→        system_prompt = self._build_memory_system_prompt(base + "\n\n" + sys_content)
+  1308→
+  1309→        self._launch_worker(user_messages, system_prompt)
+  1310→
+  1311→        # Log to journal
+  1312→        try:
+  1313→            from synapse.panel.session_journal import get_journal
+  1314→            get_journal().log_command("/explain", "{} ({})".format(target, mode))
+  1315→        except Exception:
+  1316→            pass
+  1317→
+  1318→    # ── Network Trace ────────────────────────────────────────
+  1319→
+  1320→    def _do_trace(self, network_path=""):
+  1321→        """Trace data flow through a network and display results."""
+  1322→        try:
+  1323→            from synapse.panel.network_trace import trace_network, format_trace_html
+  1324→        except ImportError as e:
+  1325→            self._sys("Network trace unavailable: " + str(e))
+  1326→            return
+  1327→
+  1328→        network_path = network_path.strip()
+  1329→        report = trace_network(network_path)
+  1330→        self._chat_display.append(format_trace_html(report))
+  1331→        sb = self._chat_display.verticalScrollBar()
+  1332→        sb.setValue(sb.maximum())
+  1333→
+  1334→        self._log_activity("Trace: " + report.summary, "info")
+  1335→
+  1336→        # Log to journal
+  1337→        try:
+  1338→            from synapse.panel.session_journal import get_journal
+  1339→            get_journal().log_command("/trace", report.summary)
+  1340→        except Exception:
+  1341→            pass
+  1342→
+  1343→    # ── VEX Tutor ────────────────────────────────────────────
+  1344→
+  1345→    def _do_vex(self, arg=""):
+  1346→        """VEX tutor: explain, help, or write VEX code."""
+  1347→        try:
+  1348→            from synapse.panel.vex_tutor import (
+  1349→                parse_vex_command, VEX_REFERENCE,
+  1350→                gather_wrangle_context, build_vex_messages,
+  1351→                format_vex_reference_html,
+  1352→            )
+  1353→        except ImportError as e:
+  1354→            self._sys("VEX tutor unavailable: " + str(e))
+  1355→            return
+  1356→
+  1357→        parsed = parse_vex_command("/vex " + arg)
+  1358→        mode = parsed["mode"]
+  1359→        vex_arg = parsed["arg"]
+  1360→
+  1361→        # Display user intent
+  1362→        user_color = SIGNAL if _HAS_DESIGN else "#00D4FF"
+  1363→        display_text = "/vex {}".format(arg) if arg else "/vex"
+  1364→        self._chat_display.append(
+  1365→            '<div style="margin: 8px 0 4px 0;">'
+  1366→            '<b style="color: {};">You</b></div>'
+  1367→            '<div style="margin: 0 0 8px 10px;">{}</div>'.format(
+  1368→                user_color, display_text,
+  1369→            )
+  1370→        )
+  1371→
+  1372→        # Show usage if bare /vex help with no argument
+  1373→        if mode == "help" and not vex_arg:
+  1374→            self._sys(
+  1375→                "<b>VEX Tutor commands:</b><br>"
+  1376→                "  /vex explain -- Explain VEX in selected wrangle<br>"
+  1377→                "  /vex help &lt;function&gt; -- Quick reference for a VEX function<br>"
+  1378→                "  /vex write &lt;description&gt; -- Generate VEX from a description<br>"
+  1379→                "  /vex &lt;function&gt; -- Shortcut for /vex help &lt;function&gt;"
+  1380→            )
+  1381→            return
+  1382→
+  1383→        # Gather wrangle context for all modes
+  1384→        context = gather_wrangle_context()
+  1385→
+  1386→        # If help mode and function is in reference, show inline card first
+  1387→        if mode == "help" and vex_arg in VEX_REFERENCE:
+  1388→            ref = VEX_REFERENCE[vex_arg]
+  1389→            self._chat_display.append(format_vex_reference_html(vex_arg, ref))
+  1390→            sb = self._chat_display.verticalScrollBar()
+  1391→            sb.setValue(sb.maximum())
+  1392→
+  1393→        # For explain mode, check we have code
+  1394→        if mode == "explain" and not context.get("vex_code"):
+  1395→            self._sys("Select a wrangle node with VEX code first, then try /vex explain again.")
+  1396→            return
+  1397→
+  1398→        # Build messages and launch Claude
+  1399→        messages = build_vex_messages(mode, vex_arg, context)
+  1400→        # Separate system from user messages
+  1401→        sys_msgs = [m for m in messages if m["role"] == "system"]
+  1402→        user_msgs = [m for m in messages if m["role"] != "system"]
+  1403→        sys_content = sys_msgs[0]["content"] if sys_msgs else ""
+  1404→
+  1405→        try:
+  1406→            from synapse.panel.system_prompt import build_system_prompt
+  1407→            base = build_system_prompt(self._gather_context())
+  1408→        except ImportError:
+  1409→            base = "You are SYNAPSE, an AI co-pilot inside Houdini 21."
+  1410→        system_prompt = self._build_memory_system_prompt(base + "\n\n" + sys_content)
+  1411→
+  1412→        self._launch_worker(user_msgs, system_prompt)
+  1413→
+  1414→        # Log to journal
+  1415→        try:
+  1416→            from synapse.panel.session_journal import get_journal
+  1417→            get_journal().log_command("/vex", "{} {}".format(mode, vex_arg).strip())
+  1418→        except Exception:
+  1419→            pass
+  1420→
+  1421→    # ── Recipe Book ──────────────────────────────────────────
+  1422→
+  1423→    def _do_recipes(self, arg=""):
+  1424→        """Browse and build network recipes."""
+  1425→        try:
+  1426→            from synapse.panel.recipe_book import (
+  1427→                parse_recipe_command, format_categories_html,
+  1428→                format_category_html, format_recipe_html,
+  1429→                search_recipes, build_recipe_messages, get_recipe,
+  1430→            )
+  1431→        except ImportError as e:
+  1432→            self._sys("Recipe book unavailable: " + str(e))
+  1433→            return
+  1434→
+  1435→        parsed = parse_recipe_command("/recipes " + arg)
+  1436→        action = parsed["action"]
+  1437→
+  1438→        if action == "list":
+  1439→            self._chat_display.append(format_categories_html())
+  1440→            sb = self._chat_display.verticalScrollBar()
+  1441→            sb.setValue(sb.maximum())
+  1442→        elif action == "category":
+  1443→            self._chat_display.append(format_category_html(parsed["category"]))
+  1444→            sb = self._chat_display.verticalScrollBar()
+  1445→            sb.setValue(sb.maximum())
+  1446→        elif action == "detail":
+  1447→            self._chat_display.append(
+  1448→                format_recipe_html(parsed["category"], parsed["recipe"])
+  1449→            )
+  1450→            sb = self._chat_display.verticalScrollBar()
+  1451→            sb.setValue(sb.maximum())
+  1452→        elif action == "search":
+  1453→            results = search_recipes(parsed["query"])
+  1454→            if not results:
+  1455→                self._sys("No recipes found matching '{}'.".format(parsed["query"]))
+  1456→            else:
+  1457→                color = SILVER if _HAS_DESIGN else "#999999"
+  1458→                lines = [
+  1459→                    '<div style="color: {};">'.format(
+  1460→                        BONE if _HAS_DESIGN else "#CCCCCC"
+  1461→                    ),
+  1462→                    "<b>Search results for '{}':</b><br>".format(parsed["query"]),
+  1463→                ]
+  1464→                for cat, name, title, match_ctx in results:
+  1465→                    lines.append(
+  1466→                        "  <b>{}/{}</b> -- {}<br>".format(cat, name, title)
+  1467→                    )
+  1468→                lines.append(
+  1469→                    '<span style="color: {};">Type /recipes &lt;category&gt; '
+  1470→                    "&lt;recipe&gt; for details.</span>".format(color)
+  1471→                )
+  1472→                lines.append("</div>")
+  1473→                self._chat_display.append("\n".join(lines))
+  1474→                sb = self._chat_display.verticalScrollBar()
+  1475→                sb.setValue(sb.maximum())
+  1476→        elif action == "build":
+  1477→            category = parsed["category"]
+  1478→            recipe_name = parsed["recipe"]
+  1479→            recipe = get_recipe(category, recipe_name)
+  1480→            if recipe is None:
+  1481→                self._sys(
+  1482→                    "Recipe '{}/{}' not found. Type /recipes to browse.".format(
+  1483→                        category, recipe_name
+  1484→                    )
+  1485→                )
+  1486→                return
+  1487→
+  1488→            # Display user intent
+  1489→            user_color = SIGNAL if _HAS_DESIGN else "#00D4FF"
+  1490→            self._chat_display.append(
+  1491→                '<div style="margin: 8px 0 4px 0;">'
+  1492→                '<b style="color: {};">You</b></div>'
+  1493→                '<div style="margin: 0 0 8px 10px;">'
+  1494→                '/recipes build {} {}</div>'.format(
+  1495→                    user_color, category, recipe_name,
+  1496→                )
+  1497→            )
+  1498→
+  1499→            context = self._gather_context()
+  1500→            parent_path = context.get("network", "/obj/geo1")
+  1501→            messages = build_recipe_messages(
+  1502→                category, recipe_name, {"parent_path": parent_path}
+  1503→            )
+  1504→            if not messages:
+  1505→                self._sys("Could not build messages for this recipe.")
+  1506→                return
+  1507→
+  1508→            try:
+  1509→                from synapse.panel.system_prompt import build_system_prompt
+  1510→                base = build_system_prompt(context)
+  1511→            except ImportError:
+  1512→                base = "You are SYNAPSE, an AI co-pilot inside Houdini 21."
+  1513→            system_prompt = self._build_memory_system_prompt(base)
+  1514→
+  1515→            self._launch_worker(messages, system_prompt)
+  1516→
+  1517→            self._log_activity(
+  1518→                "Building recipe: {}/{}".format(category, recipe_name), "action"
+  1519→            )
+  1520→
+  1521→        # Log to journal
+  1522→        try:
+  1523→            from synapse.panel.session_journal import get_journal
+  1524→            get_journal().log_command(
+  1525→                "/recipes", "{} {}".format(action, arg).strip()
+  1526→            )
+  1527→        except Exception:
+  1528→            pass
+  1529→
+  1530→    # ── APEX Rigging Tools ────────────────────────────────────
+  1531→
+  1532→    def _do_apex(self, arg=""):
+  1533→        """APEX rigging tools: explain, trace, recipes, build, overview, concept, migrate."""
+  1534→        parts = arg.strip().split(None, 1) if arg else []
+  1535→        subcmd = parts[0].lower() if parts else ""
+  1536→        subarg = parts[1] if len(parts) > 1 else ""
+  1537→
+  1538→        # Display user intent
+  1539→        user_color = SIGNAL if _HAS_DESIGN else "#00D4FF"
+  1540→        display_text = "/apex {}".format(arg) if arg else "/apex"
+  1541→        self._chat_display.append(
+  1542→            '<div style="margin: 8px 0 4px 0;">'
+  1543→            '<b style="color: {};">You</b></div>'
+  1544→            '<div style="margin: 0 0 8px 10px;">{}</div>'.format(
+  1545→                user_color, display_text,
+  1546→            )
+  1547→        )
+  1548→
+  1549→        if not subcmd or subcmd == "help":
+  1550→            color = SILVER if _HAS_DESIGN else "#999999"
+  1551→            sz = SIZE_SMALL if _HAS_DESIGN else 11
+  1552→            help_lines = [
+  1553→                "<b>APEX Rigging Tools:</b>",
+  1554→                "",
+  1555→                "  /apex explain [node] -- Explain any APEX node",
+  1556→                "  /apex trace [node] -- Trace an APEX graph's execution",
+  1557→                "  /apex recipes -- Browse APEX rigging recipes",
+  1558→                "  /apex recipes &lt;name&gt; -- Show recipe details",
+  1559→                "  /apex build &lt;recipe&gt; -- Build an APEX recipe",
+  1560→                "  /apex overview -- Introduction to APEX",
+  1561→                "  /apex concept &lt;name&gt; -- Look up an APEX concept",
+  1562→                "  /apex migrate -- KineFX to APEX migration guide",
+  1563→            ]
+  1564→            html_out = '<div style="color: {}; font-size: {}pt; margin: 4px 0;">{}</div>'.format(
+  1565→                color, sz, "<br>".join(help_lines),
+  1566→            )
+  1567→            self._chat_display.append(html_out)
+  1568→            sb = self._chat_display.verticalScrollBar()
+  1569→            sb.setValue(sb.maximum())
+  1570→
+  1571→        elif subcmd == "explain":
+  1572→            try:
+  1573→                from synapse.panel.apex_explainer import (
+  1574→                    gather_apex_context, build_apex_explain_prompt,
+  1575→                    build_apex_messages,
+  1576→                )
+  1577→            except ImportError as e:
+  1578→                self._sys("APEX explainer unavailable: " + str(e))
+  1579→                return
+  1580→
+  1581→            node_path = subarg.strip()
+  1582→            if not node_path:
+  1583→                try:
+  1584→                    sel = hou.selectedNodes()
+  1585→                    if sel:
+  1586→                        node_path = sel[0].path()
+  1587→                except Exception:
+  1588→                    pass
+  1589→            if not node_path:
+  1590→                self._sys("Select an APEX node first, or type /apex explain &lt;node_path&gt;")
+  1591→                return
+  1592→
+  1593→            context = gather_apex_context(node_path)
+  1594→            if context.get("errors") and not context.get("is_apex_node"):
+  1595→                for err in context["errors"]:
+  1596→                    self._sys(str(err))
+  1597→                return
+  1598→
+  1599→            explain_prompt = build_apex_explain_prompt(context)
+  1600→            messages = build_apex_messages(context)
+  1601→
+  1602→            try:
+  1603→                from synapse.panel.system_prompt import build_system_prompt
+  1604→                base = build_system_prompt(self._gather_context())
+  1605→            except ImportError:
+  1606→                base = "You are SYNAPSE, an AI co-pilot inside Houdini 21."
+  1607→            system_prompt = self._build_memory_system_prompt(base + "\n\n" + explain_prompt)
+  1608→
+  1609→            self._launch_worker(messages, system_prompt)
+  1610→
+  1611→            try:
+  1612→                from synapse.panel.session_journal import get_journal
+  1613→                get_journal().log_command("/apex", "explain {}".format(node_path))
+  1614→            except Exception:
+  1615→                pass
+  1616→
+  1617→        elif subcmd == "trace":
+  1618→            try:
+  1619→                from synapse.panel.apex_trace import (
+  1620→                    trace_apex_graph, format_apex_trace_html,
+  1621→                    build_apex_trace_prompt, build_apex_trace_messages,
+  1622→                )
+  1623→            except ImportError as e:
+  1624→                self._sys("APEX trace unavailable: " + str(e))
+  1625→                return
+  1626→
+  1627→            invoke_path = subarg.strip()
+  1628→            if not invoke_path:
+  1629→                try:
+  1630→                    sel = hou.selectedNodes()
+  1631→                    if sel:
+  1632→                        invoke_path = sel[0].path()
+  1633→                except Exception:
+  1634→                    pass
+  1635→            if not invoke_path:
+  1636→                self._sys("Select an APEX Invoke node first, or type /apex trace &lt;node_path&gt;")
+  1637→                return
+  1638→
+  1639→            trace = trace_apex_graph(invoke_path)
+  1640→
+  1641→            # Display trace HTML inline
+  1642→            self._chat_display.append(format_apex_trace_html(trace))
+  1643→            sb = self._chat_display.verticalScrollBar()
+  1644→            sb.setValue(sb.maximum())
+  1645→
+  1646→            # Also send to Claude for interpretation
+  1647→            trace_prompt = build_apex_trace_prompt(trace)
+  1648→            messages = build_apex_trace_messages(trace)
+  1649→
+  1650→            try:
+  1651→                from synapse.panel.system_prompt import build_system_prompt
+  1652→                base = build_system_prompt(self._gather_context())
+  1653→            except ImportError:
+  1654→                base = "You are SYNAPSE, an AI co-pilot inside Houdini 21."
+  1655→            system_prompt = self._build_memory_system_prompt(base + "\n\n" + trace_prompt)
+  1656→
+  1657→            self._launch_worker(messages, system_prompt)
+  1658→
+  1659→            self._log_activity("APEX trace: " + trace.summary, "info")
+  1660→
+  1661→            try:
+  1662→                from synapse.panel.session_journal import get_journal
+  1663→                get_journal().log_command("/apex", "trace {}".format(invoke_path))
+  1664→            except Exception:
+  1665→                pass
+  1666→
+  1667→        elif subcmd == "recipes":
+  1668→            if subarg:
+  1669→                # Show specific recipe detail
+  1670→                try:
+  1671→                    from synapse.panel.apex_recipes import format_apex_recipe_detail_html
+  1672→                except ImportError as e:
+  1673→                    self._sys("APEX recipes unavailable: " + str(e))
+  1674→                    return
+  1675→                self._chat_display.append(format_apex_recipe_detail_html(subarg.strip()))
+  1676→            else:
+  1677→                # Show all APEX recipes overview
+  1678→                try:
+  1679→                    from synapse.panel.apex_recipes import format_apex_recipes_html
+  1680→                except ImportError as e:
+  1681→                    self._sys("APEX recipes unavailable: " + str(e))
+  1682→                    return
+  1683→                self._chat_display.append(format_apex_recipes_html())
+  1684→            sb = self._chat_display.verticalScrollBar()
+  1685→            sb.setValue(sb.maximum())
+  1686→
+  1687→            try:
+  1688→                from synapse.panel.session_journal import get_journal
+  1689→                get_journal().log_command("/apex", "recipes {}".format(subarg).strip())
+  1690→            except Exception:
+  1691→                pass
+  1692→
+  1693→        elif subcmd == "build":
+  1694→            if not subarg:
+  1695→                self._sys("Usage: /apex build &lt;recipe_name&gt;")
+  1696→                return
+  1697→
+  1698→            try:
+  1699→                from synapse.panel.apex_recipes import (
+  1700→                    get_apex_recipe, build_apex_recipe_messages,
+  1701→                )
+  1702→            except ImportError as e:
+  1703→                self._sys("APEX recipes unavailable: " + str(e))
+  1704→                return
+  1705→
+  1706→            recipe_name = subarg.strip()
+  1707→            recipe = get_apex_recipe(recipe_name)
+  1708→            if recipe is None:
+  1709→                self._sys(
+  1710→                    "APEX recipe '{}' not found. Type /apex recipes to browse.".format(
+  1711→                        recipe_name
+  1712→                    )
+  1713→                )
+  1714→                return
+  1715→
+  1716→            context = self._gather_context()
+  1717→            parent_path = context.get("network", "/obj/geo1")
+  1718→            messages = build_apex_recipe_messages(
+  1719→                recipe_name, {"parent_path": parent_path}
+  1720→            )
+  1721→            if not messages:
+  1722→                self._sys("Could not build messages for this recipe.")
+  1723→                return
+  1724→
+  1725→            try:
+  1726→                from synapse.panel.system_prompt import build_system_prompt
+  1727→                base = build_system_prompt(context)
+  1728→            except ImportError:
+  1729→                base = "You are SYNAPSE, an AI co-pilot inside Houdini 21."
+  1730→            system_prompt = self._build_memory_system_prompt(base)
+  1731→
+  1732→            self._launch_worker(messages, system_prompt)
+  1733→
+  1734→            self._log_activity(
+  1735→                "Building APEX recipe: {}".format(recipe_name), "action"
+  1736→            )
+  1737→
+  1738→            try:
+  1739→                from synapse.panel.session_journal import get_journal
+  1740→                get_journal().log_command("/apex", "build {}".format(recipe_name))
+  1741→            except Exception:
+  1742→                pass
+  1743→
+  1744→        elif subcmd == "overview":
+  1745→            try:
+  1746→                from synapse.panel.apex_explainer import build_apex_overview_prompt
+  1747→            except ImportError as e:
+  1748→                self._sys("APEX explainer unavailable: " + str(e))
+  1749→                return
+  1750→
+  1751→            overview_prompt = build_apex_overview_prompt()
+  1752→            messages = [{"role": "user", "content": "Give me an introduction to APEX in Houdini 21."}]
+  1753→
+  1754→            try:
+  1755→                from synapse.panel.system_prompt import build_system_prompt
+  1756→                base = build_system_prompt(self._gather_context())
+  1757→            except ImportError:
+  1758→                base = "You are SYNAPSE, an AI co-pilot inside Houdini 21."
+  1759→            system_prompt = self._build_memory_system_prompt(base + "\n\n" + overview_prompt)
+  1760→
+  1761→            self._launch_worker(messages, system_prompt)
+  1762→
+  1763→            try:
+  1764→                from synapse.panel.session_journal import get_journal
+  1765→                get_journal().log_command("/apex", "overview")
+  1766→            except Exception:
+  1767→                pass
+  1768→
+  1769→        elif subcmd == "concept":
+  1770→            if not subarg:
+  1771→                # List all concept names
+  1772→                try:
+  1773→                    from synapse.panel.apex_explainer import APEX_CONCEPTS
+  1774→                except ImportError as e:
+  1775→                    self._sys("APEX explainer unavailable: " + str(e))
+  1776→                    return
+  1777→                names = sorted(APEX_CONCEPTS.keys())
+  1778→                color = SILVER if _HAS_DESIGN else "#999999"
+  1779→                sz = SIZE_SMALL if _HAS_DESIGN else 11
+  1780→                lines = ["<b>APEX Concepts:</b><br>"]
+  1781→                for name in names:
+  1782→                    title = APEX_CONCEPTS[name].get("title", name)
+  1783→                    lines.append("  <b>{}</b> -- {}<br>".format(name, title))
+  1784→                lines.append(
+  1785→                    '<br><span style="color: {}; font-size: {}pt;">'
+  1786→                    "Type /apex concept &lt;name&gt; for details.</span>".format(color, sz)
+  1787→                )
+  1788→                self._chat_display.append(
+  1789→                    '<div style="color: {};">{}</div>'.format(
+  1790→                        BONE if _HAS_DESIGN else "#CCCCCC",
+  1791→                        "\n".join(lines),
+  1792→                    )
+  1793→                )
+  1794→            else:
+  1795→                try:
+  1796→                    from synapse.panel.apex_explainer import format_concept_html, APEX_CONCEPTS
+  1797→                except ImportError as e:
+  1798→                    self._sys("APEX explainer unavailable: " + str(e))
+  1799→                    return
+  1800→                concept_key = subarg.strip().lower()
+  1801→                self._chat_display.append(format_concept_html(concept_key))
+  1802→            sb = self._chat_display.verticalScrollBar()
+  1803→            sb.setValue(sb.maximum())
+  1804→
+  1805→            try:
+  1806→                from synapse.panel.session_journal import get_journal
+  1807→                get_journal().log_command("/apex", "concept {}".format(subarg).strip())
+  1808→            except Exception:
+  1809→                pass
+  1810→
+  1811→        elif subcmd == "migrate":
+  1812→            try:
+  1813→                from synapse.panel.apex_recipes import KINEFX_MIGRATION_GUIDE
+  1814→            except ImportError as e:
+  1815→                self._sys("APEX recipes unavailable: " + str(e))
+  1816→                return
+  1817→
+  1818→            # Format migration guide as styled HTML
+  1819→            import html as _html_mod
+  1820→            escaped = _html_mod.escape(KINEFX_MIGRATION_GUIDE)
+  1821→            escaped = escaped.replace("\n", "<br>")
+  1822→            mono = FONT_MONO if _HAS_DESIGN else "monospace"
+  1823→            sz = SIZE_SMALL if _HAS_DESIGN else 11
+  1824→            self._chat_display.append(
+  1825→                '<div style="font-family: {}; font-size: {}pt; color: {}; '
+  1826→                'padding: 8px; line-height: 1.6;">{}</div>'.format(
+  1827→                    mono, sz,
+  1828→                    BONE if _HAS_DESIGN else "#CCCCCC",
+  1829→                    escaped,
+  1830→                )
+  1831→            )
+  1832→            sb = self._chat_display.verticalScrollBar()
+  1833→            sb.setValue(sb.maximum())
+  1834→
+  1835→            try:
+  1836→                from synapse.panel.session_journal import get_journal
+  1837→                get_journal().log_command("/apex", "migrate")
+  1838→            except Exception:
+  1839→                pass
+  1840→
+  1841→        else:
+  1842→            self._sys(
+  1843→                "Unknown APEX subcommand: {}. Type /apex help for available commands.".format(
+  1844→                    subcmd
+  1845→                )
+  1846→            )
+  1847→
+  1848→    # ── Welcome Experience ───────────────────────────────────
+  1849→
+  1850→    def _show_welcome(self):
+  1851→        """Display first-time welcome message in the chat area."""
+  1852→        signal = SIGNAL if _HAS_DESIGN else "#00D4FF"
+  1853→        text = BONE if _HAS_DESIGN else "#CCCCCC"
+  1854→        dim = SILVER if _HAS_DESIGN else "#999999"
+  1855→        sz = SIZE_BODY if _HAS_DESIGN else 13
+  1856→        sz_sm = SIZE_SMALL if _HAS_DESIGN else 11
+  1857→        html = (
+  1858→            '<div style="color: {text}; font-size: {sz}pt; margin: 12px 8px;">'
+  1859→            '<b style="color: {signal}; font-size: {sz_lg}pt;">SYNAPSE</b>'
+  1860→            '<br><br>'
+  1861→            "I'm here to help you build, learn, and ship."
+  1862→            '<br><br>'
+  1863→            '<span style="color: {dim};">Three things to try:</span>'
+  1864→            '<br>'
+  1865→            '<b style="color: {signal};">Tell me what to build</b> '
+  1866→            '-- "create a grid with mountain displacement"'
+  1867→            '<br>'
+  1868→            '<b style="color: {signal};">Ask me to explain</b> '
+  1869→            '-- select a node and type <b>/explain</b>'
+  1870→            '<br>'
+  1871→            '<b style="color: {signal};">Check your work</b> '
+  1872→            '-- <b>/diagnose</b> scans for problems'
+  1873→            '<br><br>'
+  1874→            '<span style="color: {dim}; font-size: {sz_sm}pt;">'
+  1875→            'Type anything to get started. <b>/help</b> shows all commands.'
+  1876→            '</span>'
+  1877→            '</div>'
+  1878→        ).format(
+  1879→            text=text, signal=signal, dim=dim,
+  1880→            sz=sz, sz_sm=sz_sm,
+  1881→            sz_lg=SIZE_TITLE if _HAS_DESIGN else 16,
+  1882→        )
+  1883→        self._chat_display.append(html)
+  1884→
+  1885→    def _chat(self, user_text):
+  1886→        """Send a message to Claude and stream the response."""
+  1887→        # Display user message
+  1888→        user_color = SIGNAL if _HAS_DESIGN else "#00D4FF"
+  1889→        user_html = (
+  1890→            '<div style="margin: 8px 0 4px 0;">'
+  1891→            '<b style="color: {};">You</b></div>'
+  1892→            '<div style="margin: 0 0 8px 10px;">{}</div>'
+  1893→        ).format(user_color, user_text.replace("\n", "<br>"))
+  1894→        self._chat_display.append(user_html)
+  1895→
+  1896→        # Append to conversation history
+  1897→        self._messages.append({"role": "user", "content": user_text})
+  1898→
+  1899→        # Build system prompt
+  1900→        try:
+  1901→            from synapse.panel.system_prompt import build_system_prompt
+  1902→            system_prompt = build_system_prompt(self._gather_context())
+  1903→        except ImportError:
+  1904→            system_prompt = (
+  1905→                "You are SYNAPSE, an AI co-pilot inside Houdini 21. "
+  1906→                "Help the artist with VFX tasks."
+  1907→            )
+  1908→        system_prompt = self._build_memory_system_prompt(system_prompt)
+  1909→
+  1910→        self._launch_worker(self._messages, system_prompt)
+  1911→
+  1912→    def _on_token(self, text):
+  1913→        """Handle a streamed text token from the worker."""
+  1914→        self._streaming_text += text
+  1915→        # Move cursor to end and insert text
+  1916→        cursor = self._chat_display.textCursor()
+  1917→        cursor.movePosition(QtGui.QTextCursor.End)
+  1918→        cursor.insertText(text)
+  1919→        self._chat_display.setTextCursor(cursor)
+  1920→        sb = self._chat_display.verticalScrollBar()
+  1921→        sb.setValue(sb.maximum())
+  1922→
+  1923→    def _on_done(self):
+  1924→        """Handle stream completion."""
+  1925→        # Close the streaming div
+  1926→        cursor = self._chat_display.textCursor()
+  1927→        cursor.movePosition(QtGui.QTextCursor.End)
+  1928→        cursor.insertHtml("</div>")
+  1929→        self._chat_display.setTextCursor(cursor)
+  1930→
+  1931→        self._send_btn.setEnabled(True)
+  1932→
+  1933→        # Sync conversation history from the worker (includes tool loop turns)
+  1934→        if self._worker:
+  1935→            self._messages = self._worker.get_messages()
+  1936→
+  1937→    def _on_error(self, error_msg):
+  1938→        """Handle stream error with optional translation."""
+  1939→        # Try to translate the error into a coaching-tone explanation
+  1940→        try:
+  1941→            from synapse.panel.error_translator import translate_error, format_translation_html
+  1942→            translation = translate_error(error_msg)
+  1943→            if translation:
+  1944→                self._chat_display.append(format_translation_html(translation))
+  1945→                sb = self._chat_display.verticalScrollBar()
+  1946→                sb.setValue(sb.maximum())
+  1947→                self._send_btn.setEnabled(True)
+  1948→                # Log to journal
+  1949→                try:
+  1950→                    from synapse.panel.session_journal import get_journal
+  1951→                    get_journal().log_event("ERROR", error_msg[:200])
+  1952→                except Exception:
+  1953→                    pass
+  1954→                return
+  1955→        except ImportError:
+  1956→            pass
+  1957→
+  1958→        # No pattern match or translator unavailable -- show raw error
+  1959→        error_color = ERROR if _HAS_DESIGN else "#FF3D71"
+  1960→        self._chat_display.append(
+  1961→            '<div style="color: {}; margin: 4px 0 8px 10px;">'
+  1962→            'We hit a snag: {}</div>'.format(error_color, error_msg[:300])
+  1963→        )
+  1964→        self._send_btn.setEnabled(True)
+  1965→        # Log to journal
+  1966→        try:
+  1967→            from synapse.panel.session_journal import get_journal
+  1968→            get_journal().log_event("ERROR", error_msg[:200])
+  1969→        except Exception:
+  1970→            pass
+  1971→
+  1972→    def _on_tool_status(self, tool_name, status):
+  1973→        """Display a compact inline indicator showing tool execution status."""
+  1974→        icons = {"running": "\u2699", "done": "\u2713", "error": "\u2717"}
+  1975→        colors = {
+  1976→            "running": FIRE if _HAS_DESIGN else "#FF6B35",
+  1977→            "done": GROW if _HAS_DESIGN else "#00E676",
+  1978→            "error": ERROR if _HAS_DESIGN else "#FF3D71",
+  1979→        }
+  1980→        display = tool_name.replace("houdini_", "").replace("synapse_", "")
+  1981→        display = display.replace("_", " ").title()
+  1982→        text_sec = SILVER if _HAS_DESIGN else "#999999"
+  1983→        color = colors.get(status, text_sec)
+  1984→        icon = icons.get(status, "")
+  1985→        sz = SIZE_SMALL if _HAS_DESIGN else 11
+  1986→        html = (
+  1987→            '<div style="margin:2px 0 2px 20px; padding:3px 10px; '
+  1988→            'font-size:{}pt; color:{}; '
+  1989→            'border-left:2px solid {};">'
+  1990→            '{} {}'
+  1991→            '</div>'
+  1992→        ).format(sz, color, color, icon, display)
+  1993→        self._chat_display.append(html)
+  1994→        sb = self._chat_display.verticalScrollBar()
+  1995→        sb.setValue(sb.maximum())
+  1996→
+  1997→        # Log completed/failed tool executions to the session journal
+  1998→        if status in ("done", "error"):
+  1999→            try:
+  2000→                from synapse.panel.session_journal import get_journal
+  2001→                get_journal().log_tool(
+  2002→                    tool_name, {}, None,
+  2003→                    error=("Tool error" if status == "error" else None),
+  2004→                )
+  2005→            except Exception:
+  2006→                pass
+  2007→
+  2008→    # ── Server Controls ──────────────────────────────────
+  2009→
+  2010→    def _on_connect_toggle(self):
+  2011→        """Start or stop the WebSocket server."""
+  2012→        if self._server and getattr(self._server, "_running", False):
+  2013→            # Stop the server
+  2014→            self._stop_server()
+  2015→        else:
+  2016→            # Start the server
+  2017→            self._start_server()
+  2018→
+  2019→    # ── Sprint 5: Command Palette ───────────────────────────
+  2020→
+  2021→    def _show_palette(self):
+  2022→        """Open the fuzzy-search command palette (Ctrl+K)."""
+  2023→        try:
+  2024→            from synapse.panel.command_palette import CommandPaletteWidget
+  2025→        except ImportError:
+  2026→            self._sys("Command palette not available")
+  2027→            return
+  2028→
+  2029→        if self._palette is None:
+  2030→            self._palette = CommandPaletteWidget(parent=self)
+  2031→            self._palette.command_selected.connect(self._on_palette_command)
+  2032→
+  2033→        # Feed recent journal entries if available
+  2034→        recent = []
+  2035→        try:
+  2036→            from synapse.panel.session_journal import get_journal
+  2037→            recent = get_journal().get_entries(10)
+  2038→        except Exception:
+  2039→            pass
+  2040→
+  2041→        self._palette.show_palette(recent)
+  2042→
+  2043→    def _on_palette_command(self, command):
+  2044→        """Handle a command selected from the palette."""
+  2045→        self._route_cmd(command)
+  2046→
+  2047→    # ── Sprint 5: Bookmarks ──────────────────────────────────
+  2048→
+  2049→    def _do_bookmark(self, arg=""):
+  2050→        """Handle /bookmark commands."""
+  2051→        try:
+  2052→            from synapse.panel.bookmarks import (
+  2053→                get_bookmark_manager, parse_bookmark_command,
+  2054→                format_bookmarks_html,
+  2055→            )
+  2056→        except ImportError:
+  2057→            self._sys("Bookmarks not available")
+  2058→            return
+  2059→
+  2060→        parsed = parse_bookmark_command(
+  2061→            "/bookmark " + arg if arg else "/bookmark"
+  2062→        )
+  2063→        manager = get_bookmark_manager()
+  2064→
+  2065→        if parsed["action"] == "list":
+  2066→            bookmarks = manager.get_all()
+  2067→            html = format_bookmarks_html(bookmarks)
+  2068→            self._chat_display.append(html)
+  2069→
+  2070→        elif parsed["action"] == "add":
+  2071→            # Bookmark the last assistant message
+  2072→            preview = ""
+  2073→            msg_idx = len(self._messages) - 1
+  2074→            if self._messages:
+  2075→                last = self._messages[-1]
+  2076→                if isinstance(last.get("content"), str):
+  2077→                    preview = last["content"][:100]
+  2078→                elif isinstance(last.get("content"), list):
+  2079→                    for block in last["content"]:
+  2080→                        if isinstance(block, dict) and block.get("type") == "text":
+  2081→                            preview = block["text"][:100]
+  2082→                            break
+  2083→
+  2084→            bookmark = manager.add(parsed["label"], msg_idx, preview)
+  2085→            self._sys("Bookmarked: {}".format(bookmark.label))
+  2086→
+  2087→            # Log to journal
+  2088→            try:
+  2089→                from synapse.panel.session_journal import get_journal
+  2090→                get_journal().log_command("/bookmark", bookmark.label)
+  2091→            except Exception:
+  2092→                pass
+  2093→
+  2094→        elif parsed["action"] == "search":
+  2095→            results = manager.search(parsed["query"])
+  2096→            html = format_bookmarks_html(results, parsed["query"])
+  2097→            self._chat_display.append(html)
+  2098→
+  2099→        elif parsed["action"] == "remove":
+  2100→            if manager.remove(parsed["id"]):
+  2101→                self._sys("Bookmark removed")
+  2102→            else:
+  2103→                self._sys("Bookmark not found: " + parsed["id"])
+  2104→
+  2105→        sb = self._chat_display.verticalScrollBar()
+  2106→        sb.setValue(sb.maximum())
+  2107→
+  2108→    # ── Sprint 5: Results Display ────────────────────────────
+  2109→
+  2110→    def _show_results(self, html, title=""):
+  2111→        """Show structured results in the chat with a visual separator."""
+  2112→        separator = '<div style="margin:8px 0; border-top:1px solid #484848;"></div>'
+  2113→        if title:
+  2114→            header = (
+  2115→                '<div style="font-weight:bold; color:#e8833a;'
+  2116→                ' margin:4px 0;">{}</div>'.format(title)
+  2117→            )
+  2118→            self._chat_display.append(separator + header + html)
+  2119→        else:
+  2120→            self._chat_display.append(separator + html)
+  2121→
+  2122→        sb = self._chat_display.verticalScrollBar()
+  2123→        sb.setValue(sb.maximum())
+  2124→
+  2125→    def _start_server(self):
+  2126→        """Start the Synapse WebSocket server."""
+  2127→        # Check for zombie server first
+  2128→        existing = _find_running_server()
+  2129→        if existing:
+  2130→            self._server = existing
+  2131→            hou.session._synapse_server = existing
+  2132→            port = getattr(existing, "_actual_port", _PORT)
+  2133→            self._set_status("connected", "port {}".format(port))
+  2134→            self._log_activity("Found running server on port {}".format(port), "success")
+  2135→            self._health_timer.start()
+  2136→            return
+  2137→
+  2138→        SynapseServer = _get_server_module()
+  2139→        if SynapseServer is None:
+  2140→            self._log_activity(
+  2141→                "Couldn't import SynapseServer -- is the synapse package installed?",
+  2142→                "error",
+  2143→            )
+  2144→            self._set_status("error", "import failed")
+  2145→            return
+  2146→
+  2147→        self._log_activity("Starting server...", "action")
+  2148→        self._set_status("executing", "Starting")
+  2149→
+  2150→        try:
+  2151→            self._server = SynapseServer(host="localhost", port=_PORT)
+  2152→            self._server.start()
+  2153→            hou.session._synapse_server = self._server
+  2154→        except Exception as e:
+  2155→            self._log_activity("Server failed to start: {}".format(e), "error")
+  2156→            self._set_status("error", str(e)[:40])
+  2157→            self._server = None
+  2158→            return
+  2159→
+  2160→        # Give the background thread a moment to bind
+  2161→        port = getattr(self._server, "_actual_port", _PORT)
+  2162→        self._set_status("connected", "port {}".format(port))
+  2163→        self._log_activity(
+  2164→            "Server listening on port {}".format(port), "success"
+  2165→        )
+  2166→        self._health_timer.start()
+  2167→
+  2168→    def _stop_server(self):
+  2169→        """Stop the Synapse WebSocket server."""
+  2170→        self._health_timer.stop()
+  2171→        if self._server:
+  2172→            self._log_activity("Stopping server...", "action")
+  2173→            try:
+  2174→                self._server.stop()
+  2175→            except Exception as e:
+  2176→                self._log_activity("Stop error: {}".format(e), "warning")
+  2177→            self._server = None
+  2178→        self._set_status("disconnected")
+  2179→        self._log_activity("Server stopped", "warning")
+  2180→
+  2181→    def _poll_server_health(self):
+  2182→        """Periodic check that the server is still running + hip change detection."""
+  2183→        # Check if hip file changed (re-login if needed)
+  2184→        try:
+  2185→            current_hip = hou.hipFile.path()
+  2186→            from synapse.panel.shot_login import check_login_needed
+  2187→            if check_login_needed(current_hip, self._last_hip):
+  2188→                self._do_shot_login()
+  2189→        except Exception:
+  2190→            pass
+  2191→
+  2192→        # Sprint 5: Update context bar on each health poll
+  2193→        if self._context_bar_widget is not None:
+  2194→            try:
+  2195→                from synapse.panel.context_bar import (
+  2196→                    update_context, update_context_bar_widget,
+  2197→                )
+  2198→                self._context_bar_state = update_context(
+  2199→                    self._login_data, self._last_diagnosis,
+  2200→                )
+  2201→                update_context_bar_widget(
+  2202→                    self._context_bar_widget, self._context_bar_state,
+  2203→                )
+  2204→                # Re-wire any new quick-action buttons
+  2205→                for btn in self._context_bar_widget.findChildren(
+  2206→                    QtWidgets.QPushButton,
+  2207→                ):
+  2208→                    cmd = btn.property("command")
+  2209→                    if cmd:
+  2210→                        try:
+  2211→                            btn.clicked.disconnect()
+  2212→                        except Exception:
+  2213→                            pass
+  2214→                        btn.clicked.connect(
+  2215→                            lambda checked=False, c=cmd: self._route_cmd(c)
+  2216→                        )
+  2217→            except Exception:
+  2218→                pass
+  2219→
+  2220→        if self._server and getattr(self._server, "_running", False):
+  2221→            # Server is alive
+  2222→            if self._status not in ("connected", "idle", "executing"):
+  2223→                port = getattr(self._server, "_actual_port", _PORT)
+  2224→                self._set_status("connected", "port {}".format(port))
+  2225→            clients = len(getattr(self._server, "_clients", set()))
+  2226→            if clients:
+  2227→                self._status_detail.setText(
+  2228→                    "{} client{}".format(clients, "s" if clients != 1 else "")
+  2229→                )
+  2230→        else:
+  2231→            # Server died unexpectedly
+  2232→            if self._status in ("connected", "idle", "executing"):
+  2233→                self._log_activity("Server stopped unexpectedly", "error")
+  2234→                self._set_status("disconnected")
+  2235→                self._server = None
+  2236→                self._health_timer.stop()
+  2237→
+  2238→
+  2239→# ── Houdini Python Panel Interface ───────────────────────
+  2240→
+  2241→def onCreateInterface():
+  2242→    """Called by Houdini to create the panel widget."""
+  2243→    return SynapsePanel()
+  2244→]]></script>
+  2245→  </interface>
+  2246→</pythonPanelDocument>
+  2247→

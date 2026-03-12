@@ -1,0 +1,786 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
+
+// Photo data with aspect ratios - edit this array to reorder/remove photos
+// Format: [filename, width, height] - width/height define the aspect ratio
+const photos: [string, number, number][] = [
+  ['000013090007_hr.jpg', 3, 2],
+  ['000015850003_hr.jpg', 2, 3],
+  ['000015850007_hr.jpg', 2, 3],
+  ['000015860010_hr.jpg', 2, 3],
+  ['000017450005_Ketruah_hr.jpg', 2, 3],
+  ['000017460005_RET_Ketruah_hr.jpg', 2, 3],
+  ['000017460009.jpg', 3, 2],
+  ['000017460010_Ketruah_hr.jpg', 2, 3],
+  ['000017490004_hr.jpg', 2, 3],
+  ['000017510010_hr.jpg', 2, 3],
+  ['000017520001_hr.jpg', 2, 3],
+  ['000017520003_hr.jpg', 2, 3],
+  ['000017790006_hr.jpg', 2, 3],
+  ['000071810006.jpg', 3, 2],
+  ['000071820004.jpg', 3, 2],
+  ['000215750005.jpg', 3, 2],
+  ['000250810008_hr.jpg', 2, 3],
+  ['000269770010.jpg', 3, 2],
+  ['000269780009.jpg', 3, 2],
+  ['000269800007.jpg', 3, 2],
+  ['000269810007_RET_anaB.jpg', 2, 3],
+  ['000269810009.jpg', 3, 2],
+  ['0002698500051_anaB.jpg', 2, 3],
+  ['000275960010_RET_hr.jpg', 3, 2],
+  ['000275990002_RET_hr.jpg', 2, 3],
+  ['000275990004 1_hr.jpg', 3, 2],
+  ['000276010009 1_hr.jpg', 2, 3],
+  ['000287830006.jpg', 3, 2],
+  ['000287850005.jpg', 3, 2],
+  ['000287850007_hr.jpg', 3, 2],
+  ['000288280003.jpg', 3, 2],
+  ['000288280006.jpg', 3, 2],
+  ['000288300003.jpg', 3, 2],
+  ['000288310006.jpg', 3, 2],
+  ['000296440008_RET_hr.jpg', 3, 2],
+  ['000296460005.jpg', 3, 2],
+  ['000296460007_RET_hr.jpg', 2, 3],
+  ['000296490006.jpg', 3, 2],
+  ['000335780002.jpg', 3, 2],
+  ['000335780005.jpg', 3, 2],
+  ['000335800007_RET_hr.jpg', 2, 3],
+  ['000335820008_hr.jpg', 2, 3],
+  ['000335820010_RET_hr.jpg', 2, 3],
+  ['000348070003.jpg', 3, 2],
+  ['000348090002.jpg', 3, 2],
+  ['000348130009.jpg', 3, 2],
+  ['000350750002_hr.jpg', 2, 3],
+  ['000350750003_hr.jpg', 2, 3],
+  ['000350750008.jpg', 3, 2],
+  ['000350750009.jpg', 3, 2],
+  ['000471890001_marisa_muse_cg_hr.jpg', 2, 3],
+  ['000471900001_marisa_muse_cg_hr.jpg', 2, 3],
+  ['000471910008_marisa_muse_cg_hr.jpg', 2, 3],
+  ['000471950003.jpg', 3, 2],
+  ['000472020007_hr.jpg', 2, 3],
+  ['000472020009_RET_hr.jpg', 2, 3],
+  ['000502830003_AnnaU_fenton_hr_.jpg', 2, 3],
+  ['000502830010_AnnaU_fenton_hr_.jpg', 2, 3],
+  ['000502850001_AnnaU_fenton_hr_.jpg', 2, 3],
+  ['000502880004_AnnaU_fenton_hr_.jpg', 2, 3],
+  ['000514810010_emilyK_outtake_hr.jpg', 2, 3],
+  ['000514820009_emiilyK_hr.jpg', 2, 3],
+  ['000514840001_EmilyK_hr.jpg', 2, 3],
+  ['000514840003_RET_emilyK_hr.jpg', 2, 3],
+  ['000514860003_emilyK_outtake_hr.jpg', 2, 3],
+  ['000514870003_RET_emilyK_hr.jpg', 2, 3],
+  ['000514870005_emiilyK_hr.jpg', 2, 3],
+  ['000514870007_RET_emilyK_hr.jpg', 2, 3],
+  ['000517490007_RET_madeleine_hr.jpg', 2, 3],
+  ['000517500005.jpg', 3, 2],
+  ['000517530002_madeleine_hr.jpg', 2, 3],
+  ['000517550008.jpg', 3, 2],
+  ['000517570008.jpg', 3, 2],
+  ['000517580007.jpg', 3, 2],
+  ['000518390008.jpg', 3, 2],
+  ['000541860008_Indu_hr.jpg', 2, 3],
+  ['000541870004_Indu_hr.jpg', 2, 3],
+  ['000541890001.jpg', 3, 2],
+  ['000541890004_Indu_hr.jpg', 2, 3],
+  ['000541900006_Indu_hr.jpg', 2, 3],
+  ['Anna_RM_RH_10232018_19594.jpg', 2, 3],
+  ['AnnaB_film_RH10232018_000144620007_hr.jpg', 3, 2],
+  ['antoniaD_film_10162018_000137660005 1_hr.jpg', 3, 2],
+  ['antoniaD_film_10162018_000137670002 1_hr.jpg', 2, 3],
+  ['JahmalChase_Film_01252019_000204720004_hr.jpg', 2, 3],
+  ['JahmalChase_Film_01252019_000204760006_hr.jpg', 3, 2],
+  ['JahmalChase_FilmBW_01252019_000205210001_hr.jpg', 2, 3],
+  ['JerudysS_film_gowanus_11112018_000159190003 1_hr 1.jpg', 2, 3],
+  ['maya_w360_film_02012019_000215750010_hr.jpg', 2, 3],
+  ['NatalieK_Film_12112018_000180850010_hr.jpg', 2, 3],
+  ['NatalieK_Film_12112018_000180880007_hr.jpg', 3, 2],
+  ['NatalieK_Film_12112018_000180890004_duvydk-hr-standard v2-hr.jpg', 3, 2],
+  ['Robert_FM_07072018_000038300006_hr_.jpg', 3, 2],
+];
+
+// Light table warm-up effect configuration (2x faster)
+const WARMUP_CONFIG = {
+  staggerMin: 10,           // Min delay between photos appearing (ms)
+  staggerMax: 40,           // Max delay between photos appearing (ms)
+  totalDuration: 1000,      // Approximate total warm-up time (ms)
+};
+
+// Cascading glow effect configuration (runs after warm-up) - 2x faster
+const GLOW_CONFIG = {
+  initialDelay: 750,        // Delay after warm-up before glow starts (ms)
+  staggerDelay: 30,         // Delay between each photo lighting up (ms)
+  glowDuration: 1250,       // How long each photo stays illuminated (ms)
+  pauseBetweenWaves: 2000,  // Pause before next cascade wave (ms)
+  photosPerWave: 12,        // How many photos light up per wave
+};
+
+export default function PhotographyPage() {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [slideshowVisible, setSlideshowVisible] = useState(false);
+  const [glowingPhotos, setGlowingPhotos] = useState<Set<number>>(new Set());
+  const [warmedUpPhotos, setWarmedUpPhotos] = useState<Set<number>>(new Set());
+  const [isWarmupComplete, setIsWarmupComplete] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Track mount state to prevent layout shift
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Light table warm-up effect - photos appear randomly like a warming light table
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const timeouts: NodeJS.Timeout[] = [];
+
+    // Create randomized order for photos to appear
+    const indices = Array.from({ length: photos.length }, (_, i) => i);
+    const shuffled = indices.sort(() => Math.random() - 0.5);
+
+    // Calculate stagger delays that add up to roughly totalDuration
+    let currentDelay = 50; // Small initial delay (2x faster)
+
+    shuffled.forEach((photoIndex, i) => {
+      const randomStagger = WARMUP_CONFIG.staggerMin +
+        Math.random() * (WARMUP_CONFIG.staggerMax - WARMUP_CONFIG.staggerMin);
+
+      currentDelay += randomStagger;
+
+      const timeout = setTimeout(() => {
+        setWarmedUpPhotos(prev => {
+          const next = new Set(prev);
+          next.add(photoIndex);
+          return next;
+        });
+      }, currentDelay);
+
+      timeouts.push(timeout);
+    });
+
+    // Mark warm-up as complete after all photos have appeared
+    const completeTimeout = setTimeout(() => {
+      setIsWarmupComplete(true);
+    }, currentDelay + 250);
+
+    timeouts.push(completeTimeout);
+
+    return () => {
+      timeouts.forEach(t => clearTimeout(t));
+    };
+  }, [isMounted]);
+
+  // Detect if device supports hover (desktop)
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+    setIsDesktop(mediaQuery.matches);
+
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+
+  // Cascading light effect - photos illuminate in waves with staggered timing
+  // Only starts after warm-up is complete
+  useEffect(() => {
+    if (!isDesktop || selectedIndex !== null || !isWarmupComplete) return;
+
+    const timeouts: NodeJS.Timeout[] = [];
+    let waveTimeout: NodeJS.Timeout | null = null;
+
+    const startCascadeWave = () => {
+      // Clear any existing timeouts
+      timeouts.forEach(t => clearTimeout(t));
+      timeouts.length = 0;
+
+      // Pick random starting positions for this wave
+      const availableIndices = Array.from({ length: photos.length }, (_, i) => i);
+      const shuffled = availableIndices.sort(() => Math.random() - 0.5);
+      const wavePhotos = shuffled.slice(0, GLOW_CONFIG.photosPerWave);
+
+      // Cascade: light up each photo with staggered delay
+      wavePhotos.forEach((photoIndex, i) => {
+        // Stagger the turn-on
+        const turnOnTimeout = setTimeout(() => {
+          setGlowingPhotos(prev => {
+            const next = new Set(prev);
+            next.add(photoIndex);
+            return next;
+          });
+        }, i * GLOW_CONFIG.staggerDelay);
+
+        timeouts.push(turnOnTimeout);
+
+        // Stagger the turn-off (same order, after glow duration)
+        const turnOffTimeout = setTimeout(() => {
+          setGlowingPhotos(prev => {
+            const next = new Set(prev);
+            next.delete(photoIndex);
+            return next;
+          });
+        }, i * GLOW_CONFIG.staggerDelay + GLOW_CONFIG.glowDuration);
+
+        timeouts.push(turnOffTimeout);
+      });
+
+      // Schedule next wave after this one completes
+      const totalWaveDuration =
+        (GLOW_CONFIG.photosPerWave * GLOW_CONFIG.staggerDelay) +
+        GLOW_CONFIG.glowDuration +
+        GLOW_CONFIG.pauseBetweenWaves;
+
+      waveTimeout = setTimeout(startCascadeWave, totalWaveDuration);
+    };
+
+    // Start after initial delay
+    const initialTimeout = setTimeout(startCascadeWave, GLOW_CONFIG.initialDelay);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      if (waveTimeout) clearTimeout(waveTimeout);
+      timeouts.forEach(t => clearTimeout(t));
+      setGlowingPhotos(new Set());
+    };
+  }, [isDesktop, selectedIndex, isWarmupComplete]);
+
+  // Open slideshow with animation
+  const openSlideshow = useCallback((index: number) => {
+    setSelectedIndex(index);
+    requestAnimationFrame(() => {
+      setSlideshowVisible(true);
+    });
+  }, []);
+
+  // Close slideshow with animation
+  const closeSlideshow = useCallback(() => {
+    setSlideshowVisible(false);
+    setTimeout(() => {
+      setSelectedIndex(null);
+    }, 400);
+  }, []);
+
+  const goToNext = useCallback(() => {
+    if (selectedIndex !== null && !isTransitioning) {
+      setIsTransitioning(true);
+      setSelectedIndex((selectedIndex + 1) % photos.length);
+      setTimeout(() => setIsTransitioning(false), 300);
+    }
+  }, [selectedIndex, isTransitioning]);
+
+  const goToPrev = useCallback(() => {
+    if (selectedIndex !== null && !isTransitioning) {
+      setIsTransitioning(true);
+      setSelectedIndex((selectedIndex - 1 + photos.length) % photos.length);
+      setTimeout(() => setIsTransitioning(false), 300);
+    }
+  }, [selectedIndex, isTransitioning]);
+
+  // Keyboard navigation for slideshow
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (selectedIndex === null) return;
+
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        goToNext();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goToPrev();
+      } else if (e.key === 'Escape') {
+        closeSlideshow();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIndex, goToNext, goToPrev, closeSlideshow]);
+
+  // Handle keyboard interaction on thumbnail (Enter/Space to open)
+  const handleThumbnailKeyDown = useCallback((e: React.KeyboardEvent, index: number) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openSlideshow(index);
+    }
+  }, [openSlideshow]);
+
+  // Lock body scroll when slideshow is open
+  useEffect(() => {
+    if (selectedIndex !== null) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [selectedIndex]);
+
+  return (
+    <main
+      className="min-h-screen photo-page"
+      style={{
+        backgroundColor: '#141414'
+      }}
+    >
+      {/* Header Section - Editorial description */}
+      <section className="photo-section">
+        {/* Description - Editorial serif quote style */}
+        <p
+          style={{
+            color: '#9a9a9a',
+            fontFamily: 'var(--font-display)',
+            fontWeight: 400,
+            fontSize: 'clamp(17px, 1.2vw + 13px, 21px)',
+            lineHeight: 1.75,
+            letterSpacing: '0.01em',
+            maxWidth: '680px',
+            marginBottom: 'clamp(48px, 5vw + 24px, 88px)'
+          }}
+        >
+          Made in New York between 2018 and 2020, these fashion portraits were shot in natural light on medium-format film—first as model tests for leading agencies, later featured on PhotoVogue with multiple "Best of the Day" selections. Today they serve as reference for generative lighting models, carrying analog intention into computational work.
+        </p>
+      </section>
+
+      {/* Masonry-style Grid using CSS Columns */}
+      <section className="photo-section">
+        <div
+          className="photo-grid"
+          style={{
+            opacity: isMounted ? 1 : 0,
+            visibility: isMounted ? 'visible' : 'hidden',
+          }}
+        >
+          {photos.map(([filename, w, h], index) => {
+            const isWarmedUp = warmedUpPhotos.has(index);
+            const isGlowing = glowingPhotos.has(index);
+            return (
+              <div
+                key={filename}
+                role="button"
+                tabIndex={0}
+                onClick={() => openSlideshow(index)}
+                onKeyDown={(e) => handleThumbnailKeyDown(e, index)}
+                className={`photo-thumbnail ${isWarmedUp ? 'photo-warmed' : ''} ${isGlowing ? 'photo-glowing' : ''}`}
+                aria-label={`View photo ${index + 1}`}
+              >
+                <Image
+                  src={`/photos/${filename}`}
+                  alt={`Photography ${index + 1}`}
+                  width={600}
+                  height={600 * (h / w)}
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                  style={{
+                    width: '100%',
+                    height: 'auto',
+                    display: 'block',
+                    borderRadius: '6px',
+                  }}
+                  priority={index < 8}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Divider - Pentagram style */}
+      <div
+        className="photo-section"
+        style={{ height: '1px', backgroundColor: '#222222', marginTop: 'clamp(72px, 6vw + 32px, 120px)', marginBottom: 'clamp(48px, 4vw + 24px, 72px)' }}
+      />
+
+      {/* Related Work - Pentagram style hierarchy */}
+      <section className="photo-section" style={{ marginBottom: 'clamp(64px, 5vw + 32px, 96px)' }}>
+        <p
+          style={{
+            color: '#5a5a5a',
+            fontFamily: 'var(--font-display)',
+            fontWeight: 600,
+            fontSize: '11px',
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            marginBottom: '24px'
+          }}
+        >
+          Related Work
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '36px' }}>
+          {[
+            { title: '2025 Reel', type: null, slug: 'general-reel' },
+            { title: 'Play with Oreo', type: 'Commercial', slug: 'play-with-oreo' },
+            { title: 'Twizzlers', type: 'Commercial', slug: 'twizzlers-oz' },
+          ].map((project) => (
+            <Link
+              key={project.slug}
+              href={`/projects/${project.slug}`}
+              className="group"
+              style={{ textDecoration: 'none' }}
+            >
+              <p
+                style={{
+                  color: '#d0d0d0',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 400,
+                  fontSize: '18px',
+                  letterSpacing: '0.01em',
+                  lineHeight: 1.3,
+                  marginBottom: project.type ? '8px' : '0',
+                  transition: 'color 0.25s ease'
+                }}
+                className="group-hover:text-white"
+              >
+                {project.title}
+              </p>
+              {project.type && (
+                <p
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    fontSize: '11px',
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase'
+                  }}
+                >
+                  {project.type}
+                </p>
+              )}
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Full-screen Slideshow Overlay */}
+      {selectedIndex !== null && (
+        <div
+          className="slideshow-overlay"
+          style={{
+            opacity: slideshowVisible ? 1 : 0
+          }}
+        >
+          {/* Close button - Pentagram style: subtle, refined */}
+          <button
+            onClick={closeSlideshow}
+            style={{
+              position: 'absolute',
+              top: 'clamp(20px, 2.5vw + 10px, 36px)',
+              right: 'clamp(20px, 2.5vw + 10px, 36px)',
+              padding: '12px',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              opacity: 0.4,
+              transition: 'opacity 0.3s ease',
+              zIndex: 10
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.4')}
+            aria-label="Close"
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--text-muted)"
+              strokeWidth="1"
+              strokeLinecap="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+
+          {/* Navigation: Previous - Pentagram style */}
+          <button
+            onClick={(e) => { e.stopPropagation(); goToPrev(); }}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: 'clamp(12px, 2vw + 6px, 28px)',
+              transform: 'translateY(-50%)',
+              padding: '20px 16px',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              opacity: 0.3,
+              transition: 'opacity 0.3s ease',
+              zIndex: 10
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.3')}
+            aria-label="Previous"
+          >
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--text-muted)"
+              strokeWidth="1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+
+          {/* Navigation: Next - Pentagram style */}
+          <button
+            onClick={(e) => { e.stopPropagation(); goToNext(); }}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              right: 'clamp(12px, 2vw + 6px, 28px)',
+              transform: 'translateY(-50%)',
+              padding: '20px 16px',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              opacity: 0.3,
+              transition: 'opacity 0.3s ease',
+              zIndex: 10
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.3')}
+            aria-label="Next"
+          >
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--text-muted)"
+              strokeWidth="1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+
+          {/* Image counter - Pentagram style: matches label typography */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 'clamp(20px, 2.5vw + 10px, 36px)',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              color: '#5a5a5a',
+              fontFamily: 'var(--font-display)',
+              fontSize: '11px',
+              fontWeight: 600,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase'
+            }}
+          >
+            {selectedIndex + 1} / {photos.length}
+          </div>
+
+          {/* Main image container */}
+          <div
+            onClick={goToNext}
+            className="slideshow-image-container"
+          >
+            <div
+              style={{
+                position: 'relative',
+                maxWidth: 'calc(100vw - clamp(80px, 10vw, 160px))',
+                maxHeight: 'calc(100vh - clamp(80px, 10vw, 160px))',
+                opacity: isTransitioning ? 0.7 : 1,
+                transition: 'opacity 0.2s ease-out',
+                borderRadius: '6px',
+                overflow: 'hidden'
+              }}
+            >
+              <Image
+                src={`/photos/${photos[selectedIndex][0]}`}
+                alt={`Photo ${selectedIndex + 1}`}
+                width={1600}
+                height={1600 * (photos[selectedIndex][2] / photos[selectedIndex][1])}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: 'calc(100vh - clamp(80px, 10vw, 160px))',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  borderRadius: '6px'
+                }}
+                priority
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fluid responsive styles */}
+      <style jsx global>{`
+        /* ============================================
+           FLUID DESIGN SYSTEM
+           Using clamp() for smooth scaling between breakpoints
+           Formula: clamp(min, preferred, max)
+           Preferred uses vw to scale with viewport
+           ============================================ */
+
+        .photo-page {
+          /* Fluid vertical padding: 100px at 320px → 180px at 1920px */
+          padding-top: clamp(100px, 8vw + 60px, 180px);
+          padding-bottom: clamp(80px, 6vw + 40px, 120px);
+        }
+
+        .photo-section {
+          /* Match homepage layout: centered with max-width constraint */
+          max-width: var(--max-content-width);
+          margin: 0 auto;
+          padding-left: var(--side-padding);
+          padding-right: var(--side-padding);
+        }
+
+        .photo-grid {
+          column-count: 7;
+          /* Fluid column gap: 24px at 320px → 72px at 1920px (1.5x spacing) */
+          column-gap: clamp(24px, 3.75vw + 12px, 72px);
+          /* Prevent flash before hydration - images start hidden via inline styles */
+        }
+
+        .photo-thumbnail {
+          /* Fluid margin bottom matches column gap (1.5x spacing) */
+          margin-bottom: clamp(24px, 3.75vw + 12px, 72px);
+          cursor: pointer;
+          break-inside: avoid;
+          position: relative;
+          overflow: hidden;
+          background-color: transparent;
+          /* Prevent layout thrashing during load */
+          contain: layout style;
+          /* Focus styles for keyboard navigation */
+          outline: none;
+          border-radius: 6px;
+        }
+
+        .photo-thumbnail:focus-visible {
+          outline: 2px solid rgba(255, 255, 255, 0.5);
+          outline-offset: 4px;
+        }
+
+        .photo-thumbnail:focus-visible img {
+          opacity: 1 !important;
+          filter: saturate(1) brightness(1) !important;
+        }
+
+        /* Light table warm-up and glow effects
+           Photos start invisible, warm up to dim state, then can glow brighter
+           Mobile: skip warm-up, show at full opacity */
+        .photo-thumbnail img {
+          /* Start invisible - will be revealed by warm-up effect */
+          opacity: 0;
+          filter: saturate(0) brightness(0.5);
+          /* Smooth transition for warm-up effect (2x faster) */
+          transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+                      transform 0.6s cubic-bezier(0.25, 0.1, 0.25, 1),
+                      filter 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Mobile: show at full opacity immediately when warmed up */
+        .photo-thumbnail.photo-warmed img {
+          opacity: 1;
+          filter: saturate(1) brightness(1);
+        }
+
+        /* Desktop with hover capability: apply light table effect */
+        @media (hover: hover) and (pointer: fine) {
+          /* Warmed up state: dim light table appearance */
+          .photo-thumbnail.photo-warmed img {
+            opacity: 0.35;
+            filter: saturate(0.4) brightness(0.7);
+          }
+
+          /* Cascading glow effect - photos randomly illuminate brighter (2x faster) */
+          .photo-thumbnail.photo-warmed.photo-glowing img {
+            opacity: 0.85;
+            filter: saturate(0.85) brightness(0.95);
+            /* Faster transition for snappier glow */
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+                        transform 0.6s cubic-bezier(0.25, 0.1, 0.25, 1),
+                        filter 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+
+          /* Hover always takes priority - full brightness */
+          .photo-thumbnail.photo-warmed:hover img {
+            opacity: 1;
+            transform: scale(1.02);
+            filter: saturate(1) brightness(1);
+            /* Faster transition on hover for responsiveness */
+            transition: opacity 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
+                        transform 0.6s cubic-bezier(0.25, 0.1, 0.25, 1),
+                        filter 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+          }
+        }
+
+        /* Slideshow styles - Pentagram style: refined, subtle */
+        .slideshow-overlay {
+          position: fixed;
+          inset: 0;
+          background-color: #0a0a0a;
+          z-index: 200;
+          transition: opacity 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .slideshow-image-container {
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+          /* Fluid padding */
+          padding: clamp(40px, 5vw + 20px, 80px);
+        }
+
+        /* ============================================
+           RESPONSIVE COLUMN COUNT (~15% larger images)
+           Columns still need discrete breakpoints
+           but all spacing is now fluid
+           ============================================ */
+
+        @media (max-width: 1600px) {
+          .photo-grid {
+            column-count: 5 !important;
+          }
+        }
+
+        @media (max-width: 1200px) {
+          .photo-grid {
+            column-count: 4 !important;
+          }
+        }
+
+        @media (max-width: 1024px) {
+          .photo-grid {
+            column-count: 3 !important;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .photo-grid {
+            column-count: 2 !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .photo-grid {
+            column-count: 2 !important;
+          }
+        }
+      `}</style>
+    </main>
+  );
+}

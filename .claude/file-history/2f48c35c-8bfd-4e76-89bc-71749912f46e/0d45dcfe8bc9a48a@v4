@@ -1,0 +1,72 @@
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+import { PlaceholderImage } from "./PlaceholderImage";
+import { MetaTag } from "./MetaTag";
+import { heroImage } from "@/lib/images";
+import type { Project } from "@/lib/types";
+import styles from "./GridCard.module.css";
+
+interface GridCardProps {
+  project: Project;
+  showText: boolean;
+  height: number;
+}
+
+export function GridCard({ project, showText, height }: GridCardProps) {
+  const hero = heroImage(project.slug);
+
+  return (
+    <Link href={`/work/${project.slug}`} className={styles.card}>
+      {/* Image */}
+      <div className={styles.imageContainer}>
+        <div className={styles.clipWrapper}>
+          <div className={styles.scaleWrapper}>
+            {hero ? (
+              <div style={{ position: "relative", width: "100%", height }}>
+                <Image
+                  src={hero}
+                  alt={project.title}
+                  fill
+                  style={{ objectFit: "cover", objectPosition: project.cropPosition || "center" }}
+                  sizes="(max-width: 768px) 100vw, (max-width: 1400px) 66vw, 900px"
+                />
+              </div>
+            ) : (
+              <PlaceholderImage
+                color={project.color}
+                title={project.title}
+                height={height}
+                style={{ borderRadius: 0 }}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Image-only hover overlay */}
+        {!showText && (
+          <div className={styles.hoverOverlay}>
+            <span className={styles.hoverTitle}>{project.title}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Text block with elevator metatags */}
+      {showText && (
+        <div className={styles.textBlock}>
+          <h3 className={styles.title}>{project.title}</h3>
+          <p className={styles.desc}>{project.desc}</p>
+
+          {/* Pentagram elevator metatags */}
+          <div className={styles.metatagWrapper}>
+            <div className={styles.metatagInner}>
+              <MetaTag label={project.category} />
+              <MetaTag label={project.year} />
+            </div>
+          </div>
+        </div>
+      )}
+    </Link>
+  );
+}

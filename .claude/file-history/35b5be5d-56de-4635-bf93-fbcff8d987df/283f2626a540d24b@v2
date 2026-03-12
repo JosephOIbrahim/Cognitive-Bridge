@@ -1,0 +1,15 @@
+---
+type: moc
+domain: projects
+---
+# Projects
+
+```dataview
+TABLE WITHOUT ID
+  file.link AS "Project",
+  status AS "Status",
+  file.mtime AS "Last Modified"
+FROM "_projects"
+WHERE file.name != "_README"
+SORT file.name ASC
+```

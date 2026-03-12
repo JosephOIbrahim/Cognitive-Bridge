@@ -1,0 +1,1104 @@
+# ComfyUI Agent — Node Replacement API Integration Sprint
+# Sprint: NODE-REPLACE-001
+# Date: 2026-02-24
+# Status: READY TO EXECUTE
+
+---
+
+## PRE-FLIGHT: Read Before Anything
+
+Before ANY implementation, read these files and internalize their conventions:
+
+```bash
+cat C:/Users/User/comfyui-agent/CLAUDE.md
+cat C:/Users/User/comfyui-agent/agent/tools/comfy_api.py
+cat C:/Users/User/comfyui-agent/agent/tools/comfy_discover.py
+cat C:/Users/User/comfyui-agent/agent/tools/workflow_patch.py
+cat C:/Users/User/comfyui-agent/agent/tools/__init__.py
+cat C:/Users/User/comfyui-agent/ui/__init__.py
+```
+
+Report what you find. Do NOT proceed until you understand:
+- The tool registration pattern: `TOOLS: list[dict]` + `handle(name: str, tool_input: dict) -> str`
+- How `comfy_api.py` makes HTTP requests to ComfyUI (httpx, `_get()` helper, `COMFYUI_HOST`/`COMFYUI_PORT`)
+- How `workflow_patch.py` manages mutable state (`_state` dict with `original`, `working`, `history`)
+- How `__init__.py` auto-registers tool modules via `_MODULES` list
+- The `_classify_slot()` and node classification patterns in `routes.py`
+- How `comfy_discover.py` searches registries and returns results
+- **ComfyUI Node Replacement API:** `GET /api/node_replacements` returns replacement mappings. Each mapping has: `new_node_id`, `old_node_id`, `old_widget_ids`, `input_mapping`, `output_mapping`
+
+---
+
+## STATUS REPORTING PROTOCOL
+
+**MANDATORY:** After completing each task, print the status bar in this EXACT format.
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SUPER DUPER — NODE-REPLACE-001 STATUS                     ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: QUERY + DETECT     [░░░░░░░░░░]  0%              ║
+║    API    ◆ A1 ○  A2 ○                                       ║
+║    DISC   ⟡ D1 ○                                             ║
+║                                                              ║
+║  Phase 2: MIGRATE            [░░░░░░░░░░]  0%              ║
+║    PATCH  ◈ P1 ○  P2 ○  P3 ○                                ║
+║                                                              ║
+║  Phase 3: TEST               [░░░░░░░░░░]  0%              ║
+║    TEST   ○ T1 ○  T2 ○  T3 ○                                ║
+║                                                              ║
+║  Overall: [░░░░░░░░░░░░░░░░░░░░]  0%  (0/9 tasks)          ║
+║  Legend: ✓ done  ▶ active  ○ pending  ✗ failed              ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+**Rules:**
+- Print after EVERY completed task
+- Update symbols: ○ → ▶ → ✓ or ✗
+
+---
+
+## ARCHITECTURE DECISIONS (NON-NEGOTIABLE)
+
+### 1. New Tool Module: `agent/tools/node_replacement.py`
+A dedicated tool module following the existing pattern. Three tools:
+- `get_node_replacements` — Query ComfyUI's replacement registry
+- `check_workflow_deprecations` — Scan a loaded workflow for deprecated nodes
+- `migrate_deprecated_nodes` — Apply replacement mappings to upgrade deprecated nodes
+
+### 2. Discovery Integration
+`comfy_discover.py` gets updated to flag deprecated nodes in search results when a replacement exists.
+
+### 3. Workflow Patch Integration
+The migration tool uses the existing RFC6902 patch engine in `workflow_patch.py` to make changes. No new mutation path — everything goes through patches.
+
+### 4. Caching
+Node replacements don't change often. Cache the `/api/node_replacements` response for the session duration (use a module-level `_replacement_cache` with TTL).
+
+```
+Architecture:
+
+  ComfyUI Server                     Agent Tools
+  ┌──────────────────┐               ┌─────────────────────────────┐
+  │ GET /api/         │  ◄── HTTP ── │ node_replacement.py         │
+  │ node_replacements │               │  get_node_replacements()    │
+  └──────────────────┘               │  check_workflow_deprecations│
+                                      │  migrate_deprecated_nodes() │
+                                      └──────────┬──────────────────┘
+                                                  │ uses
+                                      ┌───────────▼──────────────┐
+                                      │ workflow_patch.py         │
+                                      │  _state["working"]       │
+                                      │  apply_workflow_patch()   │
+                                      └──────────────────────────┘
+```
+
+---
+
+## FILE OWNERSHIP TABLE
+
+| Agent | Role (MOE) | Exclusive Write | Read Only |
+|-------|------------|-----------------|-----------|
+| API ◆ | ComfyUI API + Caching Expert | `agent/tools/node_replacement.py` (NEW), `agent/tools/__init__.py` | comfy_api.py, workflow_patch.py |
+| DISC ⟡ | Discovery Layer Expert | `agent/tools/comfy_discover.py` | node_replacement.py, comfy_api.py |
+| PATCH ◈ | Workflow Migration Expert | `agent/tools/node_replacement.py` (migration tool only — shared with API ◆ via phase gate) | workflow_patch.py, comfy_api.py |
+| TEST ○ | Test Coverage Expert | `tests/test_node_replacement.py` (NEW) | all source files |
+
+**NOTE:** API ◆ creates the file in Phase 1. PATCH ◈ adds the migration tool in Phase 2 (after Phase 1 gate). This is safe because they run in different phases.
+
+---
+
+## PHASE 1: QUERY + DETECT
+
+**Goal:** Create the ability to query ComfyUI's node replacement registry and detect deprecated nodes in workflows.
+
+Run API ◆ and DISC ⟡ agents **in parallel** via Task tool.
+
+### ═══ Agent API ◆ — ComfyUI API + Caching Expert ═══
+
+**MOE Expertise:** httpx HTTP clients, caching patterns, ComfyUI REST API conventions.
+**You OWN:** `agent/tools/node_replacement.py` (NEW), `agent/tools/__init__.py`
+**DO NOT TOUCH:** `comfy_api.py`, `comfy_discover.py`, `workflow_patch.py`, tests/
+
+**Task A1: Create node_replacement.py with query and detection tools**
+
+Create `agent/tools/node_replacement.py` following the exact same pattern as other tool modules (e.g., `comfy_api.py`). Include:
+
+```python
+"""Node Replacement API tools — query and detect deprecated nodes.
+
+Uses ComfyUI's /api/node_replacements endpoint to discover migration
+paths for deprecated nodes and check loaded workflows for upgradeable nodes.
+"""
+
+import json
+import logging
+import threading
+import time
+
+from ._util import to_json, validate_path
+
+log = logging.getLogger("superduper.tools.node_replacement")
+
+# ---------------------------------------------------------------------------
+# Replacement cache (session-scoped, 5-minute TTL)
+# ---------------------------------------------------------------------------
+
+_cache_lock = threading.Lock()
+_replacement_cache: dict | None = None
+_cache_timestamp: float = 0.0
+_CACHE_TTL = 300.0  # 5 minutes
+
+
+def _fetch_replacements() -> dict:
+    """Fetch node replacements from ComfyUI, with caching."""
+    global _replacement_cache, _cache_timestamp
+
+    with _cache_lock:
+        now = time.monotonic()
+        if _replacement_cache is not None and (now - _cache_timestamp) < _CACHE_TTL:
+            return _replacement_cache
+
+    # Fetch from ComfyUI
+    try:
+        from .comfy_api import _get
+        data = _get("/api/node_replacements")
+        if data is None:
+            return {}
+    except Exception as e:
+        log.warning("Failed to fetch node replacements: %s", e)
+        return {}
+
+    with _cache_lock:
+        _replacement_cache = data if isinstance(data, dict) else {}
+        _cache_timestamp = time.monotonic()
+        return _replacement_cache
+
+
+def _invalidate_cache():
+    """Clear the replacement cache (for testing)."""
+    global _replacement_cache, _cache_timestamp
+    with _cache_lock:
+        _replacement_cache = None
+        _cache_timestamp = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tool definitions
+# ---------------------------------------------------------------------------
+
+TOOLS = [
+    {
+        "name": "get_node_replacements",
+        "description": (
+            "Query ComfyUI's node replacement registry. Returns all known "
+            "migration paths from deprecated nodes to their replacements, "
+            "including input/output mapping rules. Use this to check if a "
+            "specific node has been deprecated or to browse all available migrations."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "old_node_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional: filter to replacements for a specific deprecated "
+                        "node class_type. If omitted, returns all replacements."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "check_workflow_deprecations",
+        "description": (
+            "Scan the currently loaded workflow for deprecated nodes that have "
+            "known replacements. Returns a list of deprecated nodes found, their "
+            "replacement options, and whether auto-migration is possible. "
+            "The workflow must be loaded first (via load_workflow or sidebar injection)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Tool handler
+# ---------------------------------------------------------------------------
+
+def handle(name: str, tool_input: dict) -> str:
+    """Dispatch tool calls."""
+    if name == "get_node_replacements":
+        return _handle_get_replacements(tool_input)
+    elif name == "check_workflow_deprecations":
+        return _handle_check_deprecations(tool_input)
+    return to_json({"error": f"Unknown tool: {name}"})
+
+
+def _handle_get_replacements(tool_input: dict) -> str:
+    """Query the node replacement registry."""
+    replacements = _fetch_replacements()
+    if not replacements:
+        return to_json({
+            "replacements": {},
+            "count": 0,
+            "note": "No node replacements registered (ComfyUI may not support this endpoint yet).",
+        })
+
+    old_node_id = tool_input.get("old_node_id")
+    if old_node_id:
+        # Filter to specific node
+        filtered = {old_node_id: replacements.get(old_node_id, [])}
+        if not filtered[old_node_id]:
+            return to_json({
+                "replacements": {},
+                "count": 0,
+                "note": f"No replacement found for '{old_node_id}'.",
+            })
+        return to_json({
+            "replacements": filtered,
+            "count": len(filtered[old_node_id]),
+        })
+
+    return to_json({
+        "replacements": replacements,
+        "count": sum(len(v) for v in replacements.values()),
+    })
+
+
+def _handle_check_deprecations(tool_input: dict) -> str:
+    """Check loaded workflow for deprecated nodes."""
+    # Get current workflow from PILOT state
+    try:
+        from .workflow_patch import _state
+        workflow = _state.get("working")
+    except (ImportError, AttributeError):
+        workflow = None
+
+    if not workflow or not isinstance(workflow, dict):
+        return to_json({
+            "error": "No workflow loaded. Load a workflow first.",
+        })
+
+    replacements = _fetch_replacements()
+    if not replacements:
+        return to_json({
+            "deprecated_nodes": [],
+            "count": 0,
+            "note": "No node replacements registered.",
+        })
+
+    # Scan workflow nodes for deprecated class_types
+    deprecated_found = []
+    for node_id, node_data in sorted(workflow.items()):
+        if not isinstance(node_data, dict):
+            continue
+        class_type = node_data.get("class_type", "")
+        if class_type in replacements:
+            replacement_list = replacements[class_type]
+            deprecated_found.append({
+                "node_id": node_id,
+                "class_type": class_type,
+                "replacements": replacement_list,
+                "auto_migratable": all(
+                    r.get("input_mapping") is not None
+                    for r in replacement_list
+                ),
+            })
+
+    return to_json({
+        "deprecated_nodes": deprecated_found,
+        "count": len(deprecated_found),
+        "total_workflow_nodes": len(workflow),
+        "action": (
+            "Use migrate_deprecated_nodes to auto-upgrade these nodes."
+            if deprecated_found
+            else "Workflow is clean — no deprecated nodes found."
+        ),
+    })
+```
+
+**Task A2: Register the new module in tools/__init__.py**
+
+In `agent/tools/__init__.py`, add `node_replacement` to the `_MODULES` list. Find the list and add the import:
+
+```python
+from . import node_replacement
+```
+
+And add `node_replacement` to the `_MODULES` list in the appropriate alphabetical position.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent DISC ⟡ — Discovery Layer Expert ═══
+
+**MOE Expertise:** Search ranking, registry integration, installed-status detection.
+**You OWN:** `agent/tools/comfy_discover.py`
+**DO NOT TOUCH:** `node_replacement.py`, `comfy_api.py`, `workflow_patch.py`, tests/
+
+**Task D1: Flag deprecated nodes in discovery results**
+
+In `comfy_discover.py`, in the function that formats search results (likely in the `handle` function for the `discover` tool or a helper that builds result dicts), add a deprecation check.
+
+After importing what's needed, add a helper:
+
+```python
+def _check_deprecated(class_type: str) -> dict | None:
+    """Check if a node class_type has a known replacement.
+
+    Returns replacement info dict or None. Best-effort — does not
+    fail if node_replacement module isn't available or endpoint is down.
+    """
+    try:
+        from .node_replacement import _fetch_replacements
+        replacements = _fetch_replacements()
+        if class_type in replacements:
+            reps = replacements[class_type]
+            if reps:
+                return {
+                    "deprecated": True,
+                    "replacement": reps[0].get("new_node_id", "unknown"),
+                    "all_replacements": [r.get("new_node_id") for r in reps],
+                }
+    except Exception:
+        pass
+    return None
+```
+
+Then, wherever discovery results are returned for individual nodes (in the result dict building), add:
+
+```python
+dep_info = _check_deprecated(node_class_type)
+if dep_info:
+    result_item["deprecated"] = True
+    result_item["replacement_available"] = dep_info["replacement"]
+```
+
+This is a non-breaking addition — existing consumers ignore the new fields.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 1 GATE ═══
+
+```bash
+# New file exists
+test -f C:/Users/User/comfyui-agent/agent/tools/node_replacement.py && echo "File exists OK"
+
+# Module registered
+grep -q "node_replacement" C:/Users/User/comfyui-agent/agent/tools/__init__.py && echo "Module registered OK"
+
+# Tools defined
+grep -q "get_node_replacements" C:/Users/User/comfyui-agent/agent/tools/node_replacement.py && echo "Tool 1 OK"
+grep -q "check_workflow_deprecations" C:/Users/User/comfyui-agent/agent/tools/node_replacement.py && echo "Tool 2 OK"
+
+# Python imports clean
+python -c "from agent.tools.node_replacement import TOOLS, handle; print(f'Tools: {len(TOOLS)} OK')"
+
+# Discovery integration
+grep -q "_check_deprecated" C:/Users/User/comfyui-agent/agent/tools/comfy_discover.py && echo "Discovery integration OK"
+
+# Existing tests still pass
+python -m pytest tests/ -x -q --tb=short 2>&1 | tail -5
+```
+
+**ALL checks must pass. Fix before proceeding.**
+
+Print status bar after gate check.
+
+---
+
+## PHASE 2: MIGRATE
+
+**Goal:** Add the ability to automatically migrate deprecated nodes in a loaded workflow using the replacement mappings. Uses the existing patch engine.
+
+Run PATCH ◈ agent (sequential — single agent for this phase).
+
+### ═══ Agent PATCH ◈ — Workflow Migration Expert ═══
+
+**MOE Expertise:** RFC6902 JSON patches, workflow DAG integrity, input/output mapping.
+**You OWN:** `agent/tools/node_replacement.py` (adding migrate tool)
+**DO NOT TOUCH:** `comfy_api.py`, `comfy_discover.py`, `workflow_patch.py` (reads only), tests/
+
+**Task P1: Add migrate_deprecated_nodes tool definition**
+
+Append a third tool to the `TOOLS` list in `node_replacement.py`:
+
+```python
+{
+    "name": "migrate_deprecated_nodes",
+    "description": (
+        "Automatically upgrade deprecated nodes in the loaded workflow to their "
+        "replacements. Uses ComfyUI's official replacement mappings to remap "
+        "inputs, outputs, and connections. Always previews changes before applying. "
+        "Requires a workflow to be loaded and check_workflow_deprecations to have "
+        "found deprecated nodes."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "node_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "List of node IDs to migrate. If omitted, migrates ALL "
+                    "deprecated nodes found by check_workflow_deprecations."
+                ),
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": "If true, preview changes without applying. Default: true.",
+                "default": True,
+            },
+        },
+        "required": [],
+    },
+},
+```
+
+**Task P2: Implement migrate_deprecated_nodes handler**
+
+Add the handler to the `handle()` dispatch and implement `_handle_migrate()`:
+
+Update `handle()`:
+```python
+elif name == "migrate_deprecated_nodes":
+    return _handle_migrate(tool_input)
+```
+
+Add the implementation:
+
+```python
+def _handle_migrate(tool_input: dict) -> str:
+    """Migrate deprecated nodes to their replacements."""
+    # Get current workflow
+    try:
+        from .workflow_patch import _state, handle as patch_handle
+        workflow = _state.get("working")
+    except (ImportError, AttributeError):
+        workflow = None
+
+    if not workflow or not isinstance(workflow, dict):
+        return to_json({"error": "No workflow loaded."})
+
+    replacements = _fetch_replacements()
+    if not replacements:
+        return to_json({"error": "No replacement registry available."})
+
+    dry_run = tool_input.get("dry_run", True)
+    target_ids = tool_input.get("node_ids")
+
+    # Find deprecated nodes
+    migrations = []
+    for node_id, node_data in sorted(workflow.items()):
+        if not isinstance(node_data, dict):
+            continue
+        class_type = node_data.get("class_type", "")
+        if class_type not in replacements:
+            continue
+        if target_ids and node_id not in target_ids:
+            continue
+
+        rep = replacements[class_type]
+        if not rep:
+            continue
+
+        # Use the first replacement option
+        mapping = rep[0]
+        new_class = mapping.get("new_node_id", class_type)
+        input_map = mapping.get("input_mapping", [])
+        output_map = mapping.get("output_mapping", [])
+
+        # Build RFC6902 patches for this node
+        node_patches = _build_migration_patches(
+            node_id, node_data, new_class, input_map, output_map, workflow
+        )
+
+        migrations.append({
+            "node_id": node_id,
+            "old_class": class_type,
+            "new_class": new_class,
+            "patches": node_patches,
+            "input_changes": len(input_map),
+            "output_changes": len(output_map),
+        })
+
+    if not migrations:
+        return to_json({
+            "migrated": 0,
+            "note": "No deprecated nodes to migrate.",
+        })
+
+    # Collect all patches
+    all_patches = []
+    for m in migrations:
+        all_patches.extend(m["patches"])
+
+    if dry_run:
+        return to_json({
+            "dry_run": True,
+            "migrations": [{
+                "node_id": m["node_id"],
+                "old_class": m["old_class"],
+                "new_class": m["new_class"],
+                "patch_count": len(m["patches"]),
+            } for m in migrations],
+            "total_patches": len(all_patches),
+            "action": "Set dry_run=false to apply these migrations.",
+        })
+
+    # Apply patches via the existing patch engine
+    result_json = patch_handle("apply_workflow_patch", {
+        "patches": all_patches,
+    })
+    result = json.loads(result_json) if isinstance(result_json, str) else result_json
+
+    if isinstance(result, dict) and result.get("error"):
+        return to_json({
+            "error": f"Migration failed: {result['error']}",
+            "attempted": len(migrations),
+        })
+
+    return to_json({
+        "migrated": len(migrations),
+        "migrations": [{
+            "node_id": m["node_id"],
+            "old_class": m["old_class"],
+            "new_class": m["new_class"],
+        } for m in migrations],
+        "note": "Use undo_workflow_patch to revert if needed.",
+    })
+
+
+def _build_migration_patches(
+    node_id: str,
+    node_data: dict,
+    new_class: str,
+    input_mapping: list,
+    output_mapping: list,
+    workflow: dict,
+) -> list[dict]:
+    """Build RFC6902 patches for migrating one node.
+
+    Handles:
+    - class_type replacement
+    - Input remapping (rename, set_value, remove)
+    - Output reconnection (updating downstream references)
+    """
+    patches = []
+    old_inputs = node_data.get("inputs", {})
+
+    # 1. Replace class_type
+    patches.append({
+        "op": "replace",
+        "path": f"/{node_id}/class_type",
+        "value": new_class,
+    })
+
+    if not input_mapping:
+        # No input mapping — keep existing inputs as-is
+        return patches
+
+    # 2. Build new inputs dict from mapping
+    new_inputs = {}
+    mapped_old_ids = set()
+
+    for entry in input_mapping:
+        new_id = entry.get("new_id")
+        old_id = entry.get("old_id")
+        set_value = entry.get("set_value")
+
+        if not new_id:
+            continue
+
+        if set_value is not None:
+            # Fixed value assignment
+            new_inputs[new_id] = set_value
+        elif old_id and old_id in old_inputs:
+            # Map from old input
+            new_inputs[new_id] = old_inputs[old_id]
+            mapped_old_ids.add(old_id)
+
+    # Preserve unmapped inputs that aren't explicitly removed
+    for key, val in old_inputs.items():
+        if key not in mapped_old_ids and key not in new_inputs:
+            new_inputs[key] = val
+
+    # 3. Replace inputs entirely
+    patches.append({
+        "op": "replace",
+        "path": f"/{node_id}/inputs",
+        "value": new_inputs,
+    })
+
+    # 4. Handle output remapping (update downstream connections)
+    if output_mapping:
+        for other_id, other_data in workflow.items():
+            if other_id == node_id or not isinstance(other_data, dict):
+                continue
+            other_inputs = other_data.get("inputs", {})
+            for input_key, input_val in other_inputs.items():
+                if (isinstance(input_val, list) and len(input_val) == 2
+                        and str(input_val[0]) == node_id):
+                    old_idx = input_val[1]
+                    # Find new index from output mapping
+                    for omap in output_mapping:
+                        if omap.get("old_idx") == old_idx:
+                            new_idx = omap.get("new_idx", old_idx)
+                            if new_idx != old_idx:
+                                patches.append({
+                                    "op": "replace",
+                                    "path": f"/{other_id}/inputs/{input_key}",
+                                    "value": [node_id, new_idx],
+                                })
+                            break
+
+    return patches
+```
+
+**Task P3: Update CLAUDE.md tool table**
+
+Read `C:/Users/User/comfyui-agent/CLAUDE.md`, find the Tool Overview table, and add a new row:
+
+```
+| **Node Replacement** | `get_node_replacements`, `check_workflow_deprecations`, `migrate_deprecated_nodes` |
+```
+
+Insert it after the "Model Compat" row.
+
+Also update the tool count references:
+- "77 tools" → "80 tools" (3 new tools)
+- "77 specialized tools" → "80 specialized tools"
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 2 GATE ═══
+
+```bash
+# Migration tool exists
+grep -q "migrate_deprecated_nodes" C:/Users/User/comfyui-agent/agent/tools/node_replacement.py && echo "Migrate tool OK"
+
+# Three tools total
+python -c "from agent.tools.node_replacement import TOOLS; assert len(TOOLS) == 3; print(f'{len(TOOLS)} tools OK')"
+
+# Module imports clean
+python -c "from agent.tools.node_replacement import handle; print('Import OK')"
+
+# CLAUDE.md updated
+grep -q "Node Replacement" C:/Users/User/comfyui-agent/CLAUDE.md && echo "CLAUDE.md updated OK"
+
+# Existing tests still pass
+python -m pytest tests/ -x -q --tb=short 2>&1 | tail -5
+```
+
+Print status bar after gate check.
+
+---
+
+## PHASE 3: TEST
+
+**Goal:** Full test coverage for all three tools, including edge cases.
+
+Run TEST ○ agent (sequential).
+
+### ═══ Agent TEST ○ — Test Coverage Expert ═══
+
+**MOE Expertise:** pytest, unittest.mock, edge case identification. All tests are mocked — no live ComfyUI server.
+**You OWN:** `tests/test_node_replacement.py` (NEW)
+**DO NOT TOUCH:** All source files
+
+**Task T1: Write tests for get_node_replacements**
+
+Create `tests/test_node_replacement.py`:
+
+```python
+"""Tests for agent/tools/node_replacement.py — Node Replacement API integration."""
+
+import json
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+from agent.tools.node_replacement import (
+    TOOLS,
+    handle,
+    _fetch_replacements,
+    _invalidate_cache,
+    _build_migration_patches,
+)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Clear replacement cache before each test."""
+    _invalidate_cache()
+    yield
+    _invalidate_cache()
+
+
+SAMPLE_REPLACEMENTS = {
+    "MyOldSampler": [
+        {
+            "new_node_id": "MyNewSampler",
+            "old_node_id": "MyOldSampler",
+            "old_widget_ids": ["steps", "cfg"],
+            "input_mapping": [
+                {"new_id": "model", "old_id": "model"},
+                {"new_id": "num_steps", "old_id": "steps"},
+                {"new_id": "guidance", "old_id": "cfg"},
+                {"new_id": "scheduler", "set_value": "normal"},
+            ],
+            "output_mapping": [
+                {"new_idx": 0, "old_idx": 0},
+            ],
+        }
+    ],
+    "OldLoader": [
+        {
+            "new_node_id": "NewLoader",
+            "old_node_id": "OldLoader",
+            "old_widget_ids": None,
+            "input_mapping": [
+                {"new_id": "ckpt_name", "old_id": "ckpt_name"},
+            ],
+            "output_mapping": None,
+        }
+    ],
+}
+
+SAMPLE_WORKFLOW = {
+    "1": {
+        "class_type": "MyOldSampler",
+        "inputs": {
+            "model": ["2", 0],
+            "steps": 20,
+            "cfg": 7.0,
+            "seed": 42,
+        },
+    },
+    "2": {
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {"ckpt_name": "sd_xl_base.safetensors"},
+    },
+    "3": {
+        "class_type": "SaveImage",
+        "inputs": {"images": ["1", 0]},
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Tool registration tests
+# ---------------------------------------------------------------------------
+
+class TestToolRegistration:
+    def test_tools_list_has_three_tools(self):
+        assert len(TOOLS) == 3
+
+    def test_tool_names(self):
+        names = {t["name"] for t in TOOLS}
+        assert names == {
+            "get_node_replacements",
+            "check_workflow_deprecations",
+            "migrate_deprecated_nodes",
+        }
+
+    def test_all_tools_have_input_schema(self):
+        for tool in TOOLS:
+            assert "input_schema" in tool
+            assert tool["input_schema"]["type"] == "object"
+
+
+# ---------------------------------------------------------------------------
+# get_node_replacements tests
+# ---------------------------------------------------------------------------
+
+class TestGetNodeReplacements:
+    @patch("agent.tools.node_replacement._get")
+    def test_returns_all_replacements(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        result = json.loads(handle("get_node_replacements", {}))
+        assert result["count"] == 2
+        assert "MyOldSampler" in result["replacements"]
+
+    @patch("agent.tools.node_replacement._get")
+    def test_filter_by_old_node_id(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        result = json.loads(handle("get_node_replacements", {"old_node_id": "MyOldSampler"}))
+        assert result["count"] == 1
+        assert "MyOldSampler" in result["replacements"]
+
+    @patch("agent.tools.node_replacement._get")
+    def test_filter_nonexistent_returns_empty(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        result = json.loads(handle("get_node_replacements", {"old_node_id": "NoSuchNode"}))
+        assert result["count"] == 0
+
+    @patch("agent.tools.node_replacement._get")
+    def test_empty_registry(self, mock_get):
+        mock_get.return_value = {}
+        result = json.loads(handle("get_node_replacements", {}))
+        assert result["count"] == 0
+
+    @patch("agent.tools.node_replacement._get")
+    def test_server_error_returns_empty(self, mock_get):
+        mock_get.side_effect = Exception("Connection refused")
+        result = json.loads(handle("get_node_replacements", {}))
+        assert result["count"] == 0
+
+    @patch("agent.tools.node_replacement._get")
+    def test_caching(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        handle("get_node_replacements", {})
+        handle("get_node_replacements", {})
+        # Second call should use cache — only 1 HTTP request
+        assert mock_get.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# check_workflow_deprecations tests
+# ---------------------------------------------------------------------------
+
+class TestCheckWorkflowDeprecations:
+    @patch("agent.tools.node_replacement._get")
+    @patch("agent.tools.node_replacement._state", {"working": SAMPLE_WORKFLOW})
+    def test_finds_deprecated_nodes(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        # Need to mock the import path properly
+        with patch.dict("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+            result = json.loads(handle("check_workflow_deprecations", {}))
+        assert result["count"] == 1
+        assert result["deprecated_nodes"][0]["class_type"] == "MyOldSampler"
+
+    @patch("agent.tools.node_replacement._get")
+    def test_no_workflow_loaded(self, mock_get):
+        with patch("agent.tools.workflow_patch._state", {"working": None}):
+            result = json.loads(handle("check_workflow_deprecations", {}))
+        assert "error" in result
+
+    @patch("agent.tools.node_replacement._get")
+    def test_clean_workflow(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        clean_wf = {
+            "1": {"class_type": "KSampler", "inputs": {}},
+        }
+        with patch("agent.tools.workflow_patch._state", {"working": clean_wf}):
+            result = json.loads(handle("check_workflow_deprecations", {}))
+        assert result["count"] == 0
+```
+
+**Task T2: Write tests for migrate_deprecated_nodes**
+
+Add to the same test file:
+
+```python
+class TestMigrateDeprecatedNodes:
+    @patch("agent.tools.node_replacement._get")
+    def test_dry_run_previews_changes(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW.copy()}):
+            result = json.loads(handle("migrate_deprecated_nodes", {"dry_run": True}))
+        assert result["dry_run"] is True
+        assert len(result["migrations"]) == 1
+        assert result["migrations"][0]["new_class"] == "MyNewSampler"
+
+    @patch("agent.tools.node_replacement._get")
+    def test_apply_migration(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        wf_copy = json.loads(json.dumps(SAMPLE_WORKFLOW))
+        with patch("agent.tools.workflow_patch._state", {"working": wf_copy, "original": wf_copy.copy(), "history": []}):
+            with patch("agent.tools.workflow_patch.handle") as mock_patch:
+                mock_patch.return_value = json.dumps({"success": True, "changes": 2})
+                result = json.loads(handle("migrate_deprecated_nodes", {"dry_run": False}))
+        assert result["migrated"] == 1
+
+    @patch("agent.tools.node_replacement._get")
+    def test_specific_node_ids(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+            result = json.loads(handle("migrate_deprecated_nodes", {
+                "node_ids": ["1"],
+                "dry_run": True,
+            }))
+        assert len(result["migrations"]) == 1
+
+    @patch("agent.tools.node_replacement._get")
+    def test_no_deprecated_nodes(self, mock_get):
+        mock_get.return_value = SAMPLE_REPLACEMENTS
+        clean_wf = {"1": {"class_type": "KSampler", "inputs": {}}}
+        with patch("agent.tools.workflow_patch._state", {"working": clean_wf}):
+            result = json.loads(handle("migrate_deprecated_nodes", {}))
+        assert result["migrated"] == 0
+
+    @patch("agent.tools.node_replacement._get")
+    def test_no_workflow_loaded(self, mock_get):
+        with patch("agent.tools.workflow_patch._state", {"working": None}):
+            result = json.loads(handle("migrate_deprecated_nodes", {}))
+        assert "error" in result
+```
+
+**Task T3: Write tests for _build_migration_patches**
+
+Add to the same test file:
+
+```python
+class TestBuildMigrationPatches:
+    def test_class_type_replacement(self):
+        patches = _build_migration_patches(
+            "1", {"class_type": "OldNode", "inputs": {}},
+            "NewNode", [], [], {}
+        )
+        assert len(patches) == 1
+        assert patches[0]["op"] == "replace"
+        assert patches[0]["path"] == "/1/class_type"
+        assert patches[0]["value"] == "NewNode"
+
+    def test_input_remapping(self):
+        node_data = {
+            "class_type": "OldNode",
+            "inputs": {"old_param": 42, "keep_me": "yes"},
+        }
+        input_mapping = [
+            {"new_id": "new_param", "old_id": "old_param"},
+        ]
+        patches = _build_migration_patches(
+            "1", node_data, "NewNode", input_mapping, [], {}
+        )
+        # Should have class_type patch + inputs patch
+        assert len(patches) == 2
+        inputs_patch = patches[1]
+        assert inputs_patch["path"] == "/1/inputs"
+        new_inputs = inputs_patch["value"]
+        assert new_inputs["new_param"] == 42
+        assert new_inputs["keep_me"] == "yes"  # preserved
+
+    def test_set_value_mapping(self):
+        node_data = {"class_type": "OldNode", "inputs": {}}
+        input_mapping = [
+            {"new_id": "scheduler", "set_value": "normal"},
+        ]
+        patches = _build_migration_patches(
+            "1", node_data, "NewNode", input_mapping, [], {}
+        )
+        new_inputs = patches[1]["value"]
+        assert new_inputs["scheduler"] == "normal"
+
+    def test_output_remapping(self):
+        node_data = {"class_type": "OldNode", "inputs": {}}
+        workflow = {
+            "1": node_data,
+            "2": {"class_type": "Other", "inputs": {"in": ["1", 0]}},
+        }
+        output_mapping = [{"old_idx": 0, "new_idx": 1}]
+        patches = _build_migration_patches(
+            "1", node_data, "NewNode", [], output_mapping, workflow
+        )
+        # Should patch the downstream connection
+        conn_patches = [p for p in patches if "/2/" in p["path"]]
+        assert len(conn_patches) == 1
+        assert conn_patches[0]["value"] == ["1", 1]
+
+    def test_connection_inputs_preserved(self):
+        node_data = {
+            "class_type": "OldNode",
+            "inputs": {"model": ["5", 0], "steps": 20},
+        }
+        input_mapping = [
+            {"new_id": "model", "old_id": "model"},
+            {"new_id": "num_steps", "old_id": "steps"},
+        ]
+        patches = _build_migration_patches(
+            "1", node_data, "NewNode", input_mapping, [], {}
+        )
+        new_inputs = patches[1]["value"]
+        assert new_inputs["model"] == ["5", 0]  # connection preserved
+        assert new_inputs["num_steps"] == 20
+
+
+class TestUnknownTool:
+    def test_unknown_tool_returns_error(self):
+        result = json.loads(handle("nonexistent_tool", {}))
+        assert "error" in result
+```
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 3 GATE (FINAL) ═══
+
+```bash
+# Test file exists
+test -f C:/Users/User/comfyui-agent/tests/test_node_replacement.py && echo "Test file OK"
+
+# New tests pass
+python -m pytest tests/test_node_replacement.py -v --tb=short
+
+# ALL tests still pass (no regressions)
+python -m pytest tests/ -x -q --tb=short 2>&1 | tail -5
+
+# Lint clean
+ruff check agent/tools/node_replacement.py tests/test_node_replacement.py
+```
+
+**ALL checks must pass.**
+
+Print status bar after gate check.
+
+---
+
+## FINAL STATUS BAR
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SUPER DUPER — NODE-REPLACE-001 — COMPLETE                 ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: QUERY + DETECT     [██████████] 100% ✓           ║
+║    API    ◆ A1 ✓  A2 ✓                                      ║
+║    DISC   ⟡ D1 ✓                                             ║
+║                                                              ║
+║  Phase 2: MIGRATE            [██████████] 100% ✓           ║
+║    PATCH  ◈ P1 ✓  P2 ✓  P3 ✓                                ║
+║                                                              ║
+║  Phase 3: TEST               [██████████] 100% ✓           ║
+║    TEST   ○ T1 ✓  T2 ✓  T3 ✓                                ║
+║                                                              ║
+║  Overall: [████████████████████] 100%  (9/9 tasks)           ║
+║                                                              ║
+║  New files:    2 (node_replacement.py,                       ║
+║                   test_node_replacement.py)                   ║
+║  Modified:     3 (__init__.py, comfy_discover.py, CLAUDE.md) ║
+║  Tests added:  ~20                                           ║
+║  Regressions:  0                                             ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## SAFETY RULES (ALL AGENTS — NON-NEGOTIABLE)
+
+1. **Read before write:** Always read existing code and match conventions
+2. **File ownership:** NEVER write to another agent's files
+3. **Regression zero:** Existing tests must keep passing (`python -m pytest tests/ -x -q`)
+4. **Status reporting:** Print status bar after EVERY task completion
+5. **All tests mocked:** No live ComfyUI server needed. Use `unittest.mock.patch`
+6. **Deterministic JSON:** All `json.dumps` uses `sort_keys=True` (via `_util.to_json`)
+7. **Thread safety:** Cache uses `threading.Lock` — no race conditions
+8. **Backward compatible:** New fields in discovery results are additive. Existing consumers ignore them.
+9. **Encoding:** All `open()` calls use `encoding='utf-8'`

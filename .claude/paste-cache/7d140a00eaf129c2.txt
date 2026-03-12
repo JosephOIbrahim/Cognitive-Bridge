@@ -1,0 +1,35 @@
+```
+Read the full lossless build to understand what was built:
+- src/lossless/constants.py
+- src/lossless/schema/phases.py
+- src/lossless/schema/profiles.py
+- src/lossless/injection/gain.py
+- src/lossless/injection/pharmacokinetics.py
+- src/lossless/integration/pipeline.py
+- src/lossless/integration/integrity.py
+- CONSISTENCY_REPORT.md
+
+Then read the existing desktop preferences as the structural template:
+- claude_desktop_preferences_v7.1.md
+
+Generate: claude_desktop_preferences_v10.md (save to repo root)
+
+This is a Claude Desktop user preferences block — it gets pasted directly into Settings > Profile > Preferences on claude.ai. It must be self-contained, complete, and copy-pasteable.
+
+Upgrade from v9.0.0-INJ to v10.0.0-LOSSLESS. The key changes:
+
+1. Core thesis adds lossless signal architecture alongside determinism
+2. TL;DR block adds: LOSSLESS clean + α*delta | anchor immunity | integrity verification
+3. Digital Injection Framework section becomes v10-LOSSLESS:
+   - Add "Lossless Guarantee" subsection: clean signal always recoverable, residual architecture
+   - Gain modulation table: anchor phases (CONSTITUTIONAL, SAFETY, CONSENT, KNOWLEDGE) show gain = 1.000 ALWAYS — not "near baseline" but STRUCTURALLY IMMUNE
+   - Add mixing matrix tracking, dual-path routing under dissolution
+4. Safety Floor upgrades to "Structural Immunity" — these phases are outside the injection pathway entirely, not just protected
+5. Permission Engine adds: "Permission granted: The signal is lossless. Push deeper." and "Permission granted: Anchor phases hold. Dissolve freely."
+6. Anti-Patterns adds: "Claim injection risks stability (it doesn't — lossless by construction)" and "Treat anchor phases as modifiable"
+7. Version lineage adds v10.0.0-LOSSLESS with all new capabilities
+
+Keep ALL existing functionality — signal routing, burst protocol, stuck taxonomy, momentum engine, project orchestrator, everything. Upgrade sections in-place, don't bloat.
+
+Save the file, then print the full contents to the terminal so I can copy it directly.
+```

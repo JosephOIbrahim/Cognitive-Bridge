@@ -1,0 +1,71 @@
+# Python Panel Update — Bring v5.7.0 Current with Lossless Bridge
+
+The shared/bridge.py consent system is now wired to synapse.core.gates.HumanGate.
+The following panel updates bring the UI current with the bridge integration.
+
+## 1. Audit Current Panel State
+
+Before changing anything, report:
+- What version string is displayed in the panel UI?
+- Does the panel already show gate proposals (PROPOSED → APPROVED lifecycle)?
+- Does the panel show any bridge/integrity information?
+- Where does synapse.core.gates.HumanGate surface proposals to the artist?
+- What does the gate approval UI look like currently?
+
+## 2. CRITICAL Gate Level in UI
+
+The bridge now has 4 gate levels: INFORM, REVIEW, APPROVE, CRITICAL.
+CRITICAL was added for execute_python and execute_vex (arbitrary code execution).
+
+- If the panel's gate UI only shows INFORM/REVIEW/APPROVE, add CRITICAL
+- CRITICAL proposals should be visually distinct (red/warning styling)
+- CRITICAL timeout is 300s (vs 120s for APPROVE) — show countdown if possible
+
+## 3. IntegrityBlock Display
+
+The bridge produces an IntegrityBlock for every operation. The panel should surface:
+- Session fidelity (1.0 = all green, <1.0 = highlight problem)
+- Operation count (total / verified / violations)
+- Last operation's hash_before → hash_after → delta
+- A fidelity indicator in the panel header or status bar
+
+This can be a collapsible section — artists shouldn't need to see it constantly,
+but it should be one click away.
+
+## 4. Bridge Session Report
+
+LosslessExecutionBridge.session_report() returns:
+```python
+{
+    "operations_total": int,
+    "operations_verified": int,
+    "anchor_violations": int,
+    "session_fidelity": float,
+    "operation_log_length": int,
+    "houdini_available": bool,
+}
+```
+
+The panel should poll or subscribe to this and update its status display.
+If session_fidelity drops below 1.0, surface a warning.
+
+## 5. Emergency Halt Button
+
+EmergencyProtocol.trigger_emergency_halt(bridge, reason) exists in the bridge.
+The panel should have an emergency halt button that:
+- Calls trigger_emergency_halt with a reason
+- Shows the returned report
+- Visually indicates halted state
+
+## 6. Version Considerations
+
+After these changes, the panel version should reflect the bridge integration.
+Suggest bumping to v5.8.0 if the version is managed in the panel source.
+
+## Constraints
+
+- Don't break existing panel functionality
+- All changes should be additive
+- Test that existing MCP tools still work after panel changes
+- The bridge's three-tier consent fallback means the panel doesn't HAVE to be
+  present — but when it is, gate proposals should route through it

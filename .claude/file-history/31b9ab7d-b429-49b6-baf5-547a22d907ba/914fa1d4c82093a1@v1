@@ -1,0 +1,81 @@
+import { notFound } from 'next/navigation';
+import { ProjectContentWrapper } from '@/components/ProjectContentWrapper';
+import { ProjectDetailContent } from '@/components/ProjectDetailContent';
+import { ProjectHeroReel } from '@/components/ProjectHeroReel';
+import { ScrollReset } from '@/components/ScrollReset';
+import { projects, type Project } from '@/lib/projects';
+import { genAiProjects } from '@/lib/gen-ai-projects';
+import type { Metadata } from 'next';
+
+interface ProjectPageProps {
+  params: Promise<{ slug: string }>;
+}
+
+// Combine all projects for lookup
+const allProjects = [...projects, ...genAiProjects];
+
+function findProject(slug: string): Project | undefined {
+  return allProjects.find(p => p.slug === slug);
+}
+
+export async function generateStaticParams() {
+  // Generate routes for both regular and Gen AI projects
+  return allProjects.map((project) => ({
+    slug: project.slug,
+  }));
+}
+
+export async function generateMetadata({ params }: ProjectPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const project = findProject(slug);
+
+  if (!project) {
+    return {
+      title: 'Project Not Found',
+    };
+  }
+
+  return {
+    title: project.title,
+    description: project.description,
+  };
+}
+
+export default async function ProjectPage({ params }: ProjectPageProps) {
+  const { slug } = await params;
+  const project = findProject(slug);
+
+  if (!project) {
+    notFound();
+  }
+
+  return (
+    <>
+      {/* Ensure scroll starts at top - user lands on autoplay hero */}
+      <ScrollReset />
+
+      {/* Hero Reel - Fixed position autoplay, extends to top edge */}
+      <ProjectHeroReel
+        videoId={project.videoId}
+        videoHash={project.videoHash}
+        startTime={project.startTime}
+        thumbnail={project.thumbnail}
+      />
+
+      {/* Main content - positioned below hero with responsive marginTop */}
+      <ProjectContentWrapper>
+        <main
+          className="mx-auto pb-32"
+          style={{
+            maxWidth: 'var(--max-content-width)',
+            paddingTop: 'clamp(60px, 5vw + 30px, 100px)',
+            paddingLeft: 'var(--side-padding)',
+            paddingRight: 'var(--side-padding)'
+          }}
+        >
+          <ProjectDetailContent project={project} />
+        </main>
+      </ProjectContentWrapper>
+    </>
+  );
+}

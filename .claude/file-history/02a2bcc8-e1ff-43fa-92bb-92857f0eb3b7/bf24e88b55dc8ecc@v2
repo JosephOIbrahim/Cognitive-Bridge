@@ -1,0 +1,195 @@
+"""End-to-end test of Blueprint MCP tools via the bridge."""
+import sys
+sys.path.insert(0, "C:/Users/User/Translators-Game/TranslatorsGame/ue-bridge")
+
+import json
+from remote_control_bridge import UnrealRemoteControl
+
+ue = UnrealRemoteControl()
+
+def section(title):
+    print(f"\n{'='*50}")
+    print(f"  {title}")
+    print(f"{'='*50}")
+
+# 1. Create Blueprint
+section("1. Create Blueprint")
+r = ue.execute_python("""
+import unreal
+
+asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+factory = unreal.BlueprintFactory()
+factory.set_editor_property("ParentClass", unreal.Actor)
+
+blueprint = asset_tools.create_asset("BP_ClaudeTest", "/Game/Blueprints", None, factory)
+if blueprint:
+    unreal.EditorAssetLibrary.save_asset("/Game/Blueprints/BP_ClaudeTest")
+    print("RESULT:" + blueprint.get_path_name())
+else:
+    print("RESULT:CREATE_FAILED")
+""")
+print(f"  Result: {r['result']}")
+print(f"  Error:  {r['error']}")
+bp_path = "/Game/Blueprints/BP_ClaudeTest"
+
+# 2. Add StaticMeshComponent
+section("2. Add StaticMeshComponent")
+r = ue.execute_python(f"""
+import unreal, json
+
+bp = unreal.EditorAssetLibrary.load_asset("{bp_path}")
+if bp:
+    scs = bp.get_editor_property("simple_construction_script")
+    node = scs.create_node(unreal.StaticMeshComponent, "CubeMesh")
+    if node:
+        root = scs.get_default_scene_root_node()
+        if root and node != root:
+            scs.add_node_to(node, root)
+        unreal.KismetEditorUtilities.compile_blueprint(bp)
+        unreal.EditorAssetLibrary.save_asset("{bp_path}")
+        print("RESULT:{{\\"added\\": \\"CubeMesh\\"}}")
+    else:
+        print("RESULT:{{\\"error\\": \\"create_node failed\\"}}")
+else:
+    print("RESULT:{{\\"error\\": \\"BP not found\\"}}")
+""")
+print(f"  Result: {r['result']}")
+print(f"  Error:  {r['error']}")
+
+# 3. Add PointLightComponent
+section("3. Add PointLightComponent")
+r = ue.execute_python(f"""
+import unreal
+
+bp = unreal.EditorAssetLibrary.load_asset("{bp_path}")
+if bp:
+    scs = bp.get_editor_property("simple_construction_script")
+    node = scs.create_node(unreal.PointLightComponent, "TestLight")
+    if node:
+        root = scs.get_default_scene_root_node()
+        if root and node != root:
+            scs.add_node_to(node, root)
+        unreal.KismetEditorUtilities.compile_blueprint(bp)
+        unreal.EditorAssetLibrary.save_asset("{bp_path}")
+        print("RESULT:{{\\"added\\": \\"TestLight\\"}}")
+    else:
+        print("RESULT:{{\\"error\\": \\"create_node failed\\"}}")
+else:
+    print("RESULT:{{\\"error\\": \\"BP not found\\"}}")
+""")
+print(f"  Result: {r['result']}")
+print(f"  Error:  {r['error']}")
+
+# 4. Get Blueprint components
+section("4. Inspect Blueprint Components")
+r = ue.execute_python(f"""
+import unreal, json
+
+bp = unreal.EditorAssetLibrary.load_asset("{bp_path}")
+if bp:
+    scs = bp.get_editor_property("simple_construction_script")
+    nodes = scs.get_all_nodes() if scs else []
+    components = []
+    for node in nodes:
+        template = node.get_editor_property("component_template")
+        if template:
+            components.append({{
+                "name": node.get_editor_property("internal_variable_name"),
+                "class": template.get_class().get_name(),
+            }})
+    parent = bp.get_editor_property("parent_class")
+    parent_name = parent.get_name() if parent else "None"
+    print("RESULT:" + json.dumps({{
+        "blueprint": "{bp_path}",
+        "parent_class": parent_name,
+        "components": components
+    }}))
+else:
+    print("RESULT:{{\\"error\\": \\"BP not found\\"}}")
+""")
+print(f"  Result: {json.dumps(r['result'], indent=4)}")
+print(f"  Error:  {r['error']}")
+
+# 5. Set component property (assign cube mesh)
+section("5. Set Mesh on StaticMeshComponent")
+r = ue.execute_python(f"""
+import unreal, json
+
+bp = unreal.EditorAssetLibrary.load_asset("{bp_path}")
+if bp:
+    scs = bp.get_editor_property("simple_construction_script")
+    nodes = scs.get_all_nodes() if scs else []
+    for node in nodes:
+        var_name = node.get_editor_property("internal_variable_name")
+        if var_name == "CubeMesh":
+            template = node.get_editor_property("component_template")
+            cube = unreal.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Cube")
+            if template and cube:
+                template.set_editor_property("static_mesh", cube)
+                unreal.KismetEditorUtilities.compile_blueprint(bp)
+                unreal.EditorAssetLibrary.save_asset("{bp_path}")
+                print("RESULT:{{\\"set_mesh\\": true}}")
+            else:
+                print("RESULT:{{\\"error\\": \\"template or cube not found\\"}}")
+            break
+    else:
+        print("RESULT:{{\\"error\\": \\"CubeMesh component not found\\"}}")
+else:
+    print("RESULT:{{\\"error\\": \\"BP not found\\"}}")
+""")
+print(f"  Result: {r['result']}")
+print(f"  Error:  {r['error']}")
+
+# 6. Spawn Blueprint in level
+section("6. Spawn Blueprint Instance")
+r = ue.execute_python(f"""
+import unreal
+
+bp_class = unreal.EditorAssetLibrary.load_blueprint_class("{bp_path}")
+if bp_class:
+    subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    actor = subsystem.spawn_actor_from_class(
+        bp_class,
+        unreal.Vector(500, 500, 200),
+        unreal.Rotator(0, 0, 0)
+    )
+    if actor:
+        actor.set_actor_label("ClaudeBPTest")
+        print("RESULT:" + actor.get_path_name())
+    else:
+        print("RESULT:{{\\"error\\": \\"spawn failed\\"}}")
+else:
+    print("RESULT:{{\\"error\\": \\"BP class not found\\"}}")
+""")
+print(f"  Result: {r['result']}")
+print(f"  Error:  {r['error']}")
+
+# 7. Verify it's in the level
+section("7. Verify Actor in Level")
+r = ue.list_actors()
+print(f"  Actors:")
+for a in r['result']:
+    print(f"    - {a['name']} ({a['class']}) @ {a['loc'] if 'loc' in a else a['location']}")
+
+# 8. Cleanup
+section("8. Cleanup")
+r = ue.execute_python(f"""
+import unreal
+
+# Delete spawned actor
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+for a in actors:
+    if a.get_actor_label() == "ClaudeBPTest":
+        subsystem.destroy_actor(a)
+        break
+
+# Delete blueprint asset
+unreal.EditorAssetLibrary.delete_asset("{bp_path}")
+print("RESULT:CLEANED")
+""")
+print(f"  Result: {r['result']}")
+print(f"  Error:  {r['error']}")
+
+section("ALL TESTS COMPLETE")
+ue.close()

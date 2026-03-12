@@ -1,0 +1,1105 @@
+   100→            if node is None or not hasattr(node, 'stage'):
+   101→                raise ValueError(
+   102→                    "No USD stage found -- select a LOP node or pass "
+   103→                    "a node path so I know which stage to look at"
+   104→                )
+   105→
+   106→            stage = node.stage()
+   107→            if stage is None:
+   108→                raise ValueError(
+   109→                    "That node doesn't have an active USD stage yet -- "
+   110→                    "it may need to cook first, or check the LOP network is set up"
+   111→                )
+   112→
+   113→            # Import USD types inside _on_main (only available in Houdini context)
+   114→            try:
+   115→                from pxr import UsdGeom, UsdLux, UsdShade
+   116→                _has_pxr = True
+   117→            except ImportError:
+   118→                _has_pxr = False
+   119→
+   120→            cameras = []
+   121→            lights = []
+   122→            renderable_prims = 0
+   123→            unassigned_material_prims = []
+   124→            unresolved_references = []
+   125→            prims = []
+   126→
+   127→            for prim in stage.Traverse():
+   128→                if len(prims) >= limit:
+   129→                    break
+   130→                path_str = str(prim.GetPath())
+   131→                type_name = str(prim.GetTypeName())
+   132→                prims.append({"path": path_str, "type": type_name})
+   133→
+   134→                if _has_pxr:
+   135→                    # Cameras
+   136→                    if prim.IsA(UsdGeom.Camera):
+   137→                        cameras.append(path_str)
+   138→                    # Lights -- check schema and fallback to type name
+   139→                    if prim.IsA(UsdLux.LightAPI) or "Light" in type_name:
+   140→                        lights.append(path_str)
+   141→                    # Renderable geometry
+   142→                    if prim.IsA(UsdGeom.Gprim):
+   143→                        renderable_prims += 1
+   144→                        # Check material binding
+   145→                        try:
+   146→                            binding_api = UsdShade.MaterialBindingAPI(prim)
+   147→                            mat, _ = binding_api.ComputeBoundMaterial()
+   148→                            if not mat:
+   149→                                unassigned_material_prims.append(path_str)
+   150→                        except Exception:
+   151→                            pass
+   152→                    # Unresolved references
+   153→                    try:
+   154→                        if prim.HasAuthoredReferences():
+   155→                            composer = prim.GetPrimStack()
+   156→                            for spec in composer:
+   157→                                for ref in spec.referenceList.prependedItems:
+   158→                                    if ref.assetPath:
+   159→                                        resolved = stage.ResolveIdentifierToEditTarget(
+   160→                                            ref.assetPath
+   161→                                        )
+   162→                                        if not resolved:
+   163→                                            unresolved_references.append({
+   164→                                                "prim": path_str,
+   165→                                                "asset": str(ref.assetPath),
+   166→                                            })
+   167→                    except Exception:
+   168→                        pass
+   169→
+   170→            return {
+   171→                "node": node.path(),
+   172→                "prim_count": len(prims),
+   173→                "prims": prims,
+   174→                "cameras": sorted(cameras),
+   175→                "lights": sorted(lights),
+   176→                "renderable_prims": renderable_prims,
+   177→                "unassigned_material_prims": sorted(unassigned_material_prims)[:50],
+   178→                "unresolved_references": unresolved_references[:20],
+   179→                "truncated": len(prims) >= limit,
+   180→            }
+   181→
+   182→        return run_on_main(_on_main)
+   183→
+   184→    def _handle_get_usd_attribute(self, payload: Dict) -> Dict:
+   185→        """Handle get_usd_attribute command -- read a USD attribute from a prim."""
+   186→        node_path_arg = resolve_param(payload, "node", required=False)
+   187→        prim_path = resolve_param(payload, "prim_path")
+   188→        attr_name = resolve_param(payload, "usd_attribute")
+   189→
+   190→        from .main_thread import run_on_main
+   191→
+   192→        def _on_main():
+   193→            node = self._resolve_lop_node(node_path_arg)
+   194→
+   195→            stage = node.stage()
+   196→            if stage is None:
+   197→                raise ValueError(
+   198→                    "That node doesn't have an active USD stage yet -- "
+   199→                    "it may need to cook first, or check the LOP network is set up"
+   200→                )
+   201→
+   202→            prim = stage.GetPrimAtPath(prim_path)
+   203→            if not prim.IsValid():
+   204→                raise ValueError(
+   205→                    f"Couldn't find a prim at {prim_path} -- "
+   206→                    "double-check the path on the USD stage"
+   207→                )
+   208→
+   209→            attr = prim.GetAttribute(attr_name)
+   210→            if not attr.IsValid():
+   211→                # List available attributes to help the caller
+   212→                attrs = [a.GetName() for a in prim.GetAttributes()][:30]
+   213→                raise ValueError(
+   214→                    f"That attribute name didn't match ('{attr_name}') on {prim_path}. "
+   215→                    f"Available attributes: {', '.join(attrs)}"
+   216→                )
+   217→
+   218→            value = attr.Get()
+   219→
+   220→            return {
+   221→                "node": node.path(),
+   222→                "prim_path": prim_path,
+   223→                "attribute": attr_name,
+   224→                "value": _usd_to_json(value),
+   225→                "type_name": str(attr.GetTypeName()),
+   226→            }
+   227→
+   228→        return run_on_main(_on_main)
+   229→
+   230→    def _handle_set_usd_attribute(self, payload: Dict) -> Dict:
+   231→        """Handle set_usd_attribute command -- set a USD attribute via Python LOP."""
+   232→        node_path_arg = resolve_param(payload, "node", required=False)
+   233→        prim_path = resolve_param(payload, "prim_path")
+   234→        attr_name = resolve_param(payload, "usd_attribute")
+   235→        value = resolve_param(payload, "value")
+   236→
+   237→        from .main_thread import run_on_main
+   238→
+   239→        def _on_main():
+   240→            node = self._resolve_lop_node(node_path_arg)
+   241→
+   242→            with hou.undos.group("SYNAPSE: set_usd_attribute"):
+   243→                parent = node.parent()
+   244→                safe_name = f"set_{attr_name.replace(':', '_').replace('.', '_')}"
+   245→                py_lop = parent.createNode("pythonscript", safe_name)
+   246→                py_lop.setInput(0, node)
+   247→                py_lop.moveToGoodPosition()
+   248→
+   249→                code = (
+   250→                    "from pxr import Sdf\n"
+   251→                    "stage = hou.pwd().editableStage()\n"
+   252→                    f"prim = stage.GetPrimAtPath({repr(prim_path)})\n"
+   253→                    "if prim:\n"
+   254→                    f"    attr = prim.GetAttribute({repr(attr_name)})\n"
+   255→                    "    if attr:\n"
+   256→                    f"        attr.Set({repr(value)})\n"
+   257→                )
+   258→                py_lop.parm("python").set(code)
+   259→
+   260→                # Cook and verify -- catch errors now instead of silent cook-time failure
+   261→                try:
+   262→                    py_lop.cook(force=True)
+   263→                except hou.OperationFailed as e:
+   264→                    error_msg = str(e)
+   265→                    return {
+   266→                        "created_node": py_lop.path(),
+   267→                        "prim_path": prim_path,
+   268→                        "cook_error": (
+   269→                            f"The node was created but hit a snag when cooking -- {error_msg}. "
+   270→                            "The pythonscript node is still in the network so you can inspect it. "
+   271→                            "Check that the prim path exists and the attribute types match."
+   272→                        ),
+   273→                    }
+   274→
+   275→                result = {
+   276→                    "created_node": py_lop.path(),
+   277→                    "prim_path": prim_path,
+   278→                    "attribute": attr_name,
+   279→                    "value": value,
+   280→                }
+   281→                if isinstance(value, (list, tuple)):
+   282→                    result["advisory"] = (
+   283→                        f"The value is a {type(value).__name__} with {len(value)} elements. "
+   284→                        "If the USD attribute expects a specific type (like GfVec3f), "
+   285→                        "you may need to use execute_python with explicit type construction."
+   286→                    )
+   287→                return result
+   288→
+   289→        return run_on_main(_on_main)
+   290→
+   291→    def _handle_create_usd_prim(self, payload: Dict) -> Dict:
+   292→        """Handle create_usd_prim command -- define a USD prim via Python LOP."""
+   293→        node_path_arg = resolve_param(payload, "node", required=False)
+   294→        prim_path = resolve_param(payload, "prim_path")
+   295→        prim_type = resolve_param_with_default(payload, "prim_type", "Xform")
+   296→
+   297→        from .main_thread import run_on_main
+   298→
+   299→        def _on_main():
+   300→            node = self._resolve_lop_node(node_path_arg)
+   301→
+   302→            with hou.undos.group("SYNAPSE: create_usd_prim"):
+   303→                parent = node.parent()
+   304→                safe_name = prim_path.rstrip("/").rsplit("/", 1)[-1] or "prim"
+   305→                py_lop = parent.createNode("pythonscript", f"create_{safe_name}")
+   306→                py_lop.setInput(0, node)
+   307→                py_lop.moveToGoodPosition()
+   308→
+   309→                code = (
+   310→                    "stage = hou.pwd().editableStage()\n"
+   311→                    f"stage.DefinePrim({repr(prim_path)}, {repr(prim_type)})\n"
+   312→                )
+   313→                py_lop.parm("python").set(code)
+   314→
+   315→                # Cook and verify -- catch errors now instead of silent cook-time failure
+   316→                try:
+   317→                    py_lop.cook(force=True)
+   318→                except hou.OperationFailed as e:
+   319→                    error_msg = str(e)
+   320→                    return {
+   321→                        "created_node": py_lop.path(),
+   322→                        "prim_path": prim_path,
+   323→                        "cook_error": (
+   324→                            f"The node was created but hit a snag when cooking -- {error_msg}. "
+   325→                            "The pythonscript node is still in the network so you can inspect it. "
+   326→                            "Check that the prim path exists and the attribute types match."
+   327→                        ),
+   328→                    }
+   329→
+   330→                return {
+   331→                    "created_node": py_lop.path(),
+   332→                    "prim_path": prim_path,
+   333→                    "prim_type": prim_type,
+   334→                }
+   335→
+   336→        return run_on_main(_on_main)
+   337→
+   338→    def _handle_modify_usd_prim(self, payload: Dict) -> Dict:
+   339→        """Handle modify_usd_prim command -- set metadata/properties on a prim."""
+   340→        node_path_arg = resolve_param(payload, "node", required=False)
+   341→        prim_path = resolve_param(payload, "prim_path")
+   342→
+   343→        # Collect optional modifications
+   344→        kind = resolve_param(payload, "kind", required=False)
+   345→        purpose = resolve_param(payload, "purpose", required=False)
+   346→        active = resolve_param(payload, "active", required=False)
+   347→
+   348→        # Validate before touching hou.*
+   349→        mods = {}
+   350→        if kind is not None:
+   351→            mods["kind"] = kind
+   352→        if purpose is not None:
+   353→            mods["purpose"] = purpose
+   354→        if active is not None:
+   355→            mods["active"] = active
+   356→
+   357→        if not mods:
+   358→            raise ValueError(
+   359→                "No changes specified -- pass at least one of: kind, purpose, or active"
+   360→            )
+   361→
+   362→        from .main_thread import run_on_main
+   363→
+   364→        def _on_main():
+   365→            node = self._resolve_lop_node(node_path_arg)
+   366→
+   367→            with hou.undos.group("SYNAPSE: modify_usd_prim"):
+   368→                parent = node.parent()
+   369→                safe_name = prim_path.rstrip("/").rsplit("/", 1)[-1] or "prim"
+   370→                py_lop = parent.createNode("pythonscript", f"modify_{safe_name}")
+   371→                py_lop.setInput(0, node)
+   372→                py_lop.moveToGoodPosition()
+   373→
+   374→                lines = [
+   375→                    "from pxr import Usd, UsdGeom, Sdf, Kind",
+   376→                    "stage = hou.pwd().editableStage()",
+   377→                    f"prim = stage.GetPrimAtPath({repr(prim_path)})",
+   378→                    "if prim:",
+   379→                ]
+   380→                if kind is not None:
+   381→                    lines.append(f"    Usd.ModelAPI(prim).SetKind({repr(kind)})")
+   382→                if purpose is not None:
+   383→                    lines.append(f"    UsdGeom.Imageable(prim).GetPurposeAttr().Set({repr(purpose)})")
+   384→                if active is not None:
+   385→                    lines.append(f"    prim.SetActive({active})")
+   386→
+   387→                code = "\n".join(lines)
+   388→                py_lop.parm("python").set(code)
+   389→
+   390→                # Cook and verify -- catch errors now instead of silent cook-time failure
+   391→                try:
+   392→                    py_lop.cook(force=True)
+   393→                except hou.OperationFailed as e:
+   394→                    error_msg = str(e)
+   395→                    return {
+   396→                        "created_node": py_lop.path(),
+   397→                        "prim_path": prim_path,
+   398→                        "cook_error": (
+   399→                            f"The node was created but hit a snag when cooking -- {error_msg}. "
+   400→                            "The pythonscript node is still in the network so you can inspect it. "
+   401→                            "Check that the prim path and modifications are valid."
+   402→                        ),
+   403→                    }
+   404→
+   405→                return {
+   406→                    "created_node": py_lop.path(),
+   407→                    "prim_path": prim_path,
+   408→                    "modifications": mods,
+   409→                }
+   410→
+   411→        return run_on_main(_on_main)
+   412→
+   413→    def _handle_reference_usd(self, payload: Dict) -> Dict:
+   414→        """Import a USD file into the stage via reference, payload, or sublayer.
+   415→
+   416→        Modes:
+   417→        - 'reference': Standard USD reference composition (default)
+   418→        - 'payload': Deferred-load reference — asset loads only when activated.
+   419→          Preferred for heavy assets in large scenes.
+   420→        - 'sublayer': Layer stacking — all prims merged into the stage.
+   421→          Most reliable for Karma rendering visibility.
+   422→
+   423→        Note: For Karma render scenes, 'sublayer' is the most reliable import
+   424→        method. 'reference' and 'payload' may require explicit purpose/kind
+   425→        metadata on the imported prims for Karma visibility.
+   426→        """
+   427→        if not HOU_AVAILABLE:
+   428→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   429→
+   430→        file_path = resolve_param(payload, "file")
+   431→        prim_path = resolve_param_with_default(payload, "prim_path", "/")
+   432→        mode = resolve_param_with_default(payload, "mode", "reference")
+   433→        parent = resolve_param_with_default(payload, "parent", "/stage")
+   434→
+   435→        # Validate mode before touching hou.*
+   436→        if mode not in ("sublayer", "reference", "payload"):
+   437→            raise ValueError(
+   438→                f"'{mode}' isn't a recognized import mode -- "
+   439→                "use 'reference', 'payload', or 'sublayer'"
+   440→            )
+   441→
+   442→        from .main_thread import run_on_main
+   443→
+   444→        def _on_main():
+   445→            parent_node = hou.node(parent)
+   446→            if parent_node is None:
+   447→                raise ValueError(
+   448→                    f"Couldn't find the parent node at {parent} -- "
+   449→                    "verify this path exists (default is /stage)"
+   450→                )
+   451→
+   452→            # Validate file path exists (catch missing assets early)
+   453→            import os as _os
+   454→            if not file_path.startswith(("$", "op:")) and not _os.path.isfile(file_path):
+   455→                raise ValueError(
+   456→                    f"Couldn't find the file at '{file_path}' -- "
+   457→                    "double-check the path exists. If you're using a Houdini "
+   458→                    "variable like $HIP or $HFS, make sure it's set correctly."
+   459→                )
+   460→
+   461→            with hou.undos.group("SYNAPSE: reference_usd"):
+   462→                if mode == "sublayer":
+   463→                    node = parent_node.createNode("sublayer", "sublayer_import")
+   464→                    node.parm("filepath1").set(file_path)
+   465→                else:
+   466→                    # Both 'reference' and 'payload' use the reference LOP node
+   467→                    node = parent_node.createNode("reference", "ref_import")
+   468→                    node.parm("filepath1").set(file_path)
+   469→                    if prim_path != "/":
+   470→                        node.parm("primpath").set(prim_path)
+   471→
+   472→                    # Set reference type: payload uses deferred loading
+   473→                    if mode == "payload":
+   474→                        reftype_parm = node.parm("reftype")
+   475→                        if reftype_parm is not None:
+   476→                            reftype_parm.set("payload")
+   477→
+   478→                result = {
+   479→                    "node": node.path(),
+   480→                    "file": file_path,
+   481→                    "mode": mode,
+   482→                    "prim_path": prim_path,
+   483→                }
+   484→
+   485→                # Add Karma visibility advisory for non-sublayer modes
+   486→                if mode in ("reference", "payload"):
+   487→                    result["advisory"] = (
+   488→                        "For Karma rendering, 'sublayer' is the most reliable import "
+   489→                        "mode. If this asset isn't visible in renders, try switching "
+   490→                        "to mode='sublayer' or ensure the imported prims have "
+   491→                        "purpose='default' and kind='component' metadata."
+   492→                    )
+   493→
+   494→                return result
+   495→
+   496→        return run_on_main(_on_main)
+   497→
+   498→    def _handle_query_prims(self, payload: Dict) -> Dict:
+   499→        """Query USD stage prims with filtering by type, purpose, name pattern.
+   500→
+   501→        Walks the stage hierarchy from a root path and returns matching prims
+   502→        with their types, paths, and metadata. Useful for discovering what's on
+   503→        the stage before making changes.
+   504→        """
+   505→        if not HOU_AVAILABLE:
+   506→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   507→
+   508→        node_path_arg = resolve_param(payload, "node", required=False)
+   509→        root_path = resolve_param_with_default(payload, "root_path", "/")
+   510→        prim_type = resolve_param(payload, "prim_type", required=False)
+   511→        purpose = resolve_param(payload, "purpose", required=False)
+   512→        name_pattern = resolve_param(payload, "name_pattern", required=False)
+   513→        max_depth = int(resolve_param_with_default(payload, "max_depth", 10))
+   514→        limit = int(resolve_param_with_default(payload, "limit", 100))
+   515→
+   516→        from .main_thread import run_on_main
+   517→
+   518→        def _on_main():
+   519→            node = self._resolve_lop_node(node_path_arg)  # type: ignore[attr-defined]
+   520→
+   521→            stage = node.stage()
+   522→            if stage is None:
+   523→                raise ValueError(
+   524→                    "That node doesn't have an active USD stage yet -- "
+   525→                    "it may need to cook first, or check the LOP network is set up"
+   526→                )
+   527→
+   528→            root_prim = stage.GetPrimAtPath(root_path)
+   529→            if not root_prim.IsValid():
+   530→                raise ValueError(
+   531→                    f"Couldn't find a prim at {root_path} -- "
+   532→                    "double-check the path on the USD stage"
+   533→                )
+   534→
+   535→            from pxr import Usd, UsdGeom
+   536→
+   537→            import re
+   538→            name_re = None
+   539→            if name_pattern:
+   540→                try:
+   541→                    name_re = re.compile(name_pattern, re.IGNORECASE)
+   542→                except re.error:
+   543→                    name_re = None  # fall back to substring match
+   544→
+   545→            results = []
+   546→
+   547→            def _walk(prim, depth):
+   548→                if depth > max_depth or len(results) >= limit:
+   549→                    return
+   550→
+   551→                prim_type_name = prim.GetTypeName()
+   552→
+   553→                # Apply type filter
+   554→                if prim_type:
+   555→                    if prim_type_name.lower() != prim_type.lower():
+   556→                        for child in prim.GetChildren():
+   557→                            _walk(child, depth + 1)
+   558→                        return
+   559→
+   560→                # Apply purpose filter
+   561→                if purpose:
+   562→                    imageable = UsdGeom.Imageable(prim)
+   563→                    if imageable:
+   564→                        prim_purpose = imageable.ComputePurpose()
+   565→                        if prim_purpose != purpose:
+   566→                            for child in prim.GetChildren():
+   567→                                _walk(child, depth + 1)
+   568→                            return
+   569→
+   570→                # Apply name filter
+   571→                if name_pattern:
+   572→                    prim_name = prim.GetName()
+   573→                    if name_re:
+   574→                        if not name_re.search(prim_name):
+   575→                            for child in prim.GetChildren():
+   576→                                _walk(child, depth + 1)
+   577→                            return
+   578→                    elif name_pattern.lower() not in prim_name.lower():
+   579→                        for child in prim.GetChildren():
+   580→                            _walk(child, depth + 1)
+   581→                        return
+   582→
+   583→                # Prim passes all filters
+   584→                entry = {
+   585→                    "path": str(prim.GetPath()),
+   586→                    "type": prim_type_name,
+   587→                    "name": prim.GetName(),
+   588→                }
+   589→
+   590→                kind = Usd.ModelAPI(prim).GetKind()
+   591→                if kind:
+   592→                    entry["kind"] = str(kind)
+   593→
+   594→                imageable = UsdGeom.Imageable(prim)
+   595→                if imageable:
+   596→                    p = imageable.ComputePurpose()
+   597→                    if p:
+   598→                        entry["purpose"] = str(p)
+   599→                    vis = imageable.ComputeVisibility()
+   600→                    if vis:
+   601→                        entry["visibility"] = str(vis)
+   602→
+   603→                entry["active"] = prim.IsActive()
+   604→                results.append(entry)
+   605→
+   606→                for child in prim.GetChildren():
+   607→                    _walk(child, depth + 1)
+   608→
+   609→            _walk(root_prim, 0)
+   610→
+   611→            return {
+   612→                "root_path": root_path,
+   613→                "prim_count": len(results),
+   614→                "prims": results,
+   615→                "truncated": len(results) >= limit,
+   616→            }
+   617→
+   618→        return run_on_main(_on_main)
+   619→
+   620→    def _handle_manage_variant_set(self, payload: Dict) -> Dict:
+   621→        """Manage USD variant sets: create, list, or select variants.
+   622→
+   623→        Actions:
+   624→        - 'list':   List variant sets and their variants on a prim.
+   625→        - 'create': Create a new variant set and/or add variants to it.
+   626→        - 'select': Set the active variant selection on an existing set.
+   627→
+   628→        For 'create', pass variant_set and variants (list of names).
+   629→        For 'select', pass variant_set and variant (single name).
+   630→        """
+   631→        if not HOU_AVAILABLE:
+   632→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   633→
+   634→        node_path_arg = resolve_param(payload, "node", required=False)
+   635→        prim_path = resolve_param(payload, "prim_path")
+   636→        action = resolve_param_with_default(payload, "action", "list")
+   637→
+   638→        if action not in ("list", "create", "select"):
+   639→            raise ValueError(
+   640→                f"'{action}' isn't a recognized action -- "
+   641→                "use 'list', 'create', or 'select'"
+   642→            )
+   643→
+   644→        variant_set_name = resolve_param(payload, "variant_set", required=(action != "list"))
+   645→        variants = resolve_param(payload, "variants", required=False)
+   646→        variant = resolve_param(payload, "variant", required=False)
+   647→
+   648→        from .main_thread import run_on_main
+   649→
+   650→        def _on_main():
+   651→            node = self._resolve_lop_node(node_path_arg)  # type: ignore[attr-defined]
+   652→
+   653→            if action == "list":
+   654→                stage = node.stage()
+   655→                if stage is None:
+   656→                    raise ValueError(
+   657→                        "That node doesn't have an active USD stage yet -- "
+   658→                        "it may need to cook first"
+   659→                    )
+   660→                prim = stage.GetPrimAtPath(prim_path)
+   661→                if not prim.IsValid():
+   662→                    raise ValueError(
+   663→                        f"Couldn't find a prim at {prim_path} -- "
+   664→                        "double-check the path on the USD stage"
+   665→                    )
+   666→                vsets = prim.GetVariantSets()
+   667→                set_names = vsets.GetNames()
+   668→                result_sets = []
+   669→                for sn in set_names:
+   670→                    vs = vsets.GetVariantSet(sn)
+   671→                    result_sets.append({
+   672→                        "name": sn,
+   673→                        "variants": vs.GetVariantNames(),
+   674→                        "selection": vs.GetVariantSelection(),
+   675→                    })
+   676→                return {
+   677→                    "prim_path": prim_path,
+   678→                    "variant_sets": result_sets,
+   679→                    "count": len(result_sets),
+   680→                }
+   681→
+   682→            elif action == "create":
+   683→                if not variants or not isinstance(variants, list):
+   684→                    raise ValueError(
+   685→                        "For 'create' action, pass 'variants' as a list of "
+   686→                        "variant names (e.g. ['red', 'blue', 'green'])"
+   687→                    )
+   688→                with hou.undos.group("SYNAPSE: manage_variant_set"):
+   689→                    parent = node.parent()
+   690→                    safe_name = variant_set_name.replace(" ", "_").replace("/", "_")
+   691→                    py_lop = parent.createNode("pythonscript", f"vset_{safe_name}")
+   692→                    py_lop.setInput(0, node)
+   693→                    py_lop.moveToGoodPosition()
+   694→
+   695→                    lines = [
+   696→                        "from pxr import Usd, Sdf",
+   697→                        "stage = hou.pwd().editableStage()",
+   698→                        f"prim = stage.GetPrimAtPath({repr(prim_path)})",
+   699→                        "if prim:",
+   700→                        f"    vset = prim.GetVariantSets().AddVariantSet({repr(variant_set_name)})",
+   701→                    ]
+   702→                    for v in variants:
+   703→                        lines.append(f"    vset.AddVariant({repr(v)})")
+   704→                    # Select the first variant by default
+   705→                    if variants:
+   706→                        lines.append(f"    vset.SetVariantSelection({repr(variants[0])})")
+   707→
+   708→                    code = "\n".join(lines)
+   709→                    py_lop.parm("python").set(code)
+   710→
+   711→                    # Cook and verify -- catch errors now instead of silent cook-time failure
+   712→                    try:
+   713→                        py_lop.cook(force=True)
+   714→                    except hou.OperationFailed as e:
+   715→                        error_msg = str(e)
+   716→                        return {
+   717→                            "node": py_lop.path(),
+   718→                            "prim_path": prim_path,
+   719→                            "cook_error": (
+   720→                                f"The node was created but hit a snag when cooking -- {error_msg}. "
+   721→                                "The pythonscript node is still in the network so you can inspect it. "
+   722→                                "Check that the prim path exists and the variant set is valid."
+   723→                            ),
+   724→                        }
+   725→
+   726→                    return {
+   727→                        "node": py_lop.path(),
+   728→                        "prim_path": prim_path,
+   729→                        "variant_set": variant_set_name,
+   730→                        "variants": variants,
+   731→                        "default_selection": variants[0] if variants else None,
+   732→                    }
+   733→
+   734→            else:  # select
+   735→                if not variant:
+   736→                    raise ValueError(
+   737→                        "For 'select' action, pass 'variant' with the name "
+   738→                        "to select (e.g. 'red')"
+   739→                    )
+   740→                parent = node.parent()
+   741→                safe_name = variant_set_name.replace(" ", "_").replace("/", "_")
+   742→                py_lop = parent.createNode("pythonscript", f"vsel_{safe_name}")
+   743→                py_lop.setInput(0, node)
+   744→                py_lop.moveToGoodPosition()
+   745→
+   746→                code = "\n".join([
+   747→                    "from pxr import Usd",
+   748→                    "stage = hou.pwd().editableStage()",
+   749→                    f"prim = stage.GetPrimAtPath({repr(prim_path)})",
+   750→                    "if prim:",
+   751→                    f"    vset = prim.GetVariantSets().GetVariantSet({repr(variant_set_name)})",
+   752→                    f"    vset.SetVariantSelection({repr(variant)})",
+   753→                ])
+   754→                py_lop.parm("python").set(code)
+   755→
+   756→                return {
+   757→                    "node": py_lop.path(),
+   758→                    "prim_path": prim_path,
+   759→                    "variant_set": variant_set_name,
+   760→                    "variant": variant,
+   761→                }
+   762→
+   763→        return run_on_main(_on_main)
+   764→
+   765→    def _handle_manage_collection(self, payload: Dict) -> Dict:
+   766→        """Manage USD collections: create, list, or modify.
+   767→
+   768→        Collections group prims for material assignment, light linking,
+   769→        and other operations. Each collection has include/exclude rules.
+   770→
+   771→        Actions:
+   772→        - 'list':   List collections on a prim.
+   773→        - 'create': Create a new collection with include paths.
+   774→        - 'add':    Add paths to an existing collection's includes.
+   775→        - 'remove': Remove paths from a collection's includes.
+   776→        """
+   777→        if not HOU_AVAILABLE:
+   778→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   779→
+   780→        node_path_arg = resolve_param(payload, "node", required=False)
+   781→        prim_path = resolve_param(payload, "prim_path")
+   782→        action = resolve_param_with_default(payload, "action", "list")
+   783→
+   784→        if action not in ("list", "create", "add", "remove"):
+   785→            raise ValueError(
+   786→                f"'{action}' isn't a recognized action -- "
+   787→                "use 'list', 'create', 'add', or 'remove'"
+   788→            )
+   789→
+   790→        collection_name = resolve_param(payload, "collection_name", required=(action != "list"))
+   791→        paths = resolve_param(payload, "paths", required=False)
+   792→        exclude_paths = resolve_param(payload, "exclude_paths", required=False)
+   793→        expansion_rule = resolve_param_with_default(payload, "expansion_rule", "expandPrims")
+   794→
+   795→        from .main_thread import run_on_main
+   796→
+   797→        def _on_main():
+   798→            node = self._resolve_lop_node(node_path_arg)  # type: ignore[attr-defined]
+   799→
+   800→            if action == "list":
+   801→                stage = node.stage()
+   802→                if stage is None:
+   803→                    raise ValueError(
+   804→                        "That node doesn't have an active USD stage yet -- "
+   805→                        "it may need to cook first"
+   806→                    )
+   807→                prim = stage.GetPrimAtPath(prim_path)
+   808→                if not prim.IsValid():
+   809→                    raise ValueError(
+   810→                        f"Couldn't find a prim at {prim_path} -- "
+   811→                        "double-check the path on the USD stage"
+   812→                    )
+   813→
+   814→                from pxr import Usd
+   815→
+   816→                collections = Usd.CollectionAPI.GetAllCollections(prim)
+   817→                result_colls = []
+   818→                for coll in collections:
+   819→                    includes = coll.GetIncludesRel()
+   820→                    excludes = coll.GetExcludesRel()
+   821→                    result_colls.append({
+   822→                        "name": coll.GetName(),
+   823→                        "includes": [str(t) for t in includes.GetTargets()] if includes else [],
+   824→                        "excludes": [str(t) for t in excludes.GetTargets()] if excludes else [],
+   825→                        "expansion_rule": str(coll.GetExpansionRuleAttr().Get()) if coll.GetExpansionRuleAttr() else "expandPrims",
+   826→                    })
+   827→                return {
+   828→                    "prim_path": prim_path,
+   829→                    "collections": result_colls,
+   830→                    "count": len(result_colls),
+   831→                }
+   832→
+   833→            elif action == "create":
+   834→                if not paths or not isinstance(paths, list):
+   835→                    raise ValueError(
+   836→                        "For 'create' action, pass 'paths' as a list of "
+   837→                        "prim paths to include (e.g. ['/World/geo/mesh1'])"
+   838→                    )
+   839→                with hou.undos.group("SYNAPSE: manage_collection"):
+   840→                    parent = node.parent()
+   841→                    safe_name = collection_name.replace(" ", "_").replace("/", "_")
+   842→                    py_lop = parent.createNode("pythonscript", f"coll_{safe_name}")
+   843→                    py_lop.setInput(0, node)
+   844→                    py_lop.moveToGoodPosition()
+   845→
+   846→                    path_reprs = ", ".join(repr(p) for p in paths)
+   847→                    lines = [
+   848→                        "from pxr import Usd, Sdf",
+   849→                        "stage = hou.pwd().editableStage()",
+   850→                        f"prim = stage.GetPrimAtPath({repr(prim_path)})",
+   851→                        "if prim:",
+   852→                        f"    coll = Usd.CollectionAPI.Apply(prim, {repr(collection_name)})",
+   853→                        f"    coll.GetExpansionRuleAttr().Set({repr(expansion_rule)})",
+   854→                        f"    includes = coll.GetIncludesRel()",
+   855→                        f"    for p in [{path_reprs}]:",
+   856→                        f"        includes.AddTarget(Sdf.Path(p))",
+   857→                    ]
+   858→
+   859→                    if exclude_paths and isinstance(exclude_paths, list):
+   860→                        excl_reprs = ", ".join(repr(p) for p in exclude_paths)
+   861→                        lines.append(f"    excludes = coll.GetExcludesRel()")
+   862→                        lines.append(f"    for p in [{excl_reprs}]:")
+   863→                        lines.append(f"        excludes.AddTarget(Sdf.Path(p))")
+   864→
+   865→                    code = "\n".join(lines)
+   866→                    py_lop.parm("python").set(code)
+   867→
+   868→                    result = {
+   869→                        "node": py_lop.path(),
+   870→                        "prim_path": prim_path,
+   871→                        "collection_name": collection_name,
+   872→                        "includes": paths,
+   873→                        "expansion_rule": expansion_rule,
+   874→                    }
+   875→                    if exclude_paths:
+   876→                        result["excludes"] = exclude_paths
+   877→                    return result
+   878→
+   879→            else:  # add or remove
+   880→                if not paths or not isinstance(paths, list):
+   881→                    raise ValueError(
+   882→                        f"For '{action}' action, pass 'paths' as a list of "
+   883→                        "prim paths to add/remove"
+   884→                    )
+   885→                with hou.undos.group("SYNAPSE: manage_collection"):
+   886→                    parent = node.parent()
+   887→                    safe_name = collection_name.replace(" ", "_").replace("/", "_")
+   888→                    verb = "add" if action == "add" else "rm"
+   889→                    py_lop = parent.createNode("pythonscript", f"coll_{verb}_{safe_name}")
+   890→                    py_lop.setInput(0, node)
+   891→                    py_lop.moveToGoodPosition()
+   892→
+   893→                    path_reprs = ", ".join(repr(p) for p in paths)
+   894→                    op = "AddTarget" if action == "add" else "RemoveTarget"
+   895→                    lines = [
+   896→                        "from pxr import Usd, Sdf",
+   897→                        "stage = hou.pwd().editableStage()",
+   898→                        f"prim = stage.GetPrimAtPath({repr(prim_path)})",
+   899→                        "if prim:",
+   900→                        f"    coll = Usd.CollectionAPI.Get(prim, {repr(collection_name)})",
+   901→                        f"    includes = coll.GetIncludesRel()",
+   902→                        f"    for p in [{path_reprs}]:",
+   903→                        f"        includes.{op}(Sdf.Path(p))",
+   904→                    ]
+   905→
+   906→                    code = "\n".join(lines)
+   907→                    py_lop.parm("python").set(code)
+   908→
+   909→                    return {
+   910→                        "node": py_lop.path(),
+   911→                        "prim_path": prim_path,
+   912→                        "collection_name": collection_name,
+   913→                        "action": action,
+   914→                        "paths": paths,
+   915→                    }
+   916→
+   917→        return run_on_main(_on_main)
+   918→
+   919→    def _handle_configure_light_linking(self, payload: Dict) -> Dict:
+   920→        """Configure light linking between lights and geometry via USD collections.
+   921→
+   922→        Light linking in USD works through collections on light prims:
+   923→        - 'lightLink' collection: geometry the light illuminates (default: everything)
+   924→        - 'shadowLink' collection: geometry that casts shadows from this light
+   925→
+   926→        Actions:
+   927→        - 'include': Set the light to only illuminate specified geometry paths.
+   928→        - 'exclude': Exclude specific geometry from this light's illumination.
+   929→        - 'shadow_include': Set geometry that casts shadows from this light.
+   930→        - 'shadow_exclude': Exclude geometry from casting shadows.
+   931→        - 'reset': Remove light linking (light illuminates everything again).
+   932→        """
+   933→        if not HOU_AVAILABLE:
+   934→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   935→
+   936→        node_path_arg = resolve_param(payload, "node", required=False)
+   937→        light_path = resolve_param(payload, "light_path")
+   938→        action = resolve_param_with_default(payload, "action", "include")
+   939→        geo_paths = resolve_param(payload, "geo_paths", required=False)
+   940→
+   941→        valid_actions = ("include", "exclude", "shadow_include", "shadow_exclude", "reset")
+   942→        if action not in valid_actions:
+   943→            raise ValueError(
+   944→                f"'{action}' isn't a recognized light linking action -- "
+   945→                f"use one of: {', '.join(valid_actions)}"
+   946→            )
+   947→
+   948→        if action != "reset" and (not geo_paths or not isinstance(geo_paths, list)):
+   949→            raise ValueError(
+   950→                f"For '{action}' action, pass 'geo_paths' as a list of "
+   951→                "geometry prim paths"
+   952→            )
+   953→
+   954→        from .main_thread import run_on_main
+   955→
+   956→        def _on_main():
+   957→            node = self._resolve_lop_node(node_path_arg)  # type: ignore[attr-defined]
+   958→
+   959→            with hou.undos.group("SYNAPSE: configure_light_linking"):
+   960→                parent = node.parent()
+   961→
+   962→                safe_light = light_path.rstrip("/").rsplit("/", 1)[-1] or "light"
+   963→                py_lop = parent.createNode("pythonscript", f"lightlink_{safe_light}")
+   964→                py_lop.setInput(0, node)
+   965→                py_lop.moveToGoodPosition()
+   966→
+   967→                lines = [
+   968→                    "from pxr import Usd, UsdLux, Sdf",
+   969→                    "stage = hou.pwd().editableStage()",
+   970→                    f"light = stage.GetPrimAtPath({repr(light_path)})",
+   971→                    "if light:",
+   972→                ]
+   973→
+   974→                if action == "reset":
+   975→                    # Remove custom light linking -- restore default illumination
+   976→                    lines.extend([
+   977→                        "    ll = UsdLux.LightAPI(light)",
+   978→                        "    coll = ll.GetLightLinkCollectionAPI()",
+   979→                        "    includes = coll.GetIncludesRel()",
+   980→                        "    includes.ClearTargets(True)",
+   981→                        "    includes.AddTarget(Sdf.Path('/'))",
+   982→                    ])
+   983→                elif action in ("include", "exclude"):
+   984→                    coll_method = "GetLightLinkCollectionAPI"
+   985→                    if action == "include":
+   986→                        path_reprs = ", ".join(repr(p) for p in geo_paths)
+   987→                        lines.extend([
+   988→                            "    ll = UsdLux.LightAPI(light)",
+   989→                            f"    coll = ll.{coll_method}()",
+   990→                            "    includes = coll.GetIncludesRel()",
+   991→                            "    includes.ClearTargets(True)",
+   992→                            f"    for p in [{path_reprs}]:",
+   993→                            "        includes.AddTarget(Sdf.Path(p))",
+   994→                        ])
+   995→                    else:  # exclude
+   996→                        path_reprs = ", ".join(repr(p) for p in geo_paths)
+   997→                        lines.extend([
+   998→                            "    ll = UsdLux.LightAPI(light)",
+   999→                            f"    coll = ll.{coll_method}()",
+  1000→                            "    excludes = coll.GetExcludesRel()",
+  1001→                            f"    for p in [{path_reprs}]:",
+  1002→                            "        excludes.AddTarget(Sdf.Path(p))",
+  1003→                        ])
+  1004→                else:  # shadow_include or shadow_exclude
+  1005→                    coll_method = "GetShadowLinkCollectionAPI"
+  1006→                    if action == "shadow_include":
+  1007→                        path_reprs = ", ".join(repr(p) for p in geo_paths)
+  1008→                        lines.extend([
+  1009→                            "    ll = UsdLux.LightAPI(light)",
+  1010→                            f"    coll = ll.{coll_method}()",
+  1011→                            "    includes = coll.GetIncludesRel()",
+  1012→                            "    includes.ClearTargets(True)",
+  1013→                            f"    for p in [{path_reprs}]:",
+  1014→                            "        includes.AddTarget(Sdf.Path(p))",
+  1015→                        ])
+  1016→                    else:  # shadow_exclude
+  1017→                        path_reprs = ", ".join(repr(p) for p in geo_paths)
+  1018→                        lines.extend([
+  1019→                            "    ll = UsdLux.LightAPI(light)",
+  1020→                            f"    coll = ll.{coll_method}()",
+  1021→                            "    excludes = coll.GetExcludesRel()",
+  1022→                            f"    for p in [{path_reprs}]:",
+  1023→                            "        excludes.AddTarget(Sdf.Path(p))",
+  1024→                        ])
+  1025→
+  1026→                code = "\n".join(lines)
+  1027→                py_lop.parm("python").set(code)
+  1028→
+  1029→                result = {
+  1030→                    "node": py_lop.path(),
+  1031→                    "light_path": light_path,
+  1032→                    "action": action,
+  1033→                }
+  1034→                if geo_paths:
+  1035→                    result["geo_paths"] = geo_paths
+  1036→                return result
+  1037→
+  1038→        return run_on_main(_on_main)
+  1039→
+  1040→    # -- Solaris ordering validation ----------------------------------------
+  1041→
+  1042→    # Node types where input order determines layer/opinion strength.
+  1043→    # These are merge-like LOPs: sublayer stacks, merges, etc.
+  1044→    _ORDER_DEPENDENT_TYPES = frozenset({
+  1045→        "merge", "sublayer", "merge::2.0",
+  1046→        "graft", "graft::2.0", "layerbreak",
+  1047→    })
+  1048→
+  1049→    # Node types where input selection is explicit (switch, blend) --
+  1050→    # these are NOT ambiguous even with multiple inputs.
+  1051→    _ORDER_INDEPENDENT_TYPES = frozenset({
+  1052→        "switch", "switchif", "null", "output",
+  1053→    })
+  1054→
+  1055→    def _handle_solaris_validate_ordering(self, payload: Dict) -> Dict:
+  1056→        """Walk LOP network from render ROP backwards, detect ambiguous merge points.
+  1057→
+  1058→        Ambiguous merge = a LOP node with multiple inputs where evaluation order
+  1059→        is not explicitly set and affects the output (e.g., merge LOPs, sublayer
+  1060→        stacks where order determines opinion strength).
+  1061→
+  1062→        Args:
+  1063→            payload: Dict with optional keys:
+  1064→                - node: Starting node path (render ROP or Karma LOP).
+  1065→                  If omitted, auto-discovers the display node in /stage.
+  1066→                - max_depth: Maximum traversal depth (default: 50).
+  1067→
+  1068→        Returns:
+  1069→            {
+  1070→                "issues": [
+  1071→                    {
+  1072→                        "node": "/stage/merge1",
+  1073→                        "type": "ambiguous_merge",
+  1074→                        "input_count": 3,
+  1075→                        "current_order": ["/stage/lighting", "/stage/materials", "/stage/geo"],
+  1076→                        "suggested_fix": "Verify merge order matches intended layer strength"
+  1077→                    }
+  1078→                ],
+  1079→                "nodes_visited": int,
+  1080→                "clean": bool
+  1081→            }
+  1082→        """
+  1083→        if not HOU_AVAILABLE:
+  1084→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+  1085→
+  1086→        node_path = resolve_param(payload, "node", required=False)
+  1087→        max_depth = int(resolve_param_with_default(payload, "max_depth", 50))
+  1088→
+  1089→        from .main_thread import run_on_main
+  1090→
+  1091→        def _on_main():
+  1092→            # Resolve starting node
+  1093→            start_node = None
+  1094→            if node_path:
+  1095→                start_node = hou.node(node_path)
+  1096→                if start_node is None:
+  1097→                    raise ValueError(
+  1098→                        f"Couldn't find a node at {node_path} -- "
+  1099→                        "double-check the path exists"
+  1100→                    )
+  1101→            else:
+  1102→                # Auto-discover: try /stage display node, then /out render ROPs
+  1103→                stage = hou.node("/stage")
+  1104→                if stage is not None:
+  1105→                    start_node = stage.displayNode()
+  1106→                if start_node is None:
+  1107→                    out = hou.node("/out")
+  1108→                    if out is not None:
+  1109→                        for child in out.children():
+  1110→                            if child.type().name() in ("usdrender", "usdrender_rop"):
+  1111→                                start_node = child
+  1112→                                break
+  1113→                if start_node is None:
+  1114→                    raise ValueError(
+  1115→                        "Couldn't find a render node to start from -- "
+  1116→                        "pass a node path or make sure /stage has a display node"
+  1117→                    )
+  1118→
+  1119→            issues: List[Dict] = []
+  1120→            visited: set = set()
+  1121→
+  1122→            def _walk(node, depth: int):
+  1123→                if depth > max_depth:
+  1124→                    return
+  1125→                path = node.path()
+  1126→                if path in visited:
+  1127→                    return
+  1128→                visited.add(path)
+  1129→
+  1130→                # For ROPs (e.g. usdrender in /out), follow loppath parm
+  1131→                # to jump into the LOP network
+  1132→                node_type = node.type().name()
+  1133→                if node_type in ("usdrender", "usdrender_rop"):
+  1134→                    lop_path_parm = node.parm("loppath")
+  1135→                    if lop_path_parm:
+  1136→                        lop_path = lop_path_parm.eval()
+  1137→                        if lop_path:
+  1138→                            lop_node = hou.node(lop_path)
+  1139→                            if lop_node is not None:
+  1140→                                _walk(lop_node, depth + 1)
+  1141→                    return
+  1142→
+  1143→                # Check inputs
+  1144→                inputs = node.inputs()
+  1145→                input_count = len(inputs)
+  1146→
+  1147→                if input_count >= 2:
+  1148→                    # Determine if this is an order-dependent node
+  1149→                    base_type = node_type.split("::")[0].lower()
+  1150→
+  1151→                    if base_type not in self._ORDER_INDEPENDENT_TYPES:
+  1152→                        is_order_dependent = (
+  1153→                            base_type in self._ORDER_DEPENDENT_TYPES
+  1154→                            or base_type.startswith("merge")
+  1155→                            or base_type.startswith("sublayer")
+  1156→                        )
+  1157→
+  1158→                        if is_order_dependent:
+  1159→                            current_order = []
+  1160→                            for inp in inputs:
+  1161→                                if inp is not None:
+  1162→                                    current_order.append(inp.path())
+  1163→                                else:
+  1164→                                    current_order.append(None)
+  1165→
+  1166→                            # Determine suggested fix based on node type
+  1167→                            if "sublayer" in base_type:
+  1168→                                suggested_fix = (
+  1169→                                    "Verify sublayer order matches intended opinion "
+  1170→                                    "strength -- later inputs (higher index) have "
+  1171→                                    "stronger opinions in USD composition"
+  1172→                                )
+  1173→                            else:
+  1174→                                suggested_fix = (
+  1175→                                    "Verify merge order matches intended layer "
+  1176→                                    "strength -- check that geometry, materials, "
+  1177→                                    "and lights are in the expected order"
+  1178→                                )
+  1179→
+  1180→                            issues.append({
+  1181→                                "node": path,
+  1182→                                "type": "ambiguous_merge",
+  1183→                                "node_type": node_type,
+  1184→                                "input_count": input_count,
+  1185→                                "current_order": current_order,
+  1186→                                "suggested_fix": suggested_fix,
+  1187→                            })
+  1188→
+  1189→                # Walk backwards through all inputs
+  1190→                for inp in inputs:
+  1191→                    if inp is not None:
+  1192→                        _walk(inp, depth + 1)
+  1193→
+  1194→            _walk(start_node, 0)
+  1195→
+  1196→            return {
+  1197→                "start_node": start_node.path(),
+  1198→                "issues": issues,
+  1199→                "nodes_visited": len(visited),
+  1200→                "clean": len(issues) == 0,
+  1201→            }
+  1202→
+  1203→        return run_on_main(_on_main)
+  1204→

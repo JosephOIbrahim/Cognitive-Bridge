@@ -1,0 +1,23 @@
+"""Injection engine: gain modulation, deltas, mixing, and pharmacokinetics.
+
+Implements the DMF-model gain equation (g = 1 + s_NM * d_n) with
+structural anchor exclusion, exponential onset/offset pharmacokinetics,
+additive injection deltas, and cross-expert mixing matrix tracking.
+
+Anchor phases (KNOWLEDGE, CONSTITUTIONAL, SAFETY, CONSENT) are never
+modified. All injection effects are confined to modulated phases.
+"""
+
+from src.lossless.injection.delta import InjectionDelta, compute_delta
+from src.lossless.injection.gain import compute_gain, compute_gains_for_profile
+from src.lossless.injection.mixing import MixingTracker
+from src.lossless.injection.state import InjectionState
+
+__all__ = [
+    "InjectionDelta",
+    "InjectionState",
+    "MixingTracker",
+    "compute_delta",
+    "compute_gain",
+    "compute_gains_for_profile",
+]

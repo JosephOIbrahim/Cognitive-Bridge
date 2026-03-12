@@ -1,0 +1,121 @@
+"""Unified type definitions for the GPU optimizer.
+
+Single source of truth — no duplicate types across modules.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+
+class WorkflowMode(Enum):
+    """Active application workflow detected on the system."""
+    IDLE = "idle"
+    HOUDINI = "houdini"
+    UNREAL_ENGINE = "unreal_engine"
+    COMFYUI = "comfyui"
+    CLAUDE_CODE = "claude_code"
+    MIXED = "mixed"
+
+
+class OptimizationAction(Enum):
+    """Types of optimization actions that can be applied."""
+    ENV_VAR = "env_var"
+    REGISTRY = "registry"
+    PROCESS_PRIORITY = "process_priority"
+    CPU_AFFINITY = "cpu_affinity"
+    INI_FILE = "ini_file"
+    NVIDIA_SMI = "nvidia_smi"
+    INFO = "info"  # informational, no action
+
+
+class ExpertType(Enum):
+    """Expert identifiers for the MoE routing."""
+    GPU_SPECIALIST = "gpu_specialist"
+    HOUDINI_ENGINEER = "houdini_engineer"
+    UE5_ENGINEER = "ue5_engineer"
+    SYSTEM_INTEGRATOR = "system_integrator"
+
+
+@dataclass
+class AppProfile:
+    """Application detection and resource profile."""
+    name: str
+    process_names: list[str]
+    cmdline_pattern: re.Pattern | None
+    vram_budget_gb: float
+
+    @classmethod
+    def from_config(cls, name: str, cfg: dict) -> AppProfile:
+        pattern = cfg.get("cmdline_pattern")
+        return cls(
+            name=name,
+            process_names=cfg.get("process_names", []),
+            cmdline_pattern=re.compile(pattern) if pattern else None,
+            vram_budget_gb=cfg.get("vram_budget_gb", 0),
+        )
+
+
+@dataclass
+class ProcessInfo:
+    """Detected running process with resource usage."""
+    pid: int
+    name: str
+    app: str  # matched app name or "unknown"
+    vram_mb: float = 0.0
+    cpu_percent: float = 0.0
+
+
+@dataclass
+class SystemContext:
+    """Snapshot of the current system state for expert analysis."""
+    gpu_name: str = ""
+    driver_version: str = ""
+    gpu_temp_c: float = 0.0
+    gpu_util_pct: float = 0.0
+    vram_used_mb: float = 0.0
+    vram_total_mb: float = 0.0
+    power_draw_w: float = 0.0
+    pcie_gen: int = 0
+    pcie_width: int = 0
+    active_apps: list[str] = field(default_factory=list)
+    processes: list[ProcessInfo] = field(default_factory=list)
+    workflow_mode: WorkflowMode = WorkflowMode.IDLE
+    env_vars: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class Recommendation:
+    """A single optimization recommendation from an expert."""
+    expert: ExpertType
+    action: OptimizationAction
+    description: str
+    impact: float  # 0.0 - 1.0
+    confidence: float  # 0.0 - 1.0
+    parameters: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def score(self) -> float:
+        return self.impact * self.confidence
+
+
+@dataclass
+class OptimizationResult:
+    """Result of applying a single optimization."""
+    recommendation: Recommendation
+    success: bool
+    message: str = ""
+    rollback_info: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class CycleReport:
+    """Summary of one optimization cycle."""
+    context: SystemContext
+    recommendations: list[Recommendation]
+    applied: list[OptimizationResult]
+    skipped: list[Recommendation]
+    errors: list[str]

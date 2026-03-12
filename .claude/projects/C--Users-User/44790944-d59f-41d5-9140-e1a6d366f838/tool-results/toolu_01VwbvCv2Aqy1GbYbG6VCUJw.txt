@@ -1,0 +1,1894 @@
+     1→"""
+     2→Synapse Recipe Registry
+     3→
+     4→Pre-built, pre-approved multi-step operation templates.
+     5→Recipes execute at Tier 0 speed by expanding triggers into
+     6→sequences of SynapseCommands without any LLM involvement.
+     7→
+     8→Artists can register custom recipes via registry.register().
+     9→"""
+    10→
+    11→import json
+    12→import re
+    13→from dataclasses import dataclass, field
+    14→from typing import Dict, List, Optional, Tuple, Any
+    15→
+    16→from ..core.protocol import SynapseCommand
+    17→from ..core.gates import GateLevel
+    18→from ..core.determinism import deterministic_uuid
+    19→
+    20→
+    21→@dataclass
+    22→class RecipeStep:
+    23→    """A single step in a recipe template."""
+    24→    action: str                        # CommandType value
+    25→    payload_template: Dict[str, Any]   # Values may contain {placeholders}
+    26→    gate_level: GateLevel = GateLevel.REVIEW
+    27→    output_var: str = ""               # If set, response data stored as ${var}.{field}
+    28→
+    29→    def instantiate(self, params: Dict[str, str]) -> SynapseCommand:
+    30→        """Fill placeholders and return a SynapseCommand."""
+    31→        payload = {}
+    32→        for key, value in sorted(self.payload_template.items()):
+    33→            if isinstance(value, str) and "{" in value:
+    34→                payload[key] = value.format(**params)
+    35→            else:
+    36→                payload[key] = value
+    37→
+    38→        return SynapseCommand(
+    39→            type=self.action,
+    40→            id=deterministic_uuid(
+    41→                f"recipe:{self.action}:{json.dumps(payload, sort_keys=True, default=str)}", "cmd"
+    42→            ),
+    43→            payload=payload,
+    44→        )
+    45→
+    46→    def instantiate_with_vars(self, variables: Dict[str, str]) -> SynapseCommand:
+    47→        """Fill placeholders using accumulated variables (supports $var.field syntax)."""
+    48→        payload = {}
+    49→        for key, value in sorted(self.payload_template.items()):
+    50→            if isinstance(value, str):
+    51→                # Replace $var.field references first
+    52→                resolved = value
+    53→                for var_key in sorted(variables.keys(), key=len, reverse=True):
+    54→                    resolved = resolved.replace(var_key, str(variables[var_key]))
+    55→                # Then standard {param} placeholders
+    56→                if "{" in resolved:
+    57→                    resolved = resolved.format(**{
+    58→                        k: v for k, v in sorted(variables.items())
+    59→                        if not k.startswith("$")
+    60→                    })
+    61→                payload[key] = resolved
+    62→            else:
+    63→                payload[key] = value
+    64→
+    65→        return SynapseCommand(
+    66→            type=self.action,
+    67→            id=deterministic_uuid(
+    68→                f"recipe:{self.action}:{json.dumps(payload, sort_keys=True, default=str)}", "cmd"
+    69→            ),
+    70→            payload=payload,
+    71→        )
+    72→
+    73→
+    74→@dataclass
+    75→class Recipe:
+    76→    """A pre-built multi-step operation template."""
+    77→    name: str
+    78→    description: str
+    79→    triggers: List[str]                # Regex patterns (case-insensitive)
+    80→    parameters: List[str]              # Named capture groups expected
+    81→    steps: List[RecipeStep]
+    82→    gate_level: GateLevel = GateLevel.REVIEW
+    83→    category: str = "general"
+    84→
+    85→    _compiled: List["re.Pattern[str]"] = field(default_factory=list, repr=False)
+    86→
+    87→    def __post_init__(self):
+    88→        self._compiled = [
+    89→            re.compile(t, re.IGNORECASE) for t in self.triggers
+    90→        ]
+    91→
+    92→    def match(self, text: str) -> Optional[Dict[str, str]]:
+    93→        """
+    94→        Try to match text against trigger patterns.
+    95→
+    96→        Returns extracted parameters on match, None otherwise.
+    97→        """
+    98→        text = text.strip()
+    99→        for pattern in self._compiled:
+   100→            m = pattern.match(text)
+   101→            if m:
+   102→                params = m.groupdict()
+   103→                # Fill defaults for missing optional params
+   104→                for p in self.parameters:
+   105→                    if p not in params or params[p] is None:
+   106→                        params[p] = ""
+   107→                return params
+   108→        return None
+   109→
+   110→    def instantiate(self, params: Dict[str, str]) -> List[SynapseCommand]:
+   111→        """Fill templates with extracted params, return command list."""
+   112→        return [step.instantiate(params) for step in self.steps]
+   113→
+   114→    def execute(
+   115→        self,
+   116→        params: Dict[str, str],
+   117→        command_fn,
+   118→    ) -> List[Tuple[SynapseCommand, Any]]:
+   119→        """Execute recipe with data flow between steps.
+   120→
+   121→        Each step can declare output_var. After execution, response data
+   122→        fields become ${var}.{field} variables available to later steps.
+   123→
+   124→        Args:
+   125→            params: Initial parameters from trigger match.
+   126→            command_fn: Callable(SynapseCommand) -> SynapseResponse.
+   127→
+   128→        Returns:
+   129→            List of (command, response) tuples.
+   130→        """
+   131→        variables: Dict[str, str] = dict(params)
+   132→        results: List[Tuple[SynapseCommand, Any]] = []
+   133→        for step in self.steps:
+   134→            cmd = step.instantiate_with_vars(variables)
+   135→            resp = command_fn(cmd)
+   136→            results.append((cmd, resp))
+   137→            if step.output_var and hasattr(resp, "data") and isinstance(resp.data, dict):
+   138→                for k, v in sorted(resp.data.items()):  # sorted: He2025
+   139→                    variables[f"${step.output_var}.{k}"] = str(v)
+   140→        return results
+   141→
+   142→
+   143→class RecipeRegistry:
+   144→    """
+   145→    Registry of pre-built recipes.
+   146→
+   147→    Matches input text against all registered recipes.
+   148→    Built-in recipes are registered on construction.
+   149→    """
+   150→
+   151→    def __init__(self, include_builtins: bool = True):
+   152→        self._recipes: List[Recipe] = []
+   153→        if include_builtins:
+   154→            self._register_builtins()
+   155→
+   156→    def register(self, recipe: Recipe):
+   157→        """Register a custom recipe."""
+   158→        self._recipes.append(recipe)
+   159→
+   160→    def match(self, text: str) -> Optional[Tuple[Recipe, Dict[str, str]]]:
+   161→        """
+   162→        Try to match text against all registered recipes.
+   163→
+   164→        Returns (recipe, params) on match, None otherwise.
+   165→        """
+   166→        text = text.strip()
+   167→        for recipe in self._recipes:
+   168→            params = recipe.match(text)
+   169→            if params is not None:
+   170→                return (recipe, params)
+   171→        return None
+   172→
+   173→    @property
+   174→    def recipes(self) -> List[Recipe]:
+   175→        """List of registered recipes."""
+   176→        return list(self._recipes)
+   177→
+   178→    def _register_builtins(self):
+   179→        """Register the built-in recipe library."""
+   180→
+   181→        # --- Three-Point Lighting ---
+   182→        self.register(Recipe(
+   183→            name="three_point_lighting",
+   184→            description="Create a three-point lighting setup (key, fill, rim)",
+   185→            triggers=[
+   186→                r"^(?:set up|setup|create)\s+(?:a\s+)?three[\s-]point\s+light(?:ing)?(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   187→            ],
+   188→            parameters=["parent"],
+   189→            gate_level=GateLevel.REVIEW,
+   190→            category="lighting",
+   191→            steps=[
+   192→                RecipeStep(
+   193→                    action="create_node",
+   194→                    payload_template={
+   195→                        "type": "hlight",
+   196→                        "name": "key_light",
+   197→                        "parent": "{parent}",
+   198→                    },
+   199→                    gate_level=GateLevel.REVIEW,
+   200→                ),
+   201→                RecipeStep(
+   202→                    action="set_parm",
+   203→                    payload_template={
+   204→                        "node": "{parent}/key_light",
+   205→                        "parm": "light_exposure",
+   206→                        "value": 4,
+   207→                    },
+   208→                    gate_level=GateLevel.REVIEW,
+   209→                ),
+   210→                RecipeStep(
+   211→                    action="create_node",
+   212→                    payload_template={
+   213→                        "type": "hlight",
+   214→                        "name": "fill_light",
+   215→                        "parent": "{parent}",
+   216→                    },
+   217→                    gate_level=GateLevel.REVIEW,
+   218→                ),
+   219→                RecipeStep(
+   220→                    action="set_parm",
+   221→                    payload_template={
+   222→                        "node": "{parent}/fill_light",
+   223→                        "parm": "light_exposure",
+   224→                        "value": 2,
+   225→                    },
+   226→                    gate_level=GateLevel.REVIEW,
+   227→                ),
+   228→                RecipeStep(
+   229→                    action="create_node",
+   230→                    payload_template={
+   231→                        "type": "hlight",
+   232→                        "name": "rim_light",
+   233→                        "parent": "{parent}",
+   234→                    },
+   235→                    gate_level=GateLevel.REVIEW,
+   236→                ),
+   237→                RecipeStep(
+   238→                    action="set_parm",
+   239→                    payload_template={
+   240→                        "node": "{parent}/rim_light",
+   241→                        "parm": "light_exposure",
+   242→                        "value": 3,
+   243→                    },
+   244→                    gate_level=GateLevel.REVIEW,
+   245→                ),
+   246→            ],
+   247→        ))
+   248→
+   249→        # --- Scatter & Copy ---
+   250→        self.register(Recipe(
+   251→            name="scatter_copy",
+   252→            description="Scatter source points onto target geometry using copy-to-points",
+   253→            triggers=[
+   254→                r"^scatter\s+(?P<source>[\w\-./]+)\s+(?:on(?:to)?|over)\s+(?P<target>[\w\-./]+)$",
+   255→            ],
+   256→            parameters=["source", "target"],
+   257→            gate_level=GateLevel.REVIEW,
+   258→            category="geometry",
+   259→            steps=[
+   260→                RecipeStep(
+   261→                    action="create_node",
+   262→                    payload_template={
+   263→                        "type": "scatter",
+   264→                        "name": "scatter1",
+   265→                        "parent": "{target}",
+   266→                    },
+   267→                    gate_level=GateLevel.REVIEW,
+   268→                ),
+   269→                RecipeStep(
+   270→                    action="create_node",
+   271→                    payload_template={
+   272→                        "type": "copytopoints",
+   273→                        "name": "copytopoints1",
+   274→                        "parent": "{target}",
+   275→                    },
+   276→                    gate_level=GateLevel.REVIEW,
+   277→                ),
+   278→                RecipeStep(
+   279→                    action="connect_nodes",
+   280→                    payload_template={
+   281→                        "source": "{source}",
+   282→                        "target": "{target}/copytopoints1",
+   283→                    },
+   284→                    gate_level=GateLevel.REVIEW,
+   285→                ),
+   286→            ],
+   287→        ))
+   288→
+   289→        # --- Null Controller ---
+   290→        self.register(Recipe(
+   291→            name="null_controller",
+   292→            description="Create a null node as a controller with display flag",
+   293→            triggers=[
+   294→                r"^create\s+(?:a\s+)?(?:null\s+)?controller(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   295→            ],
+   296→            parameters=["parent"],
+   297→            gate_level=GateLevel.REVIEW,
+   298→            category="utility",
+   299→            steps=[
+   300→                RecipeStep(
+   301→                    action="create_node",
+   302→                    payload_template={
+   303→                        "type": "null",
+   304→                        "name": "controller",
+   305→                        "parent": "{parent}",
+   306→                    },
+   307→                    gate_level=GateLevel.REVIEW,
+   308→                ),
+   309→                RecipeStep(
+   310→                    action="set_parm",
+   311→                    payload_template={
+   312→                        "node": "{parent}/controller",
+   313→                        "parm": "controltype",
+   314→                        "value": 1,
+   315→                    },
+   316→                    gate_level=GateLevel.REVIEW,
+   317→                ),
+   318→            ],
+   319→        ))
+   320→
+   321→        # --- Color Correction Setup (COPs) ---
+   322→        self.register(Recipe(
+   323→            name="color_correction_setup",
+   324→            description="Create a color correction chain (color_correct -> grade -> null merge point)",
+   325→            triggers=[
+   326→                r"^(?:set up|setup|create)\s+(?:a\s+)?color\s+correct(?:ion)?(?:\s+(?:chain|setup|stack))?(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   327→            ],
+   328→            parameters=["parent"],
+   329→            gate_level=GateLevel.REVIEW,
+   330→            category="compositing",
+   331→            steps=[
+   332→                RecipeStep(
+   333→                    action="create_node",
+   334→                    payload_template={
+   335→                        "type": "colorcorrect",
+   336→                        "name": "color_correct1",
+   337→                        "parent": "{parent}",
+   338→                    },
+   339→                    gate_level=GateLevel.REVIEW,
+   340→                ),
+   341→                RecipeStep(
+   342→                    action="set_parm",
+   343→                    payload_template={
+   344→                        "node": "{parent}/color_correct1",
+   345→                        "parm": "saturation",
+   346→                        "value": 1.0,
+   347→                    },
+   348→                    gate_level=GateLevel.REVIEW,
+   349→                ),
+   350→                RecipeStep(
+   351→                    action="create_node",
+   352→                    payload_template={
+   353→                        "type": "grade",
+   354→                        "name": "grade1",
+   355→                        "parent": "{parent}",
+   356→                    },
+   357→                    gate_level=GateLevel.REVIEW,
+   358→                ),
+   359→                RecipeStep(
+   360→                    action="connect_nodes",
+   361→                    payload_template={
+   362→                        "source": "{parent}/color_correct1",
+   363→                        "target": "{parent}/grade1",
+   364→                    },
+   365→                    gate_level=GateLevel.REVIEW,
+   366→                ),
+   367→            ],
+   368→        ))
+   369→
+   370→        # --- Dome Light Environment ---
+   371→        self.register(Recipe(
+   372→            name="dome_light_environment",
+   373→            description="Create a dome light with texture and exposure for environment lighting",
+   374→            triggers=[
+   375→                r"^(?:set up|setup|create)\s+(?:a\s+)?dome\s*light(?:\s+(?:with|using)\s+(?P<texture>.+))?$",
+   376→                r"^(?:add|create)\s+(?:an?\s+)?(?:environment|env|hdri)\s+light(?:\s+(?:with|using)\s+(?P<texture>.+))?$",
+   377→            ],
+   378→            parameters=["texture"],
+   379→            gate_level=GateLevel.REVIEW,
+   380→            category="lighting",
+   381→            steps=[
+   382→                RecipeStep(
+   383→                    action="create_usd_prim",
+   384→                    payload_template={
+   385→                        "prim_path": "/lights/dome_light",
+   386→                        "prim_type": "DomeLight",
+   387→                    },
+   388→                    gate_level=GateLevel.REVIEW,
+   389→                    output_var="dome",
+   390→                ),
+   391→                RecipeStep(
+   392→                    action="set_usd_attribute",
+   393→                    payload_template={
+   394→                        "prim_path": "/lights/dome_light",
+   395→                        "attribute_name": "xn__inputsexposure_vya",
+   396→                        "value": 0,
+   397→                    },
+   398→                    gate_level=GateLevel.REVIEW,
+   399→                ),
+   400→            ],
+   401→        ))
+   402→
+   403→        # --- Camera Rig ---
+   404→        self.register(Recipe(
+   405→            name="camera_rig",
+   406→            description="Create a camera with focal length and position",
+   407→            triggers=[
+   408→                r"^(?:set up|setup|create)\s+(?:a\s+)?camera(?:\s+(?:at|in)\s+(?P<parent>.+))?$",
+   409→                r"^(?:add)\s+(?:a\s+)?(?:render\s+)?camera(?:\s+(?:at|in)\s+(?P<parent>.+))?$",
+   410→            ],
+   411→            parameters=["parent"],
+   412→            gate_level=GateLevel.REVIEW,
+   413→            category="camera",
+   414→            steps=[
+   415→                RecipeStep(
+   416→                    action="create_node",
+   417→                    payload_template={
+   418→                        "type": "cam",
+   419→                        "name": "render_cam",
+   420→                        "parent": "{parent}",
+   421→                    },
+   422→                    gate_level=GateLevel.REVIEW,
+   423→                    output_var="cam",
+   424→                ),
+   425→                RecipeStep(
+   426→                    action="set_parm",
+   427→                    payload_template={
+   428→                        "node": "{parent}/render_cam",
+   429→                        "parm": "focal",
+   430→                        "value": 50,
+   431→                    },
+   432→                    gate_level=GateLevel.REVIEW,
+   433→                ),
+   434→            ],
+   435→        ))
+   436→
+   437→        # --- Pyro Source Setup ---
+   438→        self.register(Recipe(
+   439→            name="pyro_source_setup",
+   440→            description="Create a pyro source setup with scatter and attribute wrangle",
+   441→            triggers=[
+   442→                r"^(?:set up|setup|create)\s+(?:a\s+)?pyro\s+source(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   443→            ],
+   444→            parameters=["parent"],
+   445→            gate_level=GateLevel.REVIEW,
+   446→            category="fx",
+   447→            steps=[
+   448→                RecipeStep(
+   449→                    action="create_node",
+   450→                    payload_template={
+   451→                        "type": "scatter",
+   452→                        "name": "pyro_scatter",
+   453→                        "parent": "{parent}",
+   454→                    },
+   455→                    gate_level=GateLevel.REVIEW,
+   456→                ),
+   457→                RecipeStep(
+   458→                    action="create_node",
+   459→                    payload_template={
+   460→                        "type": "attribwrangle",
+   461→                        "name": "pyro_source_attrs",
+   462→                        "parent": "{parent}",
+   463→                    },
+   464→                    gate_level=GateLevel.REVIEW,
+   465→                ),
+   466→                RecipeStep(
+   467→                    action="connect_nodes",
+   468→                    payload_template={
+   469→                        "source": "{parent}/pyro_scatter",
+   470→                        "target": "{parent}/pyro_source_attrs",
+   471→                    },
+   472→                    gate_level=GateLevel.REVIEW,
+   473→                ),
+   474→            ],
+   475→        ))
+   476→
+   477→        # --- Material Quick Setup ---
+   478→        self.register(Recipe(
+   479→            name="material_quick_setup",
+   480→            description="Create a MaterialX standard surface material and assign it",
+   481→            triggers=[
+   482→                r"^(?:set up|setup|create)\s+(?:a\s+)?(?:quick\s+)?material\s+(?:named?\s+)?(?P<name>\w+)$",
+   483→            ],
+   484→            parameters=["name"],
+   485→            gate_level=GateLevel.REVIEW,
+   486→            category="materials",
+   487→            steps=[
+   488→                RecipeStep(
+   489→                    action="create_material",
+   490→                    payload_template={
+   491→                        "name": "{name}",
+   492→                        "base_color": [0.8, 0.8, 0.8],
+   493→                        "roughness": 0.4,
+   494→                    },
+   495→                    gate_level=GateLevel.REVIEW,
+   496→                    output_var="mat",
+   497→                ),
+   498→            ],
+   499→        ))
+   500→
+   501→        # --- Karma Render Setup ---
+   502→        self.register(Recipe(
+   503→            name="karma_render_setup",
+   504→            description="Create a Karma render setup with resolution and camera",
+   505→            triggers=[
+   506→                r"^(?:set up|setup|create)\s+(?:a\s+)?karma\s+render(?:\s+setup)?$",
+   507→            ],
+   508→            parameters=[],
+   509→            gate_level=GateLevel.REVIEW,
+   510→            category="render",
+   511→            steps=[
+   512→                RecipeStep(
+   513→                    action="create_node",
+   514→                    payload_template={
+   515→                        "type": "usdrender_rop",
+   516→                        "name": "karma_render",
+   517→                        "parent": "/stage",
+   518→                    },
+   519→                    gate_level=GateLevel.REVIEW,
+   520→                    output_var="rop",
+   521→                ),
+   522→            ],
+   523→        ))
+   524→
+   525→        # --- SOPImport Chain ---
+   526→        self.register(Recipe(
+   527→            name="sopimport_chain",
+   528→            description="Create a SOP Import LOP to bring SOP geometry into the USD stage",
+   529→            triggers=[
+   530→                r"^(?:import|bring)\s+(?P<sop_path>[\w\-./]+)\s+(?:into|to)\s+(?:the\s+)?(?:usd\s+)?stage$",
+   531→            ],
+   532→            parameters=["sop_path"],
+   533→            gate_level=GateLevel.REVIEW,
+   534→            category="pipeline",
+   535→            steps=[
+   536→                RecipeStep(
+   537→                    action="create_node",
+   538→                    payload_template={
+   539→                        "type": "sopimport",
+   540→                        "name": "sopimport1",
+   541→                        "parent": "/stage",
+   542→                    },
+   543→                    gate_level=GateLevel.REVIEW,
+   544→                ),
+   545→                RecipeStep(
+   546→                    action="set_parm",
+   547→                    payload_template={
+   548→                        "node": "/stage/sopimport1",
+   549→                        "parm": "soppath",
+   550→                        "value": "{sop_path}",
+   551→                    },
+   552→                    gate_level=GateLevel.REVIEW,
+   553→                ),
+   554→            ],
+   555→        ))
+   556→
+   557→        # --- Edit Transform ---
+   558→        self.register(Recipe(
+   559→            name="edit_transform",
+   560→            description="Create an edit node for transforming USD prims",
+   561→            triggers=[
+   562→                r"^(?:edit|transform)\s+(?P<prim_path>[\w\-./]+)\s+(?:position|translate|move)$",
+   563→            ],
+   564→            parameters=["prim_path"],
+   565→            gate_level=GateLevel.REVIEW,
+   566→            category="pipeline",
+   567→            steps=[
+   568→                RecipeStep(
+   569→                    action="create_node",
+   570→                    payload_template={
+   571→                        "type": "edit",
+   572→                        "name": "edit_xform",
+   573→                        "parent": "/stage",
+   574→                    },
+   575→                    gate_level=GateLevel.REVIEW,
+   576→                ),
+   577→                RecipeStep(
+   578→                    action="set_parm",
+   579→                    payload_template={
+   580→                        "node": "/stage/edit_xform",
+   581→                        "parm": "primpattern",
+   582→                        "value": "{prim_path}",
+   583→                    },
+   584→                    gate_level=GateLevel.REVIEW,
+   585→                ),
+   586→            ],
+   587→        ))
+   588→
+   589→        # ==================================================================
+   590→        # PRODUCTION RECIPES — Real VFX workflows
+   591→        # ==================================================================
+   592→
+   593→        # --- Vellum Cloth Simulation ---
+   594→        self.register(Recipe(
+   595→            name="vellum_cloth_sim",
+   596→            description=(
+   597→                "Set up a complete Vellum cloth simulation: "
+   598→                "vellumcloth configure -> vellumsolver -> filecache. "
+   599→                "Configures stretch/bend stiffness, substeps, and collision."
+   600→            ),
+   601→            triggers=[
+   602→                r"^(?:set up|setup|create)\s+(?:a\s+)?(?:vellum\s+)?cloth\s+sim(?:ulation)?(?:\s+(?:on|for|at|in|under)\s+(?P<parent>.+))?$",
+   603→                r"^(?:add|create)\s+(?:a\s+)?vellum\s+cloth(?:\s+(?:on|for|at|in|under)\s+(?P<parent>.+))?$",
+   604→            ],
+   605→            parameters=["parent"],
+   606→            gate_level=GateLevel.REVIEW,
+   607→            category="fx",
+   608→            steps=[
+   609→                RecipeStep(
+   610→                    action="execute_python",
+   611→                    payload_template={
+   612→                        "code": (
+   613→                            "import hou\n"
+   614→                            "parent = hou.node('{parent}') or hou.node('/obj')\n"
+   615→                            "# Create Vellum cloth configure\n"
+   616→                            "cloth = parent.createNode('vellumcloth', 'vellum_cloth')\n"
+   617→                            "cloth.parm('stretchstiffness').set(10000)\n"
+   618→                            "cloth.parm('bendstiffness').set(0.001)\n"
+   619→                            "cloth.parm('thickness').set(0.01)\n"
+   620→                            "# Create Vellum solver\n"
+   621→                            "solver = parent.createNode('vellumsolver', 'vellum_solver')\n"
+   622→                            "solver.parm('substeps').set(5)\n"
+   623→                            "# Wire: cloth geo output -> solver input 1\n"
+   624→                            "solver.setInput(0, cloth, 0)\n"
+   625→                            "# Wire: cloth constraints output -> solver input 2\n"
+   626→                            "solver.setInput(2, cloth, 1)\n"
+   627→                            "# File cache for sim output\n"
+   628→                            "cache = parent.createNode('filecache', 'cloth_cache')\n"
+   629→                            "cache.parm('file').set('$HIP/cache/cloth.$F4.bgeo.sc')\n"
+   630→                            "cache.setInput(0, solver, 0)\n"
+   631→                            "cache.setDisplayFlag(True)\n"
+   632→                            "cache.setRenderFlag(True)\n"
+   633→                            "parent.layoutChildren()\n"
+   634→                            "result = {{'node': cache.path(), 'solver': solver.path(), "
+   635→                            "'cloth': cloth.path()}}\n"
+   636→                        ),
+   637→                    },
+   638→                    gate_level=GateLevel.REVIEW,
+   639→                    output_var="cloth_sim",
+   640→                ),
+   641→            ],
+   642→        ))
+   643→
+   644→        # --- RBD Destruction ---
+   645→        self.register(Recipe(
+   646→            name="rbd_destruction",
+   647→            description=(
+   648→                "Set up an RBD destruction pipeline: "
+   649→                "rbdmaterialfracture -> assemble -> rbdconstraintsfromrules -> "
+   650→                "rbdconstraintproperties (glue) -> rigidsolver -> filecache."
+   651→            ),
+   652→            triggers=[
+   653→                r"^(?:set up|setup|create)\s+(?:a\s+)?(?:rbd\s+)?destruction(?:\s+(?:on|for|at|in|under)\s+(?P<parent>.+))?$",
+   654→                r"^(?:set up|setup|create)\s+(?:a\s+)?(?:rbd\s+)?fracture\s+(?:sim|simulation|pipeline)(?:\s+(?:on|for|at|in|under)\s+(?P<parent>.+))?$",
+   655→                r"^(?:destroy|fracture|break)\s+(?P<parent>[\w\-./]+)$",
+   656→            ],
+   657→            parameters=["parent"],
+   658→            gate_level=GateLevel.REVIEW,
+   659→            category="fx",
+   660→            steps=[
+   661→                RecipeStep(
+   662→                    action="execute_python",
+   663→                    payload_template={
+   664→                        "code": (
+   665→                            "import hou\n"
+   666→                            "parent = hou.node('{parent}') or hou.node('/obj')\n"
+   667→                            "# Fracture\n"
+   668→                            "frac = parent.createNode('rbdmaterialfracture', 'fracture')\n"
+   669→                            "frac.parm('numpieces').set(50)\n"
+   670→                            "# Assemble into packed prims\n"
+   671→                            "asm = parent.createNode('assemble', 'assemble')\n"
+   672→                            "asm.parm('create_packed').set(True)\n"
+   673→                            "asm.setInput(0, frac, 0)\n"
+   674→                            "# Constraints from proximity\n"
+   675→                            "cons = parent.createNode('rbdconstraintsfromrules', 'constraints')\n"
+   676→                            "cons.setInput(0, asm, 0)\n"
+   677→                            "# Glue constraint properties\n"
+   678→                            "props = parent.createNode('rbdconstraintproperties', 'glue_props')\n"
+   679→                            "props.parm('type').set(0)  # Glue\n"
+   680→                            "props.parm('strength').set(500)\n"
+   681→                            "props.setInput(0, cons, 0)\n"
+   682→                            "# Rigid body solver\n"
+   683→                            "solver = parent.createNode('rigidsolver', 'rbd_solver')\n"
+   684→                            "solver.setInput(0, asm, 0)\n"
+   685→                            "solver.setInput(2, props, 0)\n"
+   686→                            "# Cache\n"
+   687→                            "cache = parent.createNode('filecache', 'rbd_cache')\n"
+   688→                            "cache.parm('file').set('$HIP/cache/rbd.$F4.bgeo.sc')\n"
+   689→                            "cache.setInput(0, solver, 0)\n"
+   690→                            "cache.setDisplayFlag(True)\n"
+   691→                            "cache.setRenderFlag(True)\n"
+   692→                            "parent.layoutChildren()\n"
+   693→                            "result = {{'node': cache.path(), 'solver': solver.path(), "
+   694→                            "'fracture': frac.path()}}\n"
+   695→                        ),
+   696→                    },
+   697→                    gate_level=GateLevel.REVIEW,
+   698→                    output_var="rbd",
+   699→                ),
+   700→            ],
+   701→        ))
+   702→
+   703→        # --- Turntable Render ---
+   704→        self.register(Recipe(
+   705→            name="turntable_render",
+   706→            description=(
+   707→                "Set up a render-ready turntable: orbiting camera (360 deg "
+   708→                "over frame range), three-point lighting with Lighting Law "
+   709→                "exposure, dome light environment, Karma render settings with AOVs."
+   710→            ),
+   711→            triggers=[
+   712→                r"^(?:set up|setup|create)\s+(?:a\s+)?turntable(?:\s+render)?(?:\s+(?:for|of|at|in)\s+(?P<target>.+))?$",
+   713→                r"^(?:add|create)\s+(?:a\s+)?(?:render\s+)?turntable(?:\s+(?:for|of|at|in)\s+(?P<target>.+))?$",
+   714→            ],
+   715→            parameters=["target"],
+   716→            gate_level=GateLevel.REVIEW,
+   717→            category="render",
+   718→            steps=[
+   719→                RecipeStep(
+   720→                    action="execute_python",
+   721→                    payload_template={
+   722→                        "code": (
+   723→                            "import hou\n"
+   724→                            "stage = hou.node('/stage') or hou.node('/obj')\n"
+   725→                            "# Camera with orbit expression\n"
+   726→                            "cam = stage.createNode('cam', 'turntable_cam')\n"
+   727→                            "cam.parm('focal').set(50)\n"
+   728→                            "# Orbit: rotate Y over frame range\n"
+   729→                            "cam.parm('tx').set(0)\n"
+   730→                            "cam.parm('ty').set(1)\n"
+   731→                            "cam.parm('tz').set(5)\n"
+   732→                            "cam.parm('ry').setExpression("
+   733→                            "'$FF / ($FEND - $FSTART + 1) * 360')\n"
+   734→                            "result = {{'camera': cam.path()}}\n"
+   735→                        ),
+   736→                    },
+   737→                    gate_level=GateLevel.REVIEW,
+   738→                    output_var="tt_cam",
+   739→                ),
+   740→                # Key light — Lighting Law: intensity 1.0, brightness via exposure
+   741→                RecipeStep(
+   742→                    action="create_usd_prim",
+   743→                    payload_template={
+   744→                        "prim_path": "/lights/turntable_key",
+   745→                        "prim_type": "RectLight",
+   746→                    },
+   747→                    gate_level=GateLevel.REVIEW,
+   748→                    output_var="tt_key",
+   749→                ),
+   750→                RecipeStep(
+   751→                    action="set_usd_attribute",
+   752→                    payload_template={
+   753→                        "prim_path": "/lights/turntable_key",
+   754→                        "attribute_name": "xn__inputsexposure_vya",
+   755→                        "value": 5.0,
+   756→                    },
+   757→                    gate_level=GateLevel.REVIEW,
+   758→                ),
+   759→                # Fill light — 2 stops below key (4:1 ratio)
+   760→                RecipeStep(
+   761→                    action="create_usd_prim",
+   762→                    payload_template={
+   763→                        "prim_path": "/lights/turntable_fill",
+   764→                        "prim_type": "RectLight",
+   765→                    },
+   766→                    gate_level=GateLevel.REVIEW,
+   767→                ),
+   768→                RecipeStep(
+   769→                    action="set_usd_attribute",
+   770→                    payload_template={
+   771→                        "prim_path": "/lights/turntable_fill",
+   772→                        "attribute_name": "xn__inputsexposure_vya",
+   773→                        "value": 3.0,
+   774→                    },
+   775→                    gate_level=GateLevel.REVIEW,
+   776→                ),
+   777→                # Rim light
+   778→                RecipeStep(
+   779→                    action="create_usd_prim",
+   780→                    payload_template={
+   781→                        "prim_path": "/lights/turntable_rim",
+   782→                        "prim_type": "RectLight",
+   783→                    },
+   784→                    gate_level=GateLevel.REVIEW,
+   785→                ),
+   786→                RecipeStep(
+   787→                    action="set_usd_attribute",
+   788→                    payload_template={
+   789→                        "prim_path": "/lights/turntable_rim",
+   790→                        "attribute_name": "xn__inputsexposure_vya",
+   791→                        "value": 4.5,
+   792→                    },
+   793→                    gate_level=GateLevel.REVIEW,
+   794→                ),
+   795→                # Dome light for environment fill
+   796→                RecipeStep(
+   797→                    action="create_usd_prim",
+   798→                    payload_template={
+   799→                        "prim_path": "/lights/turntable_dome",
+   800→                        "prim_type": "DomeLight",
+   801→                    },
+   802→                    gate_level=GateLevel.REVIEW,
+   803→                ),
+   804→                RecipeStep(
+   805→                    action="set_usd_attribute",
+   806→                    payload_template={
+   807→                        "prim_path": "/lights/turntable_dome",
+   808→                        "attribute_name": "xn__inputsexposure_vya",
+   809→                        "value": 0.0,
+   810→                    },
+   811→                    gate_level=GateLevel.REVIEW,
+   812→                ),
+   813→            ],
+   814→        ))
+   815→
+   816→        # --- Ocean Setup ---
+   817→        self.register(Recipe(
+   818→            name="ocean_setup",
+   819→            description=(
+   820→                "Set up an ocean: oceanspectrum -> oceanevaluate for "
+   821→                "displaced surface. Configurable wind speed and chop."
+   822→            ),
+   823→            triggers=[
+   824→                r"^(?:set up|setup|create)\s+(?:an?\s+)?ocean(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   825→                r"^(?:add|create)\s+(?:an?\s+)?ocean\s+(?:surface|sim|fx)(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   826→            ],
+   827→            parameters=["parent"],
+   828→            gate_level=GateLevel.REVIEW,
+   829→            category="fx",
+   830→            steps=[
+   831→                RecipeStep(
+   832→                    action="execute_python",
+   833→                    payload_template={
+   834→                        "code": (
+   835→                            "import hou\n"
+   836→                            "parent = hou.node('{parent}') or hou.node('/obj')\n"
+   837→                            "# Ocean spectrum — wave frequency data\n"
+   838→                            "spec = parent.createNode('oceanspectrum', 'ocean_spectrum')\n"
+   839→                            "spec.parm('speed').set(15)  # wind m/s\n"
+   840→                            "spec.parm('chop').set(0.7)\n"
+   841→                            "spec.parm('gridsize').set(6)  # 2^6 = 64 resolution\n"
+   842→                            "spec.parm('depth').set(200)\n"
+   843→                            "# Ocean evaluate — displaced geometry\n"
+   844→                            "evl = parent.createNode('oceanevaluate', 'ocean_evaluate')\n"
+   845→                            "evl.setInput(0, spec, 0)\n"
+   846→                            "# Output null\n"
+   847→                            "out = parent.createNode('null', 'OCEAN_OUT')\n"
+   848→                            "out.setInput(0, evl, 0)\n"
+   849→                            "out.setDisplayFlag(True)\n"
+   850→                            "out.setRenderFlag(True)\n"
+   851→                            "parent.layoutChildren()\n"
+   852→                            "result = {{'node': out.path(), 'spectrum': spec.path(), "
+   853→                            "'evaluate': evl.path()}}\n"
+   854→                        ),
+   855→                    },
+   856→                    gate_level=GateLevel.REVIEW,
+   857→                    output_var="ocean",
+   858→                ),
+   859→            ],
+   860→        ))
+   861→
+   862→        # --- Full Pyro Fire Simulation ---
+   863→        self.register(Recipe(
+   864→            name="pyro_fire_sim",
+   865→            description=(
+   866→                "Set up a complete pyro fire simulation: scatter source points "
+   867→                "-> attribwrangle (density/temperature/flame/velocity) -> "
+   868→                "volumerasterizeattributes -> pyrosolver -> filecache."
+   869→            ),
+   870→            triggers=[
+   871→                r"^(?:set up|setup|create)\s+(?:a\s+)?(?:pyro\s+)?fire\s+sim(?:ulation)?(?:\s+(?:on|for|at|in|under)\s+(?P<parent>.+))?$",
+   872→                r"^(?:set up|setup|create)\s+(?:a\s+)?(?:full\s+)?pyro\s+sim(?:ulation)?(?:\s+(?:on|for|at|in|under)\s+(?P<parent>.+))?$",
+   873→            ],
+   874→            parameters=["parent"],
+   875→            gate_level=GateLevel.REVIEW,
+   876→            category="fx",
+   877→            steps=[
+   878→                RecipeStep(
+   879→                    action="execute_python",
+   880→                    payload_template={
+   881→                        "code": (
+   882→                            "import hou\n"
+   883→                            "parent = hou.node('{parent}') or hou.node('/obj')\n"
+   884→                            "# Scatter source points\n"
+   885→                            "scatter = parent.createNode('scatter', 'pyro_source_pts')\n"
+   886→                            "scatter.parm('npts').set(5000)\n"
+   887→                            "# Emission attributes wrangle\n"
+   888→                            "wrangle = parent.createNode('attribwrangle', 'emission_attrs')\n"
+   889→                            "wrangle.parm('snippet').set("
+   890→                            "'f@density = 1;\\n"
+   891→                            "f@temperature = 2;\\n"
+   892→                            "f@flame = 1;\\n"
+   893→                            "v@v = set(0, 2 + rand(@ptnum)*0.5, 0);\\n"
+   894→                            "f@pscale = 0.05;')\n"
+   895→                            "wrangle.setInput(0, scatter, 0)\n"
+   896→                            "# Rasterize to volumes\n"
+   897→                            "rast = parent.createNode('volumerasterizeattributes', "
+   898→                            "'rasterize')\n"
+   899→                            "rast.parm('attributes').set('density temperature flame')\n"
+   900→                            "rast.setInput(0, wrangle, 0)\n"
+   901→                            "# Pyro solver\n"
+   902→                            "solver = parent.createNode('pyrosolver', 'pyro_solver')\n"
+   903→                            "solver.parm('divsize').set(0.05)\n"
+   904→                            "solver.parm('tempcooling').set(0.6)\n"
+   905→                            "solver.parm('dissipation').set(0.1)\n"
+   906→                            "solver.setInput(0, rast, 0)\n"
+   907→                            "# Cache\n"
+   908→                            "cache = parent.createNode('filecache', 'pyro_cache')\n"
+   909→                            "cache.parm('file').set('$HIP/cache/pyro.$F4.bgeo.sc')\n"
+   910→                            "cache.setInput(0, solver, 0)\n"
+   911→                            "cache.setDisplayFlag(True)\n"
+   912→                            "cache.setRenderFlag(True)\n"
+   913→                            "parent.layoutChildren()\n"
+   914→                            "result = {{'node': cache.path(), 'solver': solver.path()}}\n"
+   915→                        ),
+   916→                    },
+   917→                    gate_level=GateLevel.REVIEW,
+   918→                    output_var="pyro",
+   919→                ),
+   920→            ],
+   921→        ))
+   922→
+   923→        # --- Vellum Hair / Wire Simulation ---
+   924→        self.register(Recipe(
+   925→            name="vellum_wire_sim",
+   926→            description=(
+   927→                "Set up Vellum hair/wire simulation for cables, ropes, or "
+   928→                "strands: vellumhair configure -> vellumsolver -> filecache."
+   929→            ),
+   930→            triggers=[
+   931→                r"^(?:set up|setup|create)\s+(?:a\s+)?(?:vellum\s+)?(?:wire|cable|rope|hair)\s+sim(?:ulation)?(?:\s+(?:on|for|at|in|under)\s+(?P<parent>.+))?$",
+   932→                r"^(?:add|sim(?:ulate)?)\s+(?:a\s+)?(?:vellum\s+)?(?:wire|cable|rope|hair)s?(?:\s+(?:on|for|at|in|under)\s+(?P<parent>.+))?$",
+   933→            ],
+   934→            parameters=["parent"],
+   935→            gate_level=GateLevel.REVIEW,
+   936→            category="fx",
+   937→            steps=[
+   938→                RecipeStep(
+   939→                    action="execute_python",
+   940→                    payload_template={
+   941→                        "code": (
+   942→                            "import hou\n"
+   943→                            "parent = hou.node('{parent}') or hou.node('/obj')\n"
+   944→                            "# Vellum hair configure (used for wires/cables)\n"
+   945→                            "hair = parent.createNode('vellumhair', 'vellum_wire')\n"
+   946→                            "hair.parm('stretchstiffness').set(50000)\n"
+   947→                            "hair.parm('bendstiffness').set(1.0)\n"
+   948→                            "# Vellum solver\n"
+   949→                            "solver = parent.createNode('vellumsolver', 'wire_solver')\n"
+   950→                            "solver.parm('substeps').set(3)\n"
+   951→                            "solver.setInput(0, hair, 0)\n"
+   952→                            "solver.setInput(2, hair, 1)\n"
+   953→                            "# Cache\n"
+   954→                            "cache = parent.createNode('filecache', 'wire_cache')\n"
+   955→                            "cache.parm('file').set('$HIP/cache/wires.$F4.bgeo.sc')\n"
+   956→                            "cache.setInput(0, solver, 0)\n"
+   957→                            "cache.setDisplayFlag(True)\n"
+   958→                            "cache.setRenderFlag(True)\n"
+   959→                            "parent.layoutChildren()\n"
+   960→                            "result = {{'node': cache.path(), 'solver': solver.path()}}\n"
+   961→                        ),
+   962→                    },
+   963→                    gate_level=GateLevel.REVIEW,
+   964→                    output_var="wire_sim",
+   965→                ),
+   966→            ],
+   967→        ))
+   968→
+   969→        # --- Terrain with Erosion ---
+   970→        self.register(Recipe(
+   971→            name="terrain_environment",
+   972→            description=(
+   973→                "Create a heightfield terrain with noise shaping and "
+   974→                "hydraulic/thermal erosion for environment work."
+   975→            ),
+   976→            triggers=[
+   977→                r"^(?:set up|setup|create)\s+(?:a\s+)?terrain(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   978→                r"^(?:set up|setup|create)\s+(?:a\s+)?heightfield(?:\s+terrain)?(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   979→                r"^(?:add|build)\s+(?:a\s+)?(?:terrain|landscape|environment\s+ground)(?:\s+(?:at|in|under)\s+(?P<parent>.+))?$",
+   980→            ],
+   981→            parameters=["parent"],
+   982→            gate_level=GateLevel.REVIEW,
+   983→            category="environment",
+   984→            steps=[
+   985→                RecipeStep(
+   986→                    action="execute_python",
+   987→                    payload_template={
+   988→                        "code": (
+   989→                            "import hou\n"
+   990→                            "parent = hou.node('{parent}') or hou.node('/obj')\n"
+   991→                            "# Heightfield base\n"
+   992→                            "hf = parent.createNode('heightfield', 'terrain_base')\n"
+   993→                            "hf.parm('sizex').set(500)\n"
+   994→                            "hf.parm('sizey').set(500)\n"
+   995→                            "hf.parm('gridspacing').set(1.0)\n"
+   996→                            "# Noise for shape\n"
+   997→                            "noise = parent.createNode('heightfield_noise', "
+   998→                            "'terrain_noise')\n"
+   999→                            "noise.parm('height').set(80)\n"
+  1000→                            "noise.parm('noisefreq').set(0.005)\n"
+  1001→                            "noise.parm('octaves').set(6)\n"
+  1002→                            "noise.setInput(0, hf, 0)\n"
+  1003→                            "# Hydraulic erosion\n"
+  1004→                            "erode = parent.createNode('heightfield_erode', "
+  1005→                            "'erosion')\n"
+  1006→                            "erode.parm('iterations').set(50)\n"
+  1007→                            "erode.setInput(0, noise, 0)\n"
+  1008→                            "# Output null\n"
+  1009→                            "out = parent.createNode('null', 'TERRAIN_OUT')\n"
+  1010→                            "out.setInput(0, erode, 0)\n"
+  1011→                            "out.setDisplayFlag(True)\n"
+  1012→                            "out.setRenderFlag(True)\n"
+  1013→                            "parent.layoutChildren()\n"
+  1014→                            "result = {{'node': out.path(), 'erosion': erode.path()}}\n"
+  1015→                        ),
+  1016→                    },
+  1017→                    gate_level=GateLevel.REVIEW,
+  1018→                    output_var="terrain",
+  1019→                ),
+  1020→            ],
+  1021→        ))
+  1022→
+  1023→        # --- Lookdev Scene ---
+  1024→        self.register(Recipe(
+  1025→            name="lookdev_scene",
+  1026→            description=(
+  1027→                "Set up a standard lookdev/turntable scene in LOPs: "
+  1028→                "dome light (environment fill), key light (exposure 5), "
+  1029→                "fill light (exposure 3, 4:1 ratio), backdrop grid, camera. "
+  1030→                "Lighting Law compliant: all intensities 1.0."
+  1031→            ),
+  1032→            triggers=[
+  1033→                r"^(?:set up|setup|create)\s+(?:a\s+)?lookdev(?:\s+scene)?$",
+  1034→                r"^(?:set up|setup|create)\s+(?:a\s+)?(?:lookdev|look\s+dev)\s+(?:environment|setup|stage)$",
+  1035→            ],
+  1036→            parameters=[],
+  1037→            gate_level=GateLevel.REVIEW,
+  1038→            category="lighting",
+  1039→            steps=[
+  1040→                RecipeStep(
+  1041→                    action="execute_python",
+  1042→                    payload_template={
+  1043→                        "code": (
+  1044→                            "import hou\n"
+  1045→                            "stage = hou.node('/stage')\n"
+  1046→                            "if not stage:\n"
+  1047→                            "    stage = hou.node('/obj')\n"
+  1048→                            "# Dome light for environment fill\n"
+  1049→                            "dome = stage.createNode('domelight', 'env_dome')\n"
+  1050→                            "# Key light\n"
+  1051→                            "key = stage.createNode('rectlight', 'key_light')\n"
+  1052→                            "key.parm('tx').set(3)\n"
+  1053→                            "key.parm('ty').set(4)\n"
+  1054→                            "key.parm('tz').set(3)\n"
+  1055→                            "key.parm('rx').set(-35)\n"
+  1056→                            "key.parm('ry').set(40)\n"
+  1057→                            "# Fill light — 2 stops below key for 4:1 ratio\n"
+  1058→                            "fill = stage.createNode('rectlight', 'fill_light')\n"
+  1059→                            "fill.parm('tx').set(-3)\n"
+  1060→                            "fill.parm('ty').set(2)\n"
+  1061→                            "fill.parm('tz').set(2)\n"
+  1062→                            "fill.parm('rx').set(-15)\n"
+  1063→                            "fill.parm('ry').set(-45)\n"
+  1064→                            "# Camera\n"
+  1065→                            "cam = stage.createNode('cam', 'lookdev_cam')\n"
+  1066→                            "cam.parm('tx').set(0)\n"
+  1067→                            "cam.parm('ty').set(1)\n"
+  1068→                            "cam.parm('tz').set(5)\n"
+  1069→                            "cam.parm('rx').set(-10)\n"
+  1070→                            "cam.parm('focal').set(85)\n"
+  1071→                            "stage.layoutChildren()\n"
+  1072→                            "result = {{'dome': dome.path(), 'key': key.path(), "
+  1073→                            "'fill': fill.path(), 'camera': cam.path()}}\n"
+  1074→                        ),
+  1075→                    },
+  1076→                    gate_level=GateLevel.REVIEW,
+  1077→                    output_var="lookdev",
+  1078→                ),
+  1079→                # Set exposures via USD (Lighting Law: intensity stays 1.0)
+  1080→                RecipeStep(
+  1081→                    action="set_parm",
+  1082→                    payload_template={
+  1083→                        "node": "$lookdev.dome",
+  1084→                        "parm": "light_exposure",
+  1085→                        "value": 0,
+  1086→                    },
+  1087→                    gate_level=GateLevel.REVIEW,
+  1088→                ),
+  1089→                RecipeStep(
+  1090→                    action="set_parm",
+  1091→                    payload_template={
+  1092→                        "node": "$lookdev.key",
+  1093→                        "parm": "light_exposure",
+  1094→                        "value": 5,
+  1095→                    },
+  1096→                    gate_level=GateLevel.REVIEW,
+  1097→                ),
+  1098→                RecipeStep(
+  1099→                    action="set_parm",
+  1100→                    payload_template={
+  1101→                        "node": "$lookdev.fill",
+  1102→                        "parm": "light_exposure",
+  1103→                        "value": 3,
+  1104→                    },
+  1105→                    gate_level=GateLevel.REVIEW,
+  1106→                ),
+  1107→            ],
+  1108→        ))
+  1109→
+  1110→        # --- File Cache ---
+  1111→        self.register(Recipe(
+  1112→            name="file_cache",
+  1113→            description=(
+  1114→                "Add a file cache node to cache any SOP output to disk. "
+  1115→                "Uses bgeo.sc format with frame padding."
+  1116→            ),
+  1117→            triggers=[
+  1118→                r"^cache\s+(?P<source>[\w\-./]+)(?:\s+to\s+disk)?$",
+  1119→                r"^(?:add|create)\s+(?:a\s+)?(?:file\s*)?cache\s+(?:for|on|after)\s+(?P<source>[\w\-./]+)$",
+  1120→            ],
+  1121→            parameters=["source"],
+  1122→            gate_level=GateLevel.REVIEW,
+  1123→            category="pipeline",
+  1124→            steps=[
+  1125→                RecipeStep(
+  1126→                    action="execute_python",
+  1127→                    payload_template={
+  1128→                        "code": (
+  1129→                            "import hou\n"
+  1130→                            "src = hou.node('{source}')\n"
+  1131→                            "if not src:\n"
+  1132→                            "    result = {{'error': 'Could not find node: {source}'}}\n"
+  1133→                            "else:\n"
+  1134→                            "    parent = src.parent()\n"
+  1135→                            "    cache = parent.createNode('filecache', "
+  1136→                            "src.name() + '_cache')\n"
+  1137→                            "    cache.parm('file').set("
+  1138→                            "'$HIP/cache/' + src.name() + '.$F4.bgeo.sc')\n"
+  1139→                            "    cache.setInput(0, src, 0)\n"
+  1140→                            "    cache.setDisplayFlag(True)\n"
+  1141→                            "    cache.setRenderFlag(True)\n"
+  1142→                            "    parent.layoutChildren()\n"
+  1143→                            "    result = {{'node': cache.path()}}\n"
+  1144→                        ),
+  1145→                    },
+  1146→                    gate_level=GateLevel.REVIEW,
+  1147→                    output_var="cached",
+  1148→                ),
+  1149→            ],
+  1150→        ))
+  1151→
+  1152→        # ==================================================================
+  1153→        # TOPS / PDG RECIPES — Autonomous pipeline operations
+  1154→        # ==================================================================
+  1155→
+  1156→        # --- TOPS Parameter Sweep ---
+  1157→        self.register(Recipe(
+  1158→            name="tops_parameter_sweep",
+  1159→            description=(
+  1160→                "Set up a wedge parameter sweep and cook it with validation. "
+  1161→                "Sweeps an attribute from start to end in N steps."
+  1162→            ),
+  1163→            triggers=[
+  1164→                r"^sweep\s+(?P<attr_name>\w+)\s+from\s+(?P<start>[\d.]+)\s+to\s+(?P<end>[\d.]+)(?:\s+in\s+(?P<steps>\d+)\s+steps?)?(?:\s+(?:in|on|at)\s+(?P<topnet>[\w\-./]+))?$",
+  1165→            ],
+  1166→            parameters=["attr_name", "start", "end", "steps", "topnet"],
+  1167→            gate_level=GateLevel.REVIEW,
+  1168→            category="tops",
+  1169→            steps=[
+  1170→                RecipeStep(
+  1171→                    action="tops_setup_wedge",
+  1172→                    payload_template={
+  1173→                        "topnet_path": "{topnet}",
+  1174→                        "attributes": [{"name": "{attr_name}", "type": "float",
+  1175→                                        "start": "{start}", "end": "{end}",
+  1176→                                        "steps": 10}],
+  1177→                    },
+  1178→                    gate_level=GateLevel.REVIEW,
+  1179→                    output_var="wedge",
+  1180→                ),
+  1181→                RecipeStep(
+  1182→                    action="tops_cook_and_validate",
+  1183→                    payload_template={
+  1184→                        "node": "$wedge.wedge_node",
+  1185→                        "max_retries": 1,
+  1186→                    },
+  1187→                    gate_level=GateLevel.REVIEW,
+  1188→                ),
+  1189→                RecipeStep(
+  1190→                    action="tops_get_cook_stats",
+  1191→                    payload_template={
+  1192→                        "node": "$wedge.wedge_node",
+  1193→                    },
+  1194→                    gate_level=GateLevel.REVIEW,
+  1195→                ),
+  1196→            ],
+  1197→        ))
+  1198→
+  1199→        # --- TOPS Quick Cook ---
+  1200→        self.register(Recipe(
+  1201→            name="tops_quick_cook",
+  1202→            description="Cook a TOP node and validate results with one retry.",
+  1203→            triggers=[
+  1204→                r"^(?:cook\s+and\s+check|quick\s+cook)\s+(?P<node>[\w\-./]+)$",
+  1205→            ],
+  1206→            parameters=["node"],
+  1207→            gate_level=GateLevel.REVIEW,
+  1208→            category="tops",
+  1209→            steps=[
+  1210→                RecipeStep(
+  1211→                    action="tops_cook_and_validate",
+  1212→                    payload_template={
+  1213→                        "node": "{node}",
+  1214→                        "max_retries": 1,
+  1215→                    },
+  1216→                    gate_level=GateLevel.REVIEW,
+  1217→                ),
+  1218→            ],
+  1219→        ))
+  1220→
+  1221→        # --- TOPS Diagnose ---
+  1222→        self.register(Recipe(
+  1223→            name="tops_diagnose_recipe",
+  1224→            description="Diagnose failures on a TOP node.",
+  1225→            triggers=[
+  1226→                r"^diagnose\s+(?P<node>[\w\-./]+)$",
+  1227→                r"^what(?:'s|\s+is)\s+wrong\s+with\s+(?P<node>[\w\-./]+)$",
+  1228→            ],
+  1229→            parameters=["node"],
+  1230→            gate_level=GateLevel.REVIEW,
+  1231→            category="tops",
+  1232→            steps=[
+  1233→                RecipeStep(
+  1234→                    action="tops_diagnose",
+  1235→                    payload_template={
+  1236→                        "node": "{node}",
+  1237→                    },
+  1238→                    gate_level=GateLevel.REVIEW,
+  1239→                ),
+  1240→            ],
+  1241→        ))
+  1242→
+  1243→        # --- Quick Render Preview ---
+  1244→        self.register(Recipe(
+  1245→            name="render_preview",
+  1246→            description=(
+  1247→                "Render a quick preview: 640x360, 32 samples, Karma XPU. "
+  1248→                "Optimized for fast iteration during layout and lighting."
+  1249→            ),
+  1250→            triggers=[
+  1251→                r"^(?:quick\s+)?(?:render|preview)\s+(?:at\s+)?(?:low|preview|draft)\s*(?:quality|res)?$",
+  1252→                r"^(?:render|do)\s+(?:a\s+)?(?:quick|fast)\s+(?:render|preview)$",
+  1253→                r"^(?:test|preview)\s+render$",
+  1254→            ],
+  1255→            parameters=[],
+  1256→            gate_level=GateLevel.REVIEW,
+  1257→            category="render",
+  1258→            steps=[
+  1259→                RecipeStep(
+  1260→                    action="render",
+  1261→                    payload_template={
+  1262→                        "width": 640,
+  1263→                        "height": 360,
+  1264→                    },
+  1265→                    gate_level=GateLevel.REVIEW,
+  1266→                ),
+  1267→            ],
+  1268→        ))
+  1269→
+  1270→        # --- HDA Scaffold ---
+  1271→        self.register(Recipe(
+  1272→            name="hda_scaffold",
+  1273→            description=(
+  1274→                "Scaffold a complete HDA: create subnet with IN/OUT nulls, "
+  1275→                "create digital asset definition, add standard parameter "
+  1276→                "interface, and save to $HIP/otls/."
+  1277→            ),
+  1278→            triggers=[
+  1279→                r"^(?:create|make|build|scaffold)\s+(?:an?\s+)?(?:hda|digital asset|otl)\s+(?:called|named)\s+(?P<name>[\w]+)(?:\s+(?:for|that|to|which)\s+(?P<description>.+))?$",
+  1280→                r"^(?:create|make|build|scaffold)\s+(?:an?\s+)?(?:hda|digital asset|otl)\s+(?P<name>[\w]+)(?:\s+(?:for|that|to|which)\s+(?P<description>.+))?$",
+  1281→                r"^(?:create|make|build|scaffold)\s+(?:an?\s+)?(?:hda|digital asset|otl)(?:\s+(?:for|that|to|which)\s+(?P<description>.+))?$",
+  1282→                r"^(?:new|setup)\s+(?:hda|digital asset)(?:\s+(?P<name>[\w]+))?(?:\s+(?:for|that|to|which)\s+(?P<description>.+))?$",
+  1283→                r"^hda\s+scaffold(?:\s+(?P<name>[\w]+))?(?:\s+(?P<description>.+))?$",
+  1284→            ],
+  1285→            parameters=["name", "description"],
+  1286→            gate_level=GateLevel.REVIEW,
+  1287→            category="pipeline",
+  1288→            steps=[
+  1289→                RecipeStep(
+  1290→                    action="execute_python",
+  1291→                    payload_template={
+  1292→                        "code": (
+  1293→                            "import hou\n"
+  1294→                            "import os\n"
+  1295→                            "import re\n"
+  1296→                            "# Parameters from trigger\n"
+  1297→                            "raw_name = '{name}'.strip()\n"
+  1298→                            "description = '{description}'.strip()\n"
+  1299→                            "# Derive names\n"
+  1300→                            "if not raw_name:\n"
+  1301→                            "    raw_name = 'custom_tool'\n"
+  1302→                            "hda_name = re.sub(r'[^a-z0-9_]', '_', "
+  1303→                            "raw_name.lower()).strip('_')\n"
+  1304→                            "hda_label = raw_name.replace('_', ' ').title()\n"
+  1305→                            "# Find parent context\n"
+  1306→                            "sel = hou.selectedNodes()\n"
+  1307→                            "if sel and sel[0].type().category() == "
+  1308→                            "hou.sopNodeTypeCategory():\n"
+  1309→                            "    parent = sel[0].parent()\n"
+  1310→                            "elif sel:\n"
+  1311→                            "    parent = sel[0]\n"
+  1312→                            "else:\n"
+  1313→                            "    obj = hou.node('/obj')\n"
+  1314→                            "    parent = obj.createNode('geo', "
+  1315→                            "hda_name + '_dev')\n"
+  1316→                            "    parent.moveToGoodPosition()\n"
+  1317→                            "# Create subnet structure\n"
+  1318→                            "subnet = parent.createNode('subnet', hda_name)\n"
+  1319→                            "input_null = subnet.createNode('null', 'IN')\n"
+  1320→                            "input_null.setPosition(hou.Vector2(0, 0))\n"
+  1321→                            "output_null = subnet.createNode('null', 'OUT')\n"
+  1322→                            "output_null.setPosition(hou.Vector2(0, -3))\n"
+  1323→                            "output_null.setInput(0, input_null)\n"
+  1324→                            "output_null.setDisplayFlag(True)\n"
+  1325→                            "output_null.setRenderFlag(True)\n"
+  1326→                            "input_null.setInput(0, "
+  1327→                            "subnet.indirectInputs()[0])\n"
+  1328→                            "subnet.layoutChildren()\n"
+  1329→                            "subnet.moveToGoodPosition()\n"
+  1330→                            "# Create HDA definition\n"
+  1331→                            "otls_dir = os.path.join("
+  1332→                            "hou.getenv('HIP', ''), 'otls')\n"
+  1333→                            "if not os.path.exists(otls_dir):\n"
+  1334→                            "    os.makedirs(otls_dir)\n"
+  1335→                            "hda_path = os.path.join(otls_dir, "
+  1336→                            "hda_name + '.hda')\n"
+  1337→                            "hda_node = subnet.createDigitalAsset(\n"
+  1338→                            "    name=hda_name,\n"
+  1339→                            "    hda_file_name=hda_path,\n"
+  1340→                            "    description=hda_label,\n"
+  1341→                            "    min_num_inputs=1,\n"
+  1342→                            "    max_num_inputs=1,\n"
+  1343→                            ")\n"
+  1344→                            "# Configure HDA definition\n"
+  1345→                            "definition = hda_node.type().definition()\n"
+  1346→                            "help_text = '= ' + hda_label + ' =\\n\\n'\n"
+  1347→                            "if description:\n"
+  1348→                            "    help_text += description + '\\n\\n'\n"
+  1349→                            "help_text += '== Parameters ==\\n\\n'\n"
+  1350→                            "help_text += 'See parameter interface "
+  1351→                            "for controls.\\n'\n"
+  1352→                            "definition.setExtraFileOption("
+  1353→                            "'Help', help_text)\n"
+  1354→                            "definition.setIcon('SOP_subnet')\n"
+  1355→                            "definition.setExtraFileOption("
+  1356→                            "'CreatedBy', 'Synapse HDA Scaffold')\n"
+  1357→                            "# Standard parameter interface\n"
+  1358→                            "ptg = hda_node.parmTemplateGroup()\n"
+  1359→                            "main_folder = hou.FolderParmTemplate(\n"
+  1360→                            "    'main_folder', 'Main', "
+  1361→                            "folder_type=hou.folderType.Tabs)\n"
+  1362→                            "if description:\n"
+  1363→                            "    main_folder.addParmTemplate(\n"
+  1364→                            "        hou.LabelParmTemplate("
+  1365→                            "'info_label', 'Purpose', "
+  1366→                            "column_labels=[description]))\n"
+  1367→                            "main_folder.addParmTemplate(\n"
+  1368→                            "    hou.FloatParmTemplate("
+  1369→                            "'blend', 'Blend', 1, "
+  1370→                            "default_value=(1.0,),\n"
+  1371→                            "        min=0.0, max=1.0, "
+  1372→                            "min_is_strict=True, "
+  1373→                            "max_is_strict=True))\n"
+  1374→                            "main_folder.addParmTemplate(\n"
+  1375→                            "    hou.ToggleParmTemplate("
+  1376→                            "'enable', 'Enable', "
+  1377→                            "default_value=True))\n"
+  1378→                            "ptg.append(main_folder)\n"
+  1379→                            "hda_node.setParmTemplateGroup(ptg)\n"
+  1380→                            "# Save and select\n"
+  1381→                            "definition.save(hda_path, hda_node)\n"
+  1382→                            "hda_node.setSelected(True, "
+  1383→                            "clear_all_selected=True)\n"
+  1384→                            "hda_node.setDisplayFlag(True)\n"
+  1385→                            "hda_node.setRenderFlag(True)\n"
+  1386→                            "result = {{\n"
+  1387→                            "    'node': hda_node.path(),\n"
+  1388→                            "    'hda_file': hda_path,\n"
+  1389→                            "    'hda_name': hda_name,\n"
+  1390→                            "    'hda_label': hda_label,\n"
+  1391→                            "    'definition': 'Sop/' + hda_name,\n"
+  1392→                            "    'description': description "
+  1393→                            "or '(none provided)',\n"
+  1394→                            "}}\n"
+  1395→                        ),
+  1396→                    },
+  1397→                    gate_level=GateLevel.REVIEW,
+  1398→                    output_var="hda",
+  1399→                ),
+  1400→            ],
+  1401→        ))
+  1402→
+  1403→        # --- VEX Debug Wrangle ---
+  1404→        self.register(Recipe(
+  1405→            name="vex_debug_wrangle",
+  1406→            description=(
+  1407→                "Debug a VEX wrangle node: inspect inputs, check for "
+  1408→                "errors, read attribute state, and suggest fixes."
+  1409→            ),
+  1410→            triggers=[
+  1411→                r"^(?:debug|diagnose|check|inspect)\s+(?:the\s+)?(?:vex|wrangle|attribwrangle)(?:\s+(?:on|at|node)?\s*(?P<node>.+))?$",
+  1412→                r"^what(?:'s| is)\s+wrong\s+with\s+(?:the\s+)?(?:vex|wrangle)(?:\s+(?:on|at)?\s*(?P<node>.+))?$",
+  1413→                r"^fix\s+(?:the\s+)?(?:vex|wrangle)\s+(?:on|at)\s+(?P<node>.+)$",
+  1414→            ],
+  1415→            parameters=["node"],
+  1416→            gate_level=GateLevel.REVIEW,
+  1417→            category="utility",
+  1418→            steps=[
+  1419→                RecipeStep(
+  1420→                    action="execute_python",
+  1421→                    payload_template={
+  1422→                        "code": (
+  1423→                            "import hou\n"
+  1424→                            "import json\n"
+  1425→                            "node_path = '{node}'.strip()\n"
+  1426→                            "# Find wrangle node\n"
+  1427→                            "node = None\n"
+  1428→                            "if node_path:\n"
+  1429→                            "    node = hou.node(node_path)\n"
+  1430→                            "if node is None:\n"
+  1431→                            "    # Try to find selected wrangle\n"
+  1432→                            "    sel = hou.selectedNodes()\n"
+  1433→                            "    for s in sel:\n"
+  1434→                            "        if 'wrangle' in s.type().name():\n"
+  1435→                            "            node = s\n"
+  1436→                            "            break\n"
+  1437→                            "if node is None:\n"
+  1438→                            "    result = {{'error': 'No wrangle node found "
+  1439→                            "-- select one or provide a path'}}\n"
+  1440→                            "else:\n"
+  1441→                            "    info = {{'node': node.path(), "
+  1442→                            "'type': node.type().name()}}\n"
+  1443→                            "    # Get snippet\n"
+  1444→                            "    snip_parm = node.parm('snippet') or "
+  1445→                            "node.parm('code')\n"
+  1446→                            "    if snip_parm:\n"
+  1447→                            "        info['snippet'] = snip_parm.eval()\n"
+  1448→                            "    # Get run-over class\n"
+  1449→                            "    class_parm = node.parm('class')\n"
+  1450→                            "    if class_parm:\n"
+  1451→                            "        class_map = {{0: 'Detail', 1: 'Points', "
+  1452→                            "2: 'Vertices', 3: 'Primitives'}}\n"
+  1453→                            "        info['run_over'] = class_map.get("
+  1454→                            "class_parm.eval(), 'unknown')\n"
+  1455→                            "    # Check errors\n"
+  1456→                            "    try:\n"
+  1457→                            "        errs = node.errors()\n"
+  1458→                            "        if errs:\n"
+  1459→                            "            info['errors'] = list(errs)\n"
+  1460→                            "    except Exception:\n"
+  1461→                            "        pass\n"
+  1462→                            "    try:\n"
+  1463→                            "        warns = node.warnings()\n"
+  1464→                            "        if warns:\n"
+  1465→                            "            info['warnings'] = list(warns)\n"
+  1466→                            "    except Exception:\n"
+  1467→                            "        pass\n"
+  1468→                            "    # Input geometry info\n"
+  1469→                            "    inputs = []\n"
+  1470→                            "    for i in range(4):\n"
+  1471→                            "        inp = node.input(i)\n"
+  1472→                            "        if inp:\n"
+  1473→                            "            geo = inp.geometry()\n"
+  1474→                            "            if geo:\n"
+  1475→                            "                attrs = [a.name() for a in "
+  1476→                            "geo.pointAttribs()]\n"
+  1477→                            "                inputs.append({{'index': i, "
+  1478→                            "'node': inp.path(), 'points': "
+  1479→                            "len(geo.points()), 'attributes': attrs}})\n"
+  1480→                            "    info['inputs'] = inputs\n"
+  1481→                            "    result = info\n"
+  1482→                        ),
+  1483→                    },
+  1484→                    gate_level=GateLevel.REVIEW,
+  1485→                    output_var="debug",
+  1486→                ),
+  1487→            ],
+  1488→        ))
+  1489→
+  1490→        # --- Material Assign ---
+  1491→        self.register(Recipe(
+  1492→            name="material_assign",
+  1493→            description=(
+  1494→                "Assign a material to geometry prims on the USD stage."
+  1495→            ),
+  1496→            triggers=[
+  1497→                r"^assign\s+(?:material\s+)?(?P<material>[\w/]+)\s+to\s+(?P<target>.+)$",
+  1498→                r"^(?:bind|apply)\s+material\s+(?P<material>[\w/]+)\s+(?:to|on)\s+(?P<target>.+)$",
+  1499→            ],
+  1500→            parameters=["material", "target"],
+  1501→            gate_level=GateLevel.REVIEW,
+  1502→            category="materials",
+  1503→            steps=[
+  1504→                RecipeStep(
+  1505→                    action="assign_material",
+  1506→                    payload_template={
+  1507→                        "material_path": "{material}",
+  1508→                        "prim_pattern": "{target}",
+  1509→                    },
+  1510→                    gate_level=GateLevel.REVIEW,
+  1511→                ),
+  1512→            ],
+  1513→        ))
+  1514→
+  1515→        # --- VEX Noise Deformer ---
+  1516→        self.register(Recipe(
+  1517→            name="vex_noise_deformer",
+  1518→            description=(
+  1519→                "Create a wrangle that deforms geometry with layered "
+  1520→                "noise displacement along normals. Standard fBm pattern."
+  1521→            ),
+  1522→            triggers=[
+  1523→                r"^(?:create|make|add)\s+(?:a\s+)?noise\s+(?:deform(?:er|ation)?|displacement)(?:\s+(?:on|to|at|in)\s+(?P<parent>.+))?$",
+  1524→                r"^(?:create|make|add)\s+(?:a\s+)?(?:vex\s+)?(?:fbm|fractal)\s+(?:noise|deform)(?:\s+(?:on|to|at|in)\s+(?P<parent>.+))?$",
+  1525→            ],
+  1526→            parameters=["parent"],
+  1527→            gate_level=GateLevel.REVIEW,
+  1528→            category="geometry",
+  1529→            steps=[
+  1530→                RecipeStep(
+  1531→                    action="execute_python",
+  1532→                    payload_template={
+  1533→                        "code": (
+  1534→                            "import hou\n"
+  1535→                            "parent_path = '{parent}'.strip()\n"
+  1536→                            "parent = hou.node(parent_path) if parent_path "
+  1537→                            "else None\n"
+  1538→                            "if parent is None:\n"
+  1539→                            "    sel = hou.selectedNodes()\n"
+  1540→                            "    if sel:\n"
+  1541→                            "        parent = sel[0].parent() if "
+  1542→                            "sel[0].type().category() == "
+  1543→                            "hou.sopNodeTypeCategory() else sel[0]\n"
+  1544→                            "    else:\n"
+  1545→                            "        parent = hou.node('/obj').createNode("
+  1546→                            "'geo', 'noise_deform')\n"
+  1547→                            "        parent.moveToGoodPosition()\n"
+  1548→                            "wrangle = parent.createNode('attribwrangle', "
+  1549→                            "'noise_deform')\n"
+  1550→                            "wrangle.parm('snippet').set("
+  1551→                            "'// fBm Noise Displacement\\n"
+  1552→                            "float n = 0;\\n"
+  1553→                            "float amp = chf(\"amplitude\");\\n"
+  1554→                            "float freq = chf(\"frequency\");\\n"
+  1555→                            "int octaves = chi(\"octaves\");\\n"
+  1556→                            "float a = 1.0;\\n"
+  1557→                            "float f = freq;\\n"
+  1558→                            "for (int i = 0; i < octaves; i++) {{\\n"
+  1559→                            "    n += snoise(@P * f + @Time * "
+  1560→                            "chf(\"speed\")) * a;\\n"
+  1561→                            "    f *= 2.0;\\n"
+  1562→                            "    a *= 0.5;\\n"
+  1563→                            "}}\\n"
+  1564→                            "@P += @N * n * amp;\\n')\n"
+  1565→                            "# Create channel references\n"
+  1566→                            "ptg = wrangle.parmTemplateGroup()\n"
+  1567→                            "ptg.append(hou.FloatParmTemplate("
+  1568→                            "'amplitude', 'Amplitude', 1, "
+  1569→                            "default_value=(0.5,)))\n"
+  1570→                            "ptg.append(hou.FloatParmTemplate("
+  1571→                            "'frequency', 'Frequency', 1, "
+  1572→                            "default_value=(2.0,)))\n"
+  1573→                            "ptg.append(hou.IntParmTemplate("
+  1574→                            "'octaves', 'Octaves', 1, "
+  1575→                            "default_value=(4,), min=1, max=8))\n"
+  1576→                            "ptg.append(hou.FloatParmTemplate("
+  1577→                            "'speed', 'Animation Speed', 1, "
+  1578→                            "default_value=(0.5,)))\n"
+  1579→                            "wrangle.setParmTemplateGroup(ptg)\n"
+  1580→                            "# Wire to last selected or first input\n"
+  1581→                            "sel = hou.selectedNodes()\n"
+  1582→                            "if sel and sel[0].parent() == parent:\n"
+  1583→                            "    wrangle.setInput(0, sel[0])\n"
+  1584→                            "wrangle.setDisplayFlag(True)\n"
+  1585→                            "wrangle.setRenderFlag(True)\n"
+  1586→                            "wrangle.moveToGoodPosition()\n"
+  1587→                            "result = {{'node': wrangle.path()}}\n"
+  1588→                        ),
+  1589→                    },
+  1590→                    gate_level=GateLevel.REVIEW,
+  1591→                    output_var="deformer",
+  1592→                ),
+  1593→            ],
+  1594→        ))
+  1595→
+  1596→        # --- HDA Generate (Content from Description) ---
+  1597→        self.register(Recipe(
+  1598→            name="hda_generate",
+  1599→            description=(
+  1600→                "Generate a functional HDA from a natural-language description. "
+  1601→                "Matches keywords to pre-built VEX templates (scatter, deformer, "
+  1602→                "color, mask, extrude) and populates the HDA with working code "
+  1603→                "and parameter interface."
+  1604→            ),
+  1605→            triggers=[
+  1606→                r"^generate\s+(?:an?\s+)?(?:hda|digital asset|tool)\s+(?:that|to|for|which)\s+(?P<description>.+)$",
+  1607→                r"^generate\s+(?:an?\s+)?(?P<name>[\w]+)\s+(?:hda|digital asset|tool)\s+(?:that|to|for|which)\s+(?P<description>.+)$",
+  1608→                r"^generate\s+(?:an?\s+)?(?:hda|digital asset|tool)\s+(?:called|named)\s+(?P<name>[\w]+)\s+(?:that|to|for|which)\s+(?P<description>.+)$",
+  1609→                r"^hda\s+generate\s+(?P<description>.+)$",
+  1610→            ],
+  1611→            parameters=["name", "description"],
+  1612→            gate_level=GateLevel.REVIEW,
+  1613→            category="pipeline",
+  1614→            steps=[
+  1615→                RecipeStep(
+  1616→                    action="execute_python",
+  1617→                    payload_template={
+  1618→                        "code": (
+  1619→                            "import hou\n"
+  1620→                            "import os\n"
+  1621→                            "import re\n"
+  1622→                            "raw_name = '{name}'.strip()\n"
+  1623→                            "description = '{description}'.strip()\n"
+  1624→                            "desc = description.lower()\n"
+  1625→                            "\n"
+  1626→                            "# --- Match description to template ---\n"
+  1627→                            "template = 'generic'\n"
+  1628→                            "vex_code = ''\n"
+  1629→                            "parms = []\n"
+  1630→                            "\n"
+  1631→                            "if any(w in desc for w in "
+  1632→                            "['scatter', 'distribute', 'sprinkle', "
+  1633→                            "'random point']):\n"
+  1634→                            "    template = 'scatter'\n"
+  1635→                            "    if not raw_name: raw_name = 'point_scatter'\n"
+  1636→                            "    vex_code = ("
+  1637→                            "'// Point removal by noise threshold\\n'"
+  1638→                            "'float density = chf(\"density\");\\n'"
+  1639→                            "'float seed = chf(\"seed\");\\n'"
+  1640→                            "'float n = noise(@P * density + "
+  1641→                            "set(seed, seed*0.7, seed*1.3));\\n'"
+  1642→                            "'if (n < chf(\"cutoff\"))\\n'"
+  1643→                            "'    removepoint(0, @ptnum);\\n')\n"
+  1644→                            "    parms = [\n"
+  1645→                            "        ('density', 'Density', 'float', 5.0),\n"
+  1646→                            "        ('cutoff', 'Cutoff', 'float', 0.5),\n"
+  1647→                            "        ('seed', 'Seed', 'float', 0.0),\n"
+  1648→                            "    ]\n"
+  1649→                            "\n"
+  1650→                            "elif any(w in desc for w in "
+  1651→                            "['deform', 'bend', 'twist', 'wave', "
+  1652→                            "'displace']):\n"
+  1653→                            "    template = 'deformer'\n"
+  1654→                            "    if not raw_name: raw_name = 'deformer'\n"
+  1655→                            "    vex_code = ("
+  1656→                            "'// fBm noise deformation\\n'"
+  1657→                            "'float amp = chf(\"amplitude\");\\n'"
+  1658→                            "'float freq = chf(\"frequency\");\\n'"
+  1659→                            "'int oct = chi(\"octaves\");\\n'"
+  1660→                            "'float n = 0, a = 1.0, f = freq;\\n'"
+  1661→                            "'for (int i = 0; i < oct; i++) {{\\n'"
+  1662→                            "'    n += snoise(@P * f + @Time * "
+  1663→                            "chf(\"speed\")) * a;\\n'"
+  1664→                            "'    f *= 2.0; a *= 0.5;\\n'"
+  1665→                            "'}}\\n'"
+  1666→                            "'@P += @N * n * amp * chf(\"blend\");\\n')\n"
+  1667→                            "    parms = [\n"
+  1668→                            "        ('amplitude', 'Amplitude', "
+  1669→                            "'float', 0.5),\n"
+  1670→                            "        ('frequency', 'Frequency', "
+  1671→                            "'float', 2.0),\n"
+  1672→                            "        ('octaves', 'Octaves', 'int', 4),\n"
+  1673→                            "        ('speed', 'Speed', 'float', 0.0),\n"
+  1674→                            "        ('blend', 'Blend', 'float', 1.0),\n"
+  1675→                            "    ]\n"
+  1676→                            "\n"
+  1677→                            "elif any(w in desc for w in "
+  1678→                            "['color', 'paint', 'gradient', 'ramp', "
+  1679→                            "'visualize']):\n"
+  1680→                            "    template = 'color'\n"
+  1681→                            "    if not raw_name: raw_name = 'color_tool'\n"
+  1682→                            "    vex_code = ("
+  1683→                            "'// Color by height gradient\\n'"
+  1684→                            "'vector bmin, bmax;\\n'"
+  1685→                            "'getbbox(0, bmin, bmax);\\n'"
+  1686→                            "'int axis = chi(\"axis\");\\n'"
+  1687→                            "'float t = fit(@P[axis], bmin[axis], "
+  1688→                            "bmax[axis], 0, 1);\\n'"
+  1689→                            "'vector ca = chv(\"color_a\");\\n'"
+  1690→                            "'vector cb = chv(\"color_b\");\\n'"
+  1691→                            "'@Cd = lerp(ca, cb, "
+  1692→                            "chramp(\"gradient\", t));\\n')\n"
+  1693→                            "    parms = [\n"
+  1694→                            "        ('axis', 'Axis (0=X 1=Y 2=Z)', "
+  1695→                            "'int', 1),\n"
+  1696→                            "        ('color_a', 'Color A', "
+  1697→                            "'vector', (0, 0, 1)),\n"
+  1698→                            "        ('color_b', 'Color B', "
+  1699→                            "'vector', (1, 0, 0)),\n"
+  1700→                            "    ]\n"
+  1701→                            "\n"
+  1702→                            "elif any(w in desc for w in "
+  1703→                            "['mask', 'group', 'select', 'filter', "
+  1704→                            "'isolate']):\n"
+  1705→                            "    template = 'mask'\n"
+  1706→                            "    if not raw_name: raw_name = 'mask_tool'\n"
+  1707→                            "    vex_code = ("
+  1708→                            "'// Proximity-based point mask\\n'"
+  1709→                            "'vector center = chv(\"center\");\\n'"
+  1710→                            "'float rad = chf(\"radius\");\\n'"
+  1711→                            "'float d = distance(@P, center);\\n'"
+  1712→                            "'f@mask = 1.0 - smooth(rad * 0.5, "
+  1713→                            "rad, d);\\n'"
+  1714→                            "'if (chi(\"invert\")) "
+  1715→                            "f@mask = 1.0 - f@mask;\\n'"
+  1716→                            "'if (f@mask > chf(\"threshold\"))\\n'"
+  1717→                            "'    setpointgroup(0, \"masked\", "
+  1718→                            "@ptnum, 1);\\n')\n"
+  1719→                            "    parms = [\n"
+  1720→                            "        ('center', 'Center', "
+  1721→                            "'vector', (0, 0, 0)),\n"
+  1722→                            "        ('radius', 'Radius', "
+  1723→                            "'float', 1.0),\n"
+  1724→                            "        ('threshold', 'Threshold', "
+  1725→                            "'float', 0.5),\n"
+  1726→                            "        ('invert', 'Invert', "
+  1727→                            "'toggle', False),\n"
+  1728→                            "    ]\n"
+  1729→                            "\n"
+  1730→                            "elif any(w in desc for w in "
+  1731→                            "['extrude', 'push', 'inflate', "
+  1732→                            "'thicken', 'offset']):\n"
+  1733→                            "    template = 'extrude'\n"
+  1734→                            "    if not raw_name: "
+  1735→                            "raw_name = 'extrude_tool'\n"
+  1736→                            "    vex_code = ("
+  1737→                            "'// Push along normals with noise\\n'"
+  1738→                            "'float dist = chf(\"distance\");\\n'"
+  1739→                            "'float namt = chf(\"noise_amount\");\\n'"
+  1740→                            "'float n = 0;\\n'"
+  1741→                            "'if (namt > 0)\\n'"
+  1742→                            "'    n = snoise(@P * chf(\"noise_freq\"))"
+  1743→                            " * namt;\\n'"
+  1744→                            "'@P += @N * (dist + n) * "
+  1745→                            "chf(\"blend\");\\n')\n"
+  1746→                            "    parms = [\n"
+  1747→                            "        ('distance', 'Distance', "
+  1748→                            "'float', 0.1),\n"
+  1749→                            "        ('noise_amount', 'Noise Amount', "
+  1750→                            "'float', 0.0),\n"
+  1751→                            "        ('noise_freq', 'Noise Frequency', "
+  1752→                            "'float', 2.0),\n"
+  1753→                            "        ('blend', 'Blend', "
+  1754→                            "'float', 1.0),\n"
+  1755→                            "    ]\n"
+  1756→                            "\n"
+  1757→                            "else:\n"
+  1758→                            "    if not raw_name: "
+  1759→                            "raw_name = 'custom_tool'\n"
+  1760→                            "    vex_code = ("
+  1761→                            "'// Custom tool: ' + description + '\\n'"
+  1762→                            "'float blend = chf(\"blend\");\\n'"
+  1763→                            "'// @P += @N * blend;\\n')\n"
+  1764→                            "    parms = [\n"
+  1765→                            "        ('blend', 'Blend', "
+  1766→                            "'float', 1.0),\n"
+  1767→                            "    ]\n"
+  1768→                            "\n"
+  1769→                            "# --- Derive names ---\n"
+  1770→                            "hda_name = re.sub(r'[^a-z0-9_]', '_', "
+  1771→                            "raw_name.lower()).strip('_')\n"
+  1772→                            "hda_label = raw_name.replace('_', "
+  1773→                            "' ').title()\n"
+  1774→                            "\n"
+  1775→                            "# --- Find parent context ---\n"
+  1776→                            "sel = hou.selectedNodes()\n"
+  1777→                            "if sel and sel[0].type().category() == "
+  1778→                            "hou.sopNodeTypeCategory():\n"
+  1779→                            "    parent = sel[0].parent()\n"
+  1780→                            "elif sel:\n"
+  1781→                            "    parent = sel[0]\n"
+  1782→                            "else:\n"
+  1783→                            "    obj = hou.node('/obj')\n"
+  1784→                            "    parent = obj.createNode('geo', "
+  1785→                            "hda_name + '_dev')\n"
+  1786→                            "    parent.moveToGoodPosition()\n"
+  1787→                            "\n"
+  1788→                            "# --- Create subnet with content ---\n"
+  1789→                            "subnet = parent.createNode("
+  1790→                            "'subnet', hda_name)\n"
+  1791→                            "input_null = subnet.createNode("
+  1792→                            "'null', 'IN')\n"
+  1793→                            "input_null.setPosition("
+  1794→                            "hou.Vector2(0, 0))\n"
+  1795→                            "wrangle = subnet.createNode("
+  1796→                            "'attribwrangle', template + '_wrangle')\n"
+  1797→                            "wrangle.parm('snippet').set(vex_code)\n"
+  1798→                            "wrangle.setPosition("
+  1799→                            "hou.Vector2(0, -2))\n"
+  1800→                            "wrangle.setInput(0, input_null)\n"
+  1801→                            "output_null = subnet.createNode("
+  1802→                            "'null', 'OUT')\n"
+  1803→                            "output_null.setPosition("
+  1804→                            "hou.Vector2(0, -4))\n"
+  1805→                            "output_null.setInput(0, wrangle)\n"
+  1806→                            "output_null.setDisplayFlag(True)\n"
+  1807→                            "output_null.setRenderFlag(True)\n"
+  1808→                            "input_null.setInput(0, "
+  1809→                            "subnet.indirectInputs()[0])\n"
+  1810→                            "subnet.layoutChildren()\n"
+  1811→                            "subnet.moveToGoodPosition()\n"
+  1812→                            "\n"
+  1813→                            "# --- Create HDA definition ---\n"
+  1814→                            "otls_dir = os.path.join("
+  1815→                            "hou.getenv('HIP', ''), 'otls')\n"
+  1816→                            "if not os.path.exists(otls_dir):\n"
+  1817→                            "    os.makedirs(otls_dir)\n"
+  1818→                            "hda_path = os.path.join(otls_dir, "
+  1819→                            "hda_name + '.hda')\n"
+  1820→                            "hda_node = subnet.createDigitalAsset(\n"
+  1821→                            "    name=hda_name,\n"
+  1822→                            "    hda_file_name=hda_path,\n"
+  1823→                            "    description=hda_label,\n"
+  1824→                            "    min_num_inputs=1,\n"
+  1825→                            "    max_num_inputs=1,\n"
+  1826→                            ")\n"
+  1827→                            "definition = hda_node.type().definition()\n"
+  1828→                            "ht = '= ' + hda_label + ' =\\n\\n'\n"
+  1829→                            "ht += 'Template: ' + template + '\\n\\n'\n"
+  1830→                            "if description:\n"
+  1831→                            "    ht += description + '\\n\\n'\n"
+  1832→                            "ht += '== Parameters ==\\n\\n'\n"
+  1833→                            "ht += 'See parameter interface.\\n'\n"
+  1834→                            "definition.setExtraFileOption('Help', ht)\n"
+  1835→                            "definition.setIcon('SOP_subnet')\n"
+  1836→                            "definition.setExtraFileOption("
+  1837→                            "'CreatedBy', 'Synapse HDA Generate')\n"
+  1838→                            "\n"
+  1839→                            "# --- Build parameter interface ---\n"
+  1840→                            "ptg = hda_node.parmTemplateGroup()\n"
+  1841→                            "mf = hou.FolderParmTemplate(\n"
+  1842→                            "    'main_folder', 'Main', "
+  1843→                            "folder_type=hou.folderType.Tabs)\n"
+  1844→                            "for pd in parms:\n"
+  1845→                            "    pn, pl, pt = pd[0], pd[1], pd[2]\n"
+  1846→                            "    pv = pd[3]\n"
+  1847→                            "    if pt == 'float':\n"
+  1848→                            "        mf.addParmTemplate("
+  1849→                            "hou.FloatParmTemplate("
+  1850→                            "pn, pl, 1, default_value=(pv,)))\n"
+  1851→                            "    elif pt == 'int':\n"
+  1852→                            "        mf.addParmTemplate("
+  1853→                            "hou.IntParmTemplate("
+  1854→                            "pn, pl, 1, default_value=(pv,)))\n"
+  1855→                            "    elif pt == 'vector':\n"
+  1856→                            "        mf.addParmTemplate("
+  1857→                            "hou.FloatParmTemplate("
+  1858→                            "pn, pl, 3, default_value=pv))\n"
+  1859→                            "    elif pt == 'toggle':\n"
+  1860→                            "        mf.addParmTemplate("
+  1861→                            "hou.ToggleParmTemplate("
+  1862→                            "pn, pl, default_value=bool(pv)))\n"
+  1863→                            "    elif pt == 'string':\n"
+  1864→                            "        mf.addParmTemplate("
+  1865→                            "hou.StringParmTemplate("
+  1866→                            "pn, pl, 1, default_value=(pv,)))\n"
+  1867→                            "ptg.append(mf)\n"
+  1868→                            "hda_node.setParmTemplateGroup(ptg)\n"
+  1869→                            "definition.save(hda_path, hda_node)\n"
+  1870→                            "hda_node.setSelected(True, "
+  1871→                            "clear_all_selected=True)\n"
+  1872→                            "hda_node.setDisplayFlag(True)\n"
+  1873→                            "hda_node.setRenderFlag(True)\n"
+  1874→                            "result = {{\n"
+  1875→                            "    'node': hda_node.path(),\n"
+  1876→                            "    'hda_file': hda_path,\n"
+  1877→                            "    'hda_name': hda_name,\n"
+  1878→                            "    'hda_label': hda_label,\n"
+  1879→                            "    'template': template,\n"
+  1880→                            "    'definition': 'Sop/' + hda_name,\n"
+  1881→                            "    'description': description "
+  1882→                            "or '(none provided)',\n"
+  1883→                            "    'vex_lines': len("
+  1884→                            "vex_code.split('\\n')),\n"
+  1885→                            "    'parameters': len(parms),\n"
+  1886→                            "}}\n"
+  1887→                        ),
+  1888→                    },
+  1889→                    gate_level=GateLevel.REVIEW,
+  1890→                    output_var="hda",
+  1891→                ),
+  1892→            ],
+  1893→        ))
+  1894→

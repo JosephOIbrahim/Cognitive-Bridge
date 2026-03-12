@@ -1,0 +1,63 @@
+I've reviewed the tutorial page. Here's a comprehensive breakdown for training SYNAPSE on Solaris:
+
+---
+
+## Tutorial Overview: "How to Work with Solaris" (Houdini 21)
+
+**Author:** Mario Leone (NodeFlow / Triarts)
+**Level:** Beginner | **Category:** Solaris | **Posted:** Oct 23, 2025 | **Rating:** 5/5
+
+This is a **3-part video series** that takes users from USD fundamentals to a production-ready Solaris workflow. Here's the breakdown:
+
+---
+
+### Part 1: Full USD Scene Workflow from Scratch
+**YouTube ID:** `xe3B3HaeJX8`
+
+Teaches building a **reusable Solaris scene template** covering the full pipeline: model import → lighting → final Karma XPU render. This is the foundational workflow.
+
+### Part 2: Intro to Component Builder
+**YouTube ID:** `pETaeV6aJmE`
+
+Covers building clean USD assets using **Component Builder** in Solaris, including organizing an asset library, setting **variants**, leveraging the **Asset Gallery**, and defining **Purpose** (render, proxy, guide).
+
+### Part 3: Create an Asset Library with Megascans
+**YouTube ID:** `Y_Lu6qYs_zs`
+
+Focuses on importing **Megascans** into Solaris, assigning materials, managing USD assets, and building a reusable asset library for lookdev workflows.
+
+---
+
+### Key Concepts for SYNAPSE Training
+
+**Core Solaris/USD Topics Covered:**
+- USD basics and scene management in Solaris
+- Reusable scene template creation (a key production pattern)
+- Karma XPU rendering setup
+- Component Builder workflow for clean USD assets
+- Asset Gallery usage
+- Variants (geometry/material variants within USD)
+- Purpose settings (render, proxy, guide)
+- Importing external assets (Megascans)
+- Material assignments in Solaris/USD
+- USD asset management and building reusable asset libraries
+
+**Node Graph Structure Visible (from the thumbnail):**
+The screenshot shows a typical Solaris LOP network with nodes like `primitive1`, `my_component`, `camera1`, `materiallibrary1`, `karmaphysicalsky1`, `karmarendersettings`, and `usdrender_rop1` — illustrating a standard import → material → lighting → render pipeline in LOPs.
+
+**Target Audience:** Artists transitioning from SOPs into Solaris/USD who need a clean, repeatable scene/asset pipeline.
+
+**Known Issue (from comments):** Changing the primitive path for `karmaphysicalsky` from `/lights/$OS` to another value detaches the sun from the sky dome — this may be a bug in Houdini 21.
+
+---
+
+### What SYNAPSE Should Learn from This
+
+1. **Scene Template Pattern:** Solaris workflows benefit enormously from reusable templates — import stage → material assignment → lighting → render settings → USD Render ROP.
+2. **Component Builder is the standard way** to create properly structured USD assets with variants and purpose in Houdini 21.
+3. **Asset Gallery** serves as a quick-access library for pre-built USD components.
+4. **Megascans integration** requires material standardization when bringing external assets into the USD pipeline.
+5. **Purpose** (render/proxy/guide) is critical for scene performance and organization.
+6. **Karma XPU** is the target renderer in this modern Solaris workflow.
+
+Would you like me to dig deeper into any of these parts, or shall I try to access the actual YouTube videos for more granular node-by-node details?

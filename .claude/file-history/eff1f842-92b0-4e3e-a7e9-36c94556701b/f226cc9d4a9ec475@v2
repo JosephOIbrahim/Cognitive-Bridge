@@ -1,0 +1,219 @@
+"""GPU optimization expert — CUDA env vars, driver settings, VRAM pressure.
+
+Absorbs FP8/flash-attention rules from the deleted NVIDIAResearcher expert.
+"""
+
+from __future__ import annotations
+
+import os
+
+from ..models import (
+    ExpertType,
+    OptimizationAction,
+    Recommendation,
+    SystemContext,
+)
+from .base import Expert
+
+
+class GPUSpecialist(Expert):
+    """Analyzes GPU state and recommends CUDA / driver optimizations."""
+
+    def analyze(self, context: SystemContext) -> list[Recommendation]:
+        recs: list[Recommendation] = []
+
+        self._check_cuda_env(context, recs)
+        self._check_vram_pressure(context, recs)
+        self._check_fp8_flash_attention(context, recs)
+        self._check_power_thermal(context, recs)
+        self._check_cutlass_perf(context, recs)
+
+        return recs
+
+    def _check_cuda_env(self, ctx: SystemContext, recs: list[Recommendation]) -> None:
+        env = ctx.env_vars
+
+        # CUDA device order
+        if env.get("CUDA_DEVICE_ORDER") != "PCI_BUS_ID":
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.ENV_VAR,
+                description="Set CUDA_DEVICE_ORDER=PCI_BUS_ID for deterministic GPU selection",
+                impact=0.3,
+                confidence=0.95,
+                parameters={"name": "CUDA_DEVICE_ORDER", "value": "PCI_BUS_ID"},
+            ))
+
+        # TF32 for Ada Lovelace
+        if env.get("NVIDIA_TF32_OVERRIDE") != "1":
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.ENV_VAR,
+                description="Enable TF32 override for SM89 (Ada Lovelace) acceleration",
+                impact=0.6,
+                confidence=0.9,
+                parameters={"name": "NVIDIA_TF32_OVERRIDE", "value": "1"},
+            ))
+
+        # CUDA cache
+        if not env.get("CUDA_CACHE_MAXSIZE"):
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.ENV_VAR,
+                description="Set CUDA cache max size to 1GB for kernel compilation caching",
+                impact=0.4,
+                confidence=0.85,
+                parameters={"name": "CUDA_CACHE_MAXSIZE", "value": "1073741824"},
+            ))
+
+    def _check_vram_pressure(self, ctx: SystemContext, recs: list[Recommendation]) -> None:
+        if ctx.vram_total_mb <= 0:
+            return
+        usage_pct = ctx.vram_used_mb / ctx.vram_total_mb
+        if usage_pct > 0.9:
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.INFO,
+                description=f"VRAM usage critical: {usage_pct:.0%} — consider closing unused GPU apps",
+                impact=0.9,
+                confidence=0.95,
+                parameters={"vram_usage_pct": usage_pct},
+            ))
+
+    def _check_fp8_flash_attention(self, ctx: SystemContext, recs: list[Recommendation]) -> None:
+        env = ctx.env_vars
+
+        # PyTorch expandable segments (prevents fragmentation)
+        alloc_conf = env.get("PYTORCH_CUDA_ALLOC_CONF", "")
+        if "expandable_segments" not in alloc_conf:
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.ENV_VAR,
+                description="Enable PyTorch expandable segments to reduce VRAM fragmentation",
+                impact=0.7,
+                confidence=0.9,
+                parameters={
+                    "name": "PYTORCH_CUDA_ALLOC_CONF",
+                    "value": "expandable_segments:True",
+                },
+            ))
+
+        # cuDNN benchmark mode
+        if env.get("CUDNN_BENCHMARK") != "1":
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.ENV_VAR,
+                description="Enable cuDNN benchmark for auto-tuning convolution algorithms",
+                impact=0.5,
+                confidence=0.85,
+                parameters={"name": "CUDNN_BENCHMARK", "value": "1"},
+            ))
+
+    def _check_power_thermal(self, ctx: SystemContext, recs: list[Recommendation]) -> None:
+        if ctx.gpu_temp_c > 85:
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.INFO,
+                description=f"GPU temp {ctx.gpu_temp_c:.0f}C exceeds 85C — check fan curve/airflow",
+                impact=0.8,
+                confidence=0.95,
+                parameters={"gpu_temp_c": ctx.gpu_temp_c},
+            ))
+
+    def _check_cutlass_perf(self, ctx: SystemContext, recs: list[Recommendation]) -> None:
+        """Produce recommendations from cached CUTLASS benchmark data."""
+        bd = ctx.benchmark_data
+        if not bd:
+            return
+
+        env = ctx.env_vars
+        peak_eff = bd.get("peak_efficiency", {})
+        mem_bw = bd.get("memory_bandwidth_gbs", 0.0)
+
+        # TF32 underperformance -> force TF32 override
+        tf32_eff = peak_eff.get("tf32", 100.0)
+        if tf32_eff < 50 and env.get("NVIDIA_TF32_OVERRIDE") != "1":
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.ENV_VAR,
+                description=(
+                    f"Benchmark: TF32 efficiency only {tf32_eff:.0f}% — "
+                    "set NVIDIA_TF32_OVERRIDE=1 to enable TF32 tensor cores"
+                ),
+                impact=0.7,
+                confidence=0.85,
+                parameters={"name": "NVIDIA_TF32_OVERRIDE", "value": "1"},
+            ))
+
+        # FP16 underperformance -> enable cuDNN benchmark
+        fp16_eff = peak_eff.get("fp16", 100.0)
+        if fp16_eff < 60 and env.get("CUDNN_BENCHMARK") != "1":
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.ENV_VAR,
+                description=(
+                    f"Benchmark: FP16 efficiency only {fp16_eff:.0f}% — "
+                    "set CUDNN_BENCHMARK=1 for auto-tuned convolution kernels"
+                ),
+                impact=0.6,
+                confidence=0.8,
+                parameters={"name": "CUDNN_BENCHMARK", "value": "1"},
+            ))
+
+        # High FP32 but TF32 barely used -> INFO about potential 2x speedup
+        fp32_eff = peak_eff.get("fp32", 0.0)
+        if fp32_eff > 50 and tf32_eff < 10:
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.INFO,
+                description=(
+                    f"Benchmark: FP32 at {fp32_eff:.0f}% but TF32 at {tf32_eff:.0f}% — "
+                    "enabling TF32 could yield ~2x throughput for matmul workloads"
+                ),
+                impact=0.8,
+                confidence=0.9,
+                parameters={"fp32_eff": fp32_eff, "tf32_eff": tf32_eff},
+            ))
+
+        # Low memory bandwidth -> tune allocator
+        if 0 < mem_bw < 700:
+            alloc_conf = env.get("PYTORCH_CUDA_ALLOC_CONF", "")
+            if "expandable_segments" not in alloc_conf:
+                recs.append(Recommendation(
+                    expert=ExpertType.GPU_SPECIALIST,
+                    action=OptimizationAction.ENV_VAR,
+                    description=(
+                        f"Benchmark: memory bandwidth {mem_bw:.0f} GB/s below 700 — "
+                        "enable expandable_segments to reduce allocation overhead"
+                    ),
+                    impact=0.5,
+                    confidence=0.75,
+                    parameters={
+                        "name": "PYTORCH_CUDA_ALLOC_CONF",
+                        "value": "expandable_segments:True",
+                    },
+                ))
+
+        # ComfyUI active + good FP16 -> ensure CUTLASS_PATH set
+        if (
+            "comfyui" in ctx.active_apps
+            and fp16_eff > 70
+            and not os.environ.get("CUTLASS_PATH")
+        ):
+            recs.append(Recommendation(
+                expert=ExpertType.GPU_SPECIALIST,
+                action=OptimizationAction.ENV_VAR,
+                description=(
+                    f"Benchmark: FP16 at {fp16_eff:.0f}% with ComfyUI active — "
+                    "set CUTLASS_PATH for optimized kernel dispatch"
+                ),
+                impact=0.6,
+                confidence=0.7,
+                parameters={
+                    "name": "CUTLASS_PATH",
+                    "value": str(os.environ.get(
+                        "CUTLASS_PATH",
+                        r"C:\Users\User\OneDrive\Desktop\AI_Dev\cutlass",
+                    )),
+                },
+            ))

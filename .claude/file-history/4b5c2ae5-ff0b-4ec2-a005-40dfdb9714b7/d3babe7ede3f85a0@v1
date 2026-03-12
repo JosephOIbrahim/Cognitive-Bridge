@@ -1,0 +1,37 @@
+.container {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: clamp(40px, 6vh, 80px) 0 32px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.button {
+  padding: 4px 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  position: relative;
+  transition: color 200ms var(--ease);
+}
+
+.buttonActive {
+  color: var(--text);
+}
+
+.underline {
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: var(--text);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 300ms var(--ease-out);
+}
+
+.buttonActive .underline {
+  transform: scaleX(1);
+}

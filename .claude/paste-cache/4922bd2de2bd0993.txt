@@ -1,0 +1,39 @@
+
+● Let me dig into the panel code and the design system to understand what's current vs. what's expected.
+
+● 2 Explore agents finished (ctrl+o to expand)
+   ├─ Investigate Synapse panel code · 33 tool uses · 65.7k tokens
+   │  ⎿  Done
+   └─ Find project setup references · 25 tool uses · 77.0k tokens
+      ⎿  Done
+
+● You're right — the panel hasn't kept up with the backend. Here's the gap:
+
+  What exists (backend is solid)
+
+  - MCP tool synapse_project_setup — fully implemented in mcp_server.py:1121-1136
+  - Handler _handle_project_setup() — working in handlers_memory.py:68-85
+  - Scene memory functions — ensure_scene_structure(), load_full_context() all good
+
+  What's missing (UI never caught up)
+  Surface: PyPanel tool grid (synapse_panel.pypanel)
+  Status: Only 4 buttons — no Project Setup
+  ────────────────────────────────────────
+  Surface: Shelf (synapse.shelf)
+  Status: 6 tools listed — no synapse_connect or setup entry
+  ────────────────────────────────────────
+  Surface: Panel footer (panel.py)
+  Status: Only "Reload" and "Clear All"
+  ────────────────────────────────────────
+  Surface: Shelf function (synapse_connect.py)
+  Status: Code exists but reimplements locally instead of calling the MCP tool, and isn't even wired into the shelf XML
+  The Living Memory System plan added project_setup as a Phase 1 MCP tool, but the shelf and pypanel were never updated to
+  surface it. The synapse_connect.py shelf script even duplicates the logic locally instead of going through the MCP bridge.
+
+  What needs to happen
+
+  1. PyPanel — Add a "Project\nSetup" button to the tool grid (currently 2x2, could go 3x2 or replace one)
+  2. Shelf — Add a synapse_project_setup tool entry to synapse.shelf
+  3. synapse_connect.py — Refactor to call the MCP tool over the WebSocket bridge instead of reimplementing locally
+
+  Want me to update these files? I'd start with the pypanel since that's the primary artist-facing surface.

@@ -1,0 +1,1159 @@
+2026-03-06T23:11:11.093Z [DEBUG] MDM settings load completed in 13ms
+2026-03-06T23:11:11.131Z [DEBUG] CA certs: Config fallback - globalEnv keys: , settingsEnv keys: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS,SYNAPSE_ROOT
+2026-03-06T23:11:11.131Z [DEBUG] [init] configureGlobalMTLS starting
+2026-03-06T23:11:11.131Z [DEBUG] [init] configureGlobalMTLS complete
+2026-03-06T23:11:11.131Z [DEBUG] [init] configureGlobalAgents starting
+2026-03-06T23:11:11.132Z [DEBUG] CA certs: Config fallback - globalEnv keys: , settingsEnv keys: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS,SYNAPSE_ROOT
+2026-03-06T23:11:11.132Z [DEBUG] CA certs: useSystemCA=false, envPath=undefined, configPath=undefined, extraCertsPath=undefined
+2026-03-06T23:11:11.132Z [DEBUG] [init] configureGlobalAgents complete
+2026-03-06T23:11:11.152Z [DEBUG] Using bash path: "C:\Program Files\Git\bin\bash.exe"
+2026-03-06T23:11:11.153Z [DEBUG] Error log sink initialized
+2026-03-06T23:11:11.161Z [DEBUG] Applying permission update: Adding 177 allow rule(s) to destination 'localSettings': ["Bash(pip show:*)","Bash(pip index:*)","Bash(pip install:*)","Bash(python:*)","Bash(gh api:*)","Bash(gh repo list:*)","Bash(gh release list:*)","Bash(findstr:*)","Bash(git fetch:*)","WebFetch(domain:thinkingmachines.ai)","Bash(git ls-tree:*)","Bash(copy /Y \"C:\\\\Users\\\\User\\\\SYNAPSE\\\\houdini\\\\scripts\\\\python\\\\synapse_shelf.py\" \"C:\\\\Users\\\\User\\\\.synapse\\\\houdini\\\\scripts\\\\python\\\\synapse_shelf.py\")","Bash(copy:*)","Bash(copy /Y \"C:\\\\Users\\\\User\\\\SYNAPSE\\\\houdini\\\\toolbar\\\\synapse.shelf\" \"C:\\\\Users\\\\User\\\\.synapse\\\\houdini\\\\toolbar\\\\synapse.shelf\")","Bash(git add:*)","Bash(git commit -m \"$\\(cat <<''EOF''\nfeat\\(houdini\\): surface project_setup across shelf, panel, and toolbar\n\nThe Living Memory backend \\(project_setup handler, MCP tool\\) shipped in\nv5.2.0 but the Houdini UI never caught up. This wires it through all\nthree artist-facing surfaces:\n\n- synapse_shelf.py: new project_setup\\(\\) using installed synapse package\n  \\(replaces fragile importlib path hack from synapse_connect.py\\)\n- synapse_panel.pypanel: Project Setup as first button in tool grid\n- synapse.shelf: synapse_project_setup toolbar entry\n\nAlso updates README to v5.2.2: test count 874->890, adds Living Memory\ntools to MCP/protocol tables, corrects houdini/ project structure, and\nsimplifies the Houdini panel setup section.\n\nHe2025: all json.dumps calls include sort_keys=True.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")","Bash(git push:*)","Bash(git rm:*)","Bash(git commit -m \"$\\(cat <<''EOF''\nchore: remove legacy synapse.pypanel \\(v4.0.0 artifact\\)\n\nThe old panel \\(interface name \"Synapse - AI Bridge\"\\) predates the\ndesign system and causes a confusing dual-panel entry in Houdini''s\nPython Panel menu. synapse_panel.pypanel is the current panel with\nthe 5-button tool grid and design tokens.\n\nThe old panel also started an hrpyc server on port 18118 as a side\neffect -- that transport was superseded by the WebSocket bridge.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")","WebSearch","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" status)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" diff design/synapse_styles.py houdini/python_panels/synapse_panel.pypanel houdini/scripts/python/synapse_shelf.py)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" add design/synapse_styles.py houdini/python_panels/synapse_panel.pypanel houdini/scripts/python/synapse_shelf.py)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" commit -m \"$\\(cat <<''EOF''\nfix\\(houdini\\): PySide6 compat for Houdini 21 + catch-up changes\n\n- Try PySide6 first, fall back to PySide2 \\(panel + shelf clipboard\\)\n- Add project_setup\\(\\) shelf callback and panel button \\(from f455ed6\\)\n- Enforce sort_keys=True on all json.dumps paths \\(from 8a2f8e1\\)\n- Update docstrings to reflect Qt6 support\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" push)","mcp__synapse__houdini_execute_python","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" diff --stat)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" log --oneline -3)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" add design/synapse_styles.py design/tokens.py houdini/python_panels/synapse_panel.pypanel houdini/scripts/python/synapse_shelf.py)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" diff --cached --stat)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" diff houdini/toolbar/synapse.shelf)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" add:*)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" commit -m \"$\\(cat <<''EOF''\nfix\\(design\\): Houdini-native palette, font scaling, project setup bootstrap\n\n- Shift background palette to match Houdini 21 dark theme \\(#3C3C3C panel\n  base, #333333 surfaces, #252525 recessed, #222222 borders\\)\n- Rebalance text colors for contrast on lighter backgrounds \\(SLATE #888,\n  SILVER #AAA pass WCAG AA\\)\n- Bump font scale +2px across the board to match Houdini UI defaults\n- Compact tool grid buttons \\(60px -> 44px\\) to match Houdini proportions\n- Fix button hover: explicit #484848 \\(brighter\\) instead of GRAPHITE\n- Bootstrap ~/SYNAPSE/python onto sys.path in synapse_shelf.py so\n  project_setup\\(\\) can import synapse.memory without pip install\n- Add Project Setup shelf tool to synapse.shelf toolbar\n- Replace stale port_label QSS with ws_url_field style\n- Clipboard fix: fall back to QGuiApplication.instance\\(\\) for PySide6\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")","Bash(start \"\" \"C:\\\\Program Files\\\\Side Effects Software\\\\Houdini 21.0.456\\\\bin\\\\houdini.exe\")","Bash(start \"\" \"C:\\\\Program Files\\\\Side Effects Software\\\\Houdini 21.0.596\\\\bin\\\\houdini.exe\")","Bash(chmod +x \"C:\\\\Users\\\\User\\\\.synapse\\\\.git\\\\hooks\\\\post-commit\")","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" add design/synapse_styles.py design/tokens.py houdini/python_panels/synapse_panel.pypanel houdini/scripts/python/synapse_shelf.py houdini/toolbar/synapse.shelf)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" commit -m \"$\\(cat <<''EOF''\nfix\\(panel\\): 2x font scale, clip.exe clipboard, auto-sync hook\n\n- Double all font sizes for 4K/high-DPI displays \\(SIZE_HERO 44px for\n  SYNAPSE title, SIZE_BODY 26px base, SIZE_UI 24px buttons\\)\n- Scale all container heights to match \\(title 64px, status 48px,\n  buttons 80px, connection 52px, scrollbar 10px\\)\n- Replace PySide6 clipboard \\(QApplication.instance\\(\\) returns None\\) with\n  Windows clip.exe as primary method, Qt as fallback\n- Click-to-copy on WS URL field via panel eventFilter\n- Add git post-commit hook to auto-sync houdini/ files to\n  ~/houdini21.0/ \\(panel, shelf, toolbar\\) -- no more stale copies\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")","mcp__synapse__synapse_ping","mcp__synapse__houdini_scene_info","Bash(git commit:*)","Bash(cmd /c \"dir /B \"C:UsersUserSYNAPSEragskillshoudini21-reference\"\" \")","mcp__synapse__houdini_create_node","mcp__synapse__synapse_knowledge_lookup","mcp__synapse__houdini_set_parm","mcp__synapse__houdini_connect_nodes","mcp__synapse__houdini_create_material","mcp__synapse__houdini_assign_material","mcp__synapse__houdini_capture_viewport","mcp__synapse__houdini_render","mcp__synapse__houdini_render_settings","mcp__synapse__synapse_inspect_scene","mcp__synapse__synapse_inspect_node","Bash(C:UsersUserSYNAPSE.claudeskillsdeploySKILL.md << 'EOF'\n# Deploy SYNAPSE\n1. Verify all changes are in SYNAPSE/houdini/ \\(NOT ~/.synapse/houdini/\\)\n2. Run the installer script to redeploy\n3. Confirm deployment by checking file timestamps in ~/.synapse/houdini/\n4. Report what changed\nEOF)","Bash(chmod:*)","Bash(claude mcp add:*)","Bash(git -C \"C:\\\\Users\\\\User\" status CLAUDE.md)","Bash(git -C \"C:\\\\Users\\\\User\" log --oneline -1)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" diff)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" log --oneline -5)","Bash(gh release create v5.3.0 --title \"v5.3.0\" --notes \"$\\(cat <<''EOF''\n## Performance\n\n**18 hot-path bottlenecks eliminated** across the MCP-to-handler pipeline, targeting 5-10x latency reduction \\(~80-1250μs → ~15-100μs per call\\):\n\n- **Protocol**: Replace `asdict\\(\\)` deep copy with manual dict in `to_json\\(\\)` \\(~50-500μs saved per response\\); add `orjson` fast path for `from_json\\(\\)`\n- **MCP Server**: Monotonic counter replaces SHA-256 `_cmd_id\\(\\)`; 19 identity-copy lambdas replaced with pass-through; enum comparison for connection state\n- **Handlers**: Normalize command type once per dispatch; batch bridge + audit log into single executor submission\n- **Resilience**: Single `time.time\\(\\)` call in rate limiter `acquire\\(\\)`\n- **WebSocket**: Use `_to_json_str` for auth handshake messages \\(4 sites\\)\n- **Cache**: O\\(n\\) eviction scan replaces O\\(n log n\\) `sorted\\(\\)`\n- **Router**: `orjson` fast path in `_hash_context\\(\\)`\n- **Knowledge**: Pre-indexed section headers at load time for O\\(1\\) lookup\n- **Memory Store**: Index uses sets instead of lists \\(O\\(1\\) membership\\); no-op `_wait_loaded` after initial load\n- **Init**: Deferred agent/context/session imports into `__getattr__` lazy loading\n\n## Features\n\n- Surface `project_setup` across shelf, panel, and toolbar\n- Developer experience improvements from insights analysis\n\n## Cleanup\n\n- Remove legacy `synapse.pypanel` \\(v4.0.0 artifact\\)\n- Remove dead `_REVERSE_ALIASES` from aliases.py\n\n## Stats\n\n- 874 tests passing, 0 failures\n- Python 3.11 + 3.14 compatible\nEOF\n\\)\")","mcp__synapse__synapse_health","Bash(git -C \"$HOME/.synapse\" diff)","Bash(git -C \"$HOME/.synapse\" remote -v)","Bash(git -C \"$HOME/.synapse\" add houdini/python_panels/synapse_panel.pypanel)","Bash(git -C \"$HOME/.synapse\" commit -m \"$\\(cat <<''EOF''\nfeat\\(panel\\): wire Connect button to actually start/stop WebSocket server\n\nThe Connect/Disconnect button was purely cosmetic -- it toggled a UI\nlabel but never started or stopped the SynapseServer. This meant\nexternal MCP clients couldn''t reach Houdini even though the panel\nshowed \"Connected\".\n\nNow clicking Connect imports SynapseServer, starts it on the configured\nport, and polls health every 3s. Disconnect calls server.stop\\(\\). Panel\ninit auto-detects zombie servers via gc.get_objects\\(\\) so reopening the\npanel reclaims an already-running instance.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")","Bash(git -C \"$HOME/.synapse\" push origin toolkit)","mcp__synapse__houdini_read_material","Bash(git log:*)","Bash(git check-ignore:*)","Bash(curl:*)","Bash(powershell:*)","Bash(start \"\" \"C:\\\\Program Files\\\\Side Effects Software\\\\Houdini 21.0.596\\\\bin\\\\houdinifx.exe\")","Bash(taskkill:*)","Bash(git stash:*)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" add houdini/scripts/python/synapse_shelf.py)","Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" commit -m \"$\\(cat <<''EOF''\nfeat\\(shelf\\): auto-start MCP endpoint when opening panel\n\nopen_panel\\(\\) now calls start_mcp\\(\\) after activating the panel,\nso clicking the Synapse shelf button starts both WebSocket \\(9999\\)\nand MCP HTTP \\(8008\\) servers in one click. Guarded with try/except\nso MCP failure doesn''t block the panel.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")","Bash(ls:*)","Bash(find:*)","Bash(wc:*)","Bash(echo:*)","Bash(python3:*)","Bash(du:*)","Bash(dir:*)","Bash(git restore:*)","Bash(if not exist \"C:\\\\Users\\\\User\\\\SYNAPSE\\\\docs\\\\monitoring\" mkdir \"C:\\\\Users\\\\User\\\\SYNAPSE\\\\docs\\\\monitoring\")","Bash(grep:*)","WebFetch(domain:arxiv.org)","Bash(1 python -c \" import json with open\\(''/tmp/synapse_sessions.json''\\) as f: data = json.load\\(f\\) print\\(f''Matched sessions: {len\\(data\\)}''\\) total_mins = sum\\(s.get\\(''duration_minutes'',0\\) for s in data\\) print\\(f''Total minutes: {total_mins}''\\) user_msgs = sum\\(s.get\\(''user_message_count'',0\\) for s in data\\) asst_msgs = sum\\(s.get\\(''assistant_message_count'',0\\) for s in data\\) print\\(f''Messages: {user_msgs} user / {asst_msgs} assistant''\\) commits = sum\\(s.get\\(''git_commits'',0\\) for s in data\\) pushes = sum\\(s.get\\(''git_pushes'',0\\) for s in data\\) added = sum\\(s.get\\(''lines_added'',0\\) for s in data\\) removed = sum\\(s.get\\(''lines_removed'',0\\) for s in data\\) files = sum\\(s.get\\(''files_modified'',0\\) for s in data\\) print\\(f''Commits: {commits} \\(pushed: {pushes}\\)''\\) print\\(f''Lines: +{added} / -{removed} across {files} files''\\) # Tools from collections import Counter tools = Counter\\(\\) for s in data: for t, c in s.get\\(''tool_counts'', {}\\).items\\(\\): tools[t] += c print\\(''\\\\nTop tools:''\\) for t, c in tools.most_common\\(15\\): print\\(f'' {t}: {c}''\\) # Languages langs = Counter\\(\\) for s in data: for l, c in s.get\\(''languages'', {}\\).items\\(\\): langs[l] += c print\\(''\\\\nLanguages:''\\) for l, c in langs.most_common\\(\\): print\\(f'' {l}: {c}''\\) \")","mcp__synapse__houdini_stage_info","mcp__synapse__synapse_validate_frame","mcp__synapse__houdini_get_usd_attribute","mcp__synapse__houdini_get_parm","mcp__synapse__synapse_add_memory","mcp__synapse__synapse_search","mcp__synapse__synapse_recall","mcp__synapse__synapse_memory_query","mcp__synapse__synapse_context","Bash(git status:*)","mcp__synapse__synapse_batch","mcp__synapse__houdini_delete_node","WebFetch(domain:www.sidefx.com)","WebFetch(domain:80.lv)","WebFetch(domain:tokeru.com)","WebFetch(domain:andreaskj.com)","WebFetch(domain:digitalproduction.com)","mcp__synapse__houdini_reference_usd","mcp__synapse__houdini_query_prims","mcp__synapse__houdini_create_textured_material","mcp__synapse__houdini_manage_variant_set","mcp__synapse__houdini_configure_light_linking","mcp__synapse__synapse_configure_render_passes","mcp__synapse__houdini_manage_collection","Skill(last30days)","Skill(handover)","Bash(cat:*)","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/render/untitled.karma_render.0001.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render2.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render3.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render3.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render4.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render4.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render5.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render5.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render6.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render6.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render_hq.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/test_render_hq.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/render_3quarter.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/render_3quarter.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/render_topdown.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/render_topdown.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/render_3quarter_v2.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/render_3quarter_v2.jpg\")","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\":*)","Bash(\"C:/Program Files/Side Effects Software/Houdini 21.0.596/bin/iconvert.exe\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/switch_test2.exr\" \"C:/Users/User/AppData/Local/Temp/synapse_renders/switch_test2.jpg\")","Bash(sort:*)","Bash(HOU_PYTHON=\"/c/Program Files/Side Effects Software/Houdini 21.0.596/python/python3.11.exe\")","Bash(__NEW_LINE_9311e49b494fcbe5__ \"$HOU_PYTHON\" -c \":*)","Bash(HYTHON=\"/c/Program Files/Side Effects Software/Houdini 21.0.596/bin/hython3.11.exe\")","Bash(__NEW_LINE_5bf9e081d5378047__ \"$HYTHON\" -c \":*)","Bash(\"$HYTHON\" -c \":*)","Bash(claude mcp list:*)","Bash(printf:*)","Bash(tasklist:*)","Bash(claude mcp remove:*)","Bash(\"/c/Program Files/Side Effects Software/Houdini 21.0.596/bin/hython.exe\":*)","Bash(python3.12 -m pytest /mnt/c/Users/User/Synapse/tests/test_routing.py -v --tb=short -k \"route_chat\" 2>&1)","Bash(pip3 install pytest 2>&1 | tail -5; python3 -m pytest /mnt/c/Users/User/Synapse/tests/test_routing.py -v --tb=short -k \"route_chat\" 2>&1)","Bash(python3.12 -m pip install pytest 2>&1 | tail -5)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python314/python.exe -m pytest /mnt/c/Users/User/Synapse/tests/test_routing.py -v --tb=short -k \"route_chat\" 2>&1)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/test_routing.py -v --tb=short -k \"route_chat\" 2>&1)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/test_routing.py -v --tb=short 2>&1)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/ -v --tb=short 2>&1)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/ -v --tb=short --ignore=tests/test_live_capture.py 2>&1)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/ -v --tb=short \\\\\n  --ignore=tests/test_live_capture.py \\\\\n  --ignore=tests/test_capture.py \\\\\n  --ignore=tests/test_e2e_sprint.py \\\\\n  --ignore=tests/test_integration_pipeline.py \\\\\n  --ignore=tests/test_load.py \\\\\n  --ignore=tests/test_multi_shot.py \\\\\n  --ignore=tests/test_v5_features.py \\\\\n  2>&1)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/ -v --tb=short \\\\\n  --ignore=tests/test_live_capture.py \\\\\n  --ignore=tests/test_capture.py \\\\\n  --ignore=tests/test_e2e_sprint.py \\\\\n  --ignore=tests/test_integration_pipeline.py \\\\\n  --ignore=tests/test_load.py \\\\\n  --ignore=tests/test_multi_shot.py \\\\\n  --ignore=tests/test_v5_features.py \\\\\n  --ignore=tests/test_frame_validator.py \\\\\n  2>&1)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/ --tb=line -q \\\\\n  --ignore=tests/test_live_capture.py \\\\\n  --ignore=tests/test_capture.py \\\\\n  --ignore=tests/test_e2e_sprint.py \\\\\n  --ignore=tests/test_integration_pipeline.py \\\\\n  --ignore=tests/test_load.py \\\\\n  --ignore=tests/test_multi_shot.py \\\\\n  --ignore=tests/test_v5_features.py \\\\\n  --ignore=tests/test_frame_validator.py \\\\\n  2>&1 | tail -40)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/ --tb=line -q \\\\\n  --ignore=tests/test_live_capture.py \\\\\n  --ignore=tests/test_capture.py \\\\\n  --ignore=tests/test_e2e_sprint.py \\\\\n  --ignore=tests/test_integration_pipeline.py \\\\\n  --ignore=tests/test_load.py \\\\\n  --ignore=tests/test_multi_shot.py \\\\\n  --ignore=tests/test_v5_features.py \\\\\n  --ignore=tests/test_frame_validator.py \\\\\n  2>&1 | grep \"FAILED\" | grep -i \"route_chat\")","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/ --tb=no -q \\\\\n  --ignore=tests/test_live_capture.py \\\\\n  --ignore=tests/test_capture.py \\\\\n  --ignore=tests/test_e2e_sprint.py \\\\\n  --ignore=tests/test_integration_pipeline.py \\\\\n  --ignore=tests/test_load.py \\\\\n  --ignore=tests/test_multi_shot.py \\\\\n  --ignore=tests/test_v5_features.py \\\\\n  --ignore=tests/test_frame_validator.py \\\\\n  2>&1 | grep \"^FAILED\" | sed 's/::.*//' | sort | uniq -c | sort -rn)","Bash(/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe -m pytest tests/ --tb=no -q \\\\\n  --ignore=tests/test_live_capture.py \\\\\n  --ignore=tests/test_capture.py \\\\\n  --ignore=tests/test_e2e_sprint.py \\\\\n  --ignore=tests/test_integration_pipeline.py \\\\\n  --ignore=tests/test_load.py \\\\\n  --ignore=tests/test_multi_shot.py \\\\\n  --ignore=tests/test_v5_features.py \\\\\n  --ignore=tests/test_frame_validator.py \\\\\n  2>&1 | grep \"^FAILED tests/test_routing\\\\|^FAILED tests/test_mcp\\\\|^FAILED tests/test_hda\\\\|^FAILED tests/test_agent\")","Bash(echo === $\\(basename $d\\) ===:*)","Bash(git:*)","Bash(cd:*)","Bash(cmd:*)","WebFetch(domain:www.pinterest.com)","WebFetch(domain:pin.it)","WebFetch(domain:api.pinterest.com)","mcp__synapse__synapse_inspect_selection","mcp__synapse__houdini_get_selection","Bash(comm:*)","Bash(cd C:\\\\Users\\\\User\\\\SYNAPSE:*)","Bash(PYTHONIOENCODING=utf-8 python:*)","WebFetch(domain:raw.githubusercontent.com)","Bash(netstat:*)","Bash(PYTHONPATH=python python:*)","Bash(cp:*)","Bash(/tmp/hstack.ps1:*)","Bash(/tmp/findsynapse.ps1:*)","Bash(/tmp/checkports.ps1:*)","Bash(/tmp/restart_synapse.py:*)","Bash(/tmp/checkport.ps1:*)","Bash(CLAUDECODE= claude mcp:*)","mcp__synapse__synapse_memory_status","mcp__synapse__houdini_network_explain"]
+2026-03-06T23:11:11.162Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-03-06T23:11:11.171Z [DEBUG] [ToolSearch:optimistic] mode=tst, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-03-06T23:11:11.172Z [DEBUG] [STARTUP] Running setup()...
+2026-03-06T23:11:11.173Z [DEBUG] [TeammateModeSnapshot] Captured from config: auto
+2026-03-06T23:11:11.177Z [DEBUG] Loading skills from: managed=C:\Program Files\ClaudeCode\.claude\skills, user=C:\Users\User\.claude\skills, project=[C:\Users\User\SYNAPSE\.claude\skills]
+2026-03-06T23:11:11.177Z [DEBUG] Error log sink initialized
+2026-03-06T23:11:11.211Z [DEBUG] [Claude in Chrome] Found chrome profiles: Default
+2026-03-06T23:11:11.219Z [DEBUG] [STARTUP] setup() completed in 47ms
+2026-03-06T23:11:11.219Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-03-06T23:11:11.222Z [DEBUG] [Claude in Chrome] Extension fcoeoabgfenejglbffodgkkbkcdhcgfn found in chrome Default
+2026-03-06T23:11:11.234Z [DEBUG] Git remote URL: https://github.com/JosephOIbrahim/Synapse.git
+2026-03-06T23:11:11.234Z [DEBUG] Parsed repository: github.com/JosephOIbrahim/Synapse from URL: https://github.com/JosephOIbrahim/Synapse.git
+2026-03-06T23:11:11.264Z [DEBUG] Loaded 4 installed plugins from C:\Users\User\.claude\plugins\installed_plugins.json
+2026-03-06T23:11:11.266Z [DEBUG] Loading plugin superpowers-developing-for-claude-code from source: "./"
+2026-03-06T23:11:11.267Z [DEBUG] Loading plugin last30days from source: "./"
+2026-03-06T23:11:11.268Z [DEBUG] Loading plugin image-generator from source: "./plugins/image-generator"
+2026-03-06T23:11:11.268Z [DEBUG] Loading plugin llm-council from source: "./plugins/llm-council"
+2026-03-06T23:11:11.278Z [DEBUG] Using manifest version for image-generator@dair-academy-plugins: 1.1.1
+2026-03-06T23:11:11.279Z [DEBUG] Using manifest version for llm-council@dair-academy-plugins: 1.0.0
+2026-03-06T23:11:11.279Z [DEBUG] Using manifest version for superpowers-developing-for-claude-code@superpowers-developing-for-claude-code-dev: 0.3.1
+2026-03-06T23:11:11.279Z [DEBUG] Using manifest version for last30days@last30days: 2.0.0
+2026-03-06T23:11:11.280Z [DEBUG] Plugin image-generator@dair-academy-plugins version 1.1.1 already cached at C:\Users\User\.claude\plugins\cache\dair-academy-plugins\image-generator\1.1.1
+2026-03-06T23:11:11.280Z [DEBUG] Resolved local plugin image-generator to versioned cache: C:\Users\User\.claude\plugins\cache\dair-academy-plugins\image-generator\1.1.1
+2026-03-06T23:11:11.280Z [DEBUG] Plugin llm-council@dair-academy-plugins version 1.0.0 already cached at C:\Users\User\.claude\plugins\cache\dair-academy-plugins\llm-council\1.0.0
+2026-03-06T23:11:11.280Z [DEBUG] Resolved local plugin llm-council to versioned cache: C:\Users\User\.claude\plugins\cache\dair-academy-plugins\llm-council\1.0.0
+2026-03-06T23:11:11.280Z [DEBUG] Plugin superpowers-developing-for-claude-code@superpowers-developing-for-claude-code-dev version 0.3.1 already cached at C:\Users\User\.claude\plugins\cache\superpowers-developing-for-claude-code-dev\superpowers-developing-for-claude-code\0.3.1
+2026-03-06T23:11:11.280Z [DEBUG] Resolved local plugin superpowers-developing-for-claude-code to versioned cache: C:\Users\User\.claude\plugins\cache\superpowers-developing-for-claude-code-dev\superpowers-developing-for-claude-code\0.3.1
+2026-03-06T23:11:11.280Z [DEBUG] Plugin last30days@last30days version 2.0.0 already cached at C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0
+2026-03-06T23:11:11.280Z [DEBUG] Resolved local plugin last30days to versioned cache: C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0
+2026-03-06T23:11:11.281Z [DEBUG] Loaded 95 unique skills (95 unconditional, 0 conditional, managed: 0, user: 23, project: 4, additional: 0, legacy commands: 68)
+2026-03-06T23:11:11.282Z [DEBUG] Found 4 plugins (4 enabled, 0 disabled)
+2026-03-06T23:11:11.282Z [DEBUG] getPluginSkills: Processing 4 enabled plugins
+2026-03-06T23:11:11.282Z [DEBUG] Checking plugin superpowers-developing-for-claude-code: skillsPath=exists, skillsPaths=0 paths
+2026-03-06T23:11:11.282Z [DEBUG] Attempting to load skills from plugin superpowers-developing-for-claude-code default skillsPath: C:\Users\User\.claude\plugins\cache\superpowers-developing-for-claude-code-dev\superpowers-developing-for-claude-code\0.3.1\skills
+2026-03-06T23:11:11.282Z [DEBUG] Checking plugin last30days: skillsPath=none, skillsPaths=1 paths
+2026-03-06T23:11:11.282Z [DEBUG] Attempting to load skills from plugin last30days skillsPaths: C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0\
+2026-03-06T23:11:11.282Z [DEBUG] Loading from skillPath: C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0\ for plugin last30days
+2026-03-06T23:11:11.282Z [DEBUG] Checking plugin image-generator: skillsPath=exists, skillsPaths=0 paths
+2026-03-06T23:11:11.282Z [DEBUG] Attempting to load skills from plugin image-generator default skillsPath: C:\Users\User\.claude\plugins\cache\dair-academy-plugins\image-generator\1.1.1\skills
+2026-03-06T23:11:11.282Z [DEBUG] Checking plugin llm-council: skillsPath=exists, skillsPaths=0 paths
+2026-03-06T23:11:11.282Z [DEBUG] Attempting to load skills from plugin llm-council default skillsPath: C:\Users\User\.claude\plugins\cache\dair-academy-plugins\llm-council\1.0.0\skills
+2026-03-06T23:11:11.282Z [DEBUG] Registered 0 hooks from 4 plugins
+2026-03-06T23:11:11.282Z [DEBUG] Total plugin commands loaded: 0
+2026-03-06T23:11:11.282Z [DEBUG] Total plugin agents loaded: 0
+2026-03-06T23:11:11.290Z [DEBUG] Loaded 1 skills from plugin last30days custom path: C:\Users\User\.claude\plugins\cache\last30days\last30days\2.0.0\
+2026-03-06T23:11:11.291Z [DEBUG] Loaded 2 skills from plugin superpowers-developing-for-claude-code default directory
+2026-03-06T23:11:11.292Z [DEBUG] Loaded 1 skills from plugin llm-council default directory
+2026-03-06T23:11:11.295Z [DEBUG] Loaded 1 skills from plugin image-generator default directory
+2026-03-06T23:11:11.295Z [DEBUG] Total plugin skills loaded: 5
+2026-03-06T23:11:11.295Z [DEBUG] getSkills returning: 95 skill dir commands, 5 plugin skills, 5 bundled skills, 0 builtin plugin skills
+2026-03-06T23:11:11.295Z [DEBUG] [STARTUP] Commands and agents loaded in 76ms
+2026-03-06T23:11:11.297Z [DEBUG] [STARTUP] Running showSetupScreens()...
+2026-03-06T23:11:11.367Z [DEBUG] Cleared CA certificates cache
+2026-03-06T23:11:11.367Z [DEBUG] Cleared mTLS configuration cache
+2026-03-06T23:11:11.367Z [DEBUG] Cleared proxy agent cache
+2026-03-06T23:11:11.367Z [DEBUG] CA certs: Config fallback - globalEnv keys: , settingsEnv keys: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS,SYNAPSE_ROOT
+2026-03-06T23:11:11.367Z [DEBUG] CA certs: useSystemCA=false, envPath=undefined, configPath=undefined, extraCertsPath=undefined
+2026-03-06T23:11:11.368Z [DEBUG] Grove: Cache stale, returning cached data and refreshing in background
+2026-03-06T23:11:11.377Z [DEBUG] Path C:\Users\User\SYNAPSE already tracked for repo josephoibrahim/synapse
+2026-03-06T23:11:11.378Z [DEBUG] [Perfetto] initializePerfettoTracing called, env value: undefined
+2026-03-06T23:11:11.378Z [DEBUG] [3P telemetry] isTelemetryEnabled=false (CLAUDE_CODE_ENABLE_TELEMETRY=undefined)
+2026-03-06T23:11:11.381Z [DEBUG] [keybindings] KeybindingSetup initialized with 104 bindings, 0 warnings
+2026-03-06T23:11:11.391Z [DEBUG] [keybindings] Watching for changes to C:\Users\User\.claude\keybindings.json
+2026-03-06T23:11:11.497Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.65176.1772838671497
+2026-03-06T23:11:11.497Z [DEBUG] Preserving file permissions: 100666
+2026-03-06T23:11:11.499Z [DEBUG] Temp file written successfully, size: 46623 bytes
+2026-03-06T23:11:11.499Z [DEBUG] Applied original permissions to temp file
+2026-03-06T23:11:11.499Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.65176.1772838671497 to C:\Users\User\.claude.json
+2026-03-06T23:11:11.499Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-03-06T23:11:11.536Z [DEBUG] [STARTUP] showSetupScreens() completed in 239ms
+2026-03-06T23:11:11.537Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-03-06T23:11:11.537Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-03-06T23:11:11.537Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-03-06T23:11:11.537Z [DEBUG] Starting background startup prefetches
+2026-03-06T23:11:11.538Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:11:11.538Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:11:11.539Z [DEBUG] Passes: Cache stale, returning cached data and refreshing in background
+2026-03-06T23:11:11.549Z [DEBUG] [STARTUP] MCP configs resolved in 122ms (awaited at +387ms)
+2026-03-06T23:11:11.595Z [DEBUG] All plugins already exist, skipping migration
+2026-03-06T23:11:11.595Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:11:11.598Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-03-06T23:11:11.598Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:11.598Z [DEBUG] Matched 3 unique hooks for query "startup" (3 before deduplication)
+2026-03-06T23:11:11.598Z [DEBUG] Initialized versioned plugins system with 4 plugins
+2026-03-06T23:11:11.599Z [DEBUG] CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR not set, no file descriptor token available
+2026-03-06T23:11:11.601Z [DEBUG] MCP server "unreal": Starting connection with timeout of 30000ms
+2026-03-06T23:11:11.607Z [DEBUG] [Reconnection] computeInitialTeamContext: No teammate context set (not a teammate)
+2026-03-06T23:11:11.608Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.65176.1772838671608
+2026-03-06T23:11:11.608Z [DEBUG] Preserving file permissions: 100666
+2026-03-06T23:11:11.611Z [DEBUG] Temp file written successfully, size: 46623 bytes
+2026-03-06T23:11:11.611Z [DEBUG] Applied original permissions to temp file
+2026-03-06T23:11:11.611Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.65176.1772838671608 to C:\Users\User\.claude.json
+2026-03-06T23:11:11.611Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-03-06T23:11:11.631Z [DEBUG] MCP server "synapse": Starting connection with timeout of 30000ms
+2026-03-06T23:11:11.643Z [DEBUG] [keybindings] KeybindingSetup initialized with 104 bindings, 0 warnings
+2026-03-06T23:11:11.649Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:11:11.653Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:11:11.666Z [DEBUG] [REPL:mount] REPL mounted, disabled=false
+2026-03-06T23:11:11.666Z [DEBUG] Official marketplace auto-install skipped: already_attempted
+2026-03-06T23:11:11.666Z [DEBUG] performStartupChecks called
+2026-03-06T23:11:11.666Z [DEBUG] Starting background plugin installations
+2026-03-06T23:11:11.668Z [DEBUG] Loaded 4 CLAUDE.md/rules files:
+  [User] C:\Users\User\.claude\CLAUDE.md (17773 chars)
+  [Project] C:\Users\User\CLAUDE.md (12361 chars)
+  [Project] C:\Users\User\SYNAPSE\CLAUDE.md (30280 chars)
+  [AutoMem] C:\Users\User\.claude\projects\C--Users-User-SYNAPSE\memory\MEMORY.md (4667 chars)
+2026-03-06T23:11:11.682Z [DEBUG] performBackgroundPluginInstallations called
+2026-03-06T23:11:11.696Z [DEBUG] MCP server "github": Starting connection with timeout of 30000ms
+2026-03-06T23:11:11.709Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-03-06T23:11:11.712Z [DEBUG] Total LSP servers loaded: 0
+2026-03-06T23:11:11.712Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-03-06T23:11:11.712Z [DEBUG] LSP manager initialized with 0 servers
+2026-03-06T23:11:11.712Z [DEBUG] LSP server manager initialized successfully
+2026-03-06T23:11:11.712Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-03-06T23:11:11.719Z [DEBUG] [claudeai-mcp] Checking gate (cached)...
+2026-03-06T23:11:11.719Z [DEBUG] [claudeai-mcp] Gate returned: true
+2026-03-06T23:11:11.720Z [DEBUG] [claudeai-mcp] Fetching from https://api.anthropic.com/v1/mcp_servers?limit=1000
+2026-03-06T23:11:11.728Z [DEBUG] Fetching plugin security messages from https://raw.githubusercontent.com/anthropics/claude-plugins-official/refs/heads/security/security.json
+2026-03-06T23:11:11.739Z [DEBUG] Org fast mode: enabled
+2026-03-06T23:11:11.739Z [DEBUG] Watching for changes in setting files C:\Users\User\.claude\settings.json, C:\Users\User\SYNAPSE\.claude\settings.json, C:\Users\User\SYNAPSE\.claude\settings.local.json, C:\Program Files\ClaudeCode\managed-settings.json...
+2026-03-06T23:11:11.739Z [DEBUG] Watching for changes in skill/command directories: C:\Users\User\.claude\skills, C:\Users\User\.claude\commands, C:\Users\User\SYNAPSE\.claude\skills...
+2026-03-06T23:11:11.814Z [DEBUG] Security messages saved successfully
+2026-03-06T23:11:11.834Z [DEBUG] [claudeai-mcp] Fetched 4 servers
+2026-03-06T23:11:11.841Z [DEBUG] MCP server "claude.ai Vercel": Initializing claude.ai proxy transport for server mcpsrv_013PZdcxtpsWHjHjzHQVVg7K
+2026-03-06T23:11:11.842Z [DEBUG] MCP server "claude.ai Vercel": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_013PZdcxtpsWHjHjzHQVVg7K
+2026-03-06T23:11:11.842Z [DEBUG] MCP server "claude.ai Vercel": claude.ai proxy transport created successfully
+2026-03-06T23:11:11.842Z [DEBUG] MCP server "claude.ai Vercel": Starting connection with timeout of 30000ms
+2026-03-06T23:11:11.842Z [DEBUG] MCP server "claude.ai Gmail": Initializing claude.ai proxy transport for server mcpsrv_01Nh1FBruws7rZjRsDecLKyg
+2026-03-06T23:11:11.842Z [DEBUG] MCP server "claude.ai Gmail": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_01Nh1FBruws7rZjRsDecLKyg
+2026-03-06T23:11:11.842Z [DEBUG] MCP server "claude.ai Gmail": claude.ai proxy transport created successfully
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Gmail": Starting connection with timeout of 30000ms
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Google Calendar": Initializing claude.ai proxy transport for server mcpsrv_01XFtuwjYrg1X6WLuK6ap5F6
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Google Calendar": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_01XFtuwjYrg1X6WLuK6ap5F6
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Google Calendar": claude.ai proxy transport created successfully
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Google Calendar": Starting connection with timeout of 30000ms
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Hugging Face": Initializing claude.ai proxy transport for server mcpsrv_014HaudWSTEBpeVtLFa6nELD
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Hugging Face": Using claude.ai proxy at https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_014HaudWSTEBpeVtLFa6nELD
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Hugging Face": claude.ai proxy transport created successfully
+2026-03-06T23:11:11.843Z [DEBUG] MCP server "claude.ai Hugging Face": Starting connection with timeout of 30000ms
+2026-03-06T23:11:11.865Z [DEBUG] Loaded plugins - Enabled: 4, Disabled: 0, Commands: 0, Agents: 0, Errors: 0
+2026-03-06T23:11:11.871Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:11.875Z [DEBUG] StatusLine [node "C:/Users/User/.claude/hooks/gsd-statusline.js"] completed with status 0
+2026-03-06T23:11:11.875Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:11.875Z [DEBUG] Hook SessionStart:startup (SessionStart) success:
+Synapse bridge connected.
+No pending Houdini events.
+2026-03-06T23:11:11.887Z [DEBUG] Checking for native installer update to version 2.1.70
+2026-03-06T23:11:11.901Z [DEBUG] Found 2.1.70 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-03-06T23:11:11.956Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=C:\Users\User\.local\bin\claude.exe)
+2026-03-06T23:11:12.255Z [DEBUG] MCP server "claude.ai Gmail": Successfully connected to claudeai-proxy server in 413ms
+2026-03-06T23:11:12.255Z [DEBUG] MCP server "claude.ai Gmail": Connection established with capabilities: {"hasTools":true,"hasPrompts":false,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"mcp-server-gmail","version":"0.1.0"}}
+2026-03-06T23:11:12.255Z [DEBUG] [MCP] Server "claude.ai Gmail" connected with subscribe=false
+2026-03-06T23:11:12.305Z [DEBUG] MCP server "claude.ai Google Calendar": Successfully connected to claudeai-proxy server in 462ms
+2026-03-06T23:11:12.305Z [DEBUG] MCP server "claude.ai Google Calendar": Connection established with capabilities: {"hasTools":true,"hasPrompts":true,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"mcp-server-gcal","version":"0.1.0"}}
+2026-03-06T23:11:12.305Z [DEBUG] [MCP] Server "claude.ai Google Calendar" connected with subscribe=false
+2026-03-06T23:11:12.407Z [DEBUG] MCP server "claude.ai Vercel": Successfully connected to claudeai-proxy server in 566ms
+2026-03-06T23:11:12.407Z [DEBUG] MCP server "claude.ai Vercel": Connection established with capabilities: {"hasTools":true,"hasPrompts":true,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"Vercel MCP Server","version":"2"}}
+2026-03-06T23:11:12.407Z [DEBUG] [MCP] Server "claude.ai Vercel" connected with subscribe=false
+2026-03-06T23:11:12.422Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:12.423Z [DEBUG] [useDeferredValue] Messages deferred by 6 (0→6)
+2026-03-06T23:11:12.549Z [DEBUG] MCP server "claude.ai Hugging Face": Successfully connected to claudeai-proxy server in 706ms
+2026-03-06T23:11:12.549Z [DEBUG] MCP server "claude.ai Hugging Face": Connection established with capabilities: {"hasTools":true,"hasPrompts":true,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"@huggingface/mcp-services","title":"Hugging Face","icons":[{"src":"https://huggingface.co/favicon.ico"}],"version":"0.3.5","websiteUrl":"https://huggingface.co/mcp"}}
+2026-03-06T23:11:12.549Z [DEBUG] [MCP] Server "claude.ai Hugging Face" connected with subscribe=false
+2026-03-06T23:11:12.600Z [ERROR] MCP server "unreal" Server stderr: 2026-03-06 18:11:12,588 [INFO] ue5-mcp: ue-bridge v2.1.0 starting (stdio transport)
+2026-03-06 18:11:12,588 [INFO] ue5-mcp: UE5 Remote Control endpoint: http://localhost:30010
+2026-03-06 18:11:12,589 [INFO] ue5-mcp: Startup checks passed � ready for connections
+2026-03-06T23:11:12.600Z [DEBUG] MCP server "unreal": Successfully connected to stdio server in 1001ms
+2026-03-06T23:11:12.600Z [DEBUG] MCP server "unreal": Connection established with capabilities: {"hasTools":true,"hasPrompts":true,"hasResources":true,"hasResourceSubscribe":false,"serverVersion":{"name":"unreal-engine","version":"1.26.0"}}
+2026-03-06T23:11:12.600Z [DEBUG] [MCP] Server "unreal" connected with subscribe=false
+2026-03-06T23:11:12.613Z [DEBUG] MCP server "synapse": Successfully connected to stdio server in 983ms
+2026-03-06T23:11:12.613Z [DEBUG] MCP server "synapse": Connection established with capabilities: {"hasTools":true,"hasPrompts":false,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"synapse","version":"1.26.0"}}
+2026-03-06T23:11:12.613Z [DEBUG] [MCP] Server "synapse" connected with subscribe=false
+2026-03-06T23:11:12.804Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.65176.1772838672804
+2026-03-06T23:11:12.804Z [DEBUG] Preserving file permissions: 100666
+2026-03-06T23:11:12.806Z [DEBUG] Temp file written successfully, size: 46623 bytes
+2026-03-06T23:11:12.806Z [DEBUG] Applied original permissions to temp file
+2026-03-06T23:11:12.806Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.65176.1772838672804 to C:\Users\User\.claude.json
+2026-03-06T23:11:12.807Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-03-06T23:11:12.807Z [DEBUG] Passes eligibility cached for org c1c0c285-f7ba-4844-997e-44612bdc9d01: true
+2026-03-06T23:11:13.195Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:11:13.235Z [ERROR] MCP server "github" Server stderr: GitHub MCP Server running on stdio
+2026-03-06T23:11:13.235Z [DEBUG] MCP server "github": Successfully connected to stdio server in 1540ms
+2026-03-06T23:11:13.235Z [DEBUG] MCP server "github": Connection established with capabilities: {"hasTools":true,"hasPrompts":false,"hasResources":false,"hasResourceSubscribe":false,"serverVersion":{"name":"github-mcp-server","version":"0.6.2"}}
+2026-03-06T23:11:13.235Z [DEBUG] [MCP] Server "github" connected with subscribe=false
+2026-03-06T23:11:13.278Z [DEBUG] StatusLine [node "C:/Users/User/.claude/hooks/gsd-statusline.js"] completed with status 0
+2026-03-06T23:11:16.219Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:11:16.219Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:11:16.219Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:11:16.220Z [DEBUG] Sending 103 skills via attachment (initial, 101 total sent)
+2026-03-06T23:11:16.220Z [DEBUG] Skill prompt: showing "superpowers-developing-for-claude-code:working-with-claude-code" (userFacingName="working-with-claude-code")
+2026-03-06T23:11:16.220Z [DEBUG] Skill prompt: showing "superpowers-developing-for-claude-code:developing-claude-code-plugins" (userFacingName="developing-claude-code-plugins")
+2026-03-06T23:11:16.220Z [DEBUG] Skill prompt: showing "last30days:2.0.0" (userFacingName="last30days")
+2026-03-06T23:11:16.220Z [DEBUG] Skill prompt: showing "image-generator:image-generator" (userFacingName="Image Generator")
+2026-03-06T23:11:16.220Z [DEBUG] Skill prompt: showing "llm-council:llm-council" (userFacingName="LLM Council")
+2026-03-06T23:11:16.220Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:11:16.220Z [WARN] [3P telemetry] Event dropped (no event logger initialized): user_prompt
+2026-03-06T23:11:16.222Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-03-06T23:11:16.222Z [DEBUG] Found 1 hook matchers in settings
+2026-03-06T23:11:16.222Z [DEBUG] Matched 1 unique hooks for query "no match query" (1 before deduplication)
+2026-03-06T23:11:16.228Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:11:16.230Z [DEBUG] High write ratio: blit=516, write=707 (57.8% writes), screen=15x129
+2026-03-06T23:11:16.306Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:16.307Z [DEBUG] FileHistory: Added snapshot for 50949d94-8499-47fb-bed2-be50267b27f7, tracking 0 files
+2026-03-06T23:11:16.320Z [DEBUG] Total plugin output styles loaded: 0
+2026-03-06T23:11:16.321Z [DEBUG] [useDeferredValue] Messages deferred by 2 (6→8)
+2026-03-06T23:11:16.335Z [DEBUG] autocompact: tokens=3784 threshold=167000 effectiveWindow=180000
+2026-03-06T23:11:16.336Z [DEBUG] Dynamic tool loading: 0/241 deferred tools included
+2026-03-06T23:11:16.337Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:11:16.337Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:11:16.337Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:11:16.338Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:11:19.155Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:11:20.501Z [DEBUG] [useDeferredValue] Messages deferred by 1 (8→9)
+2026-03-06T23:11:20.504Z [DEBUG] [useDeferredValue] Messages deferred by 1 (8→9)
+2026-03-06T23:11:21.400Z [DEBUG] [useDeferredValue] Messages deferred by 1 (9→10)
+2026-03-06T23:11:21.970Z [DEBUG] executePreToolHooks called for tool: ToolSearch
+2026-03-06T23:11:21.972Z [DEBUG] Getting matching hook commands for PreToolUse with query: ToolSearch
+2026-03-06T23:11:21.972Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:21.972Z [DEBUG] Matched 0 unique hooks for query "ToolSearch" (0 before deduplication)
+2026-03-06T23:11:21.973Z [DEBUG] ToolSearchTool: cache invalidated - deferred tools changed
+2026-03-06T23:11:21.973Z [DEBUG] ToolSearchTool: selected Read, Glob, Grep
+2026-03-06T23:11:21.975Z [DEBUG] Getting matching hook commands for PostToolUse with query: ToolSearch
+2026-03-06T23:11:21.975Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:21.975Z [DEBUG] Matched 1 unique hooks for query "ToolSearch" (1 before deduplication)
+2026-03-06T23:11:21.981Z [DEBUG] [useDeferredValue] Messages deferred by 1 (10→11)
+2026-03-06T23:11:22.050Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:22.051Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:11:22.051Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:11:22.051Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:11:22.051Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:11:22.052Z [DEBUG] autocompact: tokens=32078 threshold=167000 effectiveWindow=180000
+2026-03-06T23:11:22.053Z [DEBUG] Dynamic tool loading: found 3 discovered tools in message history
+2026-03-06T23:11:22.053Z [DEBUG] Dynamic tool loading: 3/241 deferred tools included
+2026-03-06T23:11:22.053Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:11:22.054Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:11:22.054Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:11:22.054Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:11:22.056Z [DEBUG] [useDeferredValue] Messages deferred by 3 (11→14)
+2026-03-06T23:11:24.875Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:11:24.878Z [DEBUG] [useDeferredValue] Messages deferred by 1 (14→15)
+2026-03-06T23:11:24.882Z [DEBUG] [useDeferredValue] Messages deferred by 1 (14→15)
+2026-03-06T23:11:25.399Z [DEBUG] executePreToolHooks called for tool: Glob
+2026-03-06T23:11:25.400Z [DEBUG] Getting matching hook commands for PreToolUse with query: Glob
+2026-03-06T23:11:25.400Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:25.400Z [DEBUG] Matched 0 unique hooks for query "Glob" (0 before deduplication)
+2026-03-06T23:11:25.411Z [DEBUG] [useDeferredValue] Messages deferred by 1 (15→16)
+2026-03-06T23:11:25.678Z [DEBUG] Getting matching hook commands for PostToolUse with query: Glob
+2026-03-06T23:11:25.678Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:25.678Z [DEBUG] Matched 2 unique hooks for query "Glob" (2 before deduplication)
+2026-03-06T23:11:25.745Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:25.831Z [DEBUG] [useDeferredValue] Messages deferred by 5 (16→21)
+2026-03-06T23:11:25.855Z [DEBUG] executePreToolHooks called for tool: Glob
+2026-03-06T23:11:25.856Z [DEBUG] Getting matching hook commands for PreToolUse with query: Glob
+2026-03-06T23:11:25.856Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:25.856Z [DEBUG] Matched 0 unique hooks for query "Glob" (0 before deduplication)
+2026-03-06T23:11:25.865Z [DEBUG] [useDeferredValue] Messages deferred by 1 (21→22)
+2026-03-06T23:11:26.137Z [DEBUG] Getting matching hook commands for PostToolUse with query: Glob
+2026-03-06T23:11:26.137Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:26.137Z [DEBUG] Matched 2 unique hooks for query "Glob" (2 before deduplication)
+2026-03-06T23:11:26.215Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:26.268Z [DEBUG] [useDeferredValue] Messages deferred by 5 (22→27)
+2026-03-06T23:11:26.272Z [DEBUG] executePreToolHooks called for tool: Glob
+2026-03-06T23:11:26.273Z [DEBUG] Getting matching hook commands for PreToolUse with query: Glob
+2026-03-06T23:11:26.273Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:26.273Z [DEBUG] Matched 0 unique hooks for query "Glob" (0 before deduplication)
+2026-03-06T23:11:26.283Z [DEBUG] [useDeferredValue] Messages deferred by 6 (22→28)
+2026-03-06T23:11:26.566Z [DEBUG] Getting matching hook commands for PostToolUse with query: Glob
+2026-03-06T23:11:26.566Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:26.566Z [DEBUG] Matched 2 unique hooks for query "Glob" (2 before deduplication)
+2026-03-06T23:11:26.635Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:26.706Z [DEBUG] [useDeferredValue] Messages deferred by 5 (28→33)
+2026-03-06T23:11:26.754Z [DEBUG] executePreToolHooks called for tool: Read
+2026-03-06T23:11:26.755Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-03-06T23:11:26.755Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:26.755Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-03-06T23:11:26.759Z [DEBUG] Permission suggestions for Read: [
+  {
+    "type": "addRules",
+    "rules": [
+      {
+        "toolName": "Read",
+        "ruleContent": "//c/Users/User/.claude/handovers/**"
+      }
+    ],
+    "behavior": "allow",
+    "destination": "session"
+  }
+]
+2026-03-06T23:11:26.760Z [DEBUG] executePermissionRequestHooks called for tool: Read
+2026-03-06T23:11:26.760Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Read
+2026-03-06T23:11:26.760Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:11:26.760Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-03-06T23:11:26.761Z [DEBUG] [useDeferredValue] Messages deferred by 1 (33→34)
+2026-03-06T23:11:39.636Z [DEBUG] Applying permission update: Adding 1 allow rule(s) to destination 'session': ["Read(//c/Users/User/.claude/handovers/**)"]
+2026-03-06T23:11:39.640Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:11:39.643Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:11:39.649Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-03-06T23:11:39.653Z [DEBUG] Read tool error (16ms): File does not exist. Note: your current working directory is C:\Users\User\SYNAPSE.
+2026-03-06T23:11:39.653Z [ERROR] Error: Error: File does not exist. Note: your current working directory is C:\Users\User\SYNAPSE.
+    at call (B:/~BUN/root/src/entrypoints/cli.js:1467:5979)
+    at async aaM (B:/~BUN/root/src/entrypoints/cli.js:3709:14914)
+    at processTicksAndRejections (native:7:39)
+2026-03-06T23:11:39.654Z [DEBUG] Getting matching hook commands for PostToolUseFailure with query: Read
+2026-03-06T23:11:39.654Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:11:39.654Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-03-06T23:11:39.654Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:11:39.654Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:11:39.654Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:11:39.655Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:11:39.655Z [DEBUG] autocompact: tokens=34302 threshold=167000 effectiveWindow=180000
+2026-03-06T23:11:39.655Z [DEBUG] Dynamic tool loading: found 3 discovered tools in message history
+2026-03-06T23:11:39.656Z [DEBUG] Dynamic tool loading: 3/241 deferred tools included
+2026-03-06T23:11:39.656Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:11:39.656Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:11:39.656Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:11:39.656Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:11:39.661Z [DEBUG] [useDeferredValue] Messages deferred by 1 (34→35)
+2026-03-06T23:11:39.724Z [DEBUG] StatusLine [node "C:/Users/User/.claude/hooks/gsd-statusline.js"] completed with status 0
+2026-03-06T23:11:39.752Z [DEBUG] Checking for native installer update to version 2.1.70
+2026-03-06T23:11:39.753Z [DEBUG] Found 2.1.70 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-03-06T23:11:41.758Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:11:42.286Z [DEBUG] executePreToolHooks called for tool: Read
+2026-03-06T23:11:42.287Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-03-06T23:11:42.287Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:42.287Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-03-06T23:11:42.290Z [DEBUG] [useDeferredValue] Messages deferred by 1 (35→36)
+2026-03-06T23:11:42.295Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-03-06T23:11:42.295Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:42.295Z [DEBUG] Matched 2 unique hooks for query "Read" (2 before deduplication)
+2026-03-06T23:11:42.368Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:42.633Z [DEBUG] [useDeferredValue] Messages deferred by 5 (36→41)
+2026-03-06T23:11:42.636Z [DEBUG] [useDeferredValue] Messages deferred by 5 (36→41)
+2026-03-06T23:11:42.656Z [DEBUG] executePreToolHooks called for tool: Read
+2026-03-06T23:11:42.657Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-03-06T23:11:42.657Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:42.657Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-03-06T23:11:42.659Z [DEBUG] [useDeferredValue] Messages deferred by 1 (41→42)
+2026-03-06T23:11:42.664Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-03-06T23:11:42.664Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:42.664Z [DEBUG] Matched 2 unique hooks for query "Read" (2 before deduplication)
+2026-03-06T23:11:42.738Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:42.739Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:11:42.739Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:11:42.739Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:11:42.740Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:11:42.741Z [DEBUG] autocompact: tokens=39424 threshold=167000 effectiveWindow=180000
+2026-03-06T23:11:42.741Z [DEBUG] Dynamic tool loading: found 3 discovered tools in message history
+2026-03-06T23:11:42.742Z [DEBUG] Dynamic tool loading: 3/241 deferred tools included
+2026-03-06T23:11:42.742Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:11:42.742Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:11:42.742Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:11:42.742Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:11:42.744Z [DEBUG] [useDeferredValue] Messages deferred by 5 (42→47)
+2026-03-06T23:11:45.184Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:11:51.916Z [DEBUG] [useDeferredValue] Messages deferred by 1 (47→48)
+2026-03-06T23:11:51.956Z [DEBUG] [useDeferredValue] Messages deferred by 1 (48→49)
+2026-03-06T23:11:51.957Z [DEBUG] [useDeferredValue] Messages deferred by 1 (48→49)
+2026-03-06T23:11:52.967Z [DEBUG] executePreToolHooks called for tool: Grep
+2026-03-06T23:11:52.968Z [DEBUG] Getting matching hook commands for PreToolUse with query: Grep
+2026-03-06T23:11:52.968Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:52.968Z [DEBUG] Matched 0 unique hooks for query "Grep" (0 before deduplication)
+2026-03-06T23:11:52.977Z [DEBUG] [useDeferredValue] Messages deferred by 1 (49→50)
+2026-03-06T23:11:52.981Z [DEBUG] High write ratio: blit=0, write=1064 (100.0% writes), screen=25x129
+2026-03-06T23:11:53.003Z [DEBUG] High write ratio: blit=0, write=1092 (100.0% writes), screen=26x129
+2026-03-06T23:11:53.252Z [DEBUG] Getting matching hook commands for PostToolUse with query: Grep
+2026-03-06T23:11:53.252Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:53.252Z [DEBUG] Matched 2 unique hooks for query "Grep" (2 before deduplication)
+2026-03-06T23:11:53.329Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:53.458Z [DEBUG] [useDeferredValue] Messages deferred by 5 (50→55)
+2026-03-06T23:11:53.461Z [DEBUG] [useDeferredValue] Messages deferred by 5 (50→55)
+2026-03-06T23:11:53.462Z [DEBUG] [useDeferredValue] Messages deferred by 5 (50→55)
+2026-03-06T23:11:53.971Z [DEBUG] [useDeferredValue] Messages deferred by 1 (55→56)
+2026-03-06T23:11:53.973Z [DEBUG] executePreToolHooks called for tool: Grep
+2026-03-06T23:11:53.974Z [DEBUG] Getting matching hook commands for PreToolUse with query: Grep
+2026-03-06T23:11:53.974Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:53.974Z [DEBUG] Matched 0 unique hooks for query "Grep" (0 before deduplication)
+2026-03-06T23:11:53.982Z [DEBUG] [useDeferredValue] Messages deferred by 1 (55→56)
+2026-03-06T23:11:54.244Z [DEBUG] Getting matching hook commands for PostToolUse with query: Grep
+2026-03-06T23:11:54.244Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:54.244Z [DEBUG] Matched 2 unique hooks for query "Grep" (2 before deduplication)
+2026-03-06T23:11:54.318Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:54.417Z [DEBUG] [useDeferredValue] Messages deferred by 5 (56→61)
+2026-03-06T23:11:54.421Z [DEBUG] [useDeferredValue] Messages deferred by 5 (56→61)
+2026-03-06T23:11:54.422Z [DEBUG] [useDeferredValue] Messages deferred by 5 (56→61)
+2026-03-06T23:11:54.422Z [DEBUG] [useDeferredValue] Messages deferred by 5 (56→61)
+2026-03-06T23:11:54.423Z [DEBUG] [useDeferredValue] Messages deferred by 5 (56→61)
+2026-03-06T23:11:54.604Z [DEBUG] [useDeferredValue] Messages deferred by 1 (61→62)
+2026-03-06T23:11:54.607Z [DEBUG] executePreToolHooks called for tool: Grep
+2026-03-06T23:11:54.608Z [DEBUG] Getting matching hook commands for PreToolUse with query: Grep
+2026-03-06T23:11:54.608Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:54.608Z [DEBUG] Matched 0 unique hooks for query "Grep" (0 before deduplication)
+2026-03-06T23:11:54.618Z [DEBUG] [useDeferredValue] Messages deferred by 1 (61→62)
+2026-03-06T23:11:54.870Z [DEBUG] Getting matching hook commands for PostToolUse with query: Grep
+2026-03-06T23:11:54.870Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:54.870Z [DEBUG] Matched 2 unique hooks for query "Grep" (2 before deduplication)
+2026-03-06T23:11:54.938Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:11:54.938Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:11:54.938Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:11:54.938Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:11:54.939Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:11:54.941Z [DEBUG] autocompact: tokens=42654 threshold=167000 effectiveWindow=180000
+2026-03-06T23:11:54.942Z [DEBUG] Dynamic tool loading: found 3 discovered tools in message history
+2026-03-06T23:11:54.942Z [DEBUG] Dynamic tool loading: 3/241 deferred tools included
+2026-03-06T23:11:54.942Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:11:54.943Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:11:54.943Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:11:54.943Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:11:54.945Z [DEBUG] [useDeferredValue] Messages deferred by 6 (62→68)
+2026-03-06T23:11:57.384Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:11:58.753Z [DEBUG] [useDeferredValue] Messages deferred by 1 (68→69)
+2026-03-06T23:11:58.757Z [DEBUG] [useDeferredValue] Messages deferred by 1 (68→69)
+2026-03-06T23:11:59.647Z [DEBUG] [useDeferredValue] Messages deferred by 1 (69→70)
+2026-03-06T23:11:59.649Z [DEBUG] executePreToolHooks called for tool: Grep
+2026-03-06T23:11:59.650Z [DEBUG] Getting matching hook commands for PreToolUse with query: Grep
+2026-03-06T23:11:59.650Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:59.650Z [DEBUG] Matched 0 unique hooks for query "Grep" (0 before deduplication)
+2026-03-06T23:11:59.659Z [DEBUG] [useDeferredValue] Messages deferred by 1 (69→70)
+2026-03-06T23:11:59.662Z [DEBUG] High write ratio: blit=0, write=1246 (100.0% writes), screen=29x129
+2026-03-06T23:11:59.687Z [DEBUG] High write ratio: blit=0, write=1266 (100.0% writes), screen=30x129
+2026-03-06T23:11:59.808Z [DEBUG] executePreToolHooks called for tool: Glob
+2026-03-06T23:11:59.809Z [DEBUG] Getting matching hook commands for PreToolUse with query: Glob
+2026-03-06T23:11:59.809Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:11:59.809Z [DEBUG] Matched 0 unique hooks for query "Glob" (0 before deduplication)
+2026-03-06T23:11:59.818Z [DEBUG] [useDeferredValue] Messages deferred by 1 (70→71)
+2026-03-06T23:11:59.822Z [DEBUG] [useDeferredValue] Messages deferred by 1 (70→71)
+2026-03-06T23:11:59.926Z [DEBUG] Getting matching hook commands for PostToolUse with query: Grep
+2026-03-06T23:11:59.926Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:11:59.926Z [DEBUG] Matched 2 unique hooks for query "Grep" (2 before deduplication)
+2026-03-06T23:11:59.999Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:12:00.001Z [DEBUG] [useDeferredValue] Messages deferred by 5 (71→76)
+2026-03-06T23:12:00.099Z [DEBUG] Getting matching hook commands for PostToolUse with query: Glob
+2026-03-06T23:12:00.099Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:12:00.099Z [DEBUG] Matched 2 unique hooks for query "Glob" (2 before deduplication)
+2026-03-06T23:12:00.168Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:12:00.169Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:12:00.169Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:12:00.169Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:12:00.170Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:12:00.171Z [DEBUG] autocompact: tokens=43175 threshold=167000 effectiveWindow=180000
+2026-03-06T23:12:00.171Z [DEBUG] Dynamic tool loading: found 3 discovered tools in message history
+2026-03-06T23:12:00.171Z [DEBUG] Dynamic tool loading: 3/241 deferred tools included
+2026-03-06T23:12:00.172Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:12:00.172Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:12:00.172Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:12:00.172Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:12:00.174Z [DEBUG] [useDeferredValue] Messages deferred by 5 (76→81)
+2026-03-06T23:12:02.434Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:12:02.865Z [DEBUG] executePreToolHooks called for tool: Glob
+2026-03-06T23:12:02.866Z [DEBUG] Getting matching hook commands for PreToolUse with query: Glob
+2026-03-06T23:12:02.866Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:12:02.866Z [DEBUG] Matched 0 unique hooks for query "Glob" (0 before deduplication)
+2026-03-06T23:12:02.874Z [DEBUG] [useDeferredValue] Messages deferred by 1 (81→82)
+2026-03-06T23:12:03.037Z [DEBUG] executePreToolHooks called for tool: Glob
+2026-03-06T23:12:03.038Z [DEBUG] Getting matching hook commands for PreToolUse with query: Glob
+2026-03-06T23:12:03.038Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:12:03.038Z [DEBUG] Matched 0 unique hooks for query "Glob" (0 before deduplication)
+2026-03-06T23:12:03.050Z [DEBUG] [useDeferredValue] Messages deferred by 1 (82→83)
+2026-03-06T23:12:03.150Z [DEBUG] Getting matching hook commands for PostToolUse with query: Glob
+2026-03-06T23:12:03.150Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:12:03.150Z [DEBUG] Matched 2 unique hooks for query "Glob" (2 before deduplication)
+2026-03-06T23:12:03.227Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:12:03.228Z [DEBUG] [useDeferredValue] Messages deferred by 5 (83→88)
+2026-03-06T23:12:03.329Z [DEBUG] Getting matching hook commands for PostToolUse with query: Glob
+2026-03-06T23:12:03.329Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:12:03.329Z [DEBUG] Matched 2 unique hooks for query "Glob" (2 before deduplication)
+2026-03-06T23:12:03.402Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:12:03.403Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:12:03.403Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:12:03.403Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:12:03.403Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:12:03.404Z [DEBUG] autocompact: tokens=44239 threshold=167000 effectiveWindow=180000
+2026-03-06T23:12:03.404Z [DEBUG] Dynamic tool loading: found 3 discovered tools in message history
+2026-03-06T23:12:03.404Z [DEBUG] Dynamic tool loading: 3/241 deferred tools included
+2026-03-06T23:12:03.405Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:12:03.405Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:12:03.405Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:12:03.405Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:12:03.407Z [DEBUG] [useDeferredValue] Messages deferred by 5 (88→93)
+2026-03-06T23:12:05.743Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:12:06.088Z [DEBUG] executePreToolHooks called for tool: Read
+2026-03-06T23:12:06.089Z [DEBUG] Getting matching hook commands for PreToolUse with query: Read
+2026-03-06T23:12:06.089Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:12:06.089Z [DEBUG] Matched 0 unique hooks for query "Read" (0 before deduplication)
+2026-03-06T23:12:06.091Z [DEBUG] [useDeferredValue] Messages deferred by 1 (93→94)
+2026-03-06T23:12:06.095Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:12:06.095Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:12:06.095Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:12:06.209Z [DEBUG] Getting matching hook commands for PostToolUse with query: Read
+2026-03-06T23:12:06.209Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:12:06.209Z [DEBUG] Matched 2 unique hooks for query "Read" (2 before deduplication)
+2026-03-06T23:12:06.281Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:12:06.282Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:12:06.282Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:12:06.282Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:12:06.283Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:12:06.284Z [DEBUG] autocompact: tokens=54781 threshold=167000 effectiveWindow=180000
+2026-03-06T23:12:06.285Z [DEBUG] Dynamic tool loading: found 3 discovered tools in message history
+2026-03-06T23:12:06.285Z [DEBUG] Dynamic tool loading: 3/241 deferred tools included
+2026-03-06T23:12:06.286Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:12:06.286Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:12:06.286Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:12:06.286Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:12:06.288Z [DEBUG] [useDeferredValue] Messages deferred by 5 (94→99)
+2026-03-06T23:12:09.756Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:12:23.314Z [DEBUG] [useDeferredValue] Messages deferred by 1 (99→100)
+2026-03-06T23:12:23.316Z [DEBUG] [useDeferredValue] Messages deferred by 1 (99→100)
+2026-03-06T23:12:25.877Z [DEBUG] [useDeferredValue] Messages deferred by 1 (100→101)
+2026-03-06T23:12:26.974Z [DEBUG] [useDeferredValue] Messages deferred by 1 (101→102)
+2026-03-06T23:12:26.976Z [DEBUG] executePreToolHooks called for tool: Grep
+2026-03-06T23:12:26.977Z [DEBUG] Getting matching hook commands for PreToolUse with query: Grep
+2026-03-06T23:12:26.977Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:12:26.977Z [DEBUG] Matched 0 unique hooks for query "Grep" (0 before deduplication)
+2026-03-06T23:12:26.989Z [DEBUG] High write ratio: blit=0, write=1740 (100.0% writes), screen=42x129
+2026-03-06T23:12:27.241Z [DEBUG] Getting matching hook commands for PostToolUse with query: Grep
+2026-03-06T23:12:27.241Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:12:27.241Z [DEBUG] Matched 2 unique hooks for query "Grep" (2 before deduplication)
+2026-03-06T23:12:27.312Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:12:27.313Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:12:27.313Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:12:27.313Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:12:27.313Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:12:27.314Z [DEBUG] autocompact: tokens=58145 threshold=167000 effectiveWindow=180000
+2026-03-06T23:12:27.314Z [DEBUG] Dynamic tool loading: found 3 discovered tools in message history
+2026-03-06T23:12:27.314Z [DEBUG] Dynamic tool loading: 3/241 deferred tools included
+2026-03-06T23:12:27.315Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:12:27.315Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:12:27.315Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:12:27.316Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:12:27.317Z [DEBUG] [useDeferredValue] Messages deferred by 5 (102→107)
+2026-03-06T23:12:30.984Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:12:31.226Z [DEBUG] executePreToolHooks called for tool: ToolSearch
+2026-03-06T23:12:31.228Z [DEBUG] Getting matching hook commands for PreToolUse with query: ToolSearch
+2026-03-06T23:12:31.228Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:12:31.228Z [DEBUG] Matched 0 unique hooks for query "ToolSearch" (0 before deduplication)
+2026-03-06T23:12:31.229Z [DEBUG] ToolSearchTool: selected Edit, Write
+2026-03-06T23:12:31.230Z [DEBUG] Getting matching hook commands for PostToolUse with query: ToolSearch
+2026-03-06T23:12:31.230Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:12:31.230Z [DEBUG] Matched 1 unique hooks for query "ToolSearch" (1 before deduplication)
+2026-03-06T23:12:31.231Z [DEBUG] [useDeferredValue] Messages deferred by 1 (107→108)
+2026-03-06T23:12:31.234Z [DEBUG] High write ratio: blit=0, write=1742 (100.0% writes), screen=42x129
+2026-03-06T23:12:31.319Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:12:31.319Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:12:31.319Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:12:31.320Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:12:31.320Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:12:31.320Z [DEBUG] autocompact: tokens=58115 threshold=167000 effectiveWindow=180000
+2026-03-06T23:12:31.321Z [DEBUG] Dynamic tool loading: found 5 discovered tools in message history
+2026-03-06T23:12:31.321Z [DEBUG] Dynamic tool loading: 5/241 deferred tools included
+2026-03-06T23:12:31.322Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:12:31.322Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:12:31.322Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:12:31.322Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:12:31.324Z [DEBUG] [useDeferredValue] Messages deferred by 3 (108→111)
+2026-03-06T23:12:33.817Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:12:35.810Z [DEBUG] [useDeferredValue] Messages deferred by 1 (111→112)
+2026-03-06T23:13:57.448Z [WARN] Streaming stall detected: 81.4s gap between events (stall #1)
+2026-03-06T23:13:58.203Z [DEBUG] [useDeferredValue] Messages deferred by 1 (112→113)
+2026-03-06T23:13:58.207Z [DEBUG] executePreToolHooks called for tool: Write
+2026-03-06T23:13:58.208Z [DEBUG] Getting matching hook commands for PreToolUse with query: Write
+2026-03-06T23:13:58.208Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:13:58.208Z [DEBUG] Matched 2 unique hooks for query "Write" (2 before deduplication)
+2026-03-06T23:13:58.221Z [DEBUG] High write ratio: blit=0, write=1893 (100.0% writes), screen=47x129
+2026-03-06T23:13:58.225Z [DEBUG] [useDeferredValue] Messages deferred by 2 (113→115)
+2026-03-06T23:13:58.229Z [WARN] Streaming completed with 1 stall(s), total stall time: 81.4s
+2026-03-06T23:13:58.305Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:13:58.305Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:13:58.310Z [DEBUG] Permission suggestions for Write: [
+  {
+    "type": "setMode",
+    "mode": "acceptEdits",
+    "destination": "session"
+  }
+]
+2026-03-06T23:13:58.310Z [DEBUG] executePermissionRequestHooks called for tool: Write
+2026-03-06T23:13:58.312Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Write
+2026-03-06T23:13:58.312Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:13:58.312Z [DEBUG] Matched 0 unique hooks for query "Write" (0 before deduplication)
+2026-03-06T23:13:58.651Z [DEBUG] High write ratio: blit=5160, write=119701 (95.9% writes), screen=992x129
+2026-03-06T23:14:04.725Z [DEBUG] Getting matching hook commands for Notification with query: permission_prompt
+2026-03-06T23:14:04.725Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:14:04.725Z [DEBUG] Matched 0 unique hooks for query "permission_prompt" (0 before deduplication)
+2026-03-06T23:15:49.219Z [DEBUG] Applying permission update: Setting mode to 'acceptEdits'
+2026-03-06T23:15:49.223Z [DEBUG] FileHistory: Tracked file modification for C:\Users\User\SYNAPSE\python\synapse\memory\agent_state.py
+2026-03-06T23:15:49.224Z [DEBUG] Writing to temp file: C:\Users\User\SYNAPSE\python\synapse\memory\agent_state.py.tmp.65176.1772838949224
+2026-03-06T23:15:49.224Z [DEBUG] Preserving file permissions: 100666
+2026-03-06T23:15:49.225Z [DEBUG] Temp file written successfully, size: 26338 bytes
+2026-03-06T23:15:49.225Z [DEBUG] Applied original permissions to temp file
+2026-03-06T23:15:49.225Z [DEBUG] Renaming C:\Users\User\SYNAPSE\python\synapse\memory\agent_state.py.tmp.65176.1772838949224 to C:\Users\User\SYNAPSE\python\synapse\memory\agent_state.py
+2026-03-06T23:15:49.226Z [DEBUG] File C:\Users\User\SYNAPSE\python\synapse\memory\agent_state.py written atomically
+2026-03-06T23:15:49.266Z [DEBUG] Getting matching hook commands for PostToolUse with query: Write
+2026-03-06T23:15:49.266Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:15:49.266Z [DEBUG] Matched 5 unique hooks for query "Write" (5 before deduplication)
+2026-03-06T23:15:49.283Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:15:49.285Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:15:49.292Z [DEBUG] High write ratio: blit=0, write=1932 (100.0% writes), screen=48x129
+2026-03-06T23:15:49.292Z [DEBUG] Full reset (shrink->below): prevHeight=992, nextHeight=48, viewport=53
+2026-03-06T23:15:49.297Z [DEBUG] [lspRecommendation] Looking for LSP plugins for .py
+2026-03-06T23:15:49.300Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-03-06T23:15:49.354Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:15:49.365Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:15:49.368Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:15:49.379Z [DEBUG] StatusLine [node "C:/Users/User/.claude/hooks/gsd-statusline.js"] completed with status 0
+2026-03-06T23:15:49.417Z [DEBUG] Checking for native installer update to version 2.1.70
+2026-03-06T23:15:49.418Z [DEBUG] Found 2.1.70 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-03-06T23:15:49.511Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:15:49.513Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:15:49.513Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:15:49.513Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:15:49.513Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:15:49.514Z [DEBUG] autocompact: tokens=67361 threshold=167000 effectiveWindow=180000
+2026-03-06T23:15:49.514Z [DEBUG] Dynamic tool loading: found 5 discovered tools in message history
+2026-03-06T23:15:49.515Z [DEBUG] Dynamic tool loading: 5/241 deferred tools included
+2026-03-06T23:15:49.515Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:15:49.516Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:15:49.516Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:15:49.516Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:15:49.518Z [DEBUG] [useDeferredValue] Messages deferred by 14 (115→129)
+2026-03-06T23:15:49.727Z [DEBUG] High write ratio: blit=4902, write=110311 (95.7% writes), screen=990x129
+2026-03-06T23:15:52.041Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:15:53.475Z [DEBUG] [useDeferredValue] Messages deferred by 1 (129→130)
+2026-03-06T23:15:53.478Z [DEBUG] [useDeferredValue] Messages deferred by 1 (129→130)
+2026-03-06T23:15:53.763Z [DEBUG] executePreToolHooks called for tool: ToolSearch
+2026-03-06T23:15:53.764Z [DEBUG] Getting matching hook commands for PreToolUse with query: ToolSearch
+2026-03-06T23:15:53.764Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:15:53.764Z [DEBUG] Matched 0 unique hooks for query "ToolSearch" (0 before deduplication)
+2026-03-06T23:15:53.765Z [DEBUG] ToolSearchTool: selected Bash
+2026-03-06T23:15:53.766Z [DEBUG] Getting matching hook commands for PostToolUse with query: ToolSearch
+2026-03-06T23:15:53.766Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:15:53.767Z [DEBUG] Matched 1 unique hooks for query "ToolSearch" (1 before deduplication)
+2026-03-06T23:15:53.767Z [DEBUG] [useDeferredValue] Messages deferred by 1 (130→131)
+2026-03-06T23:15:53.785Z [DEBUG] High write ratio: blit=0, write=111939 (100.0% writes), screen=992x129
+2026-03-06T23:15:53.790Z [DEBUG] [useDeferredValue] Messages deferred by 1 (130→131)
+2026-03-06T23:15:53.858Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:15:53.859Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:15:53.859Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:15:53.859Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:15:53.859Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:15:53.860Z [DEBUG] autocompact: tokens=67470 threshold=167000 effectiveWindow=180000
+2026-03-06T23:15:53.860Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:15:53.861Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:15:53.861Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:15:53.861Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:15:53.861Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:15:53.862Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:15:53.863Z [DEBUG] [useDeferredValue] Messages deferred by 3 (131→134)
+2026-03-06T23:15:56.946Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:15:58.599Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-03-06T23:15:58.600Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-03-06T23:15:58.600Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:15:58.600Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-03-06T23:15:58.603Z [DEBUG] [useDeferredValue] Messages deferred by 1 (134→135)
+2026-03-06T23:15:58.630Z [DEBUG] High write ratio: blit=0, write=112099 (100.0% writes), screen=998x129
+2026-03-06T23:15:58.632Z [DEBUG] [useDeferredValue] Messages deferred by 1 (135→136)
+2026-03-06T23:15:58.686Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:15:58.727Z [DEBUG] tree-sitter: loaded from embedded
+2026-03-06T23:15:58.741Z [DEBUG] Creating shell snapshot for bash (C:\Program Files\Git\bin\bash.exe)
+2026-03-06T23:15:58.741Z [DEBUG] Looking for shell config file: C:\Users\User\.bashrc
+2026-03-06T23:15:58.741Z [DEBUG] Shell config file not found: C:\Users\User\.bashrc, creating snapshot with Claude Code defaults only
+2026-03-06T23:15:58.741Z [DEBUG] Snapshots directory: C:\Users\User\.claude\shell-snapshots
+2026-03-06T23:15:58.770Z [DEBUG] Creating snapshot at: C:\Users\User\.claude\shell-snapshots\snapshot-bash-1772838958741-fq7y4d.sh
+2026-03-06T23:15:58.770Z [DEBUG] Execution timeout: 10000ms
+2026-03-06T23:15:59.066Z [DEBUG] Shell snapshot created successfully (308 bytes)
+2026-03-06T23:15:59.066Z [DEBUG] Session environment not yet supported on Windows
+2026-03-06T23:15:59.066Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-03-06T23:15:59.206Z [DEBUG] Getting matching hook commands for PostToolUse with query: Bash
+2026-03-06T23:15:59.206Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:15:59.206Z [DEBUG] Matched 2 unique hooks for query "Bash" (2 before deduplication)
+2026-03-06T23:15:59.283Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:15:59.295Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:15:59.296Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:15:59.296Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:15:59.296Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:15:59.296Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:15:59.297Z [DEBUG] autocompact: tokens=70814 threshold=167000 effectiveWindow=180000
+2026-03-06T23:15:59.297Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:15:59.297Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:15:59.298Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:15:59.298Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:15:59.298Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:15:59.298Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:15:59.300Z [DEBUG] [useDeferredValue] Messages deferred by 6 (136→142)
+2026-03-06T23:16:02.060Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:16:03.436Z [DEBUG] [useDeferredValue] Messages deferred by 1 (142→143)
+2026-03-06T23:16:04.636Z [DEBUG] [useDeferredValue] Messages deferred by 1 (143→144)
+2026-03-06T23:16:04.639Z [DEBUG] executePreToolHooks called for tool: Grep
+2026-03-06T23:16:04.640Z [DEBUG] Getting matching hook commands for PreToolUse with query: Grep
+2026-03-06T23:16:04.640Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:16:04.640Z [DEBUG] Matched 0 unique hooks for query "Grep" (0 before deduplication)
+2026-03-06T23:16:04.650Z [DEBUG] [useDeferredValue] Messages deferred by 1 (143→144)
+2026-03-06T23:16:04.669Z [DEBUG] High write ratio: blit=0, write=112348 (100.0% writes), screen=1003x129
+2026-03-06T23:16:04.919Z [DEBUG] Getting matching hook commands for PostToolUse with query: Grep
+2026-03-06T23:16:04.919Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:16:04.919Z [DEBUG] Matched 2 unique hooks for query "Grep" (2 before deduplication)
+2026-03-06T23:16:04.988Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:16:04.989Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:16:04.989Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:16:04.989Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:16:04.989Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:16:04.990Z [DEBUG] autocompact: tokens=71012 threshold=167000 effectiveWindow=180000
+2026-03-06T23:16:04.990Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:16:04.991Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:16:04.991Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:16:04.991Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:16:04.991Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:16:04.992Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:16:04.993Z [DEBUG] [useDeferredValue] Messages deferred by 5 (144→149)
+2026-03-06T23:16:07.632Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:16:08.920Z [DEBUG] [useDeferredValue] Messages deferred by 1 (149→150)
+2026-03-06T23:16:08.924Z [DEBUG] executePreToolHooks called for tool: Grep
+2026-03-06T23:16:08.925Z [DEBUG] Getting matching hook commands for PreToolUse with query: Grep
+2026-03-06T23:16:08.925Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:16:08.925Z [DEBUG] Matched 0 unique hooks for query "Grep" (0 before deduplication)
+2026-03-06T23:16:08.936Z [DEBUG] [useDeferredValue] Messages deferred by 1 (149→150)
+2026-03-06T23:16:09.190Z [DEBUG] Getting matching hook commands for PostToolUse with query: Grep
+2026-03-06T23:16:09.190Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:16:09.190Z [DEBUG] Matched 2 unique hooks for query "Grep" (2 before deduplication)
+2026-03-06T23:16:09.260Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:16:09.262Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:16:09.262Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:16:09.262Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:16:09.262Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:16:09.263Z [DEBUG] autocompact: tokens=72597 threshold=167000 effectiveWindow=180000
+2026-03-06T23:16:09.263Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:16:09.264Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:16:09.264Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:16:09.265Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:16:09.265Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:16:09.265Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:16:09.267Z [DEBUG] [useDeferredValue] Messages deferred by 5 (150→155)
+2026-03-06T23:16:11.626Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:16:24.360Z [DEBUG] [useDeferredValue] Messages deferred by 1 (155→156)
+2026-03-06T23:16:24.363Z [DEBUG] [useDeferredValue] Messages deferred by 1 (155→156)
+2026-03-06T23:16:24.405Z [DEBUG] [useDeferredValue] Messages deferred by 1 (156→157)
+2026-03-06T23:18:09.470Z [WARN] Streaming stall detected: 105.0s gap between events (stall #1)
+2026-03-06T23:18:10.682Z [WARN] Streaming completed with 1 stall(s), total stall time: 105.0s
+2026-03-06T23:18:10.683Z [DEBUG] executePreToolHooks called for tool: Write
+2026-03-06T23:18:10.685Z [DEBUG] Getting matching hook commands for PreToolUse with query: Write
+2026-03-06T23:18:10.685Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:18:10.685Z [DEBUG] Matched 2 unique hooks for query "Write" (2 before deduplication)
+2026-03-06T23:18:10.691Z [DEBUG] [useDeferredValue] Messages deferred by 3 (157→160)
+2026-03-06T23:18:10.713Z [DEBUG] High write ratio: blit=0, write=112564 (100.0% writes), screen=1008x129
+2026-03-06T23:18:10.774Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:10.774Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:10.777Z [DEBUG] FileHistory: Tracked file modification for C:\Users\User\SYNAPSE\tests\test_agent_state.py
+2026-03-06T23:18:10.786Z [DEBUG] [lspRecommendation] Looking for LSP plugins for .py
+2026-03-06T23:18:11.215Z [DEBUG] Writing to temp file: C:\Users\User\SYNAPSE\tests\test_agent_state.py.tmp.65176.1772839091215
+2026-03-06T23:18:11.216Z [DEBUG] Temp file written successfully, size: 30967 bytes
+2026-03-06T23:18:11.216Z [DEBUG] Renaming C:\Users\User\SYNAPSE\tests\test_agent_state.py.tmp.65176.1772839091215 to C:\Users\User\SYNAPSE\tests\test_agent_state.py
+2026-03-06T23:18:11.216Z [DEBUG] File C:\Users\User\SYNAPSE\tests\test_agent_state.py written atomically
+2026-03-06T23:18:11.218Z [DEBUG] Getting matching hook commands for PostToolUse with query: Write
+2026-03-06T23:18:11.218Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:18:11.218Z [DEBUG] Matched 5 unique hooks for query "Write" (5 before deduplication)
+2026-03-06T23:18:11.297Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:11.310Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:11.311Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:11.444Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:11.446Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:18:11.446Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:18:11.446Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:18:11.446Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:18:11.447Z [DEBUG] autocompact: tokens=83996 threshold=167000 effectiveWindow=180000
+2026-03-06T23:18:11.448Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:18:11.448Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:18:11.449Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:18:11.449Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:18:11.449Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:18:11.449Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:18:11.451Z [DEBUG] [useDeferredValue] Messages deferred by 13 (160→173)
+2026-03-06T23:18:13.894Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:18:14.334Z [DEBUG] [useDeferredValue] Messages deferred by 1 (173→174)
+2026-03-06T23:18:14.337Z [DEBUG] [useDeferredValue] Messages deferred by 1 (173→174)
+2026-03-06T23:18:15.268Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-03-06T23:18:15.269Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-03-06T23:18:15.269Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:18:15.269Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-03-06T23:18:15.272Z [DEBUG] [useDeferredValue] Messages deferred by 1 (174→175)
+2026-03-06T23:18:15.291Z [DEBUG] High write ratio: blit=0, write=113047 (100.0% writes), screen=1024x129
+2026-03-06T23:18:15.293Z [DEBUG] [useDeferredValue] Messages deferred by 2 (174→176)
+2026-03-06T23:18:15.353Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:15.359Z [DEBUG] Session environment not yet supported on Windows
+2026-03-06T23:18:15.359Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-03-06T23:18:18.135Z [DEBUG] Getting matching hook commands for PostToolUse with query: Bash
+2026-03-06T23:18:18.135Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:18:18.135Z [DEBUG] Matched 2 unique hooks for query "Bash" (2 before deduplication)
+2026-03-06T23:18:18.208Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:18.219Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:18.220Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:18:18.220Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:18:18.220Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:18:18.221Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:18:18.222Z [DEBUG] autocompact: tokens=86129 threshold=167000 effectiveWindow=180000
+2026-03-06T23:18:18.222Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:18:18.222Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:18:18.223Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:18:18.223Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:18:18.223Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:18:18.223Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:18:18.225Z [DEBUG] [useDeferredValue] Messages deferred by 7 (176→183)
+2026-03-06T23:18:21.400Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:18:24.008Z [DEBUG] [useDeferredValue] Messages deferred by 1 (183→184)
+2026-03-06T23:18:24.925Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-03-06T23:18:24.926Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-03-06T23:18:24.926Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:18:24.926Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-03-06T23:18:24.929Z [DEBUG] [useDeferredValue] Messages deferred by 1 (184→185)
+2026-03-06T23:18:24.949Z [DEBUG] High write ratio: blit=0, write=113537 (100.0% writes), screen=1035x129
+2026-03-06T23:18:24.962Z [DEBUG] [useDeferredValue] Messages deferred by 1 (185→186)
+2026-03-06T23:18:24.964Z [DEBUG] [useDeferredValue] Messages deferred by 1 (185→186)
+2026-03-06T23:18:25.019Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:25.029Z [DEBUG] Session environment not yet supported on Windows
+2026-03-06T23:18:25.029Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-03-06T23:18:27.138Z [DEBUG] Getting matching hook commands for PostToolUse with query: Bash
+2026-03-06T23:18:27.138Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:18:27.138Z [DEBUG] Matched 2 unique hooks for query "Bash" (2 before deduplication)
+2026-03-06T23:18:27.217Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:27.228Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:27.229Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:18:27.229Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:18:27.229Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:18:27.230Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:18:27.231Z [DEBUG] autocompact: tokens=87414 threshold=167000 effectiveWindow=180000
+2026-03-06T23:18:27.231Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:18:27.231Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:18:27.232Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:18:27.232Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:18:27.232Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:18:27.232Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:18:27.234Z [DEBUG] [useDeferredValue] Messages deferred by 6 (186→192)
+2026-03-06T23:18:30.214Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:18:31.026Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-03-06T23:18:31.027Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-03-06T23:18:31.027Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:18:31.027Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-03-06T23:18:31.030Z [DEBUG] [useDeferredValue] Messages deferred by 1 (192→193)
+2026-03-06T23:18:31.049Z [DEBUG] High write ratio: blit=0, write=113865 (100.0% writes), screen=1041x129
+2026-03-06T23:18:31.052Z [DEBUG] [useDeferredValue] Messages deferred by 2 (192→194)
+2026-03-06T23:18:31.111Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:31.118Z [DEBUG] Session environment not yet supported on Windows
+2026-03-06T23:18:31.118Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-03-06T23:18:33.827Z [DEBUG] Getting matching hook commands for PostToolUse with query: Bash
+2026-03-06T23:18:33.827Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:18:33.827Z [DEBUG] Matched 2 unique hooks for query "Bash" (2 before deduplication)
+2026-03-06T23:18:33.899Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:33.911Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:33.912Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:18:33.912Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:18:33.912Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:18:33.912Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:18:33.912Z [DEBUG] autocompact: tokens=88470 threshold=167000 effectiveWindow=180000
+2026-03-06T23:18:33.913Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:18:33.913Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:18:33.913Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:18:33.914Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:18:33.914Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:18:33.914Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:18:33.916Z [DEBUG] [useDeferredValue] Messages deferred by 6 (194→200)
+2026-03-06T23:18:36.714Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:18:46.954Z [DEBUG] [useDeferredValue] Messages deferred by 1 (200→201)
+2026-03-06T23:18:46.991Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-03-06T23:18:46.991Z [DEBUG] Found 1 hook matchers in settings
+2026-03-06T23:18:46.991Z [DEBUG] Matched 1 unique hooks for query "no match query" (1 before deduplication)
+2026-03-06T23:18:46.992Z [DEBUG] [useDeferredValue] Messages deferred by 1 (201→202)
+2026-03-06T23:18:47.080Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:18:47.082Z [DEBUG] [useDeferredValue] Messages deferred by 3 (202→205)
+2026-03-06T23:18:47.087Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:19:47.115Z [DEBUG] Getting matching hook commands for Notification with query: idle_prompt
+2026-03-06T23:19:47.115Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:19:47.115Z [DEBUG] Matched 0 unique hooks for query "idle_prompt" (0 before deduplication)
+2026-03-06T23:20:55.991Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:20:55.991Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:20:55.991Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:20:55.992Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:20:55.993Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-03-06T23:20:55.993Z [DEBUG] Found 1 hook matchers in settings
+2026-03-06T23:20:55.993Z [DEBUG] Matched 1 unique hooks for query "no match query" (1 before deduplication)
+2026-03-06T23:20:55.999Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:20:56.078Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:20:56.078Z [DEBUG] FileHistory: Making snapshot for message 236cb764-cb17-4674-9c73-28ff84a4f48a
+2026-03-06T23:20:56.092Z [DEBUG] FileHistory: Added snapshot for 236cb764-cb17-4674-9c73-28ff84a4f48a, tracking 2 files
+2026-03-06T23:20:56.093Z [DEBUG] autocompact: tokens=89347 threshold=167000 effectiveWindow=180000
+2026-03-06T23:20:56.094Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:20:56.094Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:20:56.095Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:20:56.096Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:20:56.096Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:20:56.096Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:20:56.098Z [DEBUG] [useDeferredValue] Messages deferred by 1 (205→206)
+2026-03-06T23:20:56.148Z [DEBUG] High write ratio: blit=0, write=115794 (100.0% writes), screen=1080x129
+2026-03-06T23:20:58.562Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:21:00.035Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-03-06T23:21:00.036Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-03-06T23:21:00.036Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:21:00.036Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-03-06T23:21:00.040Z [DEBUG] [useDeferredValue] Messages deferred by 1 (206→207)
+2026-03-06T23:21:00.061Z [DEBUG] High write ratio: blit=0, write=115794 (100.0% writes), screen=1080x129
+2026-03-06T23:21:00.064Z [DEBUG] [useDeferredValue] Messages deferred by 2 (206→208)
+2026-03-06T23:21:00.120Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:21:00.123Z [DEBUG] Permission suggestions for Bash: []
+2026-03-06T23:21:00.123Z [DEBUG] executePermissionRequestHooks called for tool: Bash
+2026-03-06T23:21:00.124Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Bash
+2026-03-06T23:21:00.124Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:21:00.124Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-03-06T23:21:06.151Z [DEBUG] Getting matching hook commands for Notification with query: permission_prompt
+2026-03-06T23:21:06.151Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:21:06.151Z [DEBUG] Matched 0 unique hooks for query "permission_prompt" (0 before deduplication)
+2026-03-06T23:23:25.541Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:23:25.542Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:23:25.563Z [DEBUG] High write ratio: blit=0, write=115960 (100.0% writes), screen=1084x129
+2026-03-06T23:23:25.568Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-03-06T23:23:25.568Z [DEBUG] Session environment not yet supported on Windows
+2026-03-06T23:23:25.568Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-03-06T23:23:25.643Z [DEBUG] StatusLine [node "C:/Users/User/.claude/hooks/gsd-statusline.js"] completed with status 0
+2026-03-06T23:23:25.677Z [DEBUG] Checking for native installer update to version 2.1.70
+2026-03-06T23:23:25.678Z [DEBUG] Found 2.1.70 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-03-06T23:23:25.713Z [DEBUG] Getting matching hook commands for PostToolUse with query: Bash
+2026-03-06T23:23:25.713Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:23:25.713Z [DEBUG] Matched 2 unique hooks for query "Bash" (2 before deduplication)
+2026-03-06T23:23:25.791Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:23:25.801Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:23:25.802Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:23:25.803Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:23:25.803Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:23:25.803Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:23:25.804Z [DEBUG] autocompact: tokens=90002 threshold=167000 effectiveWindow=180000
+2026-03-06T23:23:25.805Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:23:25.805Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:23:25.805Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:23:25.806Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:23:25.806Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:23:25.806Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:23:25.808Z [DEBUG] [useDeferredValue] Messages deferred by 6 (208→214)
+2026-03-06T23:23:28.232Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:23:31.944Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-03-06T23:23:31.945Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-03-06T23:23:31.945Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:23:31.945Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-03-06T23:23:31.948Z [DEBUG] [useDeferredValue] Messages deferred by 1 (214→215)
+2026-03-06T23:23:31.969Z [DEBUG] High write ratio: blit=0, write=116045 (100.0% writes), screen=1086x129
+2026-03-06T23:23:31.972Z [DEBUG] [useDeferredValue] Messages deferred by 2 (214→216)
+2026-03-06T23:23:32.032Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:23:32.036Z [DEBUG] Permission suggestions for Bash: []
+2026-03-06T23:23:32.036Z [DEBUG] executePermissionRequestHooks called for tool: Bash
+2026-03-06T23:23:32.037Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Bash
+2026-03-06T23:23:32.037Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:23:32.037Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-03-06T23:23:38.064Z [DEBUG] Getting matching hook commands for Notification with query: permission_prompt
+2026-03-06T23:23:38.064Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:23:38.064Z [DEBUG] Matched 0 unique hooks for query "permission_prompt" (0 before deduplication)
+2026-03-06T23:27:53.696Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:27:53.699Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:27:53.717Z [DEBUG] High write ratio: blit=0, write=116225 (100.0% writes), screen=1091x129
+2026-03-06T23:27:53.746Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-03-06T23:27:53.746Z [DEBUG] Session environment not yet supported on Windows
+2026-03-06T23:27:53.746Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-03-06T23:27:53.821Z [DEBUG] StatusLine [node "C:/Users/User/.claude/hooks/gsd-statusline.js"] completed with status 0
+2026-03-06T23:27:53.857Z [DEBUG] Checking for native installer update to version 2.1.70
+2026-03-06T23:27:53.858Z [DEBUG] Found 2.1.70 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-03-06T23:27:53.930Z [DEBUG] Getting matching hook commands for PostToolUse with query: Bash
+2026-03-06T23:27:53.930Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:27:53.930Z [DEBUG] Matched 2 unique hooks for query "Bash" (2 before deduplication)
+2026-03-06T23:27:54.001Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:27:54.012Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:27:54.013Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:27:54.013Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:27:54.013Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:27:54.014Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:27:54.014Z [DEBUG] autocompact: tokens=90530 threshold=167000 effectiveWindow=180000
+2026-03-06T23:27:54.015Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:27:54.015Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:27:54.016Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:27:54.016Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:27:54.016Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:27:54.016Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:27:54.018Z [DEBUG] [useDeferredValue] Messages deferred by 6 (216→222)
+2026-03-06T23:27:56.742Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:27:57.478Z [DEBUG] executePreToolHooks called for tool: Bash
+2026-03-06T23:27:57.479Z [DEBUG] Getting matching hook commands for PreToolUse with query: Bash
+2026-03-06T23:27:57.479Z [DEBUG] Found 3 hook matchers in settings
+2026-03-06T23:27:57.479Z [DEBUG] Matched 1 unique hooks for query "Bash" (1 before deduplication)
+2026-03-06T23:27:57.482Z [DEBUG] [useDeferredValue] Messages deferred by 1 (222→223)
+2026-03-06T23:27:57.509Z [DEBUG] High write ratio: blit=0, write=116460 (100.0% writes), screen=1096x129
+2026-03-06T23:27:57.511Z [DEBUG] [useDeferredValue] Messages deferred by 1 (223→224)
+2026-03-06T23:27:57.564Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:27:57.566Z [DEBUG] executePermissionRequestHooks called for tool: Bash
+2026-03-06T23:27:57.567Z [DEBUG] Getting matching hook commands for PermissionRequest with query: Bash
+2026-03-06T23:27:57.567Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:27:57.567Z [DEBUG] Matched 0 unique hooks for query "Bash" (0 before deduplication)
+2026-03-06T23:28:03.598Z [DEBUG] Getting matching hook commands for Notification with query: permission_prompt
+2026-03-06T23:28:03.598Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:28:03.598Z [DEBUG] Matched 0 unique hooks for query "permission_prompt" (0 before deduplication)
+2026-03-06T23:28:22.538Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:28:22.539Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:28:22.556Z [DEBUG] High write ratio: blit=0, write=116461 (100.0% writes), screen=1096x129
+2026-03-06T23:28:22.597Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-03-06T23:28:22.597Z [DEBUG] Session environment not yet supported on Windows
+2026-03-06T23:28:22.597Z [DEBUG] Spawning shell without login (-l flag skipped)
+2026-03-06T23:28:22.666Z [DEBUG] Checking for native installer update to version 2.1.70
+2026-03-06T23:28:22.667Z [DEBUG] Found 2.1.70 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-03-06T23:28:22.673Z [DEBUG] StatusLine [node "C:/Users/User/.claude/hooks/gsd-statusline.js"] completed with status 0
+2026-03-06T23:28:23.519Z [DEBUG] Getting matching hook commands for PostToolUse with query: Bash
+2026-03-06T23:28:23.519Z [DEBUG] Found 9 hook matchers in settings
+2026-03-06T23:28:23.519Z [DEBUG] Matched 2 unique hooks for query "Bash" (2 before deduplication)
+2026-03-06T23:28:23.594Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:28:23.607Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:28:23.608Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-03-06T23:28:23.608Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-03-06T23:28:23.608Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-03-06T23:28:23.608Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-03-06T23:28:23.609Z [DEBUG] autocompact: tokens=90694 threshold=167000 effectiveWindow=180000
+2026-03-06T23:28:23.609Z [DEBUG] Dynamic tool loading: found 6 discovered tools in message history
+2026-03-06T23:28:23.609Z [DEBUG] Dynamic tool loading: 6/241 deferred tools included
+2026-03-06T23:28:23.610Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.70.0a4; cc_entrypoint=cli; cch=00000;
+2026-03-06T23:28:23.610Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-03-06T23:28:23.610Z [DEBUG] [API:auth] OAuth token check starting
+2026-03-06T23:28:23.610Z [DEBUG] [API:auth] OAuth token check complete
+2026-03-06T23:28:23.612Z [DEBUG] [useDeferredValue] Messages deferred by 6 (224→230)
+2026-03-06T23:28:26.192Z [DEBUG] Stream started - received first chunk
+2026-03-06T23:28:27.085Z [DEBUG] [useDeferredValue] Messages deferred by 1 (230→231)
+2026-03-06T23:28:27.099Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-03-06T23:28:27.099Z [DEBUG] Found 1 hook matchers in settings
+2026-03-06T23:28:27.099Z [DEBUG] Matched 1 unique hooks for query "no match query" (1 before deduplication)
+2026-03-06T23:28:27.100Z [DEBUG] [useDeferredValue] Messages deferred by 1 (231→232)
+2026-03-06T23:28:27.185Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-03-06T23:28:27.186Z [DEBUG] [useDeferredValue] Messages deferred by 2 (232→234)
+2026-03-06T23:28:27.192Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:29:27.205Z [DEBUG] Getting matching hook commands for Notification with query: idle_prompt
+2026-03-06T23:29:27.205Z [DEBUG] Found 0 hook matchers in settings
+2026-03-06T23:29:27.205Z [DEBUG] Matched 0 unique hooks for query "idle_prompt" (0 before deduplication)
+2026-03-06T23:47:17.425Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:47:17.527Z [DEBUG] High write ratio: blit=96, write=117546 (99.9% writes), screen=1097x130
+2026-03-06T23:47:17.724Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:47:17.834Z [DEBUG] High write ratio: blit=96, write=153338 (99.9% writes), screen=1089x168
+2026-03-06T23:47:17.981Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:47:18.077Z [DEBUG] High write ratio: blit=96, write=154283 (99.9% writes), screen=1089x169
+2026-03-06T23:47:23.149Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:47:23.179Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:47:23.213Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:47:23.245Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:47:23.260Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-06T23:58:22.732Z [DEBUG] Checking for native installer update to version 2.1.70
+2026-03-06T23:58:22.733Z [DEBUG] Found 2.1.70 at C:\Users\User\.local\bin\claude.exe, skipping install
+2026-03-07T00:28:22.746Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T00:28:22.747Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T00:28:22.748Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T00:58:22.748Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T00:58:22.750Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T00:58:22.750Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T01:28:22.760Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T01:28:22.762Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T01:28:22.762Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T01:58:22.811Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T01:58:22.813Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T01:58:22.813Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T02:28:22.786Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T02:28:22.788Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T02:28:22.789Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T02:58:22.801Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T02:58:22.803Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T02:58:22.803Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T03:28:22.844Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T03:28:22.846Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T03:28:22.847Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T03:58:22.831Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T03:58:22.833Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T03:58:22.833Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T04:28:24.645Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T04:28:24.647Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T04:28:24.648Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T04:58:24.671Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T04:58:24.673Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T04:58:24.673Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T05:28:24.677Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T05:28:24.679Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T05:28:24.679Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T05:58:24.803Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T05:58:24.805Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T05:58:24.805Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T06:28:24.704Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T06:28:24.705Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T06:28:24.706Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T06:58:24.723Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T06:58:24.725Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T06:58:24.726Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T07:28:24.743Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T07:28:24.746Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T07:28:24.746Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T07:58:24.750Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T07:58:24.752Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T07:58:24.752Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T08:28:24.749Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T08:28:24.752Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T08:28:24.752Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T08:58:24.741Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T08:58:24.743Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T08:58:24.744Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T09:28:24.738Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T09:28:24.740Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T09:28:24.741Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T09:58:24.735Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T09:58:24.736Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T09:58:24.737Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T10:28:24.765Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T10:28:24.767Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T10:28:24.768Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T10:58:24.757Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T10:58:24.759Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T10:58:24.760Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T11:28:24.752Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T11:28:24.754Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T11:28:24.755Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T11:58:24.753Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T11:58:24.755Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T11:58:24.756Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T12:28:24.771Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T12:28:24.773Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T12:28:24.773Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T12:58:24.783Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T12:58:24.785Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T12:58:24.785Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T13:28:24.792Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T13:28:24.794Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T13:28:24.795Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T13:58:24.812Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T13:58:24.815Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T13:58:24.816Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T14:28:24.796Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T14:28:24.798Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T14:28:24.799Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T14:47:08.190Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-07T14:47:08.202Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.65176.1772894828202
+2026-03-07T14:47:08.202Z [DEBUG] Preserving file permissions: 100666
+2026-03-07T14:47:08.203Z [DEBUG] Temp file written successfully, size: 46998 bytes
+2026-03-07T14:47:08.204Z [DEBUG] Applied original permissions to temp file
+2026-03-07T14:47:08.204Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.65176.1772894828202 to C:\Users\User\.claude.json
+2026-03-07T14:47:08.204Z [DEBUG] File C:\Users\User\.claude.json written atomically
+2026-03-07T14:58:24.802Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T14:58:24.803Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T14:58:24.804Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T15:28:24.832Z [DEBUG] Checking for native installer update to version 2.1.71
+2026-03-07T15:28:24.834Z [DEBUG] Version 2.1.71 already installed, updating symlink
+2026-03-07T15:28:24.834Z [DEBUG] Successfully updated to version 2.1.71
+2026-03-07T15:30:14.063Z [DEBUG] [BackendRegistry] isInProcessEnabled: true (mode=auto, insideTmux=false)
+2026-03-07T15:30:14.110Z [DEBUG] Writing to temp file: C:\Users\User\.claude.json.tmp.65176.1772897414110
+2026-03-07T15:30:14.110Z [DEBUG] Preserving file permissions: 100666
+2026-03-07T15:30:14.114Z [DEBUG] Temp file written successfully, size: 46998 bytes
+2026-03-07T15:30:14.114Z [DEBUG] Applied original permissions to temp file
+2026-03-07T15:30:14.114Z [DEBUG] Renaming C:\Users\User\.claude.json.tmp.65176.1772897414110 to C:\Users\User\.claude.json
+2026-03-07T15:30:14.114Z [DEBUG] File C:\Users\User\.claude.json written atomically

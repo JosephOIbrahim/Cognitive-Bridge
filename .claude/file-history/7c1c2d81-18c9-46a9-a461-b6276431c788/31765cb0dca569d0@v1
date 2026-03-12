@@ -1,0 +1,134 @@
+"""Deterministic composition resolution following USD LIVRPS rules.
+
+LOCAL > INHERITS > VARIANTSETS > REFERENCES > PAYLOADS > SPECIALIZES
+
+In the cognitive substrate context, LIVRPS maps to:
+- LOCAL: Attributes defined directly on the prim
+- INHERITS: Not used (flat structure)
+- VARIANTSETS: Injection profile variants (not applied in clean channel)
+- REFERENCES: Cross-prim references
+- PAYLOADS: Deferred loading (not used in converter)
+- SPECIALIZES: Base class specialization
+
+For the converter, the primary composition is sublayer ordering:
+stronger layers (listed first) override weaker layers (listed last).
+"""
+
+from dataclasses import dataclass
+
+from src.lossless.constants import PHASES
+
+
+@dataclass(frozen=True, slots=True)
+class ConflictRecord:
+    """Records a composition conflict and its resolution."""
+
+    prim_name: str
+    attribute: str
+    winning_value: str
+    losing_value: str
+    winning_layer: str
+    losing_layer: str
+    resolution_rule: str
+
+
+def compose_livrps(
+    layers: list,
+) -> tuple:
+    """Compose multiple prim layers into a single resolved layer.
+
+    Args:
+        layers: List of (layer_name, list[CognitivePrim]) tuples,
+                ordered from WEAKEST to STRONGEST.
+
+    Returns:
+        (resolved_prims, conflict_log) where resolved_prims is a list
+        of CognitivePrim in canonical PHASES order, and conflict_log
+        is a list of ConflictRecord.
+
+    The composition is DETERMINISTIC:
+    - Same layers in same order always produce same result.
+    - Prims are keyed by name; stronger layers overwrite weaker ones.
+    - Final ordering follows PHASES from constants (not insertion order).
+    """
+    resolved = {}  # name -> (prim, layer_name)
+    conflicts = []
+
+    for layer_name, prims in layers:
+        for prim in prims:
+            if prim.name in resolved:
+                old_prim, old_layer = resolved[prim.name]
+                conflicts.append(ConflictRecord(
+                    prim_name=prim.name,
+                    attribute="markdown_content",
+                    winning_value=_truncate(prim.markdown_content),
+                    losing_value=_truncate(old_prim.markdown_content),
+                    winning_layer=layer_name,
+                    losing_layer=old_layer,
+                    resolution_rule="stronger_sublayer_wins",
+                ))
+            resolved[prim.name] = (prim, layer_name)
+
+    # Extract prims and sort by canonical phase order, then by priority
+    prim_list = [prim for prim, _layer in resolved.values()]
+    prim_list = _canonical_sort(prim_list)
+
+    return prim_list, conflicts
+
+
+def _canonical_sort(prims: list) -> list:
+    """Sort prims by canonical PHASES order, then by priority, then by name.
+
+    This sort is deterministic: same input always produces same output.
+    The three-level sort key ensures no ambiguity even with equal priorities.
+    """
+    phase_order = {name: i for i, name in enumerate(PHASES)}
+    default_idx = len(PHASES)
+
+    return sorted(
+        prims,
+        key=lambda p: (
+            phase_order.get(p.phase, default_idx),
+            p.priority,
+            p.name,
+        ),
+    )
+
+
+def apply_overrides(prims: list, overrides: list) -> list:
+    """Apply override prims to resolved prims.
+
+    Args:
+        prims: Resolved prim list.
+        overrides: List of (override_prim, mode) where mode is
+                   "append" or "replace".
+
+    Returns:
+        New list of prims with overrides applied.
+        Order is preserved (deterministic).
+    """
+    prim_map = {p.name: p for p in prims}
+
+    for override, mode in overrides:
+        if override.name not in prim_map:
+            continue
+        target = prim_map[override.name]
+        if mode == "replace":
+            prim_map[override.name] = target.with_content(
+                override.markdown_content
+            )
+        elif mode == "append":
+            prim_map[override.name] = target.with_content(
+                target.markdown_content + override.markdown_content
+            )
+
+    # Maintain canonical sort order
+    result = _canonical_sort(list(prim_map.values()))
+    return result
+
+
+def _truncate(text: str, max_len: int = 80) -> str:
+    """Truncate text for conflict log readability."""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "..."

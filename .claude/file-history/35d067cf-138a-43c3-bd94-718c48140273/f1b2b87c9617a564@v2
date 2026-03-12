@@ -1,0 +1,67 @@
+#usda 1.0
+(
+    doc = """Lossless Core Layer
+    Extends core_substrate_v7.usda with anchor/modulated phase metadata.
+
+    This layer adds lossless-specific attributes to each section prim:
+    - custom string phase_classification: which cascade phase this section maps to
+    - custom bool is_anchor: whether this section is immutable under injection
+    - custom float receptor_density: the d_n value for gain modulation
+
+    These attributes are READ by the lossless converter to determine
+    which sections can be modulated and which are protected.
+    """
+)
+
+# Phase-to-section mapping with anchor classification
+# Each 'over' augments the corresponding 'def' from core_substrate_v7.usda
+
+over "Header"
+{
+    custom string phase_classification = "DEFAULT"
+    custom bool is_anchor = false
+    custom float receptor_density = 0.20
+}
+
+over "ReasoningProtocols"
+{
+    custom string phase_classification = "KNOWLEDGE"
+    custom bool is_anchor = true
+    custom float receptor_density = 0.85
+}
+
+over "WorkflowProtocols"
+{
+    custom string phase_classification = "KNOWLEDGE"
+    custom bool is_anchor = true
+    custom float receptor_density = 0.85
+}
+
+over "CodeProtocols"
+{
+    custom string phase_classification = "EXPERT"
+    custom bool is_anchor = false
+    custom float receptor_density = 0.75
+}
+
+over "SlashCommandAgents"
+{
+    custom string phase_classification = "DOMAIN"
+    custom bool is_anchor = false
+    custom float receptor_density = 0.50
+}
+
+over "ClaudeCodeConfiguration"
+{
+    custom string phase_classification = "PROJECT"
+    custom bool is_anchor = false
+    custom float receptor_density = 0.40
+}
+
+# DeepSeek graft sections get modulated classification
+over "DeepSeekV32"
+{
+    custom string phase_classification = "SIGNAL"
+    custom bool is_anchor = false
+    custom float receptor_density = 0.80
+}

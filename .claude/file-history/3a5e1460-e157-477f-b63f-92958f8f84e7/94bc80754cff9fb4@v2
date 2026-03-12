@@ -1,0 +1,56 @@
+# Session Handover
+**Date:** 2026-02-27 18:00
+**Project:** Cinema Camera Rig v4.0 (Houdini 21)
+**Working directory:** C:\Users\User\OneDrive\Documents\houdini21.0
+
+## What Was Done
+
+### Steps 0-3: Environment Cleanup (COMPLETE)
+- Path disambiguation: `Documents\houdini21.0` (basic prefs) vs `OneDrive\Documents\houdini21.0` (project workspace) vs `C:\Users\User\houdini21.0` (actual Houdini home). CLAUDE.md paths correct.
+- Deleted `nest_asyncio.cpython-311.pyc` from `__pycache__`
+- Fixed OneDrive wolfram_oracle.py (had duplicate patch block) — synced from Houdini prefs copy
+
+### Steps 5-7: Synapse Runner + Wolfram Phases (COMPLETE)
+
+#### synapse_runner.py Fixes
+1. Removed `port=` kwarg from all SynapseClient() calls — client uses global SYNAPSE_URI
+2. Rewrote response handling — `execute_python` returns `result` variable directly, not dict with `.get('data')`
+3. Added `encoding='utf-8'` to open() call
+4. Fixed status display — results come as string repr, not actual dicts
+
+#### wolfram_oracle.py Final Patch (v4, working)
+Fully synchronous — bypasses async entirely, uses `httpx.Client(timeout=30.0)` directly. No event loop. Adds Content-Type validation. Previous attempts using `asyncio.new_event_loop()` and `SelectorEventLoop()` all hit haio conflicts.
+
+#### Wolfram Phase Results (ALL PASS)
+- W1 validate_optics: 2/8 verified. W2-W3 fit_squeeze: pass. W4 pupil_shift: pass. W5 biomechanics: pass.
+- Use `--timeout 180` for reliability. Run phases individually, not `--all-phases`.
+
+### Step 8: HDA Build (NOT STARTED — next session)
+
+## What's Next: HDA Build Phase
+
+Builder scripts exist at `cinema_camera/builders/`:
+- `build_chops_biomechanics.py`, `build_cop_anamorphic_flare.py`, `build_cop_sensor_noise.py`, `build_cop_stmap_aov.py`
+- `synapse_preflight.py` also exists
+
+**Execution sequence:**
+1. Run `synapse_preflight()` via Synapse (set CINEMA_CAMERA_PATH first)
+2. Build each HDA sequentially (120s+ timeout each):
+   - `build_chops_biomechanics_hda()` -> `hda/chops/cinema_chops_biomechanics_1.0.hda`
+   - `build_cop_anamorphic_flare_hda()` -> `hda/post/cinema_cop_anamorphic_flare_2.0.hda`
+   - `build_cop_sensor_noise_hda()` -> `hda/post/cinema_cop_sensor_noise_1.0.hda`
+   - `build_cop_stmap_aov_hda()` -> `hda/post/cinema_cop_stmap_aov_1.0.hda`
+3. Verify .hda files exist, run load tests
+4. Wire `cinema::camera_rig::2.0` orchestrator HDA
+
+**Full specs:** `cinema_camera/CINEMA_CAMERA_RIG_v4_SYNAPSE_REFACTOR.md` has complete builder Python code.
+
+## Key Files Modified
+| File | Change |
+|------|--------|
+| `houdini21.0/scripts/python/cinema_camera/wolfram_oracle.py` | Rewrote asyncio patch to fully synchronous httpx.Client |
+| `OneDrive/.../synapse_runner.py` | Fixed SynapseClient API, response parsing, encoding |
+| Deleted: `__pycache__/nest_asyncio.cpython-311.pyc` | Poison file cleanup |
+
+## Blockers
+None. Houdini + Synapse running. All W phases pass. Ready for HDA build.

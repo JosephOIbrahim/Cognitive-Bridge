@@ -1,0 +1,80 @@
+/* --- Intro Animation Overlay --- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.overlay.fadeOut {
+  animation: overlayFade 600ms var(--ease-out) forwards;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+/* --- Center text block --- */
+.content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Name --- */
+.nameMask {
+  overflow: hidden;
+  line-height: 1;
+}
+
+.name {
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  transform: translateY(110%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.name.nameVisible {
+  animation: textReveal 700ms var(--ease-out) forwards;
+}
+
+.separator {
+  color: var(--muted-light);
+  font-weight: 300;
+}
+
+/* --- Keyframes --- */
+@keyframes textReveal {
+  from { transform: translateY(110%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes overlayFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* --- Reduced motion --- */
+@media (prefers-reduced-motion: reduce) {
+  .name.nameVisible {
+    animation: none;
+    transform: translateY(0);
+  }
+  .overlay.fadeOut {
+    animation: none;
+    opacity: 0;
+  }
+}

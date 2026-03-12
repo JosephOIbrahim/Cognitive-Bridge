@@ -1,0 +1,1442 @@
+diff --git a/app/gen-ai/page.tsx b/app/gen-ai/page.tsx
+index 595f522..eb53d84 100644
+--- a/app/gen-ai/page.tsx
++++ b/app/gen-ai/page.tsx
+@@ -60,9 +60,8 @@ export default function GenAiPage() {
+           <h1
+             style={{
+               color: '#a0a0a0',
+-              fontFamily: 'var(--font-lora)',
++              fontFamily: 'var(--font-display)',
+               fontWeight: 400,
+-              fontStyle: 'italic',
+               fontSize: 'clamp(22px, 3.5vw, 38px)',
+               lineHeight: 1.3,
+               letterSpacing: '0.01em',
+diff --git a/app/globals.css b/app/globals.css
+index 2f923b0..179c0f9 100644
+--- a/app/globals.css
++++ b/app/globals.css
+@@ -26,6 +26,7 @@
+   --space-lg: 89px;    /* 55 × 1.618 ≈ 89 */
+   --space-xl: 144px;   /* 89 × 1.618 ≈ 144 */
+   --space-2xl: 233px;  /* 144 × 1.618 ≈ 233 */
++  --space-section: 120px; /* Editorial section gap */
+ 
+   /* Typography - Helvetica Neue alternative */
+   /* Inter: neo-grotesque sans-serif, clean, neutral, screen-optimized */
+@@ -210,6 +211,19 @@ iframe[src*="player.vimeo"] {
+   display: block;
+ }
+ 
++/* ===========================================
++   RELATED WORK THUMBNAILS
++   =========================================== */
++
++.related-thumbnail img {
++  transition: opacity 0.3s ease, transform 0.3s ease;
++}
++
++.group:hover .related-thumbnail img {
++  opacity: 1 !important;
++  transform: scale(1.02);
++}
++
+ /* ===========================================
+    ENTRANCE ANIMATIONS
+    =========================================== */
+diff --git a/app/info/page.tsx b/app/info/page.tsx
+index b810358..963f368 100644
+--- a/app/info/page.tsx
++++ b/app/info/page.tsx
+@@ -44,7 +44,7 @@ export default function InfoPage() {
+                   className="hover:opacity-70 transition-opacity"
+                   style={{
+                     color: '#d0d0d0',
+-                    fontFamily: 'var(--font-open-sans)',
++                    fontFamily: 'var(--font-display)',
+                     fontSize: '16px',
+                     fontWeight: 400
+                   }}
+@@ -74,7 +74,7 @@ export default function InfoPage() {
+                   className="hover:opacity-70 transition-opacity"
+                   style={{
+                     color: '#d0d0d0',
+-                    fontFamily: 'var(--font-open-sans)',
++                    fontFamily: 'var(--font-display)',
+                     fontSize: '16px',
+                     fontWeight: 400
+                   }}
+@@ -104,7 +104,7 @@ export default function InfoPage() {
+                   className="hover:opacity-70 transition-opacity"
+                   style={{
+                     color: '#d0d0d0',
+-                    fontFamily: 'var(--font-open-sans)',
++                    fontFamily: 'var(--font-display)',
+                     fontSize: '16px',
+                     fontWeight: 400
+                   }}
+@@ -145,9 +145,8 @@ export default function InfoPage() {
+                 className="text-lg md:text-xl"
+                 style={{
+                   color: '#9a9a9a',
+-                  fontFamily: 'var(--font-lora)',
++                  fontFamily: 'var(--font-display)',
+                   fontWeight: 400,
+-                  fontStyle: 'italic',
+                   lineHeight: 1.75,
+                   letterSpacing: '0.01em',
+                   marginBottom: '48px'
+@@ -160,9 +159,8 @@ export default function InfoPage() {
+                 className="text-lg md:text-xl"
+                 style={{
+                   color: '#9a9a9a',
+-                  fontFamily: 'var(--font-lora)',
++                  fontFamily: 'var(--font-display)',
+                   fontWeight: 400,
+-                  fontStyle: 'italic',
+                   lineHeight: 1.75,
+                   letterSpacing: '0.01em',
+                   marginBottom: '48px'
+@@ -175,9 +173,8 @@ export default function InfoPage() {
+                 className="text-lg md:text-xl"
+                 style={{
+                   color: '#9a9a9a',
+-                  fontFamily: 'var(--font-lora)',
++                  fontFamily: 'var(--font-display)',
+                   fontWeight: 400,
+-                  fontStyle: 'italic',
+                   lineHeight: 1.75,
+                   letterSpacing: '0.01em'
+                 }}
+@@ -211,7 +208,7 @@ export default function InfoPage() {
+                       key={studio}
+                       style={{
+                         color: '#9a9a9a',
+-                        fontFamily: 'var(--font-open-sans)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: 300,
+                         fontSize: '16px',
+                         lineHeight: 1.5,
+@@ -245,7 +242,7 @@ export default function InfoPage() {
+                       key={client}
+                       style={{
+                         color: '#9a9a9a',
+-                        fontFamily: 'var(--font-open-sans)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: 300,
+                         fontSize: '16px',
+                         lineHeight: 1.5,
+@@ -284,7 +281,7 @@ export default function InfoPage() {
+                       key={project}
+                       style={{
+                         color: '#9a9a9a',
+-                        fontFamily: 'var(--font-open-sans)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: 300,
+                         fontSize: '16px',
+                         lineHeight: 1.5,
+@@ -323,7 +320,7 @@ export default function InfoPage() {
+                       key={achievement}
+                       style={{
+                         color: '#9a9a9a',
+-                        fontFamily: 'var(--font-open-sans)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: 300,
+                         fontSize: '16px',
+                         lineHeight: 1.5,
+@@ -362,7 +359,7 @@ export default function InfoPage() {
+                       key={tech}
+                       style={{
+                         color: '#9a9a9a',
+-                        fontFamily: 'var(--font-open-sans)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: 300,
+                         fontSize: '16px',
+                         lineHeight: 1.5,
+@@ -396,7 +393,7 @@ export default function InfoPage() {
+                       key={tech}
+                       style={{
+                         color: '#9a9a9a',
+-                        fontFamily: 'var(--font-open-sans)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: 300,
+                         fontSize: '16px',
+                         lineHeight: 1.5,
+@@ -430,7 +427,7 @@ export default function InfoPage() {
+                       key={tech}
+                       style={{
+                         color: '#9a9a9a',
+-                        fontFamily: 'var(--font-open-sans)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: 300,
+                         fontSize: '16px',
+                         lineHeight: 1.5,
+@@ -480,7 +477,7 @@ export default function InfoPage() {
+                       color: '#7a7a7a',
+                       backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                       borderRadius: '3px',
+-                      fontFamily: 'var(--font-open-sans)',
++                      fontFamily: 'var(--font-display)',
+                       fontSize: '13px',
+                       padding: '8px 14px'
+                     }}
+diff --git a/app/layout.tsx b/app/layout.tsx
+index ad5b0a6..255fa12 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -1,5 +1,5 @@
+ import type { Metadata } from "next";
+-import { Inter, Open_Sans, Lora, DM_Sans } from "next/font/google";
++import { Inter, Lora } from "next/font/google";
+ import "./globals.css";
+ import { Navigation } from "@/components/Navigation";
+ import { Footer } from "@/components/Footer";
+@@ -7,34 +7,20 @@ import { PerceptionLayer } from "@/components/PerceptionLayer";
+ import { ViewTransitions } from "@/components/ViewTransitions";
+ import { DeferredOverlays } from "@/components/DeferredOverlays";
+ 
+-// Inter: Helvetica Neue alternative - neo-grotesque, clean, neutral
+-// Optimized: only weights actually used (saves ~15-20KB)
++// Inter: single typeface for the entire site (reference-aligned: Pentagram, Electric Theatre, etc.)
+ const inter = Inter({
+   subsets: ["latin"],
+   display: "swap",
+   variable: "--font-inter",
+-  weight: ["400", "500", "600"], // Regular, Medium, Semibold (navigation, headings)
+-});
+-
+-const dmSans = DM_Sans({
+-  subsets: ["latin"],
+-  display: "swap",
+-  variable: "--font-dm-sans",
+-  weight: ["400", "500"], // Regular, Medium
+-});
+-
+-const openSans = Open_Sans({
+-  subsets: ["latin"],
+-  display: "swap",
+-  variable: "--font-open-sans",
+-  weight: ["300", "400"], // Light (body), Regular
++  weight: ["300", "400", "500", "600"], // Light, Regular, Medium, Semibold
+ });
+ 
++// Lora: reserved for hero statements only (homepage + chatbot)
+ const lora = Lora({
+   subsets: ["latin"],
+   display: "swap",
+   variable: "--font-lora",
+-  weight: ["400"], // Regular only (used with italic for editorial)
++  weight: ["400"],
+   style: ["normal", "italic"],
+ });
+ 
+@@ -81,7 +67,7 @@ export default function RootLayout({
+   children: React.ReactNode;
+ }>) {
+   return (
+-    <html lang="en" style={{ colorScheme: 'dark', backgroundColor: '#141414' }} className={`${inter.variable} ${openSans.variable} ${lora.variable} ${dmSans.variable}`}>
++    <html lang="en" style={{ colorScheme: 'dark', backgroundColor: '#141414' }} className={`${inter.variable} ${lora.variable}`}>
+       <head>
+         <meta name="theme-color" content="#141414" />
+         {/* color-scheme meta tag tells the browser to use dark canvas between navigations,
+diff --git a/app/og-vfx-frame/page.tsx b/app/og-vfx-frame/page.tsx
+index 1925068..de1fd9e 100644
+--- a/app/og-vfx-frame/page.tsx
++++ b/app/og-vfx-frame/page.tsx
+@@ -4,13 +4,13 @@
+ export default function OGVFXFramePage() {
+   return (
+     <div style={{ padding: '100px', color: '#a0a0a0', backgroundColor: '#141414', minHeight: '100vh' }}>
+-      <h1 style={{ fontFamily: 'var(--font-lora)', fontStyle: 'italic', fontSize: '32px', marginBottom: '24px' }}>
++      <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '32px', marginBottom: '24px' }}>
+         OG Image Preview - Option 2: VFX Frame
+       </h1>
+-      <p style={{ fontFamily: 'var(--font-open-sans)', fontSize: '16px', marginBottom: '16px' }}>
++      <p style={{ fontFamily: 'var(--font-display)', fontSize: '16px', marginBottom: '16px' }}>
+         View the generated image at: <code>/og-vfx-frame/opengraph-image</code>
+       </p>
+-      <p style={{ fontFamily: 'var(--font-open-sans)', fontSize: '14px', color: '#6a6a6a' }}>
++      <p style={{ fontFamily: 'var(--font-display)', fontSize: '14px', color: '#6a6a6a' }}>
+         Option 1 (Portrait): <code>/opengraph-image</code>
+       </p>
+     </div>
+diff --git a/app/page.tsx b/app/page.tsx
+index b3a4991..8bf3c2d 100644
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@ -140,7 +140,7 @@ export default function HomePage() {
+   // Adapt project order based on visitor archetype
+   // Only adapts when confidence > 0.5 to avoid premature/unstable reordering
+   const adaptedProjects = useMemo(() => {
+-    const gridProjects = projects.filter(p => p.slug !== 'general-reel');
++    const gridProjects = projects;
+ 
+     // Confidence threshold: don't adapt on weak signal
+     if (confidence < 0.5 || !archetype) {
+diff --git a/app/photo/page.tsx b/app/photo/page.tsx
+index a4f1b70..2aadab0 100644
+--- a/app/photo/page.tsx
++++ b/app/photo/page.tsx
+@@ -333,9 +333,8 @@ export default function PhotographyPage() {
+         <p
+           style={{
+             color: '#9a9a9a',
+-            fontFamily: 'var(--font-lora)',
++            fontFamily: 'var(--font-display)',
+             fontWeight: 400,
+-            fontStyle: 'italic',
+             fontSize: 'clamp(17px, 1.2vw + 13px, 21px)',
+             lineHeight: 1.75,
+             letterSpacing: '0.01em',
+diff --git a/app/process/[slug]/page.tsx b/app/process/[slug]/page.tsx
+index 38e9d6a..829c7db 100644
+--- a/app/process/[slug]/page.tsx
++++ b/app/process/[slug]/page.tsx
+@@ -117,7 +117,7 @@ export default async function ProcessPostPage({ params }: { params: Promise<{ sl
+                 key={i}
+                 style={{
+                   color: '#8a8a8a',
+-                  fontFamily: 'var(--font-open-sans)',
++                  fontFamily: 'var(--font-display)',
+                   fontSize: '15px',
+                   lineHeight: 1.7,
+                   marginBottom: '8px'
+@@ -137,7 +137,7 @@ export default async function ProcessPostPage({ params }: { params: Promise<{ sl
+         key={index}
+         style={{
+           color: '#8a8a8a',
+-          fontFamily: 'var(--font-open-sans)',
++          fontFamily: 'var(--font-display)',
+           fontSize: '15px',
+           lineHeight: 1.7,
+           marginBottom: '16px'
+@@ -205,7 +205,7 @@ export default async function ProcessPostPage({ params }: { params: Promise<{ sl
+           <span
+             style={{
+               color: '#4a4a4a',
+-              fontFamily: 'var(--font-open-sans)',
++              fontFamily: 'var(--font-display)',
+               fontSize: '12px'
+             }}
+           >
+@@ -221,8 +221,7 @@ export default async function ProcessPostPage({ params }: { params: Promise<{ sl
+         <h1
+           style={{
+             color: '#e8e8e8',
+-            fontFamily: 'var(--font-lora)',
+-            fontStyle: 'italic',
++            fontFamily: 'var(--font-display)',
+             fontWeight: 400,
+             fontSize: 'clamp(28px, 4vw, 42px)',
+             lineHeight: 1.2,
+@@ -237,7 +236,7 @@ export default async function ProcessPostPage({ params }: { params: Promise<{ sl
+         <p
+           style={{
+             color: '#7a7a7a',
+-            fontFamily: 'var(--font-open-sans)',
++            fontFamily: 'var(--font-display)',
+             fontSize: '17px',
+             lineHeight: 1.6,
+             marginBottom: '40px'
+@@ -272,8 +271,7 @@ export default async function ProcessPostPage({ params }: { params: Promise<{ sl
+             <span
+               style={{
+                 color: '#a0a0a0',
+-                fontFamily: 'var(--font-lora)',
+-                fontStyle: 'italic',
++                fontFamily: 'var(--font-display)',
+                 fontSize: '15px'
+               }}
+               className="group-hover:text-white transition-colors"
+diff --git a/app/process/page.tsx b/app/process/page.tsx
+index c803901..45c9420 100644
+--- a/app/process/page.tsx
++++ b/app/process/page.tsx
+@@ -89,9 +89,8 @@ export default function ProcessPage() {
+           <h1
+             style={{
+               color: '#a0a0a0',
+-              fontFamily: 'var(--font-lora)',
++              fontFamily: 'var(--font-display)',
+               fontWeight: 400,
+-              fontStyle: 'italic',
+               fontSize: 'clamp(22px, 3.5vw, 38px)',
+               lineHeight: 1.3,
+               letterSpacing: '0.01em',
+@@ -144,7 +143,7 @@ export default function ProcessPage() {
+                 <p
+                   style={{
+                     color: '#5a5a5a',
+-                    fontFamily: 'var(--font-open-sans)',
++                    fontFamily: 'var(--font-display)',
+                     fontSize: '14px',
+                     fontStyle: 'italic'
+                   }}
+diff --git a/components/AccordionCategory.tsx b/components/AccordionCategory.tsx
+index 909b775..7ca884d 100644
+--- a/components/AccordionCategory.tsx
++++ b/components/AccordionCategory.tsx
+@@ -44,8 +44,7 @@ export default function AccordionCategory({
+         <h2
+           style={{
+             color: isExpanded ? 'var(--text-primary)' : 'var(--grey-500)',
+-            fontFamily: 'var(--font-lora)',
+-            fontStyle: 'italic',
++            fontFamily: 'var(--font-display)',
+             fontWeight: 400,
+             fontSize: 'clamp(22px, 2.2vw, 28px)',
+             lineHeight: 1.15,
+diff --git a/components/ChatBot.tsx b/components/ChatBot.tsx
+index f21ae2a..3d87c16 100644
+--- a/components/ChatBot.tsx
++++ b/components/ChatBot.tsx
+@@ -418,9 +418,8 @@ export function ChatBot({ isOpen, onClose }: ChatBotProps) {
+                     <h2
+                       style={{
+                         color: 'var(--grey-300)',
+-                        fontFamily: 'var(--font-lora)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: 400,
+-                        fontStyle: 'italic',
+                         fontSize: 'clamp(32px, 5.5vw, 48px)',
+                         lineHeight: 1.15,
+                         letterSpacing: '0.01em'
+@@ -578,7 +577,7 @@ export function ChatBot({ isOpen, onClose }: ChatBotProps) {
+                   onClick={() => handleQuickReply(question)}
+                   style={{
+                     color: '#7a7a7a',
+-                    fontFamily: 'var(--font-open-sans)',
++                    fontFamily: 'var(--font-display)',
+                     fontWeight: 400,
+                     fontSize: '13px',
+                     letterSpacing: '0.01em',
+diff --git a/components/ChatProjectCard.tsx b/components/ChatProjectCard.tsx
+index 5d71057..fb3d444 100644
+--- a/components/ChatProjectCard.tsx
++++ b/components/ChatProjectCard.tsx
+@@ -75,8 +75,7 @@ export function ChatProjectCard({ slug }: ChatProjectCardProps) {
+         <h4
+           style={{
+             color: '#e8e8e8',
+-            fontFamily: 'var(--font-lora)',
+-            fontStyle: 'italic',
++            fontFamily: 'var(--font-display)',
+             fontSize: '15px',
+             fontWeight: 400,
+             lineHeight: 1.3,
+diff --git a/components/CustomCursor.tsx b/components/CustomCursor.tsx
+index 2c4fec8..4e5755a 100644
+--- a/components/CustomCursor.tsx
++++ b/components/CustomCursor.tsx
+@@ -89,7 +89,7 @@ export function CustomCursor() {
+           fontWeight: 400,
+           letterSpacing: '0',
+           textColor: '#d9d9d9',
+-          fontFamily: 'var(--font-dm-sans), -apple-system, BlinkMacSystemFont, sans-serif',
++          fontFamily: 'var(--font-display), -apple-system, BlinkMacSystemFont, sans-serif',
+           borderRadius: '2px'
+         };
+       case 'button':
+@@ -103,7 +103,7 @@ export function CustomCursor() {
+           fontWeight: 400,
+           letterSpacing: '0',
+           textColor: '#d9d9d9',
+-          fontFamily: 'var(--font-dm-sans), -apple-system, BlinkMacSystemFont, sans-serif',
++          fontFamily: 'var(--font-display), -apple-system, BlinkMacSystemFont, sans-serif',
+           borderRadius: '2px'
+         };
+       default:
+@@ -117,7 +117,7 @@ export function CustomCursor() {
+           fontWeight: 400,
+           letterSpacing: '0',
+           textColor: '#d9d9d9',
+-          fontFamily: 'var(--font-dm-sans), -apple-system, BlinkMacSystemFont, sans-serif',
++          fontFamily: 'var(--font-display), -apple-system, BlinkMacSystemFont, sans-serif',
+           borderRadius: '2px'
+         };
+     }
+diff --git a/components/ProcessThumbnail.tsx b/components/ProcessThumbnail.tsx
+index f745258..0134850 100644
+--- a/components/ProcessThumbnail.tsx
++++ b/components/ProcessThumbnail.tsx
+@@ -133,7 +133,7 @@ export default function ProcessThumbnail({
+           className="text-[13px] sm:text-[18px]"
+           style={{
+             color: 'var(--grey-500)',
+-            fontFamily: 'var(--font-open-sans)',
++            fontFamily: 'var(--font-display)',
+             fontWeight: 300,
+             lineHeight: 1.6,
+             letterSpacing: '-0.01em',
+diff --git a/components/ProjectCard.tsx b/components/ProjectCard.tsx
+index 2c547f5..f12c95d 100644
+--- a/components/ProjectCard.tsx
++++ b/components/ProjectCard.tsx
+@@ -59,33 +59,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
+           style={{
+             color: 'var(--text-primary)',
+             fontWeight: 400,
+-            fontFamily: 'var(--font-lora)',
+-            fontStyle: 'italic',
++            fontFamily: 'var(--font-display)',
+             letterSpacing: '0.01em',
+-            fontSize: 'clamp(22px, 2.2vw, 28px)',
++            fontSize: 'clamp(1.5rem, 3vw, 2.5rem)',
+             lineHeight: 1.25,
+-            marginBottom: project.gridDescription || project.client ? 'var(--space-tiny)' : 0
++            marginBottom: project.client ? 'var(--space-tiny)' : 0
+           }}
+         >
+           {project.title}
+         </h3>
+ 
+-        {/* Description - readable but clearly secondary to title */}
+-        {project.gridDescription ? (
+-          <p
+-            style={{
+-              color: 'var(--grey-500)',
+-              fontFamily: 'var(--font-open-sans)',
+-              fontWeight: 400,
+-              fontSize: '17px',
+-              lineHeight: 1.95,
+-              marginBottom: project.client ? 'var(--space-tiny)' : 0
+-            }}
+-          >
+-            {project.gridDescription}
+-          </p>
+-        ) : null}
+-
+         {/* Client as footnote - dimmest, true metadata */}
+         {project.client ? (
+           <p
+diff --git a/components/ProjectDetailContent.tsx b/components/ProjectDetailContent.tsx
+index 0ab448d..d0ef97d 100644
+--- a/components/ProjectDetailContent.tsx
++++ b/components/ProjectDetailContent.tsx
+@@ -6,12 +6,17 @@ import { EmbeddedVideoPlayer } from './EmbeddedVideoPlayer';
+ import { projects, type Project } from '@/lib/projects';
+ 
+ /**
++ * PROJECT DETAIL — Editorial Narrative Layout
++ *
++ * Reference-aligned: Tendril, Found Studio, Electric Theatre
++ * Structure: type tag → title → metadata → role → hero video → description
++ *   → editorial sections (always visible) → technologies → credits (collapsible)
++ *   → related work (thumbnail cards) → next project (full-width card)
++ *
+  * COLOR HIERARCHY MANTRA:
+  * - PRIMARY (--text-primary): Titles, role titles, key info
+  * - SECONDARY (--grey-500): Descriptions, body content
+  * - TERTIARY (--text-dim): Labels, metadata, footnotes
+- *
+- * Information hierarchy = Color hierarchy
+  */
+ 
+ interface ProjectDetailContentProps {
+@@ -19,15 +24,11 @@ interface ProjectDetailContentProps {
+ }
+ 
+ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+-  const [showProcess, setShowProcess] = useState(false);
+-
+-  // Check if project has process/insights content OR credits (both go under SHOW PROCESS)
+-  const hasProcessContent = project.lightingIntent || project.challenge || project.approach || project.reference || (project.credits && project.credits.length > 0);
++  const [showCredits, setShowCredits] = useState(false);
+ 
+-  // Find next project for navigation
++  // Find next project for navigation (forward-only, Tendril pattern)
+   const currentIndex = projects.findIndex(p => p.slug === project.slug);
+   const nextProject = currentIndex < projects.length - 1 ? projects[currentIndex + 1] : projects[0];
+-  const prevProject = currentIndex > 0 ? projects[currentIndex - 1] : projects[projects.length - 1];
+ 
+   // Build metadata line
+   const metadataItems = [
+@@ -36,9 +37,30 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+     project.role,
+   ].filter(Boolean);
+ 
++  // Narrative sections — always visible (not collapsible)
++  const narrativeSections = [
++    { label: 'Intent', content: project.lightingIntent },
++    { label: 'Challenge', content: project.challenge },
++    { label: 'Approach', content: project.approach },
++    { label: 'Reference', content: project.reference },
++  ].filter(s => s.content);
++
++  // Related projects — overlapping disciplines, exclude current + next
++  const excludeSlugs = new Set([project.slug, nextProject.slug]);
++  const relatedProjects = projects
++    .filter(p => !excludeSlugs.has(p.slug))
++    .filter(p => p.disciplines.some(d =>
++      project.disciplines.map(pd => pd.toLowerCase()).includes(d.toLowerCase())
++    ))
++    .slice(0, 3);
++
++  // Vimeo thumbnail URL for related/next cards
++  const getThumbnail = (p: Project) =>
++    p.thumbnail || `https://vumbnail.com/${p.videoId}.jpg`;
++
+   return (
+     <article>
+-      {/* Project Type Tag - Pentagram style: subtle, no background */}
++      {/* Project Type Tag */}
+       {project.projectType && (
+         <div className="mb-8">
+           <span
+@@ -55,14 +77,13 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+         </div>
+       )}
+ 
+-      {/* Title - Editorial serif style */}
++      {/* Title — clean Inter, no italic */}
+       <h1
+         className="text-4xl md:text-5xl lg:text-6xl"
+         style={{
+           color: 'var(--grey-50)',
+           fontWeight: 400,
+-          fontFamily: 'var(--font-lora)',
+-          fontStyle: 'italic',
++          fontFamily: 'var(--font-display)',
+           letterSpacing: '0.01em',
+           lineHeight: 1.1,
+           marginBottom: 'var(--space-sm)'
+@@ -71,7 +92,7 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+         {project.title}
+       </h1>
+ 
+-      {/* Metadata Line: Year • Client • Role - TERTIARY */}
++      {/* Metadata Line: Year • Client • Role */}
+       {metadataItems.length > 0 && (
+         <div
+           className="flex flex-wrap items-center gap-x-3"
+@@ -88,7 +109,7 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+               <span
+                 className="text-sm"
+                 style={{
+-                  fontFamily: 'var(--font-open-sans)',
++                  fontFamily: 'var(--font-display)',
+                   fontWeight: 400
+                 }}
+               >
+@@ -99,14 +120,9 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+         </div>
+       )}
+ 
+-      {/* MY ROLE - Editorial typography, no container */}
++      {/* MY ROLE + Responsibilities */}
+       {(project.myRole || project.responsibilities) && (
+-        <div
+-          style={{
+-            marginBottom: 'var(--space-md)',
+-          }}
+-        >
+-          {/* Role Title - PRIMARY, leads the section */}
++        <div style={{ marginBottom: 'var(--space-md)' }}>
+           {project.myRole && (
+             <p
+               style={{
+@@ -122,7 +138,6 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+             </p>
+           )}
+ 
+-          {/* Shot Count - TERTIARY, subtle metadata */}
+           {project.shotCount && (
+             <p
+               style={{
+@@ -138,12 +153,11 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+             </p>
+           )}
+ 
+-          {/* Responsibilities - SECONDARY, flowing text */}
+           {project.responsibilities && project.responsibilities.length > 0 && (
+             <p
+               style={{
+                 color: 'var(--grey-500)',
+-                fontFamily: 'var(--font-open-sans)',
++                fontFamily: 'var(--font-display)',
+                 fontWeight: 400,
+                 fontSize: '15px',
+                 lineHeight: 1.7,
+@@ -156,16 +170,16 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+         </div>
+       )}
+ 
+-      {/* Full Video Player - User-controlled playback (autoplay hero is above) */}
++      {/* Hero Video */}
+       <div style={{ marginBottom: 'var(--space-md)' }}>
+         <div className="relative w-full">
+           <EmbeddedVideoPlayer videoId={project.videoId} videoHash={project.videoHash} />
+         </div>
+       </div>
+ 
+-      {/* Description - SECONDARY */}
++      {/* Description — full-width, larger text */}
+       {project.description && (
+-        <div style={{ marginBottom: 'var(--space-lg)', maxWidth: '780px' }}>
++        <div style={{ marginBottom: 'var(--space-section, 120px)', maxWidth: '780px' }}>
+           <p
+             className="text-lg md:text-xl"
+             style={{
+@@ -181,184 +195,135 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+         </div>
+       )}
+ 
+-      {/* Process Section - Collapsible (like Credits) */}
+-      {hasProcessContent && (
+-        <div className="mb-16">
+-          {/* Process Toggle - SECONDARY */}
++      {/* ── EDITORIAL SECTIONS (always visible, NOT collapsible) ── */}
++      {narrativeSections.length > 0 && (
++        <div style={{ marginBottom: 'var(--space-section, 120px)' }}>
++          {narrativeSections.map((section, index) => (
++            <div
++              key={section.label}
++              style={{
++                marginBottom: index < narrativeSections.length - 1 ? 'var(--space-lg)' : '0'
++              }}
++            >
++              <p
++                className="text-xs uppercase mb-3"
++                style={{
++                  color: 'var(--text-dim)',
++                  fontFamily: 'var(--font-display)',
++                  fontWeight: 600,
++                  letterSpacing: '0.15em'
++                }}
++              >
++                {section.label}
++              </p>
++              <p
++                className="text-base leading-relaxed"
++                style={{
++                  color: 'var(--grey-500)',
++                  fontFamily: 'var(--font-display)',
++                  maxWidth: '780px',
++                  lineHeight: 1.7
++                }}
++              >
++                {section.content}
++              </p>
++            </div>
++          ))}
++        </div>
++      )}
++
++      {/* Technologies — inline list */}
++      {project.technologies && project.technologies.length > 0 && (
++        <div style={{ marginBottom: 'var(--space-lg)' }}>
++          <p
++            className="text-xs uppercase mb-3"
++            style={{
++              color: 'var(--text-dim)',
++              fontFamily: 'var(--font-display)',
++              fontWeight: 600,
++              letterSpacing: '0.15em'
++            }}
++          >
++            Technologies
++          </p>
++          <div className="flex flex-wrap gap-2">
++            {project.technologies.map((tech) => (
++              <span
++                key={tech}
++                style={{
++                  color: 'var(--grey-500)',
++                  fontFamily: 'var(--font-display)',
++                  fontSize: '13px',
++                  fontWeight: 400,
++                  padding: '6px 12px',
++                  backgroundColor: 'var(--surface)',
++                  borderRadius: 'var(--radius-sm)'
++                }}
++              >
++                {tech}
++              </span>
++            ))}
++          </div>
++        </div>
++      )}
++
++      {/* Credits — own collapsible toggle (Tendril pattern) */}
++      {project.credits && project.credits.length > 0 && (
++        <div style={{ marginBottom: 'var(--space-section, 120px)' }}>
+           <button
+-            onClick={() => setShowProcess(!showProcess)}
++            onClick={() => setShowCredits(!showCredits)}
+             className="group flex items-center gap-3 transition-all duration-200"
+             style={{ color: 'var(--grey-500)' }}
+           >
+             <span
+-              className="text-sm uppercase tracking-wide"
++              className="text-xs uppercase tracking-wide"
+               style={{
+                 fontFamily: 'var(--font-display)',
+                 fontWeight: 600,
+                 letterSpacing: '0.15em'
+               }}
+             >
+-              {showProcess ? 'Hide Details' : 'Project Details'}
++              {showCredits ? 'Hide Credits' : 'Credits'}
+             </span>
+             <span
+               className="transition-transform duration-200"
+               style={{
+-                fontSize: '12px',
+-                transform: showProcess ? 'rotate(180deg)' : 'rotate(0deg)'
++                fontSize: '11px',
++                transform: showCredits ? 'rotate(180deg)' : 'rotate(0deg)'
+               }}
+             >
+               ▼
+             </span>
+           </button>
+ 
+-          {/* Expandable Process Content */}
+           <div
+             className={`overflow-hidden transition-all duration-400 ease-out ${
+-              showProcess ? 'max-h-[2000px] opacity-100 mt-8' : 'max-h-0 opacity-0 mt-0'
++              showCredits ? 'max-h-[2000px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0'
+             }`}
+           >
+-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+-              {project.lightingIntent && (
+-                <div>
+-                  <p
+-                    className="text-xs uppercase mb-2"
+-                    style={{
+-                      color: 'var(--text-dim)',
+-                      fontFamily: 'var(--font-display)',
+-                      fontWeight: 600,
+-                      letterSpacing: '0.15em'
+-                    }}
+-                  >
+-                    Intent
+-                  </p>
+-                  <p
+-                    className="text-sm leading-relaxed"
+-                    style={{
+-                      color: 'var(--grey-500)',
+-                      fontFamily: 'var(--font-open-sans)'
+-                    }}
+-                  >
+-                    {project.lightingIntent}
+-                  </p>
+-                </div>
+-              )}
+-
+-              {project.challenge && (
+-                <div>
+-                  <p
+-                    className="text-xs uppercase mb-2"
+-                    style={{
+-                      color: 'var(--text-dim)',
+-                      fontFamily: 'var(--font-display)',
+-                      fontWeight: 600,
+-                      letterSpacing: '0.15em'
+-                    }}
+-                  >
+-                    Challenge
+-                  </p>
+-                  <p
+-                    className="text-sm leading-relaxed"
+-                    style={{
+-                      color: 'var(--grey-500)',
+-                      fontFamily: 'var(--font-open-sans)'
+-                    }}
+-                  >
+-                    {project.challenge}
+-                  </p>
+-                </div>
+-              )}
+-
+-              {project.approach && (
+-                <div>
+-                  <p
+-                    className="text-xs uppercase mb-2"
+-                    style={{
+-                      color: 'var(--text-dim)',
+-                      fontFamily: 'var(--font-display)',
+-                      fontWeight: 600,
+-                      letterSpacing: '0.15em'
+-                    }}
+-                  >
+-                    Approach
+-                  </p>
+-                  <p
+-                    className="text-sm leading-relaxed"
+-                    style={{
+-                      color: 'var(--grey-500)',
+-                      fontFamily: 'var(--font-open-sans)'
+-                    }}
+-                  >
+-                    {project.approach}
+-                  </p>
+-                </div>
+-              )}
+-
+-              {project.reference && (
+-                <div>
+-                  <p
+-                    className="text-xs uppercase mb-2"
+-                    style={{
+-                      color: 'var(--text-dim)',
+-                      fontFamily: 'var(--font-display)',
+-                      fontWeight: 600,
+-                      letterSpacing: '0.15em'
+-                    }}
+-                  >
+-                    Reference
+-                  </p>
+-                  <p
+-                    className="text-sm leading-relaxed"
+-                    style={{
+-                      color: 'var(--grey-500)',
+-                      fontFamily: 'var(--font-open-sans)'
+-                    }}
+-                  >
+-                    {project.reference}
+-                  </p>
+-                </div>
+-              )}
+-            </div>
+-
+-            {/* Credits - Child of Process, no toggle */}
+-            {project.credits && project.credits.length > 0 && (
+-              <div className="mt-10 pt-8" style={{ borderTop: '1px solid var(--border-subtle)' }}>
++            <div className="space-y-1">
++              {project.credits.map((credit, index) => (
+                 <p
+-                  className="text-xs uppercase mb-4"
++                  key={index}
++                  className="text-sm leading-relaxed"
+                   style={{
+-                    color: 'var(--text-muted)',
+-                    fontFamily: 'var(--font-display)',
+-                    fontWeight: 600,
+-                    letterSpacing: '0.15em'
++                    color: 'var(--grey-500)',
++                    fontFamily: 'var(--font-display)'
+                   }}
+                 >
+-                  Credits
++                  {credit}
+                 </p>
+-                <div className="space-y-1">
+-                  {project.credits.map((credit, index) => (
+-                    <p
+-                      key={index}
+-                      className="text-sm leading-relaxed"
+-                      style={{
+-                        color: 'var(--grey-500)',
+-                        fontFamily: 'var(--font-open-sans)'
+-                      }}
+-                    >
+-                      {credit}
+-                    </p>
+-                  ))}
+-                </div>
+-              </div>
+-            )}
++              ))}
++            </div>
+           </div>
+         </div>
+       )}
+ 
+       {/* Breakdown Videos */}
+       {project.breakdownVideos && project.breakdownVideos.length > 0 && (
+-        <div className="mb-16">
+-          {project.breakdownVideos.map((video, index) => (
+-            <div key={video.videoId} className="mb-16">
+-              {/* Breakdown Section Label */}
++        <div style={{ marginBottom: 'var(--space-section, 120px)' }}>
++          {project.breakdownVideos.map((video) => (
++            <div key={video.videoId} className="mb-16 last:mb-0">
+               <p
+                 className="text-xs uppercase mb-6"
+                 style={{
+@@ -371,7 +336,6 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+                 Behind the Scenes
+               </p>
+ 
+-              {/* Breakdown video title */}
+               <h2
+                 className="text-2xl md:text-3xl mb-4"
+                 style={{
+@@ -384,13 +348,12 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+                 {video.title}
+               </h2>
+ 
+-              {/* Breakdown video description - SECONDARY */}
+               {video.description && (
+                 <p
+                   className="text-base leading-relaxed mb-8 max-w-3xl"
+                   style={{
+                     color: 'var(--grey-500)',
+-                    fontFamily: 'var(--font-open-sans)',
++                    fontFamily: 'var(--font-display)',
+                     fontWeight: 400
+                   }}
+                 >
+@@ -398,7 +361,6 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+                 </p>
+               )}
+ 
+-              {/* Breakdown video player */}
+               <div className="relative w-full">
+                 <EmbeddedVideoPlayer videoId={video.videoId} videoHash={video.videoHash} />
+               </div>
+@@ -407,156 +369,167 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+         </div>
+       )}
+ 
+-      {/* Related Projects - Subtle, based on shared disciplines */}
+-      {(() => {
+-        // Find projects with overlapping disciplines, excluding current and adjacent
+-        const excludeSlugs = new Set([project.slug, prevProject.slug, nextProject.slug]);
+-        const relatedProjects = projects
+-          .filter(p => !excludeSlugs.has(p.slug))
+-          .filter(p => p.disciplines.some(d =>
+-            project.disciplines.map(pd => pd.toLowerCase()).includes(d.toLowerCase())
+-          ))
+-          .slice(0, 3);
+-
+-        if (relatedProjects.length === 0) return null;
+-
+-        return (
+-          <div style={{ marginBottom: 'clamp(64px, 5vw + 32px, 96px)' }}>
+-            <p
+-              style={{
+-                color: 'var(--text-dim)',
+-                fontFamily: 'var(--font-display)',
+-                fontWeight: 600,
+-                fontSize: '11px',
+-                letterSpacing: '0.18em',
+-                textTransform: 'uppercase',
+-                marginBottom: 'var(--space-xs)'
+-              }}
+-            >
+-              Related Work
+-            </p>
+-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+-              {relatedProjects.map((related) => (
+-                <Link
+-                  key={related.slug}
+-                  href={`/projects/${related.slug}`}
+-                  className="group"
+-                  style={{ textDecoration: 'none' }}
++      {/* Related Work — 3-col thumbnail grid (Found pattern) */}
++      {relatedProjects.length > 0 && (
++        <div style={{ marginBottom: 'var(--space-section, 120px)' }}>
++          <p
++            style={{
++              color: 'var(--text-dim)',
++              fontFamily: 'var(--font-display)',
++              fontWeight: 600,
++              fontSize: '11px',
++              letterSpacing: '0.18em',
++              textTransform: 'uppercase',
++              marginBottom: 'var(--space-sm)'
++            }}
++          >
++            Related Work
++          </p>
++          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
++            {relatedProjects.map((related) => (
++              <Link
++                key={related.slug}
++                href={`/projects/${related.slug}`}
++                className="group"
++                style={{ textDecoration: 'none' }}
++              >
++                {/* Thumbnail */}
++                <div
++                  className="relative w-full overflow-hidden related-thumbnail"
++                  style={{
++                    aspectRatio: '16/9',
++                    borderRadius: 'var(--radius-md)',
++                    marginBottom: 'var(--space-tiny)',
++                    backgroundColor: '#1a1a1a'
++                  }}
+                 >
+-                  {/* Related title - PRIMARY */}
++                  <img
++                    src={getThumbnail(related)}
++                    alt={related.title}
++                    style={{
++                      width: '100%',
++                      height: '100%',
++                      objectFit: 'cover',
++                      opacity: 0.85,
++                      transition: 'opacity 0.3s ease, transform 0.3s ease'
++                    }}
++                    className="group-hover:opacity-100 group-hover:scale-[1.02]"
++                    loading="lazy"
++                  />
++                </div>
++                {/* Title */}
++                <p
++                  style={{
++                    color: 'var(--text-primary)',
++                    fontFamily: 'var(--font-display)',
++                    fontWeight: 400,
++                    fontSize: '16px',
++                    letterSpacing: '0.01em',
++                    lineHeight: 1.3,
++                    marginBottom: related.client ? '4px' : '0',
++                    transition: 'color 0.25s ease'
++                  }}
++                  className="group-hover:text-white"
++                >
++                  {related.title}
++                </p>
++                {/* Client */}
++                {related.client && (
+                   <p
+                     style={{
+-                      color: 'var(--text-primary)',
++                      color: 'var(--text-dim)',
+                       fontFamily: 'var(--font-display)',
+-                      fontWeight: 400,
+-                      fontSize: '18px',
+-                      letterSpacing: '0.01em',
+-                      lineHeight: 1.3,
+-                      marginBottom: related.projectType ? 'var(--space-tiny)' : '0',
+-                      transition: 'color 0.25s ease'
++                      fontWeight: 500,
++                      fontSize: '11px',
++                      letterSpacing: '0.12em',
++                      textTransform: 'uppercase'
+                     }}
+-                    className="group-hover:text-white"
+                   >
+-                    {related.title}
++                    {related.client}
+                   </p>
+-                  {related.projectType && (
+-                    <p
+-                      style={{
+-                        color: 'var(--text-dim)',
+-                        fontFamily: 'var(--font-display)',
+-                        fontWeight: 600,
+-                        fontSize: '11px',
+-                        letterSpacing: '0.18em',
+-                        textTransform: 'uppercase'
+-                      }}
+-                    >
+-                      {related.projectType}
+-                    </p>
+-                  )}
+-                </Link>
+-              ))}
+-            </div>
++                )}
++              </Link>
++            ))}
+           </div>
+-        );
+-      })()}
++        </div>
++      )}
+ 
+-      {/* Project Navigation */}
+-      <div className="pt-16 mt-16">
+-        <div className="flex justify-between items-center">
+-          {/* Previous Project */}
+-          <Link
+-            href={`/projects/${prevProject.slug}`}
+-            className="group flex items-center gap-3 transition-opacity hover:opacity-70"
++      {/* Next Project — full-width card (Tendril pattern, forward-only) */}
++      <div style={{ paddingTop: 'var(--space-lg)' }}>
++        <Link
++          href={`/projects/${nextProject.slug}`}
++          className="group block"
++          style={{ textDecoration: 'none' }}
++        >
++          <p
++            className="text-xs uppercase mb-4"
++            style={{
++              color: 'var(--text-dim)',
++              fontFamily: 'var(--font-display)',
++              fontWeight: 600,
++              letterSpacing: '0.15em'
++            }}
+           >
+-            <span
+-              className="text-lg"
+-              style={{ color: 'var(--text-dim)' }}
+-            >
+-              ←
+-            </span>
+-            <div className="text-left">
+-              {/* Label - TERTIARY */}
+-              <p
+-                className="text-xs uppercase mb-1"
+-                style={{
+-                  color: 'var(--text-dim)',
+-                  fontFamily: 'var(--font-display)',
+-                  fontWeight: 600,
+-                  letterSpacing: '0.15em'
+-                }}
+-              >
+-                Previous
+-              </p>
+-              {/* Title - SECONDARY */}
+-              <p
+-                className="text-sm"
+-                style={{
+-                  color: 'var(--grey-500)',
+-                  fontFamily: 'var(--font-open-sans)'
+-                }}
+-              >
+-                {prevProject.title}
+-              </p>
+-            </div>
+-          </Link>
++            Next Project
++          </p>
+ 
+-          {/* Next Project */}
+-          <Link
+-            href={`/projects/${nextProject.slug}`}
+-            className="group flex items-center gap-3 transition-opacity hover:opacity-70"
++          {/* Full-width thumbnail */}
++          <div
++            className="relative w-full overflow-hidden"
++            style={{
++              aspectRatio: '16/9',
++              borderRadius: 'var(--radius-md)',
++              marginBottom: 'var(--space-xs)',
++              backgroundColor: '#1a1a1a'
++            }}
+           >
+-            <div className="text-right">
+-              {/* Label - TERTIARY */}
+-              <p
+-                className="text-xs uppercase mb-1"
+-                style={{
+-                  color: 'var(--text-dim)',
+-                  fontFamily: 'var(--font-display)',
+-                  fontWeight: 600,
+-                  letterSpacing: '0.15em'
+-                }}
+-              >
+-                Next Project
+-              </p>
+-              {/* Title - SECONDARY */}
+-              <p
+-                className="text-sm"
+-                style={{
+-                  color: 'var(--grey-500)',
+-                  fontFamily: 'var(--font-open-sans)'
+-                }}
+-              >
+-                {nextProject.title}
+-              </p>
+-            </div>
+-            <span
+-              className="text-lg"
+-              style={{ color: 'var(--text-dim)' }}
++            <img
++              src={getThumbnail(nextProject)}
++              alt={nextProject.title}
++              style={{
++                width: '100%',
++                height: '100%',
++                objectFit: 'cover',
++                opacity: 0.85,
++                transition: 'opacity 0.3s ease, transform 0.5s ease'
++              }}
++              className="group-hover:opacity-100 group-hover:scale-[1.01]"
++              loading="lazy"
++            />
++          </div>
++
++          {/* Title */}
++          <h3
++            className="text-2xl md:text-3xl group-hover:text-white"
++            style={{
++              color: 'var(--text-primary)',
++              fontFamily: 'var(--font-display)',
++              fontWeight: 400,
++              letterSpacing: '0.01em',
++              lineHeight: 1.2,
++              marginBottom: nextProject.client ? '6px' : '0',
++              transition: 'color 0.25s ease'
++            }}
++          >
++            {nextProject.title}
++          </h3>
++
++          {/* Client */}
++          {nextProject.client && (
++            <p
++              style={{
++                color: 'var(--text-dim)',
++                fontFamily: 'var(--font-display)',
++                fontWeight: 500,
++                fontSize: '11px',
++                letterSpacing: '0.12em',
++                textTransform: 'uppercase'
++              }}
+             >
+-              →
+-            </span>
+-          </Link>
+-        </div>
++              {nextProject.client}
++            </p>
++          )}
++        </Link>
+       </div>
+     </article>
+   );
+diff --git a/components/ProjectGrid.tsx b/components/ProjectGrid.tsx
+index e143e83..dbfbf09 100644
+--- a/components/ProjectGrid.tsx
++++ b/components/ProjectGrid.tsx
+@@ -78,7 +78,7 @@ export function ProjectGrid({ projects, allDisciplines, perceptionState }: Proje
+                       className="text-xs md:text-sm transition-all duration-200"
+                       style={{
+                         color: activeDiscipline === discipline ? '#000000' : '#6a6a6a',
+-                        fontFamily: 'var(--font-lora)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: activeDiscipline === discipline ? 700 : 600,
+                         letterSpacing: '0.06em'
+                       }}
+@@ -96,7 +96,7 @@ export function ProjectGrid({ projects, allDisciplines, perceptionState }: Proje
+                       className="text-xs md:text-sm transition-all duration-200"
+                       style={{
+                         color: activeDiscipline === discipline ? '#000000' : '#6a6a6a',
+-                        fontFamily: 'var(--font-lora)',
++                        fontFamily: 'var(--font-display)',
+                         fontWeight: activeDiscipline === discipline ? 700 : 600,
+                         letterSpacing: '0.06em'
+                       }}
+diff --git a/components/RotatingRole.tsx b/components/RotatingRole.tsx
+index 9b09dad..57c489f 100644
+--- a/components/RotatingRole.tsx
++++ b/components/RotatingRole.tsx
+@@ -35,8 +35,7 @@ export function RotatingRole() {
+         className="inline-block min-w-[200px] md:min-w-[300px] hover:opacity-70 text-left"
+         style={{
+           color: '#6a6a6a',
+-          fontFamily: 'var(--font-lora)',
+-          fontStyle: 'italic',
++          fontFamily: 'var(--font-display)',
+           fontWeight: 400,
+           opacity: isBlinking ? 0.2 : 1,
+           transform: isBlinking ? 'translateX(-3px)' : 'translateX(0)',
+diff --git a/components/SearchBar.tsx b/components/SearchBar.tsx
+index 528f374..cf719d7 100644
+--- a/components/SearchBar.tsx
++++ b/components/SearchBar.tsx
+@@ -66,8 +66,7 @@ export function SearchBar({ isOpen, onClose }: SearchBarProps) {
+             className="w-full bg-transparent outline-none text-2xl"
+             style={{
+               color: 'var(--text-muted)',
+-              fontFamily: 'var(--font-lora)',
+-              fontStyle: 'italic',
++              fontFamily: 'var(--font-display)',
+               fontWeight: 400,
+               letterSpacing: '0.02em'
+             }}
+@@ -100,7 +99,7 @@ export function SearchBar({ isOpen, onClose }: SearchBarProps) {
+           className="mt-4 text-sm"
+           style={{
+             color: '#8a8a8a',
+-            fontFamily: 'var(--font-open-sans)',
++            fontFamily: 'var(--font-display)',
+             fontWeight: 400
+           }}
+         >
+diff --git a/components/ToolsOverlay.tsx b/components/ToolsOverlay.tsx
+index 92df150..bb74cfe 100644
+--- a/components/ToolsOverlay.tsx
++++ b/components/ToolsOverlay.tsx
+@@ -132,7 +132,7 @@ export function ToolsOverlay({ isOpen, onClose }: ToolsOverlayProps) {
+             <p
+               style={{
+                 color: '#5a5a5a',
+-                fontFamily: 'var(--font-open-sans)',
++                fontFamily: 'var(--font-display)',
+                 fontSize: '13px'
+               }}
+             >
+@@ -288,7 +288,7 @@ export function ToolsOverlay({ isOpen, onClose }: ToolsOverlayProps) {
+               <p
+                 style={{
+                   color: '#7a7a7a',
+-                  fontFamily: 'var(--font-open-sans)',
++                  fontFamily: 'var(--font-display)',
+                   fontSize: '14px',
+                   lineHeight: 1.6
+                 }}
+@@ -307,7 +307,7 @@ export function ToolsOverlay({ isOpen, onClose }: ToolsOverlayProps) {
+           <p
+             style={{
+               color: '#5a5a5a',
+-              fontFamily: 'var(--font-open-sans)',
++              fontFamily: 'var(--font-display)',
+               fontSize: '13px',
+               marginBottom: '12px'
+             }}
+diff --git a/components/VideoThumbnail.tsx b/components/VideoThumbnail.tsx
+index f001950..9cdd357 100644
+--- a/components/VideoThumbnail.tsx
++++ b/components/VideoThumbnail.tsx
+@@ -284,7 +284,7 @@ export function VideoThumbnail({
+         style={{
+           aspectRatio: '16/9',
+           borderRadius: '6px',
+-          boxShadow: 'inset 0 0 0 1px #141414'
++          boxShadow: 'none'
+         }}
+       >
+         <div
+@@ -307,7 +307,7 @@ export function VideoThumbnail({
+       style={{
+         aspectRatio: '16/9',
+         borderRadius: '6px',
+-        boxShadow: 'inset 0 0 0 1px #141414'
++        boxShadow: 'none'
+       }}
+       onMouseEnter={handleMouseEnter}
+       onMouseLeave={handleMouseLeave}
+@@ -322,8 +322,8 @@ export function VideoThumbnail({
+           backgroundColor: '#141414',
+           // Light table effect: visible but muted → bright reveal
+           // Base state: 60% opacity, subtle desaturation - readable but clearly "inactive"
+-          opacity: isHovering ? 1.0 : 0.60,
+-          filter: isHovering ? 'saturate(1) brightness(1)' : 'saturate(0.6) brightness(0.85)',
++          opacity: isHovering ? 1.0 : 0.85,
++          filter: isHovering ? 'saturate(1) brightness(1)' : 'saturate(0.85) brightness(0.95)',
+           transition: 'opacity 0.5s cubic-bezier(0.25, 0.1, 0.25, 1), filter 0.5s cubic-bezier(0.25, 0.1, 0.25, 1)'
+         }}
+       />
+diff --git a/package-lock.json b/package-lock.json
+index 7bfc462..0b51506 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -24,7 +24,7 @@
+         "@types/react-dom": "^19.2.3",
+         "tailwindcss": "^4.1.17",
+         "tsx": "^4.21.0",
+-        "typescript": "^5.9.3"
++        "typescript": "5.9.3"
+       }
+     },
+     "node_modules/@ai-sdk/anthropic": {
+diff --git a/package.json b/package.json
+index cd52dbe..f1f9858 100644
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,6 @@
+     "@types/react-dom": "^19.2.3",
+     "tailwindcss": "^4.1.17",
+     "tsx": "^4.21.0",
+-    "typescript": "^5.9.3"
++    "typescript": "5.9.3"
+   }
+ }

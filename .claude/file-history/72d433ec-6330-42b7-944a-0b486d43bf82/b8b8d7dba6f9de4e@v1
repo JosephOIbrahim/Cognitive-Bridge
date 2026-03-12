@@ -1,0 +1,20 @@
+import styles from "./PlaceholderImage.module.css";
+
+interface PlaceholderImageProps {
+  color: string;
+  title: string;
+  height?: number | string;
+  style?: React.CSSProperties;
+}
+
+export function PlaceholderImage({ color, title, height = 380, style }: PlaceholderImageProps) {
+  return (
+    <div
+      className={styles.container}
+      style={{ background: color, height, ...style }}
+    >
+      <div className={styles.pattern} />
+      <span className={styles.label}>{title}</span>
+    </div>
+  );
+}

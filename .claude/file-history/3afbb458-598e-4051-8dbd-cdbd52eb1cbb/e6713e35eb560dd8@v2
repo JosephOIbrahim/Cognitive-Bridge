@@ -1,0 +1,63 @@
+"""Diagnose render failure."""
+import asyncio, sys, os
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+CODE = r'''
+import hou
+
+rop = hou.node("/out/cinema_karma")
+
+# Check res_fraction menu items
+rf = rop.parm("res_fraction")
+rf_items = rf.menuItems() if rf.parmTemplate().type() == hou.parmTemplateType.Menu else "not a menu"
+rf_labels = rf.menuLabels() if rf.parmTemplate().type() == hou.parmTemplateType.Menu else ""
+
+# Check the internal rop_usdrender node
+internal = rop.node("rop_usdrender")
+internal_info = None
+if internal:
+    internal_info = {
+        "type": internal.type().name(),
+        "errors": internal.errors(),
+        "warnings": internal.warnings()
+    }
+
+# Check if scene has prims by cooking the LOP
+rs = hou.node("/stage/karma_settings")
+rs_errors = rs.errors() if rs else ["karma_settings not found"]
+rs_warnings = rs.warnings() if rs else []
+
+# Check LOP parm on rop
+lop_val = rop.parm("lop").eval() if rop.parm("lop") else "no lop parm"
+
+# Check override res parms
+override = rop.parm("override_camerares").eval()
+res_frac = rop.parm("res_fraction").eval()
+resx = rop.parm("res_overridex").eval()
+resy = rop.parm("res_overridey").eval()
+
+result = {
+    "rf_items": rf_items,
+    "rf_labels": rf_labels,
+    "internal": internal_info,
+    "rs_errors": rs_errors,
+    "rs_warnings": rs_warnings,
+    "lop": lop_val,
+    "override": override,
+    "res_fraction": res_frac,
+    "resx": resx,
+    "resy": resy,
+}
+'''
+
+async def main():
+    async with SynapseClient() as client:
+        r = await client.execute_python(CODE, timeout=15.0)
+        import ast
+        if isinstance(r, str):
+            r = ast.literal_eval(r)
+        for k, v in r.items():
+            print(f"  {k}: {v}")
+
+asyncio.run(main())

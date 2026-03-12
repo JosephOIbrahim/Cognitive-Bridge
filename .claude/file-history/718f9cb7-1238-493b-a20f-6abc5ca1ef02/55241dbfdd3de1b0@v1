@@ -1,0 +1,492 @@
+# Sprint C: Agent SDK v2 — Multi-Goal Planning, Checkpoint/Resume, Self-Healing
+
+## Context
+
+Sprint B (TOPS/PDG) is complete: 14 handlers, 14 MCP tools, 87 tests, 3 recipes, 2 resource templates. The Agent SDK v1 (`~/.synapse/agent/`) has 12 tools, a linear tool-use loop (MAX_TURNS=30), and no planning, checkpointing, or self-healing capability. Sprint C evolves the agent from a simple tool-use loop into a planning-capable, self-healing co-pilot with TOPS integration and checkpoint/resume.
+
+**Sprint C filesystem gates** (from `docs/agent/AGENT_V2_SPRINT.md`):
+```
+~/.synapse/agent/synapse_planner.py      # Multi-goal planner
+~/.synapse/agent/synapse_checkpoint.py   # Checkpoint/resume
+~/.synapse/agent/tests/test_planner.py   # Planner tests (must pass)
+```
+
+**All code lives in `~/.synapse/agent/`** — this is the agent SDK repo, NOT the core Synapse repo.
+
+---
+
+## Phase 1: Add 8 New Tools
+
+Expand `synapse_tools.py` (12 → 20 tools) and `synapse_ws.py` (add client methods).
+
+### 1a. New Tool Definitions (synapse_tools.py)
+
+Add 8 entries to `TOOL_DEFINITIONS` after the memory tools:
+
+| Tool Name | Server Command | Required Params | Description |
+|-----------|---------------|-----------------|-------------|
+| `synapse_tops_cook` | `tops_cook_and_validate` | `node` | Cook a TOP node with optional retry (`max_retries`, `validate_states`) |
+| `synapse_tops_status` | `tops_pipeline_status` | `topnet_path` | Get pipeline health for a topnet (`include_items` optional) |
+| `synapse_tops_diagnose` | `tops_diagnose` | `node` | Diagnose failures: work items, scheduler, upstream deps |
+| `synapse_tops_wedge` | `tops_setup_wedge` | `topnet_path`, `attribute_name`, `values` | Set up and cook a parameter wedge |
+| `synapse_tops_work_items` | `tops_get_work_items` | `node` | Query work items with optional state filter |
+| `synapse_tops_cook_stats` | `tops_get_cook_stats` | `node` | Get cook timing and throughput stats |
+| `synapse_capture_viewport` | `capture_viewport` | — | Capture viewport screenshot (format, width, height optional) |
+| `synapse_batch` | `batch_commands` | `commands` | Execute multiple Synapse commands atomically |
+
+### 1b. New Client Methods (synapse_ws.py)
+
+Add to `SynapseClient` class and `_SLOW_COMMANDS`:
+
+```python
+# _SLOW_COMMANDS additions:
+"tops_cook_and_validate": 600.0,
+"tops_pipeline_status": 60.0,
+"tops_diagnose": 30.0,
+"tops_setup_wedge": 120.0,
+"tops_get_work_items": 30.0,
+"tops_get_cook_stats": 30.0,
+"batch_commands": 60.0,
+
+# New methods:
+async def tops_cook(self, node: str, max_retries: int = 0, validate: bool = True) -> dict
+async def tops_status(self, topnet_path: str, include_items: bool = False) -> dict
+async def tops_diagnose(self, node: str) -> dict
+async def tops_wedge(self, topnet_path: str, attribute_name: str, values: list) -> dict
+async def tops_work_items(self, node: str, state_filter: str = "") -> dict
+async def tops_cook_stats(self, node: str) -> dict
+# capture_viewport already exists — no change needed
+async def batch_commands(self, commands: list) -> dict
+```
+
+### 1c. Execute Dispatch (synapse_tools.py)
+
+Add 8 `elif` branches in `execute_tool()` after the memory tools:
+
+```python
+elif tool_name == "synapse_tops_cook":
+    result = await client.tops_cook(
+        node=tool_input["node"],
+        max_retries=tool_input.get("max_retries", 0),
+        validate=tool_input.get("validate_states", True),
+    )
+    return json.dumps(result, indent=2, default=str)
+# ... etc for each tool
+```
+
+### 1d. Tests
+
+Update `tests/test_tools.py`:
+- Change `test_tool_definitions_count`: 12 → 20
+- Add 8 assertions for new tool names
+- Add 4 async execution tests: `test_execute_tops_cook`, `test_execute_tops_status`, `test_execute_capture_viewport`, `test_execute_batch`
+
+---
+
+## Phase 2: Multi-Goal Planner
+
+**New file:** `~/.synapse/agent/synapse_planner.py`
+
+### 2a. Data Model
+
+```python
+@dataclass
+class SubGoal:
+    id: str                    # deterministic_uuid(description)
+    description: str           # Natural language
+    tools_hint: list[str]      # Suggested tool names
+    depends_on: list[str]      # Sub-goal IDs (DAG edges)
+    verification: str          # How to check success
+    max_retries: int = 2       # Self-healing retry limit
+    status: str = "pending"    # pending | running | completed | failed
+    error: str = ""            # Last error if failed
+    attempts: int = 0          # Number of execution attempts
+
+    def to_dict(self) -> dict  # sorted keys for He2025
+    @classmethod
+    def from_dict(cls, d: dict) -> "SubGoal"
+
+@dataclass
+class Plan:
+    goal: str                  # Original user goal
+    sub_goals: list[SubGoal]   # Ordered list
+    created_at: float          # time.monotonic()
+    goal_hash: str             # deterministic_uuid(goal)
+
+    def to_dict(self) -> dict
+    @classmethod
+    def from_dict(cls, d: dict) -> "Plan"
+    def pending_goals(self) -> list[SubGoal]  # status == "pending"
+    def next_ready(self) -> SubGoal | None    # first pending with all deps completed
+```
+
+### 2b. Utility Functions
+
+```python
+def goal_hash(goal: str) -> str:
+    """Content-based hash for checkpoint naming. Uses deterministic_uuid."""
+    return deterministic_uuid(goal.strip().lower(), namespace="goal")
+
+def validate_dag(sub_goals: list[SubGoal]) -> bool:
+    """Validate no cycles in dependency graph using Kahn's algorithm."""
+    # Returns True if valid DAG, raises ValueError with cycle info if not
+
+def topological_order(sub_goals: list[SubGoal]) -> list[SubGoal]:
+    """Return sub-goals in valid execution order (respecting depends_on)."""
+    # Uses Kahn's algorithm, stable sort on ID for determinism
+```
+
+### 2c. Plan Creation (LLM Call)
+
+```python
+PLANNING_SYSTEM_PROMPT = """You are a VFX pipeline planner. Given a user's goal and the
+current Houdini scene context, decompose the goal into 3-8 ordered sub-goals.
+
+Return a JSON array of objects with fields:
+- description: what to do (natural language)
+- tools_hint: list of Synapse tool names likely needed
+- depends_on: list of indices (0-based) of sub-goals that must complete first
+- verification: how to check this sub-goal succeeded
+..."""
+
+async def create_plan(client: Anthropic, goal: str, scene_context: dict) -> Plan:
+    """Single LLM call to decompose goal into sub-goals."""
+    # 1. Build prompt with goal + scene_context JSON
+    # 2. Call client.messages.create() with MODEL
+    # 3. Parse JSON array from response
+    # 4. Build SubGoal list with deterministic_uuid IDs
+    # 5. Validate DAG
+    # 6. Return Plan
+
+def parse_plan_response(response_text: str, goal: str) -> Plan:
+    """Extract JSON array from LLM response, build Plan."""
+    # Handles markdown code fences, bare JSON, etc.
+```
+
+### 2d. Tests
+
+**New file:** `~/.synapse/agent/tests/test_planner.py` (~30 tests)
+
+| Test | What it verifies |
+|------|-----------------|
+| `test_subgoal_deterministic_id` | Same description → same ID |
+| `test_subgoal_to_dict_sorted` | Output keys are sorted (He2025) |
+| `test_subgoal_roundtrip` | to_dict → from_dict preserves all fields |
+| `test_plan_to_dict_roundtrip` | Plan serialization/deserialization |
+| `test_goal_hash_deterministic` | Same goal → same hash |
+| `test_goal_hash_case_insensitive` | "Set Up Lighting" == "set up lighting" |
+| `test_validate_dag_valid` | Linear chain passes |
+| `test_validate_dag_cycle` | A→B→A raises ValueError |
+| `test_validate_dag_self_ref` | A→A raises ValueError |
+| `test_validate_dag_empty` | Empty list passes |
+| `test_topological_order_linear` | A→B→C returns [A, B, C] |
+| `test_topological_order_diamond` | A→{B,C}→D returns valid order |
+| `test_topological_order_parallel` | No deps → stable sort by ID |
+| `test_parse_plan_response_json` | Bare JSON array parses |
+| `test_parse_plan_response_fenced` | ```json ... ``` parses |
+| `test_parse_plan_response_invalid` | Bad JSON raises ValueError |
+| `test_plan_pending_goals` | Filters by status |
+| `test_plan_next_ready` | Respects dependency completion |
+| `test_plan_next_ready_blocked` | Returns None if all pending are blocked |
+| `test_create_plan_mock` | Mocked Anthropic client returns valid Plan |
+
+**Import pattern:** Same as existing tests — `sys.path.insert(0, ...)`, direct import.
+
+**Determinism import:** Copy `deterministic_uuid` inline or import from SYNAPSE core:
+```python
+# Import from Synapse core (available since agent runs in same Python env)
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "SYNAPSE" / "python"))
+from synapse.core.determinism import deterministic_uuid
+```
+
+Actually — simpler: copy the 4-line `deterministic_uuid` function into `synapse_planner.py` directly (agent SDK is standalone, shouldn't depend on Synapse package import path). Add a comment noting the source.
+
+---
+
+## Phase 3: Checkpoint/Resume
+
+**New file:** `~/.synapse/agent/synapse_checkpoint.py`
+
+### 3a. Data Model
+
+```python
+@dataclass
+class Checkpoint:
+    plan: Plan                  # Current plan with sub-goal statuses
+    messages: list[dict]        # Conversation history (last 20 messages)
+    completed_goals: list[str]  # Sub-goal IDs completed so far
+    scene_snapshot: dict        # Scene info at checkpoint time
+    timestamp: float            # time.monotonic()
+    goal_hash: str              # For file naming
+
+    def to_dict(self) -> dict   # sorted keys
+    @classmethod
+    def from_dict(cls, d: dict) -> "Checkpoint"
+```
+
+### 3b. File Operations
+
+Checkpoints stored at `~/.synapse/agent/checkpoints/`.
+
+```python
+CHECKPOINT_DIR = Path(__file__).parent / "checkpoints"
+
+def save_checkpoint(checkpoint: Checkpoint) -> Path:
+    """Append checkpoint as one JSON line to goal-specific file."""
+    CHECKPOINT_DIR.mkdir(exist_ok=True)
+    filename = f"{checkpoint.goal_hash}.jsonl"
+    path = CHECKPOINT_DIR / filename
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(checkpoint.to_dict(), sort_keys=True) + "\n")
+    return path
+
+def load_latest_checkpoint(goal_hash: str) -> Checkpoint | None:
+    """Read last line from goal-specific JSONL file."""
+    path = CHECKPOINT_DIR / f"{goal_hash}.jsonl"
+    if not path.exists():
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [l.strip() for l in f if l.strip()]
+    if not lines:
+        return None
+    return Checkpoint.from_dict(json.loads(lines[-1]))
+
+def resume_from_checkpoint(goal_hash: str) -> tuple[Plan, list[dict]] | None:
+    """Load checkpoint and return (plan, messages) for resumption."""
+    cp = load_latest_checkpoint(goal_hash)
+    if cp is None:
+        return None
+    return cp.plan, cp.messages
+
+def list_checkpoints() -> list[dict]:
+    """List all checkpoint files with metadata (goal_hash, last_modified, size)."""
+    if not CHECKPOINT_DIR.exists():
+        return []
+    results = []
+    for f in sorted(CHECKPOINT_DIR.glob("*.jsonl")):
+        stat = f.stat()
+        results.append({
+            "goal_hash": f.stem,
+            "path": str(f),
+            "size_bytes": stat.st_size,
+            "modified": stat.st_mtime,
+        })
+    return results
+
+def prune_old_checkpoints(max_age_days: int = 7) -> int:
+    """Delete checkpoint files older than max_age_days. Returns count deleted."""
+    import time as _time
+    cutoff = _time.time() - (max_age_days * 86400)
+    count = 0
+    if CHECKPOINT_DIR.exists():
+        for f in sorted(CHECKPOINT_DIR.glob("*.jsonl")):
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                count += 1
+    return count
+```
+
+### 3c. Tests
+
+**New file:** `~/.synapse/agent/tests/test_checkpoint.py` (~12 tests)
+
+| Test | What it verifies |
+|------|-----------------|
+| `test_save_creates_file` | JSONL file created in checkpoints/ |
+| `test_save_appends` | Multiple saves append lines |
+| `test_load_latest` | Returns last checkpoint |
+| `test_load_nonexistent` | Returns None |
+| `test_resume_returns_plan_and_messages` | Tuple unpacking works |
+| `test_checkpoint_roundtrip` | to_dict → from_dict preserves all fields |
+| `test_list_checkpoints` | Sorted list with metadata |
+| `test_prune_old` | Deletes old files, keeps recent |
+| `test_prune_empty_dir` | No crash on empty directory |
+| `test_messages_truncated` | Only last 20 messages saved |
+| `test_sorted_keys_in_jsonl` | He2025: output has sorted keys |
+| `test_utf8_encoding` | Non-ASCII content preserved |
+
+All tests use `tmp_path` fixture with monkeypatch on `CHECKPOINT_DIR`.
+
+---
+
+## Phase 4: Integration — Update synapse_agent.py
+
+Transform the linear loop into a plan-iterate-checkpoint outer loop with self-healing.
+
+### 4a. Extract run_subgoal()
+
+Refactor the existing turn loop (lines 112-183) into a reusable function:
+
+```python
+async def run_subgoal(
+    anthropic_client: Anthropic,
+    synapse_client: SynapseClient,
+    subgoal: SubGoal,
+    messages: list[dict],
+    system_prompt: str,
+    max_turns: int = MAX_AGENT_TURNS,
+) -> tuple[bool, list[dict]]:
+    """Execute a single sub-goal using the tool-use loop.
+
+    Returns (success: bool, updated_messages: list).
+    The inner loop runs until the agent says it's done or hits max_turns.
+    """
+    # Inject sub-goal as user message
+    goal_msg = f"SUB-GOAL: {subgoal.description}\nVERIFICATION: {subgoal.verification}"
+    messages.append({"role": "user", "content": goal_msg})
+
+    for turn in range(max_turns):
+        response = anthropic_client.messages.create(...)
+        # ... existing tool dispatch logic ...
+        if not tool_uses:
+            break
+    return (True, messages)  # or (False, messages) on failure
+```
+
+### 4b. Add run_subgoal_with_healing()
+
+```python
+async def run_subgoal_with_healing(
+    anthropic_client, synapse_client, subgoal, messages, system_prompt
+) -> tuple[bool, list[dict]]:
+    """Execute sub-goal with retry on failure."""
+    for attempt in range(1, subgoal.max_retries + 2):
+        subgoal.status = "running"
+        subgoal.attempts = attempt
+        success, messages = await run_subgoal(
+            anthropic_client, synapse_client, subgoal, messages, system_prompt,
+            max_turns=10,  # tighter limit per sub-goal
+        )
+        if success:
+            subgoal.status = "completed"
+            return True, messages
+        if attempt <= subgoal.max_retries:
+            # Inject retry context
+            messages.append({"role": "user", "content":
+                f"Sub-goal failed (attempt {attempt}/{subgoal.max_retries + 1}). "
+                f"Try a different approach."
+            })
+    subgoal.status = "failed"
+    subgoal.error = "Exhausted retries"
+    return False, messages
+```
+
+### 4c. New run_agent() Outer Loop
+
+```python
+async def run_agent(goal: str, no_resume: bool = False):
+    # 1. Connect to Houdini, get scene context
+    # 2. Check for existing checkpoint (unless --no-resume)
+    #    If found: resume from checkpoint
+    #    If not: create plan via create_plan()
+    # 3. For each sub-goal in topological order:
+    #    a. Check dependencies are completed
+    #    b. run_subgoal_with_healing()
+    #    c. save_checkpoint()
+    #    d. If failed and critical: report and stop
+    # 4. Print summary, disconnect
+```
+
+### 4d. Updated CLI
+
+```python
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Synapse VFX Co-Pilot")
+    parser.add_argument("goal", nargs="*", help="Goal to accomplish")
+    parser.add_argument("--no-resume", action="store_true", help="Start fresh, ignore checkpoints")
+    parser.add_argument("--list-checkpoints", action="store_true", help="List saved checkpoints")
+    args = parser.parse_args()
+
+    if args.list_checkpoints:
+        from synapse_checkpoint import list_checkpoints
+        for cp in list_checkpoints():
+            print(f"  {cp['goal_hash']}  {cp['size_bytes']}b  {cp['path']}")
+        return
+
+    goal = " ".join(args.goal)
+    if not goal:
+        parser.print_help()
+        sys.exit(1)
+
+    asyncio.run(run_agent(goal, no_resume=args.no_resume))
+```
+
+### 4e. Hook Addition (synapse_hooks.py)
+
+Add `validate_tops_cook()` advisory hook:
+
+```python
+def validate_tops_cook(tool_input: dict) -> Optional[str]:
+    """Advisory check for TOPS cook calls."""
+    if tool_input.get("max_retries", 0) > 5:
+        return "max_retries > 5 may cause long waits — consider a lower value"
+    return None
+```
+
+Wire into the agent loop alongside existing `validate_execute_code`.
+
+---
+
+## Files Modified (10 files)
+
+| # | File | Changes |
+|---|------|---------|
+| 1 | `~/.synapse/agent/synapse_tools.py` | 8 tool defs + 8 dispatch branches (~150 lines) |
+| 2 | `~/.synapse/agent/synapse_ws.py` | 7 client methods + 7 _SLOW_COMMANDS entries (~60 lines) |
+| 3 | `~/.synapse/agent/synapse_planner.py` | **NEW** — SubGoal, Plan, DAG validation, create_plan (~200 lines) |
+| 4 | `~/.synapse/agent/synapse_checkpoint.py` | **NEW** — Checkpoint, save/load/resume/prune (~120 lines) |
+| 5 | `~/.synapse/agent/synapse_agent.py` | run_subgoal, run_subgoal_with_healing, new outer loop, CLI (~150 lines delta) |
+| 6 | `~/.synapse/agent/synapse_hooks.py` | validate_tops_cook (~10 lines) |
+| 7 | `~/.synapse/agent/tests/test_tools.py` | Update count 12→20, 4 new async tests |
+| 8 | `~/.synapse/agent/tests/test_planner.py` | **NEW** — ~20 tests |
+| 9 | `~/.synapse/agent/tests/test_checkpoint.py` | **NEW** — ~12 tests |
+| 10 | `~/.synapse/agent/tests/test_agent.py` | Update for new run_subgoal API |
+
+---
+
+## He2025 Compliance
+
+| Pattern | Applied In |
+|---------|-----------|
+| `deterministic_uuid()` | SubGoal IDs, goal_hash (copied inline, not imported from SYNAPSE) |
+| `time.monotonic()` | Plan.created_at, Checkpoint.timestamp |
+| `sorted()` keys | SubGoal.to_dict(), Plan.to_dict(), Checkpoint.to_dict() |
+| `json.dumps(sort_keys=True)` | All JSONL checkpoint writes |
+| `encoding="utf-8"` | All file I/O (checkpoints, logs) |
+
+---
+
+## Implementation Order
+
+1. **Phase 1** first (tools) — foundation for everything else
+2. **Phase 2** next (planner) — can test standalone with mocked Anthropic client
+3. **Phase 3** next (checkpoint) — standalone, no dependencies on planner
+4. **Phase 4** last (integration) — composes phases 1-3
+
+---
+
+## Verification
+
+```bash
+# Phase 1: Tool count updated
+cd C:/Users/User/.synapse/agent
+python -c "from synapse_tools import TOOL_DEFINITIONS; print(len(TOOL_DEFINITIONS))"
+# Must print 20
+
+# Phase 2: Planner tests
+python -m pytest tests/test_planner.py -v
+# Must pass
+
+# Phase 3: Checkpoint tests
+python -m pytest tests/test_checkpoint.py -v
+# Must pass
+
+# Full agent test suite
+python -m pytest tests/ -v
+# Must pass (all ~70+ tests)
+
+# Sprint C gate check
+ls synapse_planner.py synapse_checkpoint.py tests/test_planner.py 2>/dev/null | wc -l
+# Must return 3
+```

@@ -1,0 +1,24 @@
+# Synapse Session Memory
+
+## Houdini 21 + PySide6
+- Houdini 21.0 uses **PySide6** (Qt6), not PySide2. Always use try/except import pattern.
+- `QApplication.instance()` returns **None** in Houdini 21's PySide6 — clipboard via Qt is broken.
+- **Use `clip.exe`** on Windows as primary clipboard method (`subprocess.run(["clip"], input=text.encode("utf-8"), creationflags=0x08000000)`).
+- Qt clipboard fallback: try `QGuiApplication.instance()` after `QApplication.instance()`.
+
+## .synapse / houdini21.0 Sync
+- Source of truth: `~/.synapse/houdini/` (panel, shelf, toolbar)
+- Installed to: `~/houdini21.0/` (python_panels, scripts/python, toolbar)
+- **Auto-sync**: git post-commit hook in `~/.synapse/.git/hooks/post-commit` copies 3 files on every commit.
+- Houdini loads `synapse_shelf.py` from `~/houdini21.0/scripts/python/` (takes priority over `~/.synapse/` path).
+
+## Design System
+- Background palette aligned to Houdini 21 dark theme: NEAR_BLACK=#3C3C3C, CARBON=#333333, VOID=#252525, GRAPHITE=#222222
+- Font scale at 2x for 4K displays: LABEL/SMALL=22px, UI=24px, BODY=26px, TITLE=32px, HERO=44px
+- Button hover uses explicit #484848 (GRAPHITE is now darker than CARBON, can't reuse for hover)
+- `synapse_styles.py` generates QSS from `tokens.py` — change tokens, not the stylesheet directly.
+
+## Houdini Install Paths
+- Latest: `C:\Program Files\Side Effects Software\Houdini 21.0.596\`
+- Prefs: `C:\Users\User\houdini21.0\`
+- Multiple versions installed: 20.5.684, 21.0.440, 21.0.512, 21.0.559, 21.0.596

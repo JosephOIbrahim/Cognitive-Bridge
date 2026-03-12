@@ -1,0 +1,127 @@
+import { ImageResponse } from 'next/og';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { getProcessPost } from '@/lib/process-posts';
+
+export const alt = 'Joseph Ibrahim — Process';
+export const size = { width: 1200, height: 630 };
+export const contentType = 'image/png';
+
+// Category display labels and accent colors
+const categoryConfig: Record<string, { label: string; color: string }> = {
+  'case-studies': { label: 'Case Study', color: '#c9a96e' },
+  'tools': { label: 'Tool', color: '#6ea0c9' },
+  'research': { label: 'Research', color: '#8ec96e' },
+  'experiments': { label: 'Experiment', color: '#c96ea0' },
+};
+
+export default async function Image({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const post = getProcessPost(slug);
+
+  if (!post) {
+    return new ImageResponse(
+      (
+        <div style={{ width: '100%', height: '100%', backgroundColor: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
+          <span style={{ fontSize: '32px' }}>Post Not Found</span>
+        </div>
+      ),
+      { ...size }
+    );
+  }
+
+  const hasThumbnail = post.thumbnail && !post.thumbnail.endsWith('.svg');
+  const config = categoryConfig[post.category] || { label: post.category, color: '#999' };
+
+  // Load fonts from local bundle (Google Fonts CDN fails on edge runtime)
+  // Load fonts from local bundle via filesystem
+  const fontsDir = join(process.cwd(), 'app', 'fonts');
+  const [loraItalic, dmSans] = await Promise.all([
+    readFile(join(fontsDir, 'lora-italic.ttf')),
+    readFile(join(fontsDir, 'dm-sans-regular.ttf')),
+  ]);
+
+  return new ImageResponse(
+    (
+      <div style={{ width: '100%', height: '100%', backgroundColor: '#141414', display: 'flex', position: 'relative', overflow: 'hidden' }}>
+        {/* Thumbnail background (only for raster images) */}
+        {hasThumbnail ? (
+          <>
+            <img
+              src={post.thumbnail!.startsWith('http') ? post.thumbnail! : `https://josephibrahim.com${post.thumbnail}`}
+              alt=""
+              style={{
+                position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                objectFit: 'cover', opacity: 0.35, filter: 'saturate(0.7) contrast(1.1)',
+              }}
+            />
+            <div style={{
+              position: 'absolute', left: 0, top: 0, width: '100%', height: '100%',
+              background: 'linear-gradient(180deg, rgba(20,20,20,0.6) 0%, rgba(20,20,20,0.75) 40%, rgba(20,20,20,0.95) 100%)',
+            }} />
+          </>
+        ) : (
+          /* Subtle abstract gradient for SVG/no-thumbnail posts */
+          <div style={{
+            position: 'absolute', left: 0, top: 0, width: '100%', height: '100%',
+            background: `linear-gradient(135deg, #141414 0%, #1a1a1a 50%, #141414 100%)`,
+          }} />
+        )}
+
+        {/* Text content — bottom-aligned */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+          width: '100%', height: '100%', padding: '60px', position: 'relative', zIndex: 10,
+        }}>
+          {/* Category badge */}
+          <div style={{
+            display: 'flex', marginBottom: '20px',
+          }}>
+            <div style={{
+              color: config.color, fontFamily: 'DM Sans', fontWeight: 500,
+              fontSize: '15px', letterSpacing: '0.1em', textTransform: 'uppercase',
+              border: `1px solid ${config.color}40`, borderRadius: '4px',
+              padding: '6px 16px',
+            }}>
+              {config.label}
+            </div>
+          </div>
+
+          {/* Post title */}
+          <div style={{
+            color: '#f0f0f0', fontFamily: 'Lora', fontStyle: 'italic', fontWeight: 400,
+            fontSize: '48px', lineHeight: 1.2, letterSpacing: '0.005em',
+            marginBottom: '16px', maxWidth: '900px',
+          }}>
+            {post.title}
+          </div>
+
+          {/* Excerpt */}
+          <div style={{
+            color: '#888', fontFamily: 'DM Sans', fontWeight: 400,
+            fontSize: '20px', lineHeight: 1.5, maxWidth: '800px',
+            overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {post.excerpt.length > 120 ? post.excerpt.slice(0, 120) + '...' : post.excerpt}
+          </div>
+        </div>
+
+        {/* Site URL — bottom right */}
+        <div style={{
+          position: 'absolute', bottom: '28px', right: '60px',
+          color: '#4a4a4a', fontFamily: 'DM Sans', fontWeight: 500,
+          fontSize: '13px', letterSpacing: '0.12em', textTransform: 'uppercase',
+        }}>
+          josephibrahim.com
+        </div>
+      </div>
+    ),
+    {
+      ...size,
+      fonts: [
+        { name: 'Lora', data: loraItalic, style: 'italic' as const, weight: 400 as const },
+        { name: 'DM Sans', data: dmSans, style: 'normal' as const, weight: 400 as const },
+      ],
+    }
+  );
+}

@@ -1,0 +1,1614 @@
+# SYNAPSE Prompt-to-HDA Panel — Agent Team Dispatch
+# Status: READY TO EXECUTE
+# Paste this entire file into Claude Code. It is self-contained.
+
+---
+
+## PRE-FLIGHT: Read These First
+
+Before ANY implementation, read these files and internalize their conventions:
+
+```bash
+cat CLAUDE.md
+cat synapse/handlers_hda.py
+cat synapse/panel/chat_panel.py
+cat synapse/panel/ws_bridge.py
+cat synapse/panel/tokens.py
+cat tests/test_handlers_hda.py
+ls synapse/panel/
+ls synapse/routing/
+```
+
+Report what you find. Do NOT proceed until you understand:
+- The existing HDA handler signatures (hda_create, hda_promote_parm, hda_set_help, hda_package)
+- The chat_panel.py widget structure and how it connects to ws_bridge.py
+- The tokens.py color system and any hardcoded colors in chat_panel.py
+- The test patterns in test_handlers_hda.py
+- The safety middleware conventions (undo groups, idempotent guards, atomic ops)
+
+---
+
+## STATUS REPORTING PROTOCOL
+
+After completing each agent task, print a status bar in this EXACT format:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SYNAPSE HDA PANEL SPRINT — STATUS                         ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: FOUNDATION          [████████░░] 80%              ║
+║    TOKENS  ◆ T1 ✓  T2 ✓  T3 ▶  T4 ○                       ║
+║    BRIDGE  ⟡ B1 ✓  B2 ✓  B3 ✓  B4 ▶                       ║
+║                                                              ║
+║  Phase 2: CORE BUILD          [░░░░░░░░░░]  0%              ║
+║    VIEWS   ◈ V1 ○  V2 ○  V3 ○  V4 ○  V5 ○                 ║
+║    ARCH    ⬡ A1 ○  A2 ○  A3 ○  A4 ○  A5 ○                 ║
+║                                                              ║
+║  Phase 3: WIRE + VALIDATE     [░░░░░░░░░░]  0%              ║
+║    WIRE    ◇ W1 ○  W2 ○  W3 ○  W4 ○  W5 ○                 ║
+║    TEST    ○ X1 ○  X2 ○  X3 ○  X4 ○  X5 ○  X6 ○           ║
+║                                                              ║
+║  Overall: [████░░░░░░░░░░░░░░░░] 20%  (6/30 tasks)         ║
+║                                                              ║
+║  Legend: ✓ done  ▶ active  ○ pending  ✗ failed              ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+Print this after EVERY completed task. Update the symbols and percentages.
+If a task FAILS, mark it ✗ and report the error before continuing.
+
+---
+
+## ARCHITECTURE DECISION (NON-NEGOTIABLE)
+
+The HDA creation flow is a **MODE within the existing chat panel**, NOT a separate panel.
+
+```
+SYNAPSE Panel (chat_panel.py)
+└─ QStackedWidget [mode_stack]
+   ├─ index 0: Chat Mode (existing — DO NOT MODIFY its internals)
+   └─ index 1: HDA Mode
+      └─ QStackedWidget [hda_stack]
+         ├─ index 0: DescribeView  (prompt input)
+         ├─ index 1: BuildingView  (progress)
+         └─ index 2: ResultView    (outcome)
+```
+
+Toolbar gets a mode toggle: `[Chat] [Create HDA]`
+Three-state flow: **Describe → Building → Result**
+Monochromatic Pentagram styling. SIGNAL cyan (#00FFD1) as sole accent.
+
+---
+
+## FILE OWNERSHIP (CONFLICT PREVENTION)
+
+| Agent  | Role (MOE)                        | Exclusive Write                              | Read Only              |
+|--------|-----------------------------------|----------------------------------------------|------------------------|
+| TOKENS | Design System Specialist          | `synapse/panel/tokens.py`, `synapse/panel/styles.py` | chat_panel.py          |
+| BRIDGE | WebSocket Protocol Engineer       | `synapse/panel/ws_bridge.py`, `synapse/mcp/mcp_server.py` (msg types ONLY) | everything else |
+| VIEWS  | PySide2 Panel Integration Expert  | `synapse/panel/hda_views.py`, `synapse/panel/chat_panel.py` (mode switch ONLY) | tokens, styles |
+| ARCH   | HDA Pipeline Architect            | `synapse/handlers_hda.py`, `synapse/routing/hda_recipes.py` | routing, recipes       |
+| WIRE   | End-to-End Integration Engineer   | `synapse/panel/hda_controller.py`, `synapse/mcp/tools.py` (HDA reg ONLY) | views, bridge, arch    |
+| TEST   | Test Coverage & Regression Expert | `tests/test_hda_*.py`                        | everything (read only) |
+
+If an agent needs to modify another agent's file, it generates a PATCH and the orchestrator applies it after the owning agent's task completes. No exceptions.
+
+---
+
+## PHASE 1: FOUNDATION
+
+Run these two agents in parallel via Task tool.
+
+### ═══ Agent TOKENS — Design System Specialist ═══
+
+**MOE Role:** Visual Identity Expert. You own the color system and styling.
+**You OWN:** `synapse/panel/tokens.py`, `synapse/panel/styles.py`
+**DO NOT TOUCH:** chat_panel.py, ws_bridge.py, handlers_hda.py, any tests
+
+**Task T1: Audit token drift**
+
+```
+Read synapse/panel/chat_panel.py line by line.
+Find every hardcoded color hex string (e.g., "#1A1A1A", "#2A2A2A", etc.).
+Map each to the correct constant from tokens.py.
+Output a drift report:
+
+  DRIFT REPORT:
+  chat_panel.py line 42: "#1E1E1E" → should be tokens.CARBON (#1A1A1A)
+  chat_panel.py line 87: "#00FFD1" → matches tokens.SIGNAL ✓
+  ...
+
+Do NOT fix these yet — just report. VIEWS agent handles chat_panel.py.
+```
+
+**Task T2: Add HDA mode tokens**
+
+```python
+# Add to tokens.py — extend, don't replace existing tokens
+
+# HDA Mode State Colors
+STATE_DESCRIBE = SIGNAL       # "#00FFD1" — cyan, inviting input
+STATE_BUILDING = "#FF6B35"    # FIRE — active processing
+STATE_RESULT = "#10B981"      # GROW — success/completion
+
+# HDA Mode UI tokens
+HDA_INPUT_BG = "#141414"      # Slightly lighter than VOID for text input
+HDA_INPUT_BORDER = GRAPHITE   # "#2A2A2A"
+HDA_INPUT_FOCUS = SIGNAL + "40"  # SIGNAL at ~25% opacity
+HDA_PROGRESS_BG = CARBON      # "#1A1A1A"
+HDA_PROGRESS_TRACK = GRAPHITE  # "#2A2A2A"
+HDA_STAGE_INACTIVE = SLATE    # "#6B7280"
+HDA_STAGE_ACTIVE = FIRE       # "#FF6B35"
+HDA_STAGE_COMPLETE = GROW     # "#10B981"
+HDA_RESULT_SUCCESS_BG = GROW + "10"  # Very subtle green tint
+HDA_RESULT_ERROR_BG = "#EF4444" + "10"  # Very subtle red tint
+
+# Mode toggle tokens
+MODE_ACTIVE_BG = SIGNAL + "15"
+MODE_ACTIVE_BORDER = SIGNAL + "40"
+MODE_INACTIVE_BG = "transparent"
+MODE_INACTIVE_BORDER = GRAPHITE
+```
+
+**Task T3: Create HDA stylesheet**
+
+```python
+# Create or extend synapse/panel/styles.py
+# If styles.py exists, add get_hda_stylesheet() alongside existing functions.
+# If it doesn't exist, create it importing from tokens.
+
+def get_hda_stylesheet():
+    """Qt stylesheet for HDA mode views. Extends base panel styling."""
+    from . import tokens as t
+    
+    return f"""
+    /* === HDA Mode Container === */
+    QWidget#HdaModeWidget {{
+        background: {t.VOID};
+    }}
+    
+    /* === Describe View === */
+    QTextEdit#HdaPromptInput {{
+        background: {t.HDA_INPUT_BG};
+        color: {t.BONE};
+        border: 1px solid {t.HDA_INPUT_BORDER};
+        border-radius: 4px;
+        padding: 12px;
+        font-family: {t.FONT_SANS};
+        font-size: {t.SIZE_BODY}px;
+        selection-background-color: {t.HDA_INPUT_FOCUS};
+    }}
+    QTextEdit#HdaPromptInput:focus {{
+        border-color: {t.SIGNAL};
+    }}
+    
+    QComboBox#HdaContextSelector {{
+        background: {t.CARBON};
+        color: {t.SILVER};
+        border: 1px solid {t.GRAPHITE};
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_LABEL}px;
+    }}
+    
+    QPushButton#HdaGenerateBtn {{
+        background: {t.STATE_DESCRIBE};
+        color: {t.VOID};
+        border: none;
+        border-radius: 4px;
+        padding: 10px 24px;
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_LABEL}px;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }}
+    QPushButton#HdaGenerateBtn:hover {{
+        background: {t.STATE_DESCRIBE}CC;
+    }}
+    QPushButton#HdaGenerateBtn:pressed {{
+        background: {t.STATE_DESCRIBE}99;
+    }}
+    
+    /* === Building View === */
+    QWidget#BuildingView {{
+        background: {t.HDA_PROGRESS_BG};
+    }}
+    QLabel#StageLabel {{
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_LABEL}px;
+        letter-spacing: 0.5px;
+    }}
+    QProgressBar#HdaProgressBar {{
+        background: {t.HDA_PROGRESS_TRACK};
+        border: none;
+        border-radius: 3px;
+        height: 6px;
+    }}
+    QProgressBar#HdaProgressBar::chunk {{
+        background: {t.STATE_BUILDING};
+        border-radius: 3px;
+    }}
+    
+    /* === Result View === */
+    QLabel#NodePathLabel {{
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_BODY}px;
+        color: {t.GROW};
+        padding: 8px 12px;
+        background: {t.HDA_RESULT_SUCCESS_BG};
+        border-radius: 4px;
+    }}
+    QTableWidget#ParamTable {{
+        background: {t.CARBON};
+        color: {t.SILVER};
+        border: 1px solid {t.GRAPHITE};
+        gridline-color: {t.GRAPHITE};
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_LABEL}px;
+    }}
+    QTableWidget#ParamTable::item {{
+        padding: 4px 8px;
+    }}
+    QHeaderView::section {{
+        background: {t.GRAPHITE};
+        color: {t.BONE};
+        font-weight: 700;
+        padding: 4px 8px;
+        border: none;
+    }}
+    
+    /* === Mode Toggle === */
+    QPushButton#ModeToggleActive {{
+        background: {t.MODE_ACTIVE_BG};
+        border: 1px solid {t.MODE_ACTIVE_BORDER};
+        color: {t.SIGNAL};
+        border-radius: 4px;
+        padding: 4px 12px;
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_LABEL}px;
+        font-weight: 700;
+    }}
+    QPushButton#ModeToggleInactive {{
+        background: {t.MODE_INACTIVE_BG};
+        border: 1px solid {t.MODE_INACTIVE_BORDER};
+        color: {t.SLATE};
+        border-radius: 4px;
+        padding: 4px 12px;
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_LABEL}px;
+    }}
+    QPushButton#ModeToggleInactive:hover {{
+        border-color: {t.SILVER};
+        color: {t.SILVER};
+    }}
+    
+    /* === Shared Action Buttons === */
+    QPushButton#HdaActionBtn {{
+        background: {t.CARBON};
+        color: {t.SILVER};
+        border: 1px solid {t.GRAPHITE};
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_LABEL}px;
+    }}
+    QPushButton#HdaActionBtn:hover {{
+        border-color: {t.SIGNAL}66;
+        color: {t.BONE};
+    }}
+    QPushButton#CancelBtn {{
+        background: transparent;
+        color: {t.SLATE};
+        border: 1px solid {t.GRAPHITE};
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-family: {t.FONT_MONO};
+        font-size: {t.SIZE_LABEL}px;
+    }}
+    QPushButton#CancelBtn:hover {{
+        color: {t.ERROR_COLOR};
+        border-color: {t.ERROR_COLOR}66;
+    }}
+    """
+```
+
+**Task T4: Define QStackedWidget transition helpers**
+
+```python
+# Add to styles.py
+
+def animate_stack_transition(stacked_widget, new_index, duration_ms=200):
+    """Smooth opacity fade between QStackedWidget pages.
+    
+    Note: QStackedWidget doesn't support slide animations natively.
+    We use opacity fade via QGraphicsOpacityEffect.
+    """
+    from PySide2 import QtWidgets, QtCore
+    
+    current = stacked_widget.currentWidget()
+    target = stacked_widget.widget(new_index)
+    
+    if current == target:
+        return
+    
+    # Apply opacity effect to target
+    effect = QtWidgets.QGraphicsOpacityEffect(target)
+    target.setGraphicsEffect(effect)
+    effect.setOpacity(0.0)
+    
+    # Switch immediately (target starts invisible)
+    stacked_widget.setCurrentIndex(new_index)
+    
+    # Animate opacity 0 → 1
+    anim = QtCore.QPropertyAnimation(effect, b"opacity")
+    anim.setDuration(duration_ms)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+    
+    # Clean up effect after animation
+    def cleanup():
+        target.setGraphicsEffect(None)
+    anim.finished.connect(cleanup)
+    
+    # Store reference to prevent GC
+    stacked_widget._current_anim = anim
+    anim.start()
+```
+
+After completing all T1-T4, print the status bar.
+
+---
+
+### ═══ Agent BRIDGE — WebSocket Protocol Engineer ═══
+
+**MOE Role:** Transport & Message Routing Expert. You own the wire protocol.
+**You OWN:** `synapse/panel/ws_bridge.py`, `synapse/mcp/mcp_server.py` (message types ONLY)
+**DO NOT TOUCH:** tokens.py, styles.py, chat_panel.py, handlers_hda.py
+
+**Task B1: Add msg_type to response envelope**
+
+```
+Read ws_bridge.py to understand the current message format.
+Read mcp_server.py to understand how responses are constructed.
+
+In mcp_server.py, find where response dicts are built. Add a "msg_type" field:
+
+  response = {
+      "msg_type": "chat",  # or "hda_progress" or "hda_result"
+      ... existing fields ...
+  }
+
+Default msg_type is "chat" for all existing responses.
+HDA-specific msg_types will be set by HDA handlers in Phase 2.
+
+BACKWARD COMPATIBLE: Any response without msg_type is treated as "chat".
+```
+
+**Task B2: Define HDA_PROGRESS message type**
+
+```python
+# In mcp_server.py or a shared constants file, define:
+
+# HDA Progress stages (sent during hda_package execution)
+HDA_STAGES = [
+    "parsing_prompt",      # Understanding the request
+    "selecting_recipe",    # Choosing HDA template
+    "creating_subnet",     # Building the subnet container
+    "building_nodes",      # Creating internal node network
+    "wiring_connections",  # Connecting internal nodes
+    "promoting_parameters",# Building the HDA interface
+    "validating",          # Cook test + connection check
+    "complete",            # Success
+    "failed",              # Error occurred
+]
+
+# HDA Progress message format:
+# {
+#     "msg_type": "hda_progress",
+#     "stage": "building_nodes",
+#     "stage_index": 3,
+#     "total_stages": 8,
+#     "detail": "Creating attribwrangle node...",
+#     "progress_pct": 37.5
+# }
+```
+
+**Task B3: Define HDA_RESULT message type**
+
+```python
+# HDA Result message format (sent on completion):
+# {
+#     "msg_type": "hda_result",
+#     "success": true,
+#     "node_path": "/obj/my_scatter_hda",
+#     "hda_name": "scatter_points",
+#     "context": "SOP",
+#     "parameters": [
+#         {"name": "seed", "type": "int", "default": 42, "range": [0, 1000]},
+#         {"name": "count", "type": "int", "default": 10000, "range": [1, 1000000]},
+#         ...
+#     ],
+#     "validation": {
+#         "cook_success": true,
+#         "errors": [],
+#         "warnings": [],
+#         "internal_nodes": 4,
+#         "connections_valid": true
+#     }
+# }
+#
+# On failure:
+# {
+#     "msg_type": "hda_result",
+#     "success": false,
+#     "error": "Cook failed: missing input geometry",
+#     "rollback": true,
+#     "detail": "Undo group rolled back. Scene unchanged."
+# }
+```
+
+**Task B4: Implement message routing in ws_bridge.py**
+
+```python
+# In ws_bridge.py, find the on_message handler.
+# Add dispatch based on msg_type.
+
+# Add new Qt signals (alongside existing ones):
+# In the bridge class:
+from PySide2.QtCore import Signal
+
+class SynapseBridge(QtCore.QObject):
+    # Existing signals
+    message_received = Signal(dict)     # chat messages
+    
+    # NEW: HDA-specific signals
+    hda_progress = Signal(dict)         # HDA build progress updates
+    hda_result = Signal(dict)           # HDA build completion
+    connection_changed = Signal(bool)   # connection state (may already exist)
+    
+    def _dispatch_message(self, data: dict):
+        """Route incoming WebSocket message to appropriate signal."""
+        msg_type = data.get("msg_type", "chat")  # backward compat
+        
+        if msg_type == "hda_progress":
+            self.hda_progress.emit(data)
+        elif msg_type == "hda_result":
+            self.hda_result.emit(data)
+        else:
+            # Default: treat as chat message (backward compatible)
+            self.message_received.emit(data)
+```
+
+Make sure the existing on_message handler calls _dispatch_message() instead of directly emitting message_received.
+
+After completing all B1-B4, print the status bar.
+
+---
+
+### ═══ PHASE 1 GATE ═══
+
+**Run BEFORE starting Phase 2. Gate is HARD — no skip.**
+
+```bash
+# 1. Import verification
+python -c "from synapse.panel.tokens import STATE_DESCRIBE, STATE_BUILDING, STATE_RESULT; print('Tokens: OK')"
+python -c "from synapse.panel.styles import get_hda_stylesheet, animate_stack_transition; print('Styles: OK')"
+
+# 2. Bridge signal verification
+python -c "
+from synapse.panel.ws_bridge import SynapseBridge
+b = SynapseBridge()
+assert hasattr(b, 'hda_progress'), 'Missing hda_progress signal'
+assert hasattr(b, 'hda_result'), 'Missing hda_result signal'
+print('Bridge: OK')
+"
+
+# 3. Regression check
+pytest tests/ -q --tb=short 2>&1 | tail -5
+
+# 4. Stylesheet renders
+python -c "
+from synapse.panel.styles import get_hda_stylesheet
+ss = get_hda_stylesheet()
+assert 'HdaPromptInput' in ss
+assert 'BuildingView' in ss
+assert 'NodePathLabel' in ss
+print(f'Stylesheet: OK ({len(ss)} chars)')
+"
+```
+
+**ALL 4 must pass. If ANY fail, fix before Phase 2.**
+
+Print status bar after gate check.
+
+---
+
+## PHASE 2: CORE BUILD
+
+Run these two agents in parallel via Task tool.
+
+### ═══ Agent VIEWS — PySide2 Panel Integration Expert ═══
+
+**MOE Role:** UI/UX Architect. You own the visual layer.
+**You OWN:** `synapse/panel/hda_views.py` (create), `synapse/panel/chat_panel.py` (mode switch ONLY)
+**DO NOT TOUCH:** handlers_hda.py, ws_bridge.py, tokens.py, styles.py
+**DEPENDS ON:** TOKENS (import styles), BRIDGE (connect signals)
+
+**Task V1: Build DescribeView**
+
+```python
+# Create synapse/panel/hda_views.py
+
+from PySide2 import QtWidgets, QtCore, QtGui
+from . import tokens as t
+
+class DescribeView(QtWidgets.QWidget):
+    """First state: artist describes the HDA they want."""
+    
+    generate_requested = QtCore.Signal(str, str, dict)
+    # Emits: (prompt_text, context_type, options_dict)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("DescribeView")
+        self._build_ui()
+    
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        
+        # Section label
+        label = QtWidgets.QLabel("DESCRIBE YOUR HDA")
+        label.setObjectName("SectionLabel")  # Uses existing panel styling
+        label.setStyleSheet(f"color: {t.SIGNAL}; font-size: 10px; "
+                          f"font-family: monospace; letter-spacing: 2px;")
+        layout.addWidget(label)
+        
+        # Prompt input
+        self.prompt_input = QtWidgets.QTextEdit()
+        self.prompt_input.setObjectName("HdaPromptInput")
+        self.prompt_input.setPlaceholderText(
+            "Describe the HDA you want to create...\n\n"
+            "Examples:\n"
+            "  'A scatter tool that distributes points on a surface with density control'\n"
+            "  'A 3-point light rig with key, fill, and rim lights'\n"
+            "  'A Karma render setup with draft/preview/production quality tiers'"
+        )
+        self.prompt_input.setMinimumHeight(120)
+        self.prompt_input.setMaximumHeight(200)
+        layout.addWidget(self.prompt_input)
+        
+        # Options row
+        options_row = QtWidgets.QHBoxLayout()
+        options_row.setSpacing(8)
+        
+        # Context selector
+        ctx_label = QtWidgets.QLabel("Context:")
+        ctx_label.setStyleSheet(f"color: {t.SLATE}; font-family: monospace; font-size: 11px;")
+        self.context_combo = QtWidgets.QComboBox()
+        self.context_combo.setObjectName("HdaContextSelector")
+        self.context_combo.addItems(["SOP", "LOP", "DOP", "COP", "TOP"])
+        self.context_combo.setCurrentText("SOP")
+        
+        options_row.addWidget(ctx_label)
+        options_row.addWidget(self.context_combo)
+        options_row.addStretch()
+        
+        # Checkboxes
+        self.chk_help = QtWidgets.QCheckBox("Include help text")
+        self.chk_help.setChecked(True)
+        self.chk_help.setStyleSheet(f"color: {t.SILVER}; font-family: monospace; font-size: 11px;")
+        
+        self.chk_toolbar = QtWidgets.QCheckBox("Add to toolbar")
+        self.chk_toolbar.setStyleSheet(f"color: {t.SILVER}; font-family: monospace; font-size: 11px;")
+        
+        options_row.addWidget(self.chk_help)
+        options_row.addWidget(self.chk_toolbar)
+        layout.addLayout(options_row)
+        
+        # Generate button
+        self.generate_btn = QtWidgets.QPushButton("GENERATE HDA")
+        self.generate_btn.setObjectName("HdaGenerateBtn")
+        self.generate_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.generate_btn.clicked.connect(self._on_generate)
+        layout.addWidget(self.generate_btn)
+        
+        layout.addStretch()
+    
+    def _on_generate(self):
+        prompt = self.prompt_input.toPlainText().strip()
+        if not prompt:
+            return
+        context = self.context_combo.currentText()
+        options = {
+            "include_help": self.chk_help.isChecked(),
+            "add_to_toolbar": self.chk_toolbar.isChecked(),
+        }
+        self.generate_requested.emit(prompt, context, options)
+    
+    def reset(self):
+        """Clear for next HDA creation."""
+        self.prompt_input.clear()
+        self.context_combo.setCurrentText("SOP")
+        self.chk_help.setChecked(True)
+        self.chk_toolbar.setChecked(False)
+```
+
+**Task V2: Build BuildingView**
+
+```python
+class BuildingView(QtWidgets.QWidget):
+    """Second state: shows progress while HDA is being built."""
+    
+    cancel_requested = QtCore.Signal()
+    
+    STAGES = [
+        ("parsing_prompt", "Parsing prompt..."),
+        ("selecting_recipe", "Selecting recipe..."),
+        ("creating_subnet", "Creating subnet..."),
+        ("building_nodes", "Building internal nodes..."),
+        ("wiring_connections", "Wiring connections..."),
+        ("promoting_parameters", "Promoting parameters..."),
+        ("validating", "Validating HDA..."),
+    ]
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("BuildingView")
+        self._current_stage = 0
+        self._build_ui()
+    
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        
+        layout.addStretch()
+        
+        # Stage indicator
+        self.stage_label = QtWidgets.QLabel("Preparing...")
+        self.stage_label.setObjectName("StageLabel")
+        self.stage_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.stage_label.setStyleSheet(
+            f"color: {t.BONE}; font-family: monospace; font-size: 14px; font-weight: 700;")
+        layout.addWidget(self.stage_label)
+        
+        # Progress bar
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setObjectName("HdaProgressBar")
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(6)
+        layout.addWidget(self.progress_bar)
+        
+        # Stage dots row
+        self.dots_layout = QtWidgets.QHBoxLayout()
+        self.dots_layout.setSpacing(4)
+        self.dots_layout.addStretch()
+        self.dot_labels = []
+        for i, (_, _) in enumerate(self.STAGES):
+            dot = QtWidgets.QLabel("●")
+            dot.setStyleSheet(f"color: {t.HDA_STAGE_INACTIVE}; font-size: 8px;")
+            dot.setAlignment(QtCore.Qt.AlignCenter)
+            self.dot_labels.append(dot)
+            self.dots_layout.addWidget(dot)
+        self.dots_layout.addStretch()
+        layout.addLayout(self.dots_layout)
+        
+        # Detail text
+        self.detail_label = QtWidgets.QLabel("")
+        self.detail_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.detail_label.setStyleSheet(
+            f"color: {t.SLATE}; font-family: monospace; font-size: 10px;")
+        layout.addWidget(self.detail_label)
+        
+        layout.addStretch()
+        
+        # Cancel button
+        self.cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.cancel_btn.setObjectName("CancelBtn")
+        self.cancel_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.cancel_btn.clicked.connect(self.cancel_requested.emit)
+        layout.addWidget(self.cancel_btn, alignment=QtCore.Qt.AlignCenter)
+    
+    def update_stage(self, stage_name: str, progress_pct: int, detail: str = ""):
+        """Update to a new stage. Called via signal from controller."""
+        self.progress_bar.setValue(progress_pct)
+        
+        # Find stage index
+        for i, (name, display) in enumerate(self.STAGES):
+            if name == stage_name:
+                self._current_stage = i
+                self.stage_label.setText(display)
+                break
+        
+        # Update dots
+        for i, dot in enumerate(self.dot_labels):
+            if i < self._current_stage:
+                dot.setStyleSheet(f"color: {t.HDA_STAGE_COMPLETE}; font-size: 8px;")
+            elif i == self._current_stage:
+                dot.setStyleSheet(f"color: {t.HDA_STAGE_ACTIVE}; font-size: 10px;")
+            else:
+                dot.setStyleSheet(f"color: {t.HDA_STAGE_INACTIVE}; font-size: 8px;")
+        
+        if detail:
+            self.detail_label.setText(detail)
+    
+    def reset(self):
+        self._current_stage = 0
+        self.progress_bar.setValue(0)
+        self.stage_label.setText("Preparing...")
+        self.detail_label.setText("")
+        for dot in self.dot_labels:
+            dot.setStyleSheet(f"color: {t.HDA_STAGE_INACTIVE}; font-size: 8px;")
+```
+
+**Task V3: Build ResultView**
+
+```python
+class ResultView(QtWidgets.QWidget):
+    """Third state: shows the created HDA with actions."""
+    
+    action_requested = QtCore.Signal(str)  # "inspect", "edit", "save", "new"
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ResultView")
+        self._build_ui()
+    
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        
+        # Success/failure header
+        self.status_label = QtWidgets.QLabel("✓ HDA Created")
+        self.status_label.setStyleSheet(
+            f"color: {t.GROW}; font-family: monospace; font-size: 14px; font-weight: 700;")
+        layout.addWidget(self.status_label)
+        
+        # Node path (copyable)
+        self.path_label = QtWidgets.QLabel("")
+        self.path_label.setObjectName("NodePathLabel")
+        self.path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.path_label.setCursor(QtCore.Qt.IBeamCursor)
+        layout.addWidget(self.path_label)
+        
+        # Parameter table
+        self.param_table = QtWidgets.QTableWidget()
+        self.param_table.setObjectName("ParamTable")
+        self.param_table.setColumnCount(4)
+        self.param_table.setHorizontalHeaderLabels(["Parameter", "Type", "Default", "Range"])
+        self.param_table.horizontalHeader().setStretchLastSection(True)
+        self.param_table.verticalHeader().setVisible(False)
+        self.param_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.param_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.param_table.setMinimumHeight(120)
+        layout.addWidget(self.param_table)
+        
+        # Validation summary
+        self.validation_label = QtWidgets.QLabel("")
+        self.validation_label.setStyleSheet(
+            f"color: {t.SLATE}; font-family: monospace; font-size: 10px;")
+        self.validation_label.setWordWrap(True)
+        layout.addWidget(self.validation_label)
+        
+        # Action buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
+        
+        for action, label in [
+            ("inspect", "Inspect in Network"),
+            ("edit", "Edit Parameters"),
+            ("save", "Save as HDA File"),
+        ]:
+            btn = QtWidgets.QPushButton(label)
+            btn.setObjectName("HdaActionBtn")
+            btn.setCursor(QtCore.Qt.PointingHandCursor)
+            btn.clicked.connect(lambda checked, a=action: self.action_requested.emit(a))
+            btn_row.addWidget(btn)
+        
+        layout.addLayout(btn_row)
+        
+        # Create Another button
+        new_btn = QtWidgets.QPushButton("Create Another HDA")
+        new_btn.setObjectName("HdaGenerateBtn")
+        new_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        new_btn.clicked.connect(lambda: self.action_requested.emit("new"))
+        layout.addWidget(new_btn)
+    
+    def populate(self, result_data: dict):
+        """Fill the view with HDA creation results."""
+        success = result_data.get("success", False)
+        
+        if success:
+            self.status_label.setText("✓ HDA Created Successfully")
+            self.status_label.setStyleSheet(
+                f"color: {t.GROW}; font-family: monospace; font-size: 14px; font-weight: 700;")
+            self.path_label.setText(result_data.get("node_path", ""))
+            self.path_label.setStyleSheet(
+                f"color: {t.GROW}; font-family: monospace; font-size: 12px; "
+                f"padding: 8px 12px; background: {t.HDA_RESULT_SUCCESS_BG}; border-radius: 4px;")
+            
+            # Populate parameter table
+            params = result_data.get("parameters", [])
+            self.param_table.setRowCount(len(params))
+            for row, p in enumerate(params):
+                self.param_table.setItem(row, 0, QtWidgets.QTableWidgetItem(p.get("name", "")))
+                self.param_table.setItem(row, 1, QtWidgets.QTableWidgetItem(p.get("type", "")))
+                self.param_table.setItem(row, 2, QtWidgets.QTableWidgetItem(str(p.get("default", ""))))
+                rng = p.get("range", [])
+                self.param_table.setItem(row, 3, QtWidgets.QTableWidgetItem(
+                    f"{rng[0]} – {rng[1]}" if len(rng) >= 2 else ""))
+            
+            # Validation summary
+            val = result_data.get("validation", {})
+            parts = []
+            if val.get("cook_success"):
+                parts.append("✓ Cook test passed")
+            if val.get("connections_valid"):
+                parts.append(f"✓ {val.get('internal_nodes', '?')} nodes connected")
+            if val.get("warnings"):
+                parts.append(f"⚠ {len(val['warnings'])} warnings")
+            self.validation_label.setText("  |  ".join(parts))
+        
+        else:
+            self.status_label.setText("✗ HDA Creation Failed")
+            self.status_label.setStyleSheet(
+                f"color: {t.ERROR_COLOR}; font-family: monospace; font-size: 14px; font-weight: 700;")
+            self.path_label.setText(result_data.get("error", "Unknown error"))
+            self.path_label.setStyleSheet(
+                f"color: {t.ERROR_COLOR}; font-family: monospace; font-size: 11px; "
+                f"padding: 8px 12px; background: {t.HDA_RESULT_ERROR_BG}; border-radius: 4px;")
+            self.param_table.setRowCount(0)
+            
+            rollback = "Scene rolled back." if result_data.get("rollback") else ""
+            self.validation_label.setText(
+                f"{result_data.get('detail', '')} {rollback}".strip())
+    
+    def reset(self):
+        self.param_table.setRowCount(0)
+        self.path_label.setText("")
+        self.validation_label.setText("")
+```
+
+**Task V4: Add QStackedWidget mode switch to chat_panel.py**
+
+```
+CRITICAL: Read chat_panel.py CAREFULLY before editing. Only add the mode switch.
+Do NOT refactor, restyle, or restructure any existing chat functionality.
+
+In chat_panel.py:
+
+1. Import:
+   from .hda_views import DescribeView, BuildingView, ResultView
+   from .styles import get_hda_stylesheet, animate_stack_transition
+
+2. In the panel's __init__ or _build_ui method, AFTER the existing chat widget:
+   
+   # Mode stack: chat vs HDA
+   self.mode_stack = QStackedWidget()
+   
+   # Index 0: existing chat widget (move it into the stack)
+   self.mode_stack.addWidget(self.chat_widget)  # or whatever the existing main widget is
+   
+   # Index 1: HDA mode container
+   self.hda_container = QWidget()
+   hda_layout = QVBoxLayout(self.hda_container)
+   hda_layout.setContentsMargins(0, 0, 0, 0)
+   
+   self.hda_stack = QStackedWidget()
+   self.describe_view = DescribeView()
+   self.building_view = BuildingView()
+   self.result_view = ResultView()
+   self.hda_stack.addWidget(self.describe_view)   # index 0
+   self.hda_stack.addWidget(self.building_view)    # index 1
+   self.hda_stack.addWidget(self.result_view)      # index 2
+   
+   hda_layout.addWidget(self.hda_stack)
+   self.mode_stack.addWidget(self.hda_container)
+   
+   # Apply HDA stylesheet
+   self.hda_container.setStyleSheet(get_hda_stylesheet())
+   
+   # Replace the existing main widget reference with mode_stack
+   # (adapt this to match the actual layout structure)
+
+3. Be surgical. Touch ONLY the layout structure needed for the mode stack.
+```
+
+**Task V5: Wire mode toggle button**
+
+```
+Add to the panel toolbar (wherever existing toolbar buttons live):
+
+   self.mode_chat_btn = QPushButton("Chat")
+   self.mode_chat_btn.setObjectName("ModeToggleActive")
+   self.mode_chat_btn.clicked.connect(lambda: self._set_mode("chat"))
+   
+   self.mode_hda_btn = QPushButton("Create HDA")
+   self.mode_hda_btn.setObjectName("ModeToggleInactive")
+   self.mode_hda_btn.clicked.connect(lambda: self._set_mode("hda"))
+   
+   # Add to toolbar layout
+   toolbar.addWidget(self.mode_chat_btn)
+   toolbar.addWidget(self.mode_hda_btn)
+
+   def _set_mode(self, mode: str):
+       if mode == "chat":
+           animate_stack_transition(self.mode_stack, 0)
+           self.mode_chat_btn.setObjectName("ModeToggleActive")
+           self.mode_hda_btn.setObjectName("ModeToggleInactive")
+       elif mode == "hda":
+           animate_stack_transition(self.mode_stack, 1)
+           self.hda_stack.setCurrentIndex(0)  # Reset to Describe
+           self.describe_view.reset()
+           self.mode_chat_btn.setObjectName("ModeToggleInactive")
+           self.mode_hda_btn.setObjectName("ModeToggleActive")
+       
+       # Refresh styling after objectName change
+       self.mode_chat_btn.style().unpolish(self.mode_chat_btn)
+       self.mode_chat_btn.style().polish(self.mode_chat_btn)
+       self.mode_hda_btn.style().unpolish(self.mode_hda_btn)
+       self.mode_hda_btn.style().polish(self.mode_hda_btn)
+```
+
+After completing all V1-V5, print the status bar.
+
+---
+
+### ═══ Agent ARCH — HDA Pipeline Architect ═══
+
+**MOE Role:** Houdini Digital Asset Creation Expert. You own the HDA backend.
+**You OWN:** `synapse/handlers_hda.py`, `synapse/routing/hda_recipes.py` (create if missing)
+**DO NOT TOUCH:** panel/, ws_bridge.py, mcp_server.py, mcp/tools.py
+
+**Task A1: Fix hda_package — build internal node network**
+
+```
+This is the CRITICAL bug. Current hda_package creates an empty subnet
+and then tries to promote parameters from nodes that don't exist.
+
+Read the current hda_package handler. The fix:
+
+1. The handler should accept a "recipe" parameter (or "node_graph")
+   that describes the internal nodes to build.
+
+2. After creating the subnet with hou.node(parent).createNode("subnet"):
+   
+   a. Parse the recipe's node_graph list
+   b. For each entry: create the node inside the subnet
+      node = subnet.createNode(entry["type"], entry["name"])
+   c. Set parameters on each node:
+      for parm_name, value in entry["parms"].items():
+          node.parm(parm_name).set(value)
+   d. Wire connections:
+      for conn in entry["connections"]:
+          target_node.setInput(conn["input_index"], source_node, conn["output_index"])
+   e. Set display/render flags on the output node
+   
+3. THEN promote parameters to the subnet interface
+4. Wrap the ENTIRE operation in an undo group
+5. If any step fails, roll back the undo group
+
+SAFETY: Use existing safety middleware patterns from CLAUDE.md.
+Idempotent guard: check if subnet already exists before creating.
+Atomic: the whole hda_package is one undo group.
+```
+
+**Task A2: Solaris light rig HDA recipe**
+
+```python
+# Create synapse/routing/hda_recipes.py (or add to existing)
+
+HDA_RECIPES = {
+    "lop_light_rig": {
+        "name": "three_point_light_rig",
+        "context": "LOP",
+        "description": "3-point light rig with key, fill, and rim lights plus dome",
+        "node_graph": [
+            {
+                "type": "light::2.0",
+                "name": "key_light",
+                "parms": {
+                    "xformOp:translate": [3.0, 4.0, 2.0],
+                    "light_type": "distant",
+                    "inputs:intensity": 1.0,
+                    "inputs:color": [1.0, 0.95, 0.9],
+                },
+                "connections": [],
+            },
+            {
+                "type": "light::2.0",
+                "name": "fill_light",
+                "parms": {
+                    "xformOp:translate": [-2.0, 2.0, 3.0],
+                    "light_type": "distant",
+                    "inputs:intensity": 0.4,
+                    "inputs:color": [0.85, 0.9, 1.0],
+                },
+                "connections": [{"input_index": 0, "source": "key_light", "output_index": 0}],
+            },
+            {
+                "type": "light::2.0",
+                "name": "rim_light",
+                "parms": {
+                    "xformOp:translate": [-1.0, 3.0, -3.0],
+                    "light_type": "distant",
+                    "inputs:intensity": 0.6,
+                    "inputs:color": [1.0, 1.0, 1.0],
+                },
+                "connections": [{"input_index": 0, "source": "fill_light", "output_index": 0}],
+            },
+            {
+                "type": "domelight::2.0",
+                "name": "dome_light",
+                "parms": {
+                    "inputs:intensity": 0.3,
+                },
+                "connections": [{"input_index": 0, "source": "rim_light", "output_index": 0}],
+            },
+            {
+                "type": "merge",
+                "name": "light_merge",
+                "parms": {},
+                "connections": [
+                    {"input_index": 0, "source": "dome_light", "output_index": 0},
+                ],
+                "is_output": True,
+            },
+        ],
+        "promote_parameters": [
+            {"node": "key_light", "parm": "inputs:intensity", "label": "Key Intensity", "range": [0, 5]},
+            {"node": "fill_light", "parm": "inputs:intensity", "label": "Fill Intensity", "range": [0, 5]},
+            {"node": "rim_light", "parm": "inputs:intensity", "label": "Rim Intensity", "range": [0, 5]},
+            {"node": "dome_light", "parm": "inputs:intensity", "label": "Dome Intensity", "range": [0, 2]},
+        ],
+    },
+}
+
+# IMPORTANT: USD parameter names use "inputs:" prefix and "xformOp:" prefix.
+# These must be encoded correctly for Houdini 21's Solaris nodes.
+# See existing RAG knowledge for USD parameter encoding conventions.
+```
+
+**Task A3: Karma quality tier HDA recipe**
+
+```python
+# Add to HDA_RECIPES dict:
+
+"lop_karma_quality": {
+    "name": "karma_render_setup",
+    "context": "LOP",
+    "description": "Karma XPU render with draft/preview/production quality presets",
+    "node_graph": [
+        {
+            "type": "karmarenderproperties",
+            "name": "render_settings",
+            "parms": {
+                # Default to preview quality
+                "karma:global:pathtracedsamples": 64,
+                "karma:global:convergencemode": "automatic",
+                "res": [1920, 1080],
+            },
+            "connections": [],
+        },
+        {
+            "type": "usdrender_rop",
+            "name": "karma_rop",
+            "parms": {
+                "renderer": "BRAY_HdKarma",
+            },
+            "connections": [{"input_index": 0, "source": "render_settings", "output_index": 0}],
+            "is_output": True,
+        },
+    ],
+    "promote_parameters": [
+        {"node": "render_settings", "parm": "karma:global:pathtracedsamples", "label": "Samples", "range": [8, 4096]},
+        {"node": "render_settings", "parm": "res", "label": "Resolution"},
+        {"node": "karma_rop", "parm": "renderer", "label": "Renderer"},
+    ],
+    "quality_presets": {
+        "draft":      {"karma:global:pathtracedsamples": 16, "res": [960, 540]},
+        "preview":    {"karma:global:pathtracedsamples": 64, "res": [1920, 1080]},
+        "production": {"karma:global:pathtracedsamples": 256, "res": [1920, 1080]},
+    },
+},
+```
+
+**Task A4: Post-creation validation**
+
+```python
+# Add to handlers_hda.py — called at end of hda_package
+
+def _validate_hda(subnet_node) -> dict:
+    """Validate a newly created HDA subnet. Returns validation dict."""
+    result = {
+        "cook_success": False,
+        "errors": [],
+        "warnings": [],
+        "internal_nodes": 0,
+        "connections_valid": True,
+    }
+    
+    # Count internal nodes
+    children = subnet_node.children()
+    result["internal_nodes"] = len(children)
+    
+    if len(children) == 0:
+        result["errors"].append("Subnet is empty — no internal nodes created")
+        return result
+    
+    # Check connections
+    for child in children:
+        for i in range(child.inputs().__len__()):
+            # Check if required inputs are connected
+            pass  # Adapt based on actual hou API
+    
+    # Cook test
+    try:
+        subnet_node.cook(force=True)
+        result["cook_success"] = True
+    except Exception as e:
+        result["errors"].append(f"Cook failed: {str(e)}")
+        return result
+    
+    # Check for cook errors/warnings
+    for child in children:
+        errors = child.errors()
+        warnings = child.warnings()
+        result["errors"].extend([f"{child.name()}: {e}" for e in errors])
+        result["warnings"].extend([f"{child.name()}: {w}" for w in warnings])
+    
+    return result
+```
+
+**Task A5: hda_inventory handler**
+
+```python
+# Add to handlers_hda.py
+
+async def handle_hda_inventory(params: dict) -> dict:
+    """List installed HDAs in current session with metadata."""
+    context_filter = params.get("context", None)  # "SOP", "LOP", etc.
+    
+    code = f"""
+import hou
+import json
+
+results = []
+for category in hou.nodeTypeCategories().values():
+    for name, node_type in category.nodeTypes().items():
+        defn = node_type.definition()
+        if defn is None:
+            continue  # Skip built-in types
+        
+        entry = {{
+            "name": defn.nodeTypeName(),
+            "label": defn.description(),
+            "version": defn.version(),
+            "category": category.name(),
+            "library_path": defn.libraryFilePath(),
+            "parameter_count": len(defn.parmTemplateGroup().entries()),
+            "author": defn.comment(),  # Often used for author
+        }}
+        
+        context_filter = "{context_filter or ''}"
+        if context_filter and category.name() != context_filter:
+            continue
+        
+        results.append(entry)
+
+result = json.dumps(results[:100])  # Cap at 100 to avoid huge responses
+"""
+    
+    # Execute via existing houdini_execute_python pattern
+    # Return the results list
+```
+
+After completing all A1-A5, print the status bar.
+
+---
+
+### ═══ PHASE 2 GATE ═══
+
+```bash
+# 1. Views render in isolation
+python -c "
+from PySide2 import QtWidgets
+import sys
+app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+from synapse.panel.hda_views import DescribeView, BuildingView, ResultView
+d = DescribeView(); b = BuildingView(); r = ResultView()
+print(f'Views: OK (Describe={d.objectName()}, Building={b.objectName()}, Result={r.objectName()})')
+"
+
+# 2. hda_package builds non-empty HDAs (requires Houdini or mocks)
+pytest tests/test_handlers_hda.py -q --tb=short -k "hda_package" 2>&1 | tail -5
+
+# 3. Recipes importable
+python -c "
+from synapse.routing.hda_recipes import HDA_RECIPES
+assert 'lop_light_rig' in HDA_RECIPES
+assert 'lop_karma_quality' in HDA_RECIPES
+print(f'Recipes: OK ({len(HDA_RECIPES)} recipes)')
+"
+
+# 4. Full regression
+pytest tests/ -q --tb=short 2>&1 | tail -5
+```
+
+**ALL 4 must pass. Fix before Phase 3.**
+
+---
+
+## PHASE 3: WIRE + VALIDATE
+
+### ═══ Agent WIRE — End-to-End Integration Engineer ═══
+
+**MOE Role:** Pipeline Wiring Expert. You connect all the pieces.
+**You OWN:** `synapse/panel/hda_controller.py` (create), `synapse/mcp/tools.py` (HDA registration ONLY)
+**DO NOT TOUCH:** handlers_hda.py, hda_views.py, ws_bridge.py, styles.py
+
+**Task W1: Build HdaController**
+
+```python
+# Create synapse/panel/hda_controller.py
+
+from PySide2 import QtCore
+from ..routing.hda_recipes import HDA_RECIPES
+
+class HdaController(QtCore.QObject):
+    """Orchestrates prompt → recipe → build → validate → report."""
+    
+    progress = QtCore.Signal(str, int, str)  # stage_name, pct, detail
+    result = QtCore.Signal(dict)              # success/failure result
+    error = QtCore.Signal(str)                # error message
+    
+    def __init__(self, bridge, parent=None):
+        super().__init__(parent)
+        self._bridge = bridge
+        self._active = False
+        
+        # Connect bridge signals
+        bridge.hda_progress.connect(self._on_bridge_progress)
+        bridge.hda_result.connect(self._on_bridge_result)
+    
+    def execute(self, prompt: str, context: str, options: dict):
+        """Start HDA creation from a natural language prompt."""
+        if self._active:
+            self.error.emit("HDA creation already in progress")
+            return
+        
+        self._active = True
+        self.progress.emit("parsing_prompt", 5, "Understanding your description...")
+        
+        # Select recipe based on prompt + context
+        recipe = self._select_recipe(prompt, context)
+        
+        if recipe is None:
+            self.progress.emit("selecting_recipe", 10, "No matching recipe found")
+            self._active = False
+            self.result.emit({
+                "success": False,
+                "error": f"No recipe matches: '{prompt[:50]}...' in {context} context",
+                "detail": "Try a more specific description or different context.",
+            })
+            return
+        
+        self.progress.emit("selecting_recipe", 15, f"Using recipe: {recipe['name']}")
+        
+        # Send to Houdini via MCP tool chain
+        self._send_hda_request(recipe, options)
+    
+    def _select_recipe(self, prompt: str, context: str) -> dict:
+        """Match prompt to best recipe. Simple keyword matching for now."""
+        prompt_lower = prompt.lower()
+        
+        # Score each recipe by keyword overlap
+        best = None
+        best_score = 0
+        for key, recipe in HDA_RECIPES.items():
+            if recipe.get("context", "SOP") != context:
+                continue
+            
+            # Score by keyword presence
+            score = 0
+            desc_words = recipe["description"].lower().split()
+            for word in desc_words:
+                if len(word) > 3 and word in prompt_lower:
+                    score += 1
+            
+            name_words = recipe["name"].lower().replace("_", " ").split()
+            for word in name_words:
+                if word in prompt_lower:
+                    score += 2  # Name matches weighted higher
+            
+            if score > best_score:
+                best_score = score
+                best = recipe
+        
+        return best
+    
+    def _send_hda_request(self, recipe: dict, options: dict):
+        """Send the HDA build request through the bridge."""
+        # This calls the hda_package MCP tool via WebSocket
+        request = {
+            "tool": "hda_package",
+            "params": {
+                "recipe": recipe,
+                "include_help": options.get("include_help", True),
+                "add_to_toolbar": options.get("add_to_toolbar", False),
+            }
+        }
+        self._bridge.send(request)
+    
+    def _on_bridge_progress(self, data: dict):
+        """Handle progress updates from Houdini."""
+        self.progress.emit(
+            data.get("stage", ""),
+            data.get("progress_pct", 0),
+            data.get("detail", ""),
+        )
+    
+    def _on_bridge_result(self, data: dict):
+        """Handle completion from Houdini."""
+        self._active = False
+        self.result.emit(data)
+    
+    def cancel(self):
+        """Cancel in-progress HDA creation."""
+        if self._active:
+            self._bridge.send({"tool": "hda_cancel"})
+            self._active = False
+```
+
+**Task W2: Wire DescribeView → Controller**
+
+```
+In chat_panel.py, in the __init__ or setup method:
+
+    self.hda_controller = HdaController(self.bridge)
+    
+    # Describe → Controller
+    self.describe_view.generate_requested.connect(self.hda_controller.execute)
+```
+
+**Task W3: Wire Controller progress → BuildingView**
+
+```
+    # Controller → Building
+    self.hda_controller.progress.connect(self.building_view.update_stage)
+    
+    # Auto-switch to Building view when generation starts
+    self.describe_view.generate_requested.connect(
+        lambda *_: animate_stack_transition(self.hda_stack, 1))
+```
+
+**Task W4: Wire Controller result → ResultView**
+
+```
+    # Controller → Result
+    self.hda_controller.result.connect(self._on_hda_result)
+    
+    def _on_hda_result(self, data: dict):
+        self.result_view.populate(data)
+        animate_stack_transition(self.hda_stack, 2)
+    
+    # Result "new" action → back to Describe
+    self.result_view.action_requested.connect(self._on_hda_action)
+    
+    def _on_hda_action(self, action: str):
+        if action == "new":
+            self.describe_view.reset()
+            animate_stack_transition(self.hda_stack, 0)
+        elif action == "inspect":
+            # Send inspect command via bridge
+            pass  # Use existing synapse_inspect_node tool
+        elif action == "save":
+            # Trigger HDA file save dialog
+            pass  # Use hou.ui.selectFile or similar
+    
+    # Cancel → back to Describe
+    self.building_view.cancel_requested.connect(self.hda_controller.cancel)
+    self.building_view.cancel_requested.connect(
+        lambda: animate_stack_transition(self.hda_stack, 0))
+```
+
+**Task W5: Register hda_inventory in MCP tools**
+
+```
+In synapse/mcp/tools.py, add hda_inventory tool registration following existing patterns:
+
+{
+    "name": "hda_inventory",
+    "description": "List installed HDAs in current Houdini session with metadata",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "context": {
+                "type": "string",
+                "enum": ["SOP", "LOP", "DOP", "COP", "TOP"],
+                "description": "Filter by node context"
+            }
+        }
+    },
+    "annotations": {
+        "readOnlyHint": true
+    }
+}
+
+Also register in mcp_server.py (stdio bridge) following existing handler mapping pattern.
+```
+
+After completing all W1-W5, print the status bar.
+
+---
+
+### ═══ Agent TEST — Quality Assurance Lead ═══
+
+**MOE Role:** Test Coverage & Regression Expert. You validate everything.
+**You OWN:** `tests/test_hda_views.py`, `tests/test_hda_controller.py`, `tests/test_hda_bridge.py`
+**DO NOT TOUCH:** any source files (read only)
+
+**Task X1: Test bridge message routing**
+
+```python
+# tests/test_hda_bridge.py
+# Follow existing test patterns from the test suite.
+# Mock WebSocket, verify signal routing.
+
+def test_chat_message_routes_to_chat_signal():
+    """Messages without msg_type or with msg_type='chat' emit message_received."""
+    
+def test_hda_progress_routes_to_hda_signal():
+    """Messages with msg_type='hda_progress' emit hda_progress signal."""
+
+def test_hda_result_routes_to_hda_signal():
+    """Messages with msg_type='hda_result' emit hda_result signal."""
+
+def test_backward_compat_no_msg_type():
+    """Messages without msg_type field default to chat routing."""
+```
+
+**Task X2: Test view state transitions**
+
+```python
+# tests/test_hda_views.py
+
+def test_describe_view_emits_generate():
+    """DescribeView emits generate_requested with prompt, context, options."""
+
+def test_building_view_stage_progression():
+    """BuildingView.update_stage transitions through all 7 stages correctly."""
+
+def test_result_view_populates_success():
+    """ResultView.populate shows node path and parameter table on success."""
+
+def test_result_view_populates_failure():
+    """ResultView.populate shows error message on failure."""
+```
+
+**Task X3: Test hda_package with internal nodes**
+
+```python
+# tests/test_hda_controller.py or extend test_handlers_hda.py
+
+def test_hda_package_creates_internal_nodes():
+    """hda_package with recipe creates non-empty subnet."""
+    # After fix, subnet should have internal nodes matching recipe
+
+def test_hda_package_empty_recipe_fails_gracefully():
+    """hda_package with empty recipe reports error, doesn't crash."""
+```
+
+**Task X4: Test recipes**
+
+```python
+def test_lop_light_rig_recipe_valid():
+    """Light rig recipe has correct node types and connections."""
+
+def test_lop_karma_quality_recipe_valid():
+    """Karma recipe has correct quality presets."""
+
+def test_all_recipes_have_required_fields():
+    """Every recipe has name, context, node_graph, promote_parameters."""
+```
+
+**Task X5: E2E flow test**
+
+```python
+def test_e2e_prompt_to_result():
+    """Full flow: prompt → controller → recipe → (mocked) build → result."""
+    # Mock the bridge, verify:
+    # 1. Controller receives prompt
+    # 2. Selects correct recipe
+    # 3. Sends request via bridge
+    # 4. Progress signals emitted
+    # 5. Result populates correctly
+```
+
+**Task X6: Regression — existing chat unchanged**
+
+```python
+def test_chat_mode_default():
+    """Panel starts in chat mode. Chat widget visible. HDA widget hidden."""
+
+def test_chat_mode_unchanged_when_hda_inactive():
+    """Existing chat functionality works identically when HDA mode not active."""
+```
+
+After completing all X1-X6, print the status bar.
+
+---
+
+### ═══ PHASE 3 GATE (FINAL) ═══
+
+```bash
+# Full test suite — THE final word
+pytest tests/ -q --tb=short
+
+# Specific HDA tests
+pytest tests/test_hda_views.py tests/test_hda_controller.py tests/test_hda_bridge.py -v
+
+# Import the whole panel without errors
+python -c "
+from synapse.panel.chat_panel import SynapsePanel
+from synapse.panel.hda_views import DescribeView, BuildingView, ResultView
+from synapse.panel.hda_controller import HdaController
+from synapse.panel.styles import get_hda_stylesheet
+from synapse.routing.hda_recipes import HDA_RECIPES
+print('All imports: OK')
+print(f'Recipes: {len(HDA_RECIPES)}')
+print(f'Stylesheet: {len(get_hda_stylesheet())} chars')
+"
+```
+
+---
+
+## FINAL STATUS BAR (print after Phase 3 gate)
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SYNAPSE HDA PANEL SPRINT — COMPLETE                       ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: FOUNDATION          [██████████] 100% ✓           ║
+║    TOKENS  ◆ T1 ✓  T2 ✓  T3 ✓  T4 ✓                       ║
+║    BRIDGE  ⟡ B1 ✓  B2 ✓  B3 ✓  B4 ✓                       ║
+║                                                              ║
+║  Phase 2: CORE BUILD          [██████████] 100% ✓           ║
+║    VIEWS   ◈ V1 ✓  V2 ✓  V3 ✓  V4 ✓  V5 ✓                 ║
+║    ARCH    ⬡ A1 ✓  A2 ✓  A3 ✓  A4 ✓  A5 ✓                 ║
+║                                                              ║
+║  Phase 3: WIRE + VALIDATE     [██████████] 100% ✓           ║
+║    WIRE    ◇ W1 ✓  W2 ✓  W3 ✓  W4 ✓  W5 ✓                 ║
+║    TEST    ○ X1 ✓  X2 ✓  X3 ✓  X4 ✓  X5 ✓  X6 ✓           ║
+║                                                              ║
+║  Overall: [████████████████████] 100%  (30/30 tasks)        ║
+║                                                              ║
+║  New files:   hda_views.py, hda_controller.py, hda_recipes.py║
+║  Modified:    chat_panel.py, ws_bridge.py, handlers_hda.py   ║
+║  Tests added: test_hda_views.py, test_hda_controller.py,     ║
+║               test_hda_bridge.py                             ║
+║  Regressions: 0                                              ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## SAFETY RULES (ALL AGENTS — NON-NEGOTIABLE)
+
+1. **Undo groups:** All scene mutations wrapped in hou.undos.group()
+2. **Idempotent guards:** Check-before-mutate (don't create if exists)
+3. **Atomic operations:** One mutation per MCP call
+4. **Transaction wrappers:** Rollback on error
+5. **Read before write:** Always read existing code and match conventions
+6. **File ownership:** NEVER write to another agent's files
+7. **Regression zero:** Existing tests must keep passing
+8. **Status reporting:** Print status bar after EVERY task completion

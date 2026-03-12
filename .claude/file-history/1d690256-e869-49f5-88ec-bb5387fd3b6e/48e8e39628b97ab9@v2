@@ -1,0 +1,69 @@
+"""Validate all rendered frames from the farm test."""
+import hou
+import os
+import tempfile
+import json
+
+# Import OIIO for validation (via Synapse handler internally)
+outdir = os.path.join(tempfile.gettempdir(), "synapse_farm")
+files = sorted([f for f in os.listdir(outdir) if f.endswith(".jpg")])
+
+parts = ["Validating {} frames:".format(len(files))]
+all_valid = True
+
+for f in files:
+    path = os.path.join(outdir, f).replace("\\", "/")
+    # Use OIIO directly for validation
+    try:
+        import OpenImageIO as oiio
+        inp = oiio.ImageInput.open(path)
+        if inp is None:
+            parts.append("  {}: FAIL (can't open)".format(f))
+            all_valid = False
+            continue
+        spec = inp.spec()
+        w, h = spec.width, spec.height
+        pixels = inp.read_image("float")
+        inp.close()
+
+        import numpy as np
+        arr = np.array(pixels)
+
+        # Check for NaN/Inf
+        has_nan = np.any(np.isnan(arr))
+        has_inf = np.any(np.isinf(arr))
+
+        # Check mean (black frame / underexposure)
+        mean_val = float(np.mean(arr[:, :, :3]))
+
+        # Check for clipping
+        clip_pct = float(np.mean(arr[:, :, :3] >= 0.99)) * 100
+
+        status = "PASS"
+        issues = []
+        if has_nan:
+            issues.append("NaN")
+            status = "FAIL"
+        if has_inf:
+            issues.append("Inf")
+            status = "FAIL"
+        if mean_val < 0.01:
+            issues.append("black")
+            status = "FAIL"
+        if clip_pct > 5:
+            issues.append("clipping:{:.1f}%".format(clip_pct))
+
+        if status == "FAIL":
+            all_valid = False
+
+        parts.append("  {}: {} ({}x{}, mean={:.3f}{})".format(
+            f, status, w, h, mean_val,
+            " " + ",".join(issues) if issues else ""))
+    except ImportError:
+        parts.append("  {}: SKIP (no OIIO/numpy)".format(f))
+    except Exception as e:
+        parts.append("  {}: ERROR ({})".format(f, str(e)[:60]))
+        all_valid = False
+
+parts.append("Overall: {}".format("ALL VALID" if all_valid else "SOME FAILED"))
+result = "\n".join(parts)

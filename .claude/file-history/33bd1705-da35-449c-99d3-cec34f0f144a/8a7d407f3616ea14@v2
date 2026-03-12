@@ -1,0 +1,21 @@
+# Project Memory
+
+## Key Decisions
+- **Renderer**: Direct GL, not Hydra Storm. `usd-core` pip wheels exclude `UsdImagingGL`. Storm upgrade deferred to Sprint 7+.
+- **Python**: Must use 3.12 venv (usd-core has no 3.14 wheels). Venv at `.venv/`.
+- **Dependencies**: usd-core 25.11, PySide6 6.10.2, PyOpenGL 3.1.10, numpy
+
+## Project Structure
+- `src/viewport.py` — Main app: QMainWindow + StormViewport (QOpenGLWidget) + shaders
+- `src/stage_builder.py` — USD stage factory (cube, ground, dome light)
+- `.venv/` — Python 3.12 venv
+
+## Run Command
+```bash
+cd comfyui_3D_viewport && .venv/Scripts/python src/viewport.py
+```
+
+## Gotchas
+- MSAA disabled (samples=0) to enable direct depth buffer readback. Re-enable with render-to-texture later.
+- Qt silently swallows exceptions in `initializeGL` — always wrap in try/except with explicit print.
+- Output buffering: use `PYTHONUNBUFFERED=1` or `-u` flag when capturing subprocess output.

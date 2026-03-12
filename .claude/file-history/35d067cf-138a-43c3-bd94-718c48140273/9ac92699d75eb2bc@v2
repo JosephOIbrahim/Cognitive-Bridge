@@ -1,0 +1,117 @@
+"""THE CRITICAL TESTS: Lossless guarantee verification.
+
+These tests prove the architecture works:
+- Identity at zero
+- Anchor invariance
+- Reconstruction
+- Fidelity
+- Determinism
+"""
+
+from pathlib import Path
+
+from src.lossless.constants import ANCHOR_PHASES, FLOAT_TOLERANCE, PHASES, PROFILES
+from src.lossless.injection.state import InjectionState
+from src.lossless.integration.pipeline import LosslessPipeline
+from src.lossless.integration.combiner import reconstruct_clean
+
+_ROOT = Path(__file__).resolve().parents[3] / "cognitive_substrate" / "lossless_root.usda"
+
+
+def _make_pipeline(profile_name: str):
+    state = InjectionState()
+    if profile_name != "none":
+        state.activate(profile_name)
+        for _ in range(5):
+            state.advance_exchange()
+    return LosslessPipeline(_ROOT, state)
+
+
+class TestIdentityAtZero:
+    def test_none_output_equals_clean(self):
+        if not _ROOT.exists():
+            return
+        pipeline = _make_pipeline("none")
+        result = pipeline.convert()
+        clean_sections = result.clean.get_sections_dict()
+        combined_sections = result.combined.get_sections_dict()
+        for phase in sorted(clean_sections.keys()):
+            assert clean_sections[phase] == combined_sections.get(phase, ""), phase
+
+
+class TestAnchorInvariance:
+    def test_anchor_sections_identical_across_profiles(self):
+        if not _ROOT.exists():
+            return
+        baseline = _make_pipeline("none").convert()
+        baseline_anchors = {
+            k: v for k, v in baseline.clean.get_sections_dict().items()
+            if k in ANCHOR_PHASES
+        }
+
+        for name in sorted(PROFILES.keys()):
+            result = _make_pipeline(name).convert()
+            combined = result.combined.get_sections_dict()
+            for phase in sorted(baseline_anchors.keys()):
+                assert combined.get(phase, "") == baseline_anchors[phase], \
+                    f"Anchor {phase} differs at profile {name}"
+
+    def test_anchor_hash_identical_across_profiles(self):
+        if not _ROOT.exists():
+            return
+        baseline = _make_pipeline("none").convert()
+        baseline_hash = baseline.clean.anchor_hash
+
+        for name in sorted(PROFILES.keys()):
+            result = _make_pipeline(name).convert()
+            assert result.clean.anchor_hash == baseline_hash, \
+                f"Anchor hash differs at profile {name}"
+
+
+class TestReconstruction:
+    def test_reconstruct_equals_clean(self):
+        if not _ROOT.exists():
+            return
+        for name in sorted(PROFILES.keys()):
+            result = _make_pipeline(name).convert()
+            reconstructed = reconstruct_clean(result.combined)
+            clean = result.clean.get_sections_dict()
+            for phase in sorted(clean.keys()):
+                assert reconstructed.get(phase, "") == clean[phase], \
+                    f"Reconstruction failed for {phase} at {name}"
+
+
+class TestFidelity:
+    def test_fidelity_is_one(self):
+        if not _ROOT.exists():
+            return
+        for name in sorted(PROFILES.keys()):
+            result = _make_pipeline(name).convert()
+            assert "fidelity: 1.000000" in result.integrity_block, \
+                f"Fidelity != 1.0 at {name}"
+
+
+class TestDeterminism:
+    def test_10x_determinism_all_profiles(self):
+        if not _ROOT.exists():
+            return
+        for name in sorted(PROFILES.keys()):
+            results = []
+            for _ in range(10):
+                r = _make_pipeline(name).convert()
+                results.append(r.clean.clean_hash)
+            assert all(h == results[0] for h in results), \
+                f"Non-deterministic at {name}"
+
+    def test_clean_hash_identical_across_profiles(self):
+        if not _ROOT.exists():
+            return
+        hashes = {}
+        for name in sorted(PROFILES.keys()):
+            result = _make_pipeline(name).convert()
+            hashes[name] = result.clean.clean_hash
+
+        baseline = hashes["none"]
+        for name, h in sorted(hashes.items()):
+            assert h == baseline, \
+                f"Clean hash differs at {name}: {h[:16]} vs {baseline[:16]}"

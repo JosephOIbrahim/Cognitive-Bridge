@@ -1,0 +1,498 @@
+import type { Metadata } from 'next';
+import Image from 'next/image';
+
+export const metadata: Metadata = {
+  title: 'Info | Joseph Ibrahim',
+  description: 'VFX Lighting Technical Director with 16 years experience across feature films, commercials, and experimental AI workflows.',
+};
+
+export default function InfoPage() {
+  return (
+    <div
+      className="min-h-screen"
+      style={{ backgroundColor: '#141414' }}
+    >
+      <main
+        className="mx-auto pb-32"
+        style={{
+          maxWidth: 'var(--max-content-width)',
+          paddingTop: 'clamp(100px, 8vw + 60px, 180px)',
+          paddingLeft: 'var(--side-padding)',
+          paddingRight: 'var(--side-padding)'
+        }}
+      >
+        <div>
+          {/* Contact Section - Pentagram style: front-loaded, generous spacing */}
+          <section style={{ marginBottom: '72px' }}>
+            <div className="grid md:grid-cols-3 gap-x-16 gap-y-10" style={{ maxWidth: '720px' }}>
+              {/* Email */}
+              <div>
+                <p
+                  className="text-xs uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    letterSpacing: '0.18em',
+                    marginBottom: '14px'
+                  }}
+                >
+                  Email
+                </p>
+                <a
+                  href="mailto:jomar.ibrahim@gmail.com"
+                  className="hover:opacity-70 transition-opacity"
+                  style={{
+                    color: '#d0d0d0',
+                    fontFamily: 'var(--font-open-sans)',
+                    fontSize: '16px',
+                    fontWeight: 400
+                  }}
+                >
+                  jomar.ibrahim@gmail.com
+                </a>
+              </div>
+
+              {/* LinkedIn */}
+              <div>
+                <p
+                  className="text-xs uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    letterSpacing: '0.18em',
+                    marginBottom: '14px'
+                  }}
+                >
+                  LinkedIn
+                </p>
+                <a
+                  href="https://www.linkedin.com/in/josephibrahim/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:opacity-70 transition-opacity"
+                  style={{
+                    color: '#d0d0d0',
+                    fontFamily: 'var(--font-open-sans)',
+                    fontSize: '16px',
+                    fontWeight: 400
+                  }}
+                >
+                  linkedin.com/in/josephibrahim
+                </a>
+              </div>
+
+              {/* Resume */}
+              <div>
+                <p
+                  className="text-xs uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    letterSpacing: '0.18em',
+                    marginBottom: '14px'
+                  }}
+                >
+                  Resume
+                </p>
+                <a
+                  href="/JosephIbrahim_Resume.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:opacity-70 transition-opacity"
+                  style={{
+                    color: '#d0d0d0',
+                    fontFamily: 'var(--font-open-sans)',
+                    fontSize: '16px',
+                    fontWeight: 400
+                  }}
+                >
+                  Download PDF
+                </a>
+              </div>
+            </div>
+          </section>
+
+          {/* Portrait - Editorial style: introduces the person before the bio */}
+          <section style={{ marginBottom: '72px' }}>
+            <div
+              style={{
+                width: 'clamp(200px, 25vw, 320px)'
+              }}
+            >
+              <Image
+                src="/portrait.jpg"
+                alt="Joseph Ibrahim"
+                width={320}
+                height={400}
+                style={{
+                  width: '100%',
+                  height: 'auto',
+                  filter: 'contrast(1.05)'
+                }}
+                priority
+              />
+            </div>
+          </section>
+
+          {/* Bio Section - Pentagram style: generous line-height, better paragraph rhythm */}
+          <section style={{ marginBottom: '88px' }}>
+            <div style={{ maxWidth: '780px' }}>
+              {/* Bio paragraphs - Editorial serif quote style */}
+              <p
+                className="text-lg md:text-xl"
+                style={{
+                  color: '#9a9a9a',
+                  fontFamily: 'var(--font-lora)',
+                  fontWeight: 400,
+                  fontStyle: 'italic',
+                  lineHeight: 1.75,
+                  letterSpacing: '0.01em',
+                  marginBottom: '48px'
+                }}
+              >
+                VFX Lighting Technical Director specializing in the intersection of traditional cinematography, real-time rendering, and generative AI. With 16 years across feature films, commercials, and experimental workflows, I approach lighting as both a physical phenomenon and a computational problem—understanding light through the lens of natural behavior and algorithmic generation.
+              </p>
+
+              <p
+                className="text-lg md:text-xl"
+                style={{
+                  color: '#9a9a9a',
+                  fontFamily: 'var(--font-lora)',
+                  fontWeight: 400,
+                  fontStyle: 'italic',
+                  lineHeight: 1.75,
+                  letterSpacing: '0.01em',
+                  marginBottom: '48px'
+                }}
+              >
+                My work spans Disney feature films at MPC Montreal, tier-1 brand commercials for Apple and Nike, and experimental AI research recycling 750+ professional photography assignments as training data for generative lighting models.
+              </p>
+
+              <p
+                className="text-lg md:text-xl"
+                style={{
+                  color: '#9a9a9a',
+                  fontFamily: 'var(--font-lora)',
+                  fontWeight: 400,
+                  fontStyle: 'italic',
+                  lineHeight: 1.75,
+                  letterSpacing: '0.01em'
+                }}
+              >
+                Beyond production work, I develop custom Houdini HDAs for procedural workflows, mentor emerging artists through Access:VFX programs, and build integration bridges between generative AI systems and traditional VFX pipelines.
+              </p>
+            </div>
+          </section>
+
+          {/* Experience Grid - Pentagram style: more generous grid gaps */}
+          <section style={{ marginBottom: '88px' }}>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-x-16 gap-y-16">
+              {/* Studios */}
+              <div>
+                <p
+                  className="uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    letterSpacing: '0.18em',
+                    marginBottom: '34px'
+                  }}
+                >
+                  Studios
+                </p>
+                <ul className="space-y-2.5">
+                  {['MPC Montreal', 'Framestore', 'The Mill', 'Apple Marcom', 'Hornet Animation', 'Buck', 'Brand New School', 'Method Studios', 'Imaginary Forces'].map((studio) => (
+                    <li
+                      key={studio}
+                      style={{
+                        color: '#9a9a9a',
+                        fontFamily: 'var(--font-open-sans)',
+                        fontWeight: 300,
+                        fontSize: '16px',
+                        lineHeight: 1.5,
+                        letterSpacing: '-0.01em'
+                      }}
+                    >
+                      {studio}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Clients */}
+              <div>
+                <p
+                  className="uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    letterSpacing: '0.18em',
+                    marginBottom: '34px'
+                  }}
+                >
+                  Select Clients
+                </p>
+                <ul className="space-y-2.5">
+                  {['Walt Disney Pictures', 'Apple', 'Nike', 'Warner Bros. / LEGO', 'Hershey', 'Mac Miller Estate'].map((client) => (
+                    <li
+                      key={client}
+                      style={{
+                        color: '#9a9a9a',
+                        fontFamily: 'var(--font-open-sans)',
+                        fontWeight: 300,
+                        fontSize: '16px',
+                        lineHeight: 1.5,
+                        letterSpacing: '-0.01em'
+                      }}
+                    >
+                      {client}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Notable Projects */}
+              <div>
+                <p
+                  className="uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    letterSpacing: '0.18em',
+                    marginBottom: '34px'
+                  }}
+                >
+                  Notable Projects
+                </p>
+                <ul className="space-y-2.5">
+                  {[
+                    "Disney's Cinderella (2015)",
+                    'Mac Miller: Balloonerism',
+                    '100+ Brand Commercials',
+                    'Lego Dimensions Cinematics'
+                  ].map((project) => (
+                    <li
+                      key={project}
+                      style={{
+                        color: '#9a9a9a',
+                        fontFamily: 'var(--font-open-sans)',
+                        fontWeight: 300,
+                        fontSize: '16px',
+                        lineHeight: 1.5,
+                        letterSpacing: '-0.01em'
+                      }}
+                    >
+                      {project}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Achievements */}
+              <div>
+                <p
+                  className="uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    letterSpacing: '0.18em',
+                    marginBottom: '34px'
+                  }}
+                >
+                  Achievements
+                </p>
+                <ul className="space-y-2.5">
+                  {[
+                    '750+ Photography Assignments',
+                    'HDAs Adopted by 3 Studios',
+                    'Mentored 6 Junior Artists',
+                    'Access:VFX Mentor'
+                  ].map((achievement) => (
+                    <li
+                      key={achievement}
+                      style={{
+                        color: '#9a9a9a',
+                        fontFamily: 'var(--font-open-sans)',
+                        fontWeight: 300,
+                        fontSize: '16px',
+                        lineHeight: 1.5,
+                        letterSpacing: '-0.01em'
+                      }}
+                    >
+                      {achievement}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          {/* Technical Capabilities - Pentagram style */}
+          <section style={{ marginBottom: '88px' }}>
+            <div className="grid md:grid-cols-3 gap-x-16 gap-y-16">
+              {/* Offline Rendering */}
+              <div>
+                <p
+                  className="uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    letterSpacing: '0.18em',
+                    marginBottom: '34px'
+                  }}
+                >
+                  Offline Rendering
+                </p>
+                <ul className="space-y-2.5">
+                  {['Sidefx Houdini', 'Solaris / USD', 'Karma XPU', 'Katana', 'Renderman', 'Nuke'].map((tech) => (
+                    <li
+                      key={tech}
+                      style={{
+                        color: '#9a9a9a',
+                        fontFamily: 'var(--font-open-sans)',
+                        fontWeight: 300,
+                        fontSize: '16px',
+                        lineHeight: 1.5,
+                        letterSpacing: '-0.01em'
+                      }}
+                    >
+                      {tech}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Real-time */}
+              <div>
+                <p
+                  className="uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    letterSpacing: '0.18em',
+                    marginBottom: '34px'
+                  }}
+                >
+                  Real-time
+                </p>
+                <ul className="space-y-2.5">
+                  {['Unreal Engine 5', 'Lumen', 'Nanite', 'Path Tracing', 'Niagara VFX'].map((tech) => (
+                    <li
+                      key={tech}
+                      style={{
+                        color: '#9a9a9a',
+                        fontFamily: 'var(--font-open-sans)',
+                        fontWeight: 300,
+                        fontSize: '16px',
+                        lineHeight: 1.5,
+                        letterSpacing: '-0.01em'
+                      }}
+                    >
+                      {tech}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* AI / Experimental */}
+              <div>
+                <p
+                  className="uppercase"
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    letterSpacing: '0.18em',
+                    marginBottom: '34px'
+                  }}
+                >
+                  AI / Experimental
+                </p>
+                <ul className="space-y-2.5">
+                  {['ComfyUI', 'Stable Diffusion', 'ControlNet', 'Medium Format Photography', 'Film Lighting Techniques'].map((tech) => (
+                    <li
+                      key={tech}
+                      style={{
+                        color: '#9a9a9a',
+                        fontFamily: 'var(--font-open-sans)',
+                        fontWeight: 300,
+                        fontSize: '16px',
+                        lineHeight: 1.5,
+                        letterSpacing: '-0.01em'
+                      }}
+                    >
+                      {tech}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          {/* Availability & Expertise - Pentagram style: generous closing section */}
+          <section>
+            <div style={{ maxWidth: '600px' }}>
+              {/* Availability */}
+              <p
+                style={{
+                  color: '#9a9a9a',
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '17px',
+                  lineHeight: 1.7,
+                  letterSpacing: '0.01em',
+                  marginBottom: '48px'
+                }}
+              >
+                Available for freelance, consulting, and full-time opportunities.
+              </p>
+
+              {/* Expertise Tags - Pentagram style: subtle, refined */}
+              <div className="flex flex-wrap" style={{ gap: '10px' }}>
+                {[
+                  'Lighting TD',
+                  'Look Development',
+                  'Real-time Rendering',
+                  'Procedural Workflows',
+                  'USD Pipeline',
+                  'AI Integration',
+                  'Tool Development',
+                  'Mentorship'
+                ].map((skill) => (
+                  <span
+                    key={skill}
+                    style={{
+                      color: '#7a7a7a',
+                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      borderRadius: '3px',
+                      fontFamily: 'var(--font-open-sans)',
+                      fontSize: '13px',
+                      padding: '8px 14px'
+                    }}
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}

@@ -1,0 +1,244 @@
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-175-    tool_status = QtCore.Signal(str, str)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-176-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:177:    _API_HOST = "api.anthropic.com"
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:178:    _API_PATH = "/v1/messages"
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-179-    _API_VERSION = "2023-06-01"
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-180-    _MODEL = "claude-sonnet-4-20250514"
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-181-    _MAX_TOKENS = 4096
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-182-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:183:    def __init__(self, messages, system_prompt="", parent=None):
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-184-        super().__init__(parent)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:185:        self._messages = copy.deepcopy(messages)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-186-        self._system = system_prompt
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-187-        self._abort = False
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-190-        self._abort = True
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-191-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:192:    def get_messages(self):
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:193:        return copy.deepcopy(self._messages)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-194-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-195-    def run(self):
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-204-                "max_tokens": self._MAX_TOKENS,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-205-                "stream": True,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:206:                "messages": self._messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-207-            }
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-208-            if self._system:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-221-                        "Content-Type": "application/json",
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-222-                        "x-api-key": api_key,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:223:                        "anthropic-version": self._API_VERSION,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-224-                    },
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-225-                )
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-283-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-284-        # Chat state
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:285:        self._messages = []
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-286-        self._worker = None
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-287-        self._tool_executor = None  # lazy init
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-933-        try:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-934-            from synapse.panel.prompt_to_hda import (
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:935:                HDA_DESIGN_PROMPT, parse_hda_command, build_hda_messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-936-            )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-937-            from synapse.panel.system_prompt import build_system_prompt
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-946-        system_prompt = self._build_memory_system_prompt(system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-947-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:948:        # Build messages
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-949-        parsed = parse_hda_command("/hda " + description)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:950:        messages = build_hda_messages(parsed["description"], context)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-951-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:952:        self._launch_worker(messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-953-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-954-    # ── Chat Methods ───────────────────────────────────────
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1137-        )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1138-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1139:    def _launch_worker(self, messages, system_prompt):
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1140-        """Launch a ClaudeWorker with standard signal wiring."""
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1141-        self._send_btn.setEnabled(False)
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1152-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1153-        self._worker = WorkerClass(
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1154:            messages=messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1155-            system_prompt=system_prompt,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1156-            parent=self,
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1223-        try:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1224-            from synapse.panel.performance_profiler import (
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1225:                profile_network, format_profile_html, build_profile_messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1226-            )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1227-            report = profile_network(network)
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1238-            # If bottlenecks found, launch Claude worker for deeper analysis
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1239-            if report.bottlenecks:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1240:                messages = build_profile_messages(report)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1241-                system_prompt = self._build_memory_system_prompt(
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1242-                    "You are SYNAPSE, a Houdini performance advisor."
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1243-                )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1244:                self._launch_worker(messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1245-        except ImportError:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1246-            self._sys("Profiler unavailable (synapse.panel.performance_profiler not found)")
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1253-        try:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1254-            from synapse.panel.save_shot import save_shot, format_save_html
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1255:            snapshot = save_shot(note, self._messages, self._login_data)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1256-            self._chat_display.append(format_save_html(snapshot))
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1257-            sb = self._chat_display.verticalScrollBar()
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1308-            from synapse.panel.explain_mode import (
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1309-                gather_node_context, gather_network_context,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1310:                build_explain_prompt, build_explain_messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1311-            )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1312-        except ImportError as e:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1365-        # Build prompts and launch worker
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1366-        explain_prompt = build_explain_prompt(context, mode)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1367:        messages = build_explain_messages(context, mode)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1368-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1369:        # Separate system message from user messages
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1370-        sys_content = explain_prompt
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1371:        user_messages = [m for m in messages if m["role"] != "system"]
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1372-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1373-        try:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1378-        system_prompt = self._build_memory_system_prompt(base + "\n\n" + sys_content)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1379-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1380:        self._launch_worker(user_messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1381-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1382-        # Log to journal
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1419-            from synapse.panel.vex_tutor import (
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1420-                parse_vex_command, VEX_REFERENCE,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1421:                gather_wrangle_context, build_vex_messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1422-                format_vex_reference_html,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1423-            )
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1469-            return
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1470-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1471:        # Build messages and launch Claude
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1472:        messages = build_vex_messages(mode, vex_arg, context)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1473:        # Separate system from user messages
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1474:        sys_msgs = [m for m in messages if m["role"] == "system"]
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1475:        user_msgs = [m for m in messages if m["role"] != "system"]
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1476-        sys_content = sys_msgs[0]["content"] if sys_msgs else ""
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1477-
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1500-                parse_recipe_command, format_categories_html,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1501-                format_category_html, format_recipe_html,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1502:                search_recipes, build_recipe_messages, get_recipe,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1503-            )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1504-        except ImportError as e:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1574-            context = self._gather_context()
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1575-            parent_path = context.get("network", "/obj/geo1")
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1576:            messages = build_recipe_messages(
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1577-                category, recipe_name, {"parent_path": parent_path}
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1578-            )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1579:            if not messages:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1580:                self._sys("Could not build messages for this recipe.")
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1581-                return
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1582-
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1588-            system_prompt = self._build_memory_system_prompt(base)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1589-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1590:            self._launch_worker(messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1591-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1592-            self._log_activity(
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1650-                from synapse.panel.apex_explainer import (
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1651-                    gather_apex_context, build_apex_explain_prompt,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1652:                    build_apex_messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1653-                )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1654-            except ImportError as e:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1675-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1676-            explain_prompt = build_apex_explain_prompt(context)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1677:            messages = build_apex_messages(context)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1678-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1679-            try:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1684-            system_prompt = self._build_memory_system_prompt(base + "\n\n" + explain_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1685-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1686:            self._launch_worker(messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1687-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1688-            try:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1696-                from synapse.panel.apex_trace import (
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1697-                    trace_apex_graph, format_apex_trace_html,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1698:                    build_apex_trace_prompt, build_apex_trace_messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1699-                )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1700-            except ImportError as e:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1723-            # Also send to Claude for interpretation
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1724-            trace_prompt = build_apex_trace_prompt(trace)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1725:            messages = build_apex_trace_messages(trace)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1726-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1727-            try:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1732-            system_prompt = self._build_memory_system_prompt(base + "\n\n" + trace_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1733-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1734:            self._launch_worker(messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1735-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1736-            self._log_activity("APEX trace: " + trace.summary, "info")
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1775-            try:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1776-                from synapse.panel.apex_recipes import (
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1777:                    get_apex_recipe, build_apex_recipe_messages,
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1778-                )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1779-            except ImportError as e:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1793-            context = self._gather_context()
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1794-            parent_path = context.get("network", "/obj/geo1")
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1795:            messages = build_apex_recipe_messages(
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1796-                recipe_name, {"parent_path": parent_path}
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1797-            )
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1798:            if not messages:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1799:                self._sys("Could not build messages for this recipe.")
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1800-                return
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1801-
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1807-            system_prompt = self._build_memory_system_prompt(base)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1808-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1809:            self._launch_worker(messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1810-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1811-            self._log_activity(
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1827-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1828-            overview_prompt = build_apex_overview_prompt()
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1829:            messages = [{"role": "user", "content": "Give me an introduction to APEX in Houdini 21."}]
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1830-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1831-            try:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1836-            system_prompt = self._build_memory_system_prompt(base + "\n\n" + overview_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1837-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1838:            self._launch_worker(messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1839-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1840-            try:
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1974-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1975-        # Append to conversation history
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1976:        self._messages.append({"role": "user", "content": user_text})
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1977-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1978-        # Build system prompt
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1987-        system_prompt = self._build_memory_system_prompt(system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1988-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:1989:        self._launch_worker(self._messages, system_prompt)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1990-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-1991-    def _on_token(self, text):
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-2012-        # Sync conversation history from the worker (includes tool loop turns)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-2013-        if self._worker:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:2014:            self._messages = self._worker.get_messages()
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-2015-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-2016-    def _on_error(self, error_msg):
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-2150-            # Bookmark the last assistant message
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-2151-            preview = ""
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:2152:            msg_idx = len(self._messages) - 1
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:2153:            if self._messages:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:2154:                last = self._messages[-1]
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-2155-                if isinstance(last.get("content"), str):
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-2156-                    preview = last["content"][:100]

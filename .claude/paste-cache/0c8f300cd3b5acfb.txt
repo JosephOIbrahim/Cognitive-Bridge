@@ -1,0 +1,32 @@
+Here's the natural progression:
+
+  Phase 1: Fix (resolve backlog)
+
+  11 open items, prioritized:
+
+  ┌──────────┬───────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Priority │ Count │                                                            Key Items                                                             │
+  ├──────────┼───────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ CRITICAL │ 1     │ BL-008: assetreference invisible in Karma                                                                                        │
+  ├──────────┼───────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ HIGH     │ 4     │ BL-006: execute_python rollback broken, BL-007: render no EXR to disk, BL-009: NaN/Inf guard, BL-011: create_material path wrong │
+  ├──────────┼───────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ MEDIUM   │ 4     │ BL-004: set_parm tuple mode, BL-005: batch undo broken, BL-010: Lighting Law warning                                             │
+  ├──────────┼───────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ HIGH     │ 2     │ BL-001: no undo/redo tool, BL-002: read_material empty for MaterialX                                                             │
+  └──────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Some are code fixes (BL-009, BL-010, BL-011 — we can implement these now). Others are deeper investigations (BL-008 assetreference/Karma — may be a
+  Houdini limitation we document rather than fix).
+
+  Phase 2: Cycle 4 (regression)
+
+  Re-run scenarios from Cycles 1-3 to confirm fixes actually reduced friction. Measure improvement delta.
+
+  Phase 3: Cycle 5+ (expansion)
+
+  New scenarios targeting gaps we haven't tested yet (e.g., TOPS/PDG workflows, animation/keyframes, memory system reliability).
+
+  ---
+  My recommendation: tackle the fixable backlog items first (BL-009 NaN/Inf guard, BL-010 Lighting Law warning, BL-011 create_material path fix, BL-006
+  rollback fix) — then run Cycle 4 as regression. Want me to start resolving the backlog?

@@ -1,0 +1,95 @@
+# Session Handover
+**Date:** 2026-02-27 16:00
+**Project:** Cinema Camera Rig v4.0 (Houdini 21)
+**Working directory:** C:\Users\User\OneDrive\Documents\houdini21.0
+
+## What Was Done This Session
+- Re-verified Synapse bridge connection (ws://localhost:9999/synapse, protocol 4.0.0)
+- Ran synapse_preflight() successfully (Houdini 21.0.596, Copernicus available)
+- Discovered WOLFRAM_APP_ID is still placeholder "YOUR-APP-ID-HERE" in packages/cinema_camera_rig.json
+- Previous session (f00edb4) built and installed all 4 HDAs via Synapse
+
+## Current Task: User's 5-Step Plan (INCOMPLETE)
+The user requested these steps in order, stopping after each to report:
+
+1. **DONE** - Connect to Houdini via Synapse, run synapse_preflight()
+2. **BLOCKED** - Wolfram phases W1-W6 (validate optics, fit squeeze, fit pupil shift, calibrate biomechanics, generate VEX header) — needs real WOLFRAM_APP_ID
+3. **NOT STARTED** - Execute all 4 HDA builders with Wolfram-calibrated values
+4. **NOT STARTED** - Run integration tests through Synapse
+5. **NOT STARTED** - Build top-level cinema::camera_rig::2.0 orchestrator HDA
+6. **NOT STARTED** - "THEN PROCEED TO STEP 11" (integration testing from the 13-step plan)
+
+### WOLFRAM_APP_ID Issue
+- packages/cinema_camera_rig.json has "YOUR-APP-ID-HERE" placeholder
+- User said "WOLFRAM_APP_ID is set" but the file still has placeholder
+- Need user to provide real API key, OR skip Wolfram phases and use non-calibrated values
+- If skipping Wolfram: builders already work with derive_biomechanics() fallback (no calibration file needed)
+
+### What to do if skipping Wolfram (W1-W6):
+- Step 3 can proceed immediately — builders already work and were tested last session
+- The biomechanics.py derive_biomechanics_calibrated() gracefully falls back to derive_biomechanics() when no calibration file exists
+- Wolfram upgrades (fit_squeeze_breathing, fit_pupil_shift, calibrate_biomechanics, validate_optics) are all optional enhancements
+
+### What to do if Wolfram key IS provided:
+Run the wolfram upgrade scripts via Synapse in this order:
+```python
+# W1: Validate optics formulas
+from cinema_camera.wolfram_upgrades.validate_optics import validate_all_optics
+results = validate_all_optics()
+
+# W2-W3: Fit squeeze breathing curves (needs lens JSON data)
+from cinema_camera.wolfram_upgrades.fit_squeeze_breathing import fit_squeeze_curves
+fit_squeeze_curves()
+
+# W4: Fit pupil shift curves
+from cinema_camera.wolfram_upgrades.fit_pupil_shift import fit_pupil_shift_curves
+fit_pupil_shift_curves()
+
+# W5: Calibrate biomechanics (ODE solving)
+from cinema_camera.wolfram_upgrades.calibrate_biomechanics import calibrate_biomechanics
+calibrate_biomechanics()
+
+# W6: Generated VEX header is done by fit_squeeze_curves() (libcinema_optics_fitted.h)
+```
+
+## Step 5: Orchestrator HDA (cinema::camera_rig::2.0)
+This is the top-level HDA that wires together:
+- USD camera rig (build_usd_camera_rig)
+- CVEX lens shader (karma_lens_shader.bind_lens_shader)
+- CHOPs biomechanics HDA
+- COP anamorphic flare HDA
+- COP sensor noise HDA
+- COP STMap AOV HDA
+- Render product with EXR metadata
+
+Pattern: subnet in /stage → createDigitalAsset → parameter interface that drives all sub-HDAs
+
+## Synapse Bridge Protocol (CONFIRMED WORKING)
+- Endpoint: ws://localhost:9999/synapse
+- Client: ~/.synapse/agent/synapse_ws.py (SynapseClient class)
+- execute_python: set `result` variable, returned in response
+- Must set CINEMA_CAMERA_PATH in Houdini session env before running builders
+- Must `importlib.reload(mod)` to pick up code changes
+- Must `hou.hda.installFile(path)` after building HDAs
+- ignore_external_references=True for CHOPs HDA (ch() expressions)
+
+## Builder Fixes (DONE, committed f00edb4)
+- Subnet pattern for all createDigitalAsset calls
+- CHOP parms: dampingk, lag1, period, function (not damping, lag, freq, type)
+- COP: cop2net at /obj, vopcop2filter/vopcop2gen + snippet VOP, ch("../../param")
+- setDisplayFlag/setExportFlag (not setRenderFlag) for CHOPs
+
+## Git State
+- Latest: f00edb4 — clean, pushed to GitHub main
+- Remote: https://github.com/JosephOIbrahim/Houdini_Camera_Rig_System.git
+
+## Key File Paths
+- `otls/` — 4 built HDA files
+- `scripts/python/cinema_camera/builders/` — 4 builder scripts (fixed)
+- `scripts/python/cinema_camera/wolfram_upgrades/` — 4 Wolfram upgrade scripts
+- `scripts/python/cinema_camera/wolfram_oracle.py` — Wolfram API client
+- `scripts/python/cinema_camera/synapse_preflight.py` — preflight check
+- `scripts/python/cinema_camera/usd_builder.py` — USD camera rig builder
+- `scripts/python/cinema_camera/karma_lens_shader.py` — CVEX lens shader binding
+- `run_steps_8_10.py` — Synapse execution script (working)
+- `packages/cinema_camera_rig.json` — Houdini package descriptor (WOLFRAM_APP_ID placeholder)

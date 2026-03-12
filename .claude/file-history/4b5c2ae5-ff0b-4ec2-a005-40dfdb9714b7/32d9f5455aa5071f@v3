@@ -1,0 +1,15 @@
+/** Image path helpers -- reads from auto-generated manifest */
+
+import { IMAGE_MANIFEST } from "./image-manifest";
+
+export function heroImage(slug: string): string | null {
+  return IMAGE_MANIFEST[slug]?.hero ?? null;
+}
+
+export function detailImages(slug: string): string[] {
+  return IMAGE_MANIFEST[slug]?.details ?? [];
+}
+
+export function detailCount(slug: string): number {
+  return IMAGE_MANIFEST[slug]?.details.length ?? 0;
+}

@@ -1,0 +1,17 @@
+"""Clean channel: injection-blind USDA-to-markdown conversion.
+
+Orchestrates the injection-blind pipeline: parse USDA files, resolve
+sublayer composition via LIVRPS, render to per-phase markdown sections,
+and compute SHA256 integrity hashes.
+
+This channel produces identical output regardless of injection state.
+The clean signal serves as the baseline for delta computation and as
+the reconstruction target for lossless recovery.
+"""
+
+from src.lossless.clean_channel.converter import (
+    CleanConversionResult,
+    CleanConverter,
+)
+
+__all__ = ["CleanConversionResult", "CleanConverter"]

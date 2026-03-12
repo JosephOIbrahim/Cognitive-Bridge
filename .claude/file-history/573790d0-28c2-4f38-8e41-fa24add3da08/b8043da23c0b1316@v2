@@ -1,0 +1,181 @@
+"""
+Stage 4: OCR detected code frames to extract VEX text.
+
+Uses pytesseract with code-optimized settings:
+- PSM 6 (assume uniform block of text)
+- Monospace font hints
+- Custom character whitelist for VEX syntax
+
+Usage: python scripts/04_ocr_code.py
+
+Output: data/ocr/{episode}.json
+"""
+
+import os
+import pytesseract
+import cv2
+import numpy as np
+import json
+from pathlib import Path
+from tqdm import tqdm
+
+# On Windows, pytesseract needs the explicit path to tesseract.exe
+_tess_cmd = os.environ.get("TESSERACT_CMD")
+if not _tess_cmd:
+    _default = Path("C:/Program Files/Tesseract-OCR/tesseract.exe")
+    if _default.exists():
+        _tess_cmd = str(_default)
+if _tess_cmd:
+    pytesseract.pytesseract.tesseract_cmd = _tess_cmd
+
+DATA_DIR = Path("data")
+CODE_DIR = DATA_DIR / "code_frames"
+OCR_DIR = DATA_DIR / "ocr"
+OCR_DIR.mkdir(parents=True, exist_ok=True)
+
+# Tesseract config optimized for code
+# PSM 6 = Assume a single uniform block of text
+# OEM 3 = Default (LSTM + legacy)
+TESS_CONFIG = (
+    "--psm 6 --oem 3 "
+    '-c tessedit_char_whitelist='
+    'abcdefghijklmnopqrstuvwxyz'
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    '0123456789'
+    '@#$%^&*()_+-={}[]|;:,.<>?/~` '
+    "\"'"
+)
+
+
+def preprocess_for_ocr(frame):
+    """
+    Preprocess frame to maximize OCR accuracy on code.
+
+    Strategy:
+    1. Crop to likely code region (if identifiable)
+    2. Convert to grayscale
+    3. Invert (dark bg -> white bg for Tesseract)
+    4. Threshold to clean up
+    5. Scale up for better character recognition
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Find the dark code region
+    dark_mask = gray < 100
+
+    # Find bounding box of dark region
+    coords = np.column_stack(np.where(dark_mask))
+    if len(coords) < 100:
+        # Not enough dark area, process whole frame
+        roi = gray
+    else:
+        y_min, x_min = coords.min(axis=0)
+        y_max, x_max = coords.max(axis=0)
+        # Add small padding
+        pad = 10
+        y_min = max(0, y_min - pad)
+        x_min = max(0, x_min - pad)
+        y_max = min(gray.shape[0], y_max + pad)
+        x_max = min(gray.shape[1], x_max + pad)
+        roi = gray[y_min:y_max, x_min:x_max]
+
+    # Invert (Tesseract expects dark text on light background)
+    inverted = cv2.bitwise_not(roi)
+
+    # Adaptive threshold for clean binary image
+    binary = cv2.adaptiveThreshold(
+        inverted,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        blockSize=15,
+        C=8,
+    )
+
+    # Scale up 2x for better OCR
+    h, w = binary.shape
+    scaled = cv2.resize(binary, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+
+    return scaled
+
+
+def ocr_frame(frame_path):
+    """OCR a single code frame."""
+    frame = cv2.imread(str(frame_path))
+    if frame is None:
+        return None, 0.0
+
+    processed = preprocess_for_ocr(frame)
+
+    # Get detailed OCR data (includes confidence per word)
+    ocr_data = pytesseract.image_to_data(
+        processed, config=TESS_CONFIG, output_type=pytesseract.Output.DICT
+    )
+
+    # Extract text and calculate mean confidence
+    confidences = []
+    for i, text in enumerate(ocr_data["text"]):
+        conf = int(ocr_data["conf"][i])
+        if conf > 0 and text.strip():
+            confidences.append(conf / 100.0)
+
+    # Also get the full text block (preserves line structure)
+    full_text = pytesseract.image_to_string(processed, config=TESS_CONFIG)
+
+    mean_conf = float(np.mean(confidences)) if confidences else 0.0
+
+    return full_text.strip(), round(mean_conf, 3)
+
+
+def process_episode(episode_dir):
+    """OCR all code frames in an episode."""
+    detections_file = episode_dir / "detections.json"
+    if not detections_file.exists():
+        return []
+
+    with open(detections_file) as f:
+        detections = json.load(f)
+
+    results = []
+    for det in detections:
+        frame_path = episode_dir / det["frame"]
+        if not frame_path.exists():
+            continue
+
+        code_text, confidence = ocr_frame(frame_path)
+        if code_text:
+            results.append({
+                "frame": det["frame"],
+                "timestamp_sec": det["timestamp_sec"],
+                "timestamp_fmt": det["timestamp_fmt"],
+                "code_text": code_text,
+                "ocr_confidence": confidence,
+                "detection_confidence": det["confidence"],
+                "needs_review": confidence < 0.7,
+            })
+
+    return results
+
+
+def main():
+    episodes = sorted([d for d in CODE_DIR.iterdir() if d.is_dir()])
+
+    for episode_dir in tqdm(episodes, desc="OCR processing"):
+        results = process_episode(episode_dir)
+
+        output_file = OCR_DIR / f"{episode_dir.name}.json"
+        with open(output_file, "w") as f:
+            json.dump(results, f, indent=2, sort_keys=False)
+
+        low_conf = sum(1 for r in results if r["needs_review"])
+        print(f"  {episode_dir.name}: {len(results)} code blocks, {low_conf} need review")
+
+    print(
+        "\nReview items flagged with needs_review=true.\n"
+        "Low OCR confidence often means the code was partially visible "
+        "or had syntax highlighting artifacts."
+    )
+
+
+if __name__ == "__main__":
+    main()

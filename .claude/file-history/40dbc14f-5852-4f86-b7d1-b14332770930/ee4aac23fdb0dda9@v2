@@ -1,0 +1,234 @@
+"""Pipeline orchestrator for VEX corpus.
+
+Runs all pipeline stages in order:
+  1. Scrape sources (cgwiki, sidefx, local)
+  2. Merge into unified corpus
+  3. Enrich (VEX extraction, auto-tagging, prerequisites)
+  4. Quality checks (dedup report)
+
+Usage:
+    python scripts/run_pipeline.py                    # Run everything
+    python scripts/run_pipeline.py --stage merge      # Run from merge onward
+    python scripts/run_pipeline.py --stage enrich     # Run enrichment only
+    python scripts/run_pipeline.py --dry-run          # Preview all stages
+"""
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# Pipeline stage order
+STAGES = ["scrape", "merge", "enrich", "quality"]
+
+
+def _log(msg: str):
+    print(f"[pipeline] {msg}")
+
+
+def _run_timed(label: str, func, **kwargs) -> tuple:
+    """Run a function with timing. Returns (result, elapsed_seconds)."""
+    _log(f"Starting: {label}")
+    t0 = time.time()
+    try:
+        result = func(**kwargs)
+        elapsed = time.time() - t0
+        _log(f"Completed: {label} ({elapsed:.1f}s)")
+        return result, elapsed
+    except Exception as e:
+        elapsed = time.time() - t0
+        _log(f"FAILED: {label} ({elapsed:.1f}s) - {e}")
+        raise
+
+
+# ---------------------------------------------------------------------------
+# Stage: Scrape
+# ---------------------------------------------------------------------------
+
+def stage_scrape(dry_run: bool = False, sources: list[str] | None = None):
+    """Run all scrapers."""
+    timings = {}
+
+    # cgwiki
+    if not sources or "cgwiki" in sources:
+        from scripts.scrapers.scrape_cgwiki import scrape_all
+        if dry_run:
+            _log("[dry-run] Would scrape cgwiki VEX pages")
+        else:
+            _, elapsed = _run_timed("cgwiki scraper", scrape_all)
+            timings["cgwiki"] = elapsed
+
+    # sidefx
+    if not sources or "sidefx" in sources:
+        from scripts.scrapers.scrape_sidefx_vex import scrape_all as scrape_sidefx
+        if dry_run:
+            _log("[dry-run] Would scrape SideFX VEX reference")
+        else:
+            _, elapsed = _run_timed("sidefx scraper", scrape_sidefx)
+            timings["sidefx"] = elapsed
+
+    # local
+    if not sources or "local" in sources:
+        from scripts.ingest_local import ingest_directory
+        if dry_run:
+            _log("[dry-run] Would ingest local markdown files")
+        else:
+            local_dir = PROJECT_ROOT / "data" / "blueprints"
+            if local_dir.exists():
+                _, elapsed = _run_timed("local ingester", ingest_directory, input_dir=local_dir)
+                timings["local"] = elapsed
+            else:
+                _log(f"Skipping local ingest: {local_dir} not found")
+
+    return timings
+
+
+# ---------------------------------------------------------------------------
+# Stage: Merge
+# ---------------------------------------------------------------------------
+
+def stage_merge(dry_run: bool = False):
+    """Merge all sources into unified corpus."""
+    from scripts.merge_sources import merge_all
+
+    if dry_run:
+        _log("[dry-run] Would merge all sources into output/corpus/merged_corpus.jsonl")
+        return None, 0
+
+    return _run_timed("merge sources", merge_all)
+
+
+# ---------------------------------------------------------------------------
+# Stage: Enrich
+# ---------------------------------------------------------------------------
+
+def stage_enrich(dry_run: bool = False):
+    """Run all enrichment scripts."""
+    timings = {}
+
+    # VEX extractor
+    from scripts.enrichment.vex_extractor import enrich_corpus
+    if dry_run:
+        _log("[dry-run] Would run VEX function extraction and validation")
+    else:
+        _, elapsed = _run_timed("VEX extractor", enrich_corpus)
+        timings["vex_extractor"] = elapsed
+
+    # Auto-tagger
+    from scripts.enrichment.auto_tagger import tag_corpus
+    if dry_run:
+        _log("[dry-run] Would run auto-tagger")
+    else:
+        _, elapsed = _run_timed("auto-tagger", tag_corpus)
+        timings["auto_tagger"] = elapsed
+
+    # Prerequisites linker
+    from scripts.enrichment.prereq_linker import enrich_with_prereqs
+    if dry_run:
+        _log("[dry-run] Would build prerequisite graph")
+    else:
+        _, elapsed = _run_timed("prereq linker", enrich_with_prereqs)
+        timings["prereq_linker"] = elapsed
+
+    return timings
+
+
+# ---------------------------------------------------------------------------
+# Stage: Quality
+# ---------------------------------------------------------------------------
+
+def stage_quality(dry_run: bool = False):
+    """Run quality checks."""
+    from scripts.quality.dedup_report import generate_report
+
+    if dry_run:
+        _log("[dry-run] Would generate dedup report")
+        return None, 0
+
+    return _run_timed("dedup report", generate_report)
+
+
+# ---------------------------------------------------------------------------
+# Main orchestrator
+# ---------------------------------------------------------------------------
+
+def run_pipeline(
+    stage: str | None = None,
+    sources: list[str] | None = None,
+    dry_run: bool = False,
+):
+    """Run the full pipeline or from a specific stage."""
+    start_time = time.time()
+    stage_idx = STAGES.index(stage) if stage else 0
+
+    _log(f"Pipeline starting{' (dry run)' if dry_run else ''}")
+    _log(f"Stages: {' -> '.join(STAGES[stage_idx:])}")
+    print()
+
+    all_timings = {}
+
+    try:
+        if stage_idx <= 0:
+            _log("=" * 50)
+            _log("STAGE 1: SCRAPE")
+            _log("=" * 50)
+            timings = stage_scrape(dry_run=dry_run, sources=sources)
+            all_timings["scrape"] = timings
+            print()
+
+        if stage_idx <= 1:
+            _log("=" * 50)
+            _log("STAGE 2: MERGE")
+            _log("=" * 50)
+            stage_merge(dry_run=dry_run)
+            print()
+
+        if stage_idx <= 2:
+            _log("=" * 50)
+            _log("STAGE 3: ENRICH")
+            _log("=" * 50)
+            timings = stage_enrich(dry_run=dry_run)
+            all_timings["enrich"] = timings
+            print()
+
+        if stage_idx <= 3:
+            _log("=" * 50)
+            _log("STAGE 4: QUALITY")
+            _log("=" * 50)
+            stage_quality(dry_run=dry_run)
+            print()
+
+    except Exception as e:
+        _log(f"Pipeline failed: {e}")
+        raise
+
+    total_time = time.time() - start_time
+    _log("=" * 50)
+    _log(f"Pipeline complete! Total time: {total_time:.1f}s")
+    _log("=" * 50)
+
+    return all_timings
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run VEX corpus pipeline")
+    parser.add_argument("--stage", choices=STAGES,
+                        help="Start from this stage (default: run all)")
+    parser.add_argument("--source", action="append", dest="sources",
+                        help="Specific source to scrape (can repeat)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Preview pipeline without executing")
+    args = parser.parse_args()
+
+    run_pipeline(
+        stage=args.stage,
+        sources=args.sources,
+        dry_run=args.dry_run,
+    )
+
+
+if __name__ == "__main__":
+    main()

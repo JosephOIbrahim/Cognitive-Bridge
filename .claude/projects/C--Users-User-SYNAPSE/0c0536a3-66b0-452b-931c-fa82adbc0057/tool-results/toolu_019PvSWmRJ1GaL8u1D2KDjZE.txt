@@ -1,0 +1,2259 @@
+     1→#!/usr/bin/env python3
+     2→"""
+     3→Synapse MCP Server v2 — Bridge between Claude Desktop and Houdini via WebSocket.
+     4→
+     5→Connects Claude Desktop (stdio/JSON-RPC) to the Synapse WebSocket server
+     6→running inside Houdini, giving Claude Desktop full access to Houdini scene
+     7→manipulation and project memory.
+     8→
+     9→v2 latency overhaul:
+    10→    - Auth handshake: skip 2s recv wait when no local key configured
+    11→    - orjson bytes passthrough: send bytes directly over WebSocket, zero-copy
+    12→    - Lock-free fast path: volatile check before acquiring _ws_lock
+    13→    - asyncio.wait() replaces wait_for() — avoids internal task overhead
+    14→    - Recv task race condition fix: explicit cancel + cleanup on reconnect
+    15→    - Fire-and-forget warmup: stdio server starts accepting immediately
+    16→    - max_size=None: skip frame validation on localhost
+    17→    - get_running_loop() everywhere (deprecated get_event_loop removed)
+    18→
+    19→Architecture:
+    20→    Claude Desktop  <-[stdio/JSON-RPC]->  mcp_server.py  <-[WebSocket]->  Synapse (Houdini)
+    21→
+    22→Install: pip install mcp websockets
+    23→Run: python mcp_server.py
+    24→"""
+    25→
+    26→import asyncio
+    27→import atexit
+    28→import logging
+    29→import os
+    30→import time
+    31→try:
+    32→    import orjson
+    33→    def _dumps(obj) -> bytes: return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS)
+    34→    def _dumps_str(obj) -> str: return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS).decode()
+    35→    def _loads(s): return orjson.loads(s)
+    36→except ImportError:
+    37→    import json
+    38→    def _dumps(obj) -> bytes: return json.dumps(obj, sort_keys=True).encode()
+    39→    def _dumps_str(obj) -> str: return json.dumps(obj, sort_keys=True)
+    40→    _loads = json.loads
+    41→
+    42→from mcp.server import Server
+    43→from mcp.server.stdio import stdio_server
+    44→from mcp.types import Tool, TextContent, ImageContent
+    45→
+    46→import websockets
+    47→
+    48→# ---------------------------------------------------------------------------
+    49→# Authentication (client-side handshake)
+    50→# ---------------------------------------------------------------------------
+    51→
+    52→def _get_auth_key() -> str | None:
+    53→    """Get API key for authenticating with Synapse server.
+    54→
+    55→    Sources (checked in order):
+    56→    1. SYNAPSE_API_KEY environment variable
+    57→    2. ~/.synapse/auth.key file (first non-empty, non-comment line)
+    58→    3. None (auth disabled)
+    59→    """
+    60→    env_key = os.environ.get("SYNAPSE_API_KEY", "").strip()
+    61→    if env_key:
+    62→        return env_key
+    63→    key_path = os.path.join(os.path.expanduser("~"), ".synapse", "auth.key")
+    64→    try:
+    65→        if os.path.exists(key_path):
+    66→            with open(key_path, encoding="utf-8") as f:
+    67→                for line in f:
+    68→                    line = line.strip()
+    69→                    if line and not line.startswith("#"):
+    70→                        return line
+    71→    except OSError:
+    72→        pass
+    73→    return None
+    74→
+    75→
+    76→async def _auth_handshake(ws) -> None:
+    77→    """Handle auth handshake if server requires it.
+    78→
+    79→    v2 optimization: If no local key is configured, skip the 2s recv wait
+    80→    entirely. If the server requires auth, the first command will fail with
+    81→    a clear error — acceptable trade-off for eliminating 2s dead time on
+    82→    every reconnect when auth is disabled (the common case).
+    83→    """
+    84→    key = _get_auth_key()
+    85→    if not key:
+    86→        # No key configured — skip the recv wait entirely (saves ~2s)
+    87→        return
+    88→
+    89→    # Key exists — wait for auth_required from server
+    90→    try:
+    91→        raw = await asyncio.wait_for(ws.recv(), timeout=2.0)
+    92→        msg = _loads(raw)
+    93→    except (asyncio.TimeoutError, Exception):
+    94→        # Server didn't send auth_required — auth not enabled server-side
+    95→        return
+    96→
+    97→    if msg.get("type") != "auth_required":
+    98→        logger.warning("Expected auth_required, got %s (auth may be disabled)", msg.get("type"))
+    99→        return
+   100→
+   101→    await ws.send(_dumps({
+   102→        "type": "authenticate",
+   103→        "id": "auth-handshake",
+   104→        "payload": {"key": key},
+   105→    }))
+   106→
+   107→    # Wait for auth_success or auth_failed
+   108→    try:
+   109→        raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
+   110→        response = _loads(raw)
+   111→    except asyncio.TimeoutError:
+   112→        raise ConnectionError("Synapse server didn't respond to authentication within 5s")
+   113→
+   114→    if response.get("type") == "auth_failed":
+   115→        raise ConnectionError(
+   116→            f"Authentication failed: {response.get('error', 'invalid API key')}. "
+   117→            "Check your SYNAPSE_API_KEY or ~/.synapse/auth.key"
+   118→        )
+   119→
+   120→    if response.get("type") == "auth_success":
+   121→        logger.info("Authenticated with Synapse server")
+   122→        return
+   123→
+   124→    logger.warning("Unexpected auth response type: %s", response.get("type"))
+   125→
+   126→
+   127→# ---------------------------------------------------------------------------
+   128→# Deterministic command IDs (He2025: same input → same ID within a session)
+   129→# ---------------------------------------------------------------------------
+   130→_cmd_seq = 0
+   131→
+   132→def _cmd_id(cmd_type: str, payload: dict | None) -> str:
+   133→    global _cmd_seq
+   134→    _cmd_seq += 1
+   135→    return f"{cmd_type}-{_cmd_seq}"
+   136→
+   137→# ---------------------------------------------------------------------------
+   138→# Configuration
+   139→# ---------------------------------------------------------------------------
+   140→
+   141→# Transport configuration
+   142→# - hwebserver backend (default): SYNAPSE_PATH="/synapse" (production inside Houdini)
+   143→# - websocket.py backend:         SYNAPSE_PATH="" (standalone testing/CI)
+   144→# Note: websocket.py accepts any path, so "/synapse" works for both backends.
+   145→SYNAPSE_PORT = int(os.environ.get("SYNAPSE_PORT", "9999"))
+   146→SYNAPSE_PATH = os.environ.get("SYNAPSE_PATH", "/synapse")
+   147→SYNAPSE_URL = f"ws://localhost:{SYNAPSE_PORT}{SYNAPSE_PATH}"
+   148→PROTOCOL_VERSION = "5.4.0"
+   149→MAX_RETRIES = 2
+   150→RETRY_DELAY = 0.3
+   151→COMMAND_TIMEOUT = 10.0
+   152→_SLOW_COMMANDS = {
+   153→    "execute_python": 30.0, "execute_vex": 30.0, "capture_viewport": 30.0,
+   154→    "render": 120.0, "wedge": 120.0, "validate_frame": 30.0,
+   155→    "render_sequence": 600.0,
+   156→    "inspect_selection": 30.0, "inspect_scene": 30.0, "inspect_node": 30.0,
+   157→    "batch_commands": 60.0,
+   158→    "tops_cook_node": 120.0,
+   159→    "tops_generate_items": 60.0,
+   160→    "tops_configure_scheduler": 30.0,
+   161→    "tops_cancel_cook": 30.0,
+   162→    "tops_batch_cook": 300.0,
+   163→    "tops_setup_wedge": 30.0,
+   164→    "tops_cook_and_validate": 600.0,
+   165→    "tops_diagnose": 30.0,
+   166→    "tops_pipeline_status": 60.0,
+   167→    "tops_monitor_stream": 30.0,
+   168→    "tops_render_sequence": 600.0,
+   169→    "tops_multi_shot": 600.0,
+   170→    "autonomous_render": 600.0,
+   171→}
+   172→
+   173→logger = logging.getLogger("synapse-mcp")
+   174→
+   175→
+   176→# ---------------------------------------------------------------------------
+   177→# WebSocket Client
+   178→# ---------------------------------------------------------------------------
+   179→
+   180→_ws_connection = None
+   181→_ws_lock = asyncio.Lock()
+   182→_pending: dict[str, asyncio.Future] = {}
+   183→_recv_task: asyncio.Task | None = None
+   184→
+   185→
+   186→def _is_connected() -> bool:
+   187→    """Check if the WebSocket connection is open."""
+   188→    try:
+   189→        return _ws_connection is not None and _ws_connection.state == websockets.connection.State.OPEN
+   190→    except (AttributeError, Exception):
+   191→        return False
+   192→
+   193→
+   194→async def _recv_loop():
+   195→    """Background task: read messages and dispatch to pending futures by ID."""
+   196→    global _ws_connection, _recv_task
+   197→    try:
+   198→        while _ws_connection is not None:
+   199→            try:
+   200→                raw = await _ws_connection.recv()
+   201→            except Exception as e:
+   202→                # Connection lost — signal all pending futures
+   203→                logger.warning("Recv loop: connection lost (%s)", e)
+   204→                _signal_all_pending(ConnectionError(f"Connection lost: {e}"))
+   205→                break
+   206→
+   207→            try:
+   208→                response = _loads(raw)
+   209→            except Exception:
+   210→                continue  # Malformed message — skip
+   211→
+   212→            resp_id = response.get("id")
+   213→            future = _pending.pop(resp_id, None) if resp_id else None
+   214→            if future and not future.done():
+   215→                future.set_result(response)
+   216→            elif resp_id:
+   217→                logger.warning("No pending future for response ID %s (discarding)", resp_id)
+   218→    finally:
+   219→        _recv_task = None
+   220→
+   221→
+   222→def _signal_all_pending(exc: Exception):
+   223→    """Signal all pending futures with an exception (connection lost)."""
+   224→    for fut in _pending.values():
+   225→        if not fut.done():
+   226→            fut.set_exception(exc)
+   227→    _pending.clear()
+   228→
+   229→
+   230→def _start_recv_loop():
+   231→    """Ensure the background recv loop is running."""
+   232→    global _recv_task
+   233→    if _recv_task is None or _recv_task.done():
+   234→        _recv_task = asyncio.get_running_loop().create_task(_recv_loop())
+   235→
+   236→
+   237→async def _get_connection():
+   238→    """Get or create a persistent WebSocket connection.
+   239→
+   240→    v2: Lock-free fast path — volatile check before acquiring the lock.
+   241→    The common case (connection alive) skips the lock entirely.
+   242→    Double-check inside lock for safety.
+   243→    """
+   244→    global _ws_connection, _recv_task
+   245→
+   246→    # Lock-free fast path: if connected, return immediately
+   247→    if _is_connected():
+   248→        return _ws_connection
+   249→
+   250→    async with _ws_lock:
+   251→        # Double-check after acquiring lock
+   252→        if _is_connected():
+   253→            return _ws_connection
+   254→
+   255→        # Force cleanup of stale state — cancel lingering recv task
+   256→        # to prevent the race where _start_recv_loop() sees the old
+   257→        # task as "not done" and skips creating a new recv loop.
+   258→        _ws_connection = None
+   259→        if _recv_task is not None and not _recv_task.done():
+   260→            _recv_task.cancel()
+   261→            try:
+   262→                await _recv_task
+   263→            except (asyncio.CancelledError, Exception):
+   264→                pass
+   265→        _recv_task = None
+   266→        # Clear any orphaned futures from the dead connection
+   267→        _signal_all_pending(ConnectionError("Connection recycled"))
+   268→
+   269→        last_error = None
+   270→        for attempt in range(MAX_RETRIES):
+   271→            try:
+   272→                _ws_connection = await websockets.connect(
+   273→                    SYNAPSE_URL,
+   274→                    open_timeout=3.0,
+   275→                    close_timeout=1.0,
+   276→                    ping_interval=None,
+   277→                    compression=None,
+   278→                    max_size=None,  # Skip frame size validation on localhost
+   279→                )
+   280→                await _auth_handshake(_ws_connection)
+   281→                _start_recv_loop()
+   282→                logger.info("Connected to Synapse at %s", SYNAPSE_URL)
+   283→                return _ws_connection
+   284→            except Exception as e:
+   285→                last_error = e
+   286→                if attempt < MAX_RETRIES - 1:
+   287→                    await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+   288→
+   289→        raise ConnectionError(
+   290→            f"Couldn't connect to Synapse at {SYNAPSE_URL} after {MAX_RETRIES} attempts: {last_error}\n\n"
+   291→            "Houdini might not be running, or the Synapse server hasn't started yet. "
+   292→            "Launch Houdini and start the Synapse server from the Python Panel."
+   293→        )
+   294→
+   295→
+   296→async def send_command(cmd_type: str, payload: dict | None = None) -> dict:
+   297→    """
+   298→    Send a SynapseCommand over WebSocket and return the response data.
+   299→
+   300→    Supports true parallel dispatch — multiple concurrent send_command
+   301→    calls share a single recv loop that routes responses by ID.
+   302→    """
+   303→    command_id = _cmd_id(cmd_type, payload)
+   304→    command = {
+   305→        "type": cmd_type,
+   306→        "id": command_id,
+   307→        "payload": payload or {},
+   308→        "sequence": 0,
+   309→        "timestamp": time.time(),
+   310→        "protocol_version": PROTOCOL_VERSION,
+   311→    }
+   312→
+   313→    cmd_timeout = _SLOW_COMMANDS.get(cmd_type, COMMAND_TIMEOUT)
+   314→    last_err = None
+   315→
+   316→    for _attempt in range(2):  # One transparent retry on connection failure
+   317→        ws = await _get_connection()
+   318→
+   319→        # Register a future for this command's response
+   320→        loop = asyncio.get_running_loop()
+   321→        future: asyncio.Future = loop.create_future()
+   322→        _pending[command_id] = future
+   323→
+   324→        try:
+   325→            await ws.send(_dumps(command))
+   326→
+   327→            # Direct wait on future set — avoids asyncio.wait_for's internal task overhead
+   328→            done, _ = await asyncio.wait({future}, timeout=cmd_timeout)
+   329→            if not done:
+   330→                # Timeout — future still pending
+   331→                _pending.pop(command_id, None)
+   332→                future.cancel()
+   333→                raise asyncio.TimeoutError()
+   334→            response = future.result()
+   335→            break  # Success
+   336→
+   337→        except asyncio.TimeoutError:
+   338→            _pending.pop(command_id, None)
+   339→            # Close stale connection on timeout
+   340→            global _ws_connection
+   341→            try:
+   342→                if ws:
+   343→                    await ws.close()
+   344→            except Exception:
+   345→                pass
+   346→            _ws_connection = None
+   347→            raise TimeoutError(
+   348→                f"The {cmd_type} command took too long to respond \u2014 "
+   349→                "Houdini may be busy with a heavy operation"
+   350→            )
+   351→        except ConnectionError:
+   352→            # Future was signaled by _recv_loop disconnect
+   353→            _pending.pop(command_id, None)
+   354→            try:
+   355→                if ws:
+   356→                    await ws.close()
+   357→            except Exception:
+   358→                pass
+   359→            _ws_connection = None
+   360→            last_err = ConnectionError(f"Connection lost during {cmd_type}")
+   361→            logger.warning("Connection lost during %s, reconnecting...", cmd_type)
+   362→        except Exception as e:
+   363→            _pending.pop(command_id, None)
+   364→            try:
+   365→                if ws:
+   366→                    await ws.close()
+   367→            except Exception:
+   368→                pass
+   369→            _ws_connection = None
+   370→            last_err = e
+   371→            logger.warning("Connection lost during %s, reconnecting... (%s)", cmd_type, e)
+   372→    else:
+   373→        raise ConnectionError(
+   374→            f"Lost connection while sending {cmd_type} and couldn't reconnect: {last_err}"
+   375→        )
+   376→
+   377→    if not response.get("success", False):
+   378→        error_msg = response.get("error", "Something went wrong on the Synapse side")
+   379→        data = response.get("data") or {}
+   380→        if isinstance(data, dict) and "retry_after" in data:
+   381→            error_msg += f" (retry after {data['retry_after']}s)"
+   382→        raise RuntimeError(error_msg)
+   383→
+   384→    return response.get("data", {})
+   385→
+   386→
+   387→# ---------------------------------------------------------------------------
+   388→# MCP Server
+   389→# ---------------------------------------------------------------------------
+   390→
+   391→# Load TONE.md as server instructions (shapes LLM behavior when Synapse is active)
+   392→_tone_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "TONE.md")
+   393→_tone_instructions = ""
+   394→try:
+   395→    with open(_tone_path, encoding="utf-8") as _f:
+   396→        _tone_instructions = _f.read()
+   397→except FileNotFoundError:
+   398→    pass
+   399→
+   400→server = Server("synapse", instructions=_tone_instructions or None)
+   401→
+   402→
+   403→@server.list_tools()
+   404→async def list_tools():
+   405→    """Register all Synapse MCP tools."""
+   406→    return [
+   407→        # -- Utility --
+   408→        Tool(
+   409→            name="synapse_ping",
+   410→            description=(
+   411→                "Check if Houdini/Synapse is connected and responding. "
+   412→                "A quick health check \u2014 if it fails, Houdini may not be running yet."
+   413→            ),
+   414→            inputSchema={"type": "object", "properties": {}, "required": []},
+   415→        ),
+   416→        Tool(
+   417→            name="synapse_health",
+   418→            description=(
+   419→                "Get system health status including resilience layer (circuit breaker, rate limiter). "
+   420→                "Use this to diagnose connection issues before retrying operations."
+   421→            ),
+   422→            inputSchema={"type": "object", "properties": {}, "required": []},
+   423→        ),
+   424→        # -- Scene --
+   425→        Tool(
+   426→            name="houdini_scene_info",
+   427→            description=(
+   428→                "Get current Houdini scene info: HIP file path, current frame, FPS, and frame range. "
+   429→                "Good starting point to orient yourself in the artist's scene."
+   430→            ),
+   431→            inputSchema={"type": "object", "properties": {}, "required": []},
+   432→        ),
+   433→        Tool(
+   434→            name="houdini_get_selection",
+   435→            description=(
+   436→                "Get the currently selected nodes in Houdini. "
+   437→                "Useful for understanding what the artist is focused on before making changes."
+   438→            ),
+   439→            inputSchema={"type": "object", "properties": {}, "required": []},
+   440→        ),
+   441→        # -- Node operations --
+   442→        Tool(
+   443→            name="houdini_create_node",
+   444→            description=(
+   445→                "Create a new node in Houdini. Returns the path of the created node. "
+   446→                "When reporting back, share what was created and where \u2014 "
+   447→                "e.g. 'Created rim_light, it's ready at /stage/rim_light'."
+   448→            ),
+   449→            inputSchema={
+   450→                "type": "object",
+   451→                "properties": {
+   452→                    "parent": {
+   453→                        "type": "string",
+   454→                        "description": "Parent node path (e.g. '/obj', '/obj/geo1')",
+   455→                    },
+   456→                    "type": {
+   457→                        "type": "string",
+   458→                        "description": "Node type to create (e.g. 'geo', 'null', 'sphere')",
+   459→                    },
+   460→                    "name": {
+   461→                        "type": "string",
+   462→                        "description": "Optional name for the new node",
+   463→                    },
+   464→                },
+   465→                "required": ["parent", "type"],
+   466→            },
+   467→        ),
+   468→        Tool(
+   469→            name="houdini_delete_node",
+   470→            description=(
+   471→                "Delete a node in Houdini by its path. "
+   472→                "Confirm with the artist before deleting if the node wasn't just created in this session."
+   473→            ),
+   474→            inputSchema={
+   475→                "type": "object",
+   476→                "properties": {
+   477→                    "node": {
+   478→                        "type": "string",
+   479→                        "description": "Full path of the node to delete (e.g. '/obj/geo1')",
+   480→                    },
+   481→                },
+   482→                "required": ["node"],
+   483→            },
+   484→        ),
+   485→        Tool(
+   486→            name="houdini_connect_nodes",
+   487→            description=(
+   488→                "Connect the output of one node to the input of another. "
+   489→                "If it fails, check both nodes exist and indices are valid."
+   490→            ),
+   491→            inputSchema={
+   492→                "type": "object",
+   493→                "properties": {
+   494→                    "source": {
+   495→                        "type": "string",
+   496→                        "description": "Source node path (output from)",
+   497→                    },
+   498→                    "target": {
+   499→                        "type": "string",
+   500→                        "description": "Target node path (input to)",
+   501→                    },
+   502→                    "source_output": {
+   503→                        "type": "integer",
+   504→                        "description": "Source output index (default: 0)",
+   505→                    },
+   506→                    "target_input": {
+   507→                        "type": "integer",
+   508→                        "description": "Target input index (default: 0)",
+   509→                    },
+   510→                },
+   511→                "required": ["source", "target"],
+   512→            },
+   513→        ),
+   514→        # -- Parameters --
+   515→        Tool(
+   516→            name="houdini_get_parm",
+   517→            description=(
+   518→                "Read a parameter value from a Houdini node. "
+   519→                "If the parameter name doesn't match, Synapse will suggest similar names. "
+   520→                "Houdini parameter names can be cryptic \u2014 "
+   521→                "help the artist by translating to plain language."
+   522→            ),
+   523→            inputSchema={
+   524→                "type": "object",
+   525→                "properties": {
+   526→                    "node": {
+   527→                        "type": "string",
+   528→                        "description": "Node path (e.g. '/obj/geo1')",
+   529→                    },
+   530→                    "parm": {
+   531→                        "type": "string",
+   532→                        "description": "Parameter name (e.g. 'tx', 'scale', 'file')",
+   533→                    },
+   534→                },
+   535→                "required": ["node", "parm"],
+   536→            },
+   537→        ),
+   538→        Tool(
+   539→            name="houdini_set_parm",
+   540→            description=(
+   541→                "Set a parameter value on a Houdini node. "
+   542→                "When reporting success, describe the change in artist-friendly terms "
+   543→                "(e.g. 'Bumped the light intensity to 5.0') rather than raw parameter names."
+   544→            ),
+   545→            inputSchema={
+   546→                "type": "object",
+   547→                "properties": {
+   548→                    "node": {
+   549→                        "type": "string",
+   550→                        "description": "Node path (e.g. '/obj/geo1')",
+   551→                    },
+   552→                    "parm": {
+   553→                        "type": "string",
+   554→                        "description": "Parameter name (e.g. 'tx', 'scale', 'file')",
+   555→                    },
+   556→                    "value": {
+   557→                        "description": "Value to set (number, string, or array for tuple parms)",
+   558→                    },
+   559→                },
+   560→                "required": ["node", "parm", "value"],
+   561→            },
+   562→        ),
+   563→        # -- Execution --
+   564→        Tool(
+   565→            name="houdini_execute_python",
+   566→            description=(
+   567→                "Execute Python code in Houdini's runtime environment. "
+   568→                "The code runs with 'hou' module available. "
+   569→                "Set a 'result' variable to return data. "
+   570→                "When presenting results: celebrate progress, explain errors in "
+   571→                "plain language with next steps, and frame everything as "
+   572→                "collaborative iteration \u2014 'we tried X, let's adjust' not 'X failed'."
+   573→            ),
+   574→            inputSchema={
+   575→                "type": "object",
+   576→                "properties": {
+   577→                    "code": {
+   578→                        "type": "string",
+   579→                        "description": "Python code to execute in Houdini",
+   580→                    },
+   581→                    "dry_run": {
+   582→                        "type": "boolean",
+   583→                        "description": "Syntax-check only \u2014 compile the code without running it. Returns {valid: true/false}.",
+   584→                    },
+   585→                    "atomic": {
+   586→                        "type": "boolean",
+   587→                        "description": "Wrap execution in an undo group (default: true). Set false to skip undo tracking.",
+   588→                    },
+   589→                },
+   590→                "required": ["code"],
+   591→            },
+   592→        ),
+   593→        Tool(
+   594→            name="houdini_execute_vex",
+   595→            description=(
+   596→                "Execute VEX code by creating an Attribute Wrangle node. "
+   597→                "Specify the VEX snippet, run-over class (Points/Primitives/Vertices/Detail), "
+   598→                "and optional input geometry node. Returns the wrangle node path."
+   599→            ),
+   600→            inputSchema={
+   601→                "type": "object",
+   602→                "properties": {
+   603→                    "snippet": {
+   604→                        "type": "string",
+   605→                        "description": "VEX code to execute (the wrangle snippet)",
+   606→                    },
+   607→                    "run_over": {
+   608→                        "type": "string",
+   609→                        "description": "What to run over: Points, Primitives, Vertices, or Detail (default: Points)",
+   610→                    },
+   611→                    "input_node": {
+   612→                        "type": "string",
+   613→                        "description": "Optional input geometry node path to wire into the wrangle",
+   614→                    },
+   615→                },
+   616→                "required": ["snippet"],
+   617→            },
+   618→        ),
+   619→        # -- USD/Solaris --
+   620→        Tool(
+   621→            name="houdini_stage_info",
+   622→            description=(
+   623→                "Get USD stage information: prim list and types. Optionally specify a LOP node path. "
+   624→                "Great for understanding what's on the stage before making USD changes."
+   625→            ),
+   626→            inputSchema={
+   627→                "type": "object",
+   628→                "properties": {
+   629→                    "node": {
+   630→                        "type": "string",
+   631→                        "description": "Optional LOP node path. If omitted, uses current selection.",
+   632→                    },
+   633→                },
+   634→                "required": [],
+   635→            },
+   636→        ),
+   637→        Tool(
+   638→            name="houdini_get_usd_attribute",
+   639→            description=(
+   640→                "Read a USD attribute value from a prim on the stage. Returns value and type info. "
+   641→                "If the attribute name doesn't match, Synapse lists available attributes to help."
+   642→            ),
+   643→            inputSchema={
+   644→                "type": "object",
+   645→                "properties": {
+   646→                    "node": {
+   647→                        "type": "string",
+   648→                        "description": "LOP node path. If omitted, uses current selection.",
+   649→                    },
+   650→                    "prim_path": {
+   651→                        "type": "string",
+   652→                        "description": "USD prim path (e.g. '/World/geo/mesh1')",
+   653→                    },
+   654→                    "attribute_name": {
+   655→                        "type": "string",
+   656→                        "description": "USD attribute name (e.g. 'xformOp:translate', 'visibility')",
+   657→                    },
+   658→                },
+   659→                "required": ["prim_path", "attribute_name"],
+   660→            },
+   661→        ),
+   662→        Tool(
+   663→            name="houdini_set_usd_attribute",
+   664→            description=(
+   665→                "Set a USD attribute on a prim. Creates a Python LOP node wired into the graph. "
+   666→                "Describe changes naturally \u2014 "
+   667→                "'Moved the key light to (2, 5, 3)' not 'Set xformOp:translate'."
+   668→            ),
+   669→            inputSchema={
+   670→                "type": "object",
+   671→                "properties": {
+   672→                    "node": {
+   673→                        "type": "string",
+   674→                        "description": "LOP node to wire after. If omitted, uses current selection.",
+   675→                    },
+   676→                    "prim_path": {
+   677→                        "type": "string",
+   678→                        "description": "USD prim path (e.g. '/World/geo/mesh1')",
+   679→                    },
+   680→                    "attribute_name": {
+   681→                        "type": "string",
+   682→                        "description": "USD attribute name (e.g. 'xformOp:translate')",
+   683→                    },
+   684→                    "value": {
+   685→                        "description": "Value to set (number, string, or array for vector types)",
+   686→                    },
+   687→                },
+   688→                "required": ["prim_path", "attribute_name", "value"],
+   689→            },
+   690→        ),
+   691→        Tool(
+   692→            name="houdini_create_usd_prim",
+   693→            description=(
+   694→                "Create a USD prim on the stage. Creates a Python LOP node wired into the graph. "
+   695→                "Share what was created in context \u2014 "
+   696→                "'Added a DomeLight at /World/lights/env' tells the artist what happened."
+   697→            ),
+   698→            inputSchema={
+   699→                "type": "object",
+   700→                "properties": {
+   701→                    "node": {
+   702→                        "type": "string",
+   703→                        "description": "LOP node to wire after. If omitted, uses current selection.",
+   704→                    },
+   705→                    "prim_path": {
+   706→                        "type": "string",
+   707→                        "description": "USD prim path to create (e.g. '/World/lights/key_light')",
+   708→                    },
+   709→                    "prim_type": {
+   710→                        "type": "string",
+   711→                        "description": "USD prim type (e.g. 'Xform', 'Mesh', 'DomeLight', 'Material'). Default: Xform",
+   712→                    },
+   713→                },
+   714→                "required": ["prim_path"],
+   715→            },
+   716→        ),
+   717→        Tool(
+   718→            name="houdini_modify_usd_prim",
+   719→            description=(
+   720→                "Modify USD prim metadata: kind, purpose, or active state. Creates a Python LOP node. "
+   721→                "Explain what the change means \u2014 "
+   722→                "'Set as component so it shows up in asset browsers'."
+   723→            ),
+   724→            inputSchema={
+   725→                "type": "object",
+   726→                "properties": {
+   727→                    "node": {
+   728→                        "type": "string",
+   729→                        "description": "LOP node to wire after. If omitted, uses current selection.",
+   730→                    },
+   731→                    "prim_path": {
+   732→                        "type": "string",
+   733→                        "description": "USD prim path to modify",
+   734→                    },
+   735→                    "kind": {
+   736→                        "type": "string",
+   737→                        "description": "Model kind (e.g. 'component', 'group', 'assembly')",
+   738→                    },
+   739→                    "purpose": {
+   740→                        "type": "string",
+   741→                        "description": "Prim purpose (e.g. 'default', 'render', 'proxy', 'guide')",
+   742→                    },
+   743→                    "active": {
+   744→                        "type": "boolean",
+   745→                        "description": "Whether the prim is active (visible in composition)",
+   746→                    },
+   747→                },
+   748→                "required": ["prim_path"],
+   749→            },
+   750→        ),
+   751→        # -- Viewport --
+   752→        Tool(
+   753→            name="houdini_capture_viewport",
+   754→            description=(
+   755→                "Capture the Houdini viewport as an image. "
+   756→                "Returns the image directly for visual analysis of lighting, layout, and composition. "
+   757→                "This is the artist's window into their work \u2014 "
+   758→                "comment on what's working well before suggesting changes. Lead with what's strong."
+   759→            ),
+   760→            inputSchema={
+   761→                "type": "object",
+   762→                "properties": {
+   763→                    "width": {
+   764→                        "type": "integer",
+   765→                        "description": "Optional width to resize the capture to (maintains aspect ratio)",
+   766→                    },
+   767→                    "height": {
+   768→                        "type": "integer",
+   769→                        "description": "Optional height to resize the capture to (maintains aspect ratio)",
+   770→                    },
+   771→                    "format": {
+   772→                        "type": "string",
+   773→                        "enum": ["jpeg", "png"],
+   774→                        "description": "Image format (default: jpeg). JPEG is smaller, PNG is lossless.",
+   775→                    },
+   776→                },
+   777→                "required": [],
+   778→            },
+   779→        ),
+   780→        # -- Render --
+   781→        Tool(
+   782→            name="houdini_render",
+   783→            description=(
+   784→                "Render a frame using Karma XPU, Karma CPU, Mantra, or any ROP node. "
+   785→                "Returns the rendered image and reports which engine was used. "
+   786→                "Auto-discovers a render ROP if 'node' is omitted. "
+   787→                "If the render succeeds, share the result with enthusiasm \u2014 the artist made something. "
+   788→                "If it fails, diagnose calmly: check output path, camera, and render settings."
+   789→            ),
+   790→            inputSchema={
+   791→                "type": "object",
+   792→                "properties": {
+   793→                    "node": {
+   794→                        "type": "string",
+   795→                        "description": "ROP node path (e.g. '/stage/karma1'). Auto-discovers if omitted.",
+   796→                    },
+   797→                    "frame": {
+   798→                        "type": "number",
+   799→                        "description": "Frame to render. Defaults to current frame.",
+   800→                    },
+   801→                    "width": {
+   802→                        "type": "integer",
+   803→                        "description": "Override resolution width in pixels.",
+   804→                    },
+   805→                    "height": {
+   806→                        "type": "integer",
+   807→                        "description": "Override resolution height in pixels.",
+   808→                    },
+   809→                },
+   810→            },
+   811→        ),
+   812→        # -- Frame Validation --
+   813→        Tool(
+   814→            name="synapse_validate_frame",
+   815→            description=(
+   816→                "Validate a rendered frame for common quality issues: black frames, "
+   817→                "NaN/Inf pixels, clipping (overexposure), underexposure, and firefly "
+   818→                "artifacts. Uses OpenImageIO for fast C++-level pixel analysis. "
+   819→                "Returns structured pass/fail results per check. "
+   820→                "Great for automated QC after rendering."
+   821→            ),
+   822→            inputSchema={
+   823→                "type": "object",
+   824→                "properties": {
+   825→                    "image_path": {
+   826→                        "type": "string",
+   827→                        "description": "Path to the rendered image file (EXR, JPEG, PNG, etc.)",
+   828→                    },
+   829→                    "checks": {
+   830→                        "type": "array",
+   831→                        "items": {"type": "string"},
+   832→                        "description": (
+   833→                            "Optional list of checks to run. Default: all. "
+   834→                            "Available: file_integrity, black_frame, nan_check, "
+   835→                            "clipping, underexposure, saturation"
+   836→                        ),
+   837→                    },
+   838→                    "thresholds": {
+   839→                        "type": "object",
+   840→                        "description": (
+   841→                            "Optional threshold overrides. Keys: black_frame_mean, "
+   842→                            "clipping_pct, underexposure_mean, saturation_pct, "
+   843→                            "saturation_multiplier"
+   844→                        ),
+   845→                    },
+   846→                },
+   847→                "required": ["image_path"],
+   848→            },
+   849→        ),
+   850→        Tool(
+   851→            name="synapse_configure_render_passes",
+   852→            description=(
+   853→                "Configure render passes (AOVs) for Karma. Creates RenderVar prims for compositing. "
+   854→                "Presets: beauty, diffuse, specular, emission, normal, depth, position, albedo, "
+   855→                "crypto_material, crypto_object, motion, sss."
+   856→            ),
+   857→            inputSchema={
+   858→                "type": "object",
+   859→                "properties": {
+   860→                    "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+   861→                    "passes": {
+   862→                        "type": "array",
+   863→                        "items": {"type": "string"},
+   864→                        "description": "List of pass names (e.g. ['beauty', 'diffuse', 'normal', 'crypto_object'])",
+   865→                    },
+   866→                    "clear_existing": {"type": "boolean", "description": "Clear existing render vars first (default: false)"},
+   867→                },
+   868→                "required": ["passes"],
+   869→            },
+   870→        ),
+   871→        # -- Keyframe / Render Settings --
+   872→        Tool(
+   873→            name="houdini_set_keyframe",
+   874→            description=(
+   875→                "Set a keyframe on a node parameter at a specific frame. "
+   876→                "Confirm the keyframe was set by reporting the value and frame number."
+   877→            ),
+   878→            inputSchema={
+   879→                "type": "object",
+   880→                "properties": {
+   881→                    "node": {"type": "string", "description": "Node path (e.g. '/obj/geo1')"},
+   882→                    "parm": {"type": "string", "description": "Parameter name (e.g. 'tx')"},
+   883→                    "value": {"type": "number", "description": "Value to set"},
+   884→                    "frame": {"type": "number", "description": "Frame number. Defaults to current frame."},
+   885→                },
+   886→                "required": ["node", "parm", "value"],
+   887→            },
+   888→        ),
+   889→        Tool(
+   890→            name="houdini_render_settings",
+   891→            description=(
+   892→                "Read and optionally modify render settings on a ROP or Karma node. "
+   893→                "Pass settings dict to override values. "
+   894→                "When reporting changes, translate parameter names into plain language "
+   895→                "where possible (e.g. 'Set resolution to 1920x1080')."
+   896→            ),
+   897→            inputSchema={
+   898→                "type": "object",
+   899→                "properties": {
+   900→                    "node": {"type": "string", "description": "ROP or render settings node path"},
+   901→                    "settings": {"type": "object", "description": "Optional dict of parm_name: value overrides to apply"},
+   902→                },
+   903→                "required": ["node"],
+   904→            },
+   905→        ),
+   906→        # -- TOPs / PDG --
+   907→        Tool(
+   908→            name="houdini_wedge",
+   909→            description=(
+   910→                "Run a TOPs/PDG wedge to explore parameter variations. "
+   911→                "Point to a TOP network or wedge node. "
+   912→                "Great for quickly testing different looks \u2014 "
+   913→                "present results as creative options, not just data."
+   914→            ),
+   915→            inputSchema={
+   916→                "type": "object",
+   917→                "properties": {
+   918→                    "node": {"type": "string", "description": "TOP network or wedge node path"},
+   919→                    "parm": {"type": "string", "description": "Parameter to wedge"},
+   920→                    "values": {"type": "array", "items": {"type": "number"}, "description": "List of values to wedge over"},
+   921→                },
+   922→                "required": ["node"],
+   923→            },
+   924→        ),
+   925→        # -- TOPS / PDG (Phase 1) --
+   926→        Tool(
+   927→            name="tops_get_work_items",
+   928→            description=(
+   929→                "Get work items from a TOP node with optional state filtering. "
+   930→                "Returns item details including id, index, name, state, cook time, "
+   931→                "and attributes."
+   932→            ),
+   933→            inputSchema={
+   934→                "type": "object",
+   935→                "properties": {
+   936→                    "node": {"type": "string", "description": "TOP node path"},
+   937→                    "state_filter": {
+   938→                        "type": "string",
+   939→                        "description": "Filter by state: all, cooked, failed, cooking, scheduled, uncooked, cancelled (default: all)",
+   940→                    },
+   941→                    "include_attributes": {
+   942→                        "type": "boolean",
+   943→                        "description": "Include work item attributes (default: true)",
+   944→                    },
+   945→                    "limit": {
+   946→                        "type": "integer",
+   947→                        "description": "Max items to return (default: 100)",
+   948→                    },
+   949→                },
+   950→                "required": ["node"],
+   951→            },
+   952→        ),
+   953→        Tool(
+   954→            name="tops_get_dependency_graph",
+   955→            description=(
+   956→                "Get the dependency graph for a TOP network: nodes, types, "
+   957→                "work item counts by state, and edges between nodes."
+   958→            ),
+   959→            inputSchema={
+   960→                "type": "object",
+   961→                "properties": {
+   962→                    "topnet_path": {"type": "string", "description": "TOP network path"},
+   963→                    "depth": {"type": "integer", "description": "Traversal depth (-1 for full, default: -1)"},
+   964→                },
+   965→                "required": ["topnet_path"],
+   966→            },
+   967→        ),
+   968→        Tool(
+   969→            name="tops_get_cook_stats",
+   970→            description=(
+   971→                "Get cook statistics for a TOP node or network: "
+   972→                "work item counts by state and total cook times."
+   973→            ),
+   974→            inputSchema={
+   975→                "type": "object",
+   976→                "properties": {
+   977→                    "node": {"type": "string", "description": "TOP node or network path"},
+   978→                },
+   979→                "required": ["node"],
+   980→            },
+   981→        ),
+   982→        Tool(
+   983→            name="tops_cook_node",
+   984→            description=(
+   985→                "Cook a TOP node. Supports blocking (wait for completion) and "
+   986→                "non-blocking modes. Use generate_only=true to create work items "
+   987→                "without cooking them."
+   988→            ),
+   989→            inputSchema={
+   990→                "type": "object",
+   991→                "properties": {
+   992→                    "node": {"type": "string", "description": "TOP node path"},
+   993→                    "generate_only": {"type": "boolean", "description": "Generate only, don't cook (default: false)"},
+   994→                    "blocking": {"type": "boolean", "description": "Wait for cook to complete (default: true)"},
+   995→                    "top_down": {"type": "boolean", "description": "Cook upstream first (default: true)"},
+   996→                },
+   997→                "required": ["node"],
+   998→            },
+   999→        ),
+  1000→        Tool(
+  1001→            name="tops_generate_items",
+  1002→            description=(
+  1003→                "Generate work items for a TOP node without cooking. "
+  1004→                "Preview what a node will produce before running the cook."
+  1005→            ),
+  1006→            inputSchema={
+  1007→                "type": "object",
+  1008→                "properties": {
+  1009→                    "node": {"type": "string", "description": "TOP node path"},
+  1010→                },
+  1011→                "required": ["node"],
+  1012→            },
+  1013→        ),
+  1014→        # -- TOPS / PDG (Phase 2: Scheduler & Control) --
+  1015→        Tool(
+  1016→            name="tops_configure_scheduler",
+  1017→            description=(
+  1018→                "Configure the scheduler for a TOP network: type, max concurrent "
+  1019→                "processes, and working directory."
+  1020→            ),
+  1021→            inputSchema={
+  1022→                "type": "object",
+  1023→                "properties": {
+  1024→                    "topnet_path": {"type": "string", "description": "TOP network path"},
+  1025→                    "scheduler_type": {"type": "string", "description": "Scheduler type (default: local)"},
+  1026→                    "max_concurrent": {"type": "integer", "description": "Max concurrent processes"},
+  1027→                    "working_dir": {"type": "string", "description": "PDG working directory"},
+  1028→                },
+  1029→                "required": ["topnet_path"],
+  1030→            },
+  1031→        ),
+  1032→        Tool(
+  1033→            name="tops_cancel_cook",
+  1034→            description=(
+  1035→                "Cancel an active cook on a TOP node or network. "
+  1036→                "Currently cooking items may finish before cancellation takes effect."
+  1037→            ),
+  1038→            inputSchema={
+  1039→                "type": "object",
+  1040→                "properties": {
+  1041→                    "node": {"type": "string", "description": "TOP node or network path"},
+  1042→                },
+  1043→                "required": ["node"],
+  1044→            },
+  1045→        ),
+  1046→        Tool(
+  1047→            name="tops_dirty_node",
+  1048→            description=(
+  1049→                "Dirty a TOP node to clear cached work item results, forcing a re-cook. "
+  1050→                "Use dirty_upstream=true to also dirty upstream dependencies."
+  1051→            ),
+  1052→            inputSchema={
+  1053→                "type": "object",
+  1054→                "properties": {
+  1055→                    "node": {"type": "string", "description": "TOP node path"},
+  1056→                    "dirty_upstream": {"type": "boolean", "description": "Also dirty upstream (default: false)"},
+  1057→                },
+  1058→                "required": ["node"],
+  1059→            },
+  1060→        ),
+  1061→        # -- TOPS / PDG (Phase 3: Advanced) --
+  1062→        Tool(
+  1063→            name="tops_setup_wedge",
+  1064→            description=(
+  1065→                "Set up a Wedge TOP node for parameter variation exploration. "
+  1066→                "Define attributes with name, type, start, end, and steps."
+  1067→            ),
+  1068→            inputSchema={
+  1069→                "type": "object",
+  1070→                "properties": {
+  1071→                    "topnet_path": {"type": "string", "description": "TOP network path"},
+  1072→                    "wedge_name": {"type": "string", "description": "Wedge node name (default: wedge1)"},
+  1073→                    "attributes": {
+  1074→                        "type": "array",
+  1075→                        "items": {"type": "object"},
+  1076→                        "description": "List of {name, type, start, end, steps}",
+  1077→                    },
+  1078→                },
+  1079→                "required": ["topnet_path", "attributes"],
+  1080→            },
+  1081→        ),
+  1082→        Tool(
+  1083→            name="tops_batch_cook",
+  1084→            description=(
+  1085→                "Cook multiple TOP nodes in sequence. Collects per-node results "
+  1086→                "including status, work item counts, and cook times."
+  1087→            ),
+  1088→            inputSchema={
+  1089→                "type": "object",
+  1090→                "properties": {
+  1091→                    "node_paths": {
+  1092→                        "type": "array",
+  1093→                        "items": {"type": "string"},
+  1094→                        "description": "List of TOP node paths to cook",
+  1095→                    },
+  1096→                    "blocking": {"type": "boolean", "description": "Wait for each cook (default: true)"},
+  1097→                    "stop_on_error": {"type": "boolean", "description": "Stop on first error (default: true)"},
+  1098→                },
+  1099→                "required": ["node_paths"],
+  1100→            },
+  1101→        ),
+  1102→        Tool(
+  1103→            name="tops_query_items",
+  1104→            description=(
+  1105→                "Query work items by attribute value. Supports operators: "
+  1106→                "eq, gt, lt, gte, lte, contains, regex."
+  1107→            ),
+  1108→            inputSchema={
+  1109→                "type": "object",
+  1110→                "properties": {
+  1111→                    "node": {"type": "string", "description": "TOP node path"},
+  1112→                    "query_attribute": {"type": "string", "description": "Attribute name to filter on"},
+  1113→                    "filter_op": {
+  1114→                        "type": "string",
+  1115→                        "enum": ["eq", "gt", "lt", "gte", "lte", "contains", "regex"],
+  1116→                        "description": "Filter operator (default: eq)",
+  1117→                    },
+  1118→                    "filter_value": {"description": "Value to match against"},
+  1119→                },
+  1120→                "required": ["node", "query_attribute", "filter_value"],
+  1121→            },
+  1122→        ),
+  1123→        # -- TOPS / PDG (Phase 4: Autonomous Operations) --
+  1124→        Tool(
+  1125→            name="tops_cook_and_validate",
+  1126→            description=(
+  1127→                "Cook a TOP node with automatic retry on failure. "
+  1128→                "Self-healing pipeline: cook -> validate states -> "
+  1129→                "dirty -> retry. Returns per-attempt details and aggregate stats."
+  1130→            ),
+  1131→            inputSchema={
+  1132→                "type": "object",
+  1133→                "properties": {
+  1134→                    "node": {"type": "string", "description": "TOP node path"},
+  1135→                    "max_retries": {"type": "integer", "description": "Max retry attempts on failure (default: 0)"},
+  1136→                    "validate_states": {"type": "boolean", "description": "Check work item states after cook (default: true)"},
+  1137→                },
+  1138→                "required": ["node"],
+  1139→            },
+  1140→        ),
+  1141→        Tool(
+  1142→            name="tops_diagnose",
+  1143→            description=(
+  1144→                "Diagnose failures on a TOP node: inspect failed work items, "
+  1145→                "scheduler config, upstream dependencies, and generate suggestions."
+  1146→            ),
+  1147→            inputSchema={
+  1148→                "type": "object",
+  1149→                "properties": {
+  1150→                    "node": {"type": "string", "description": "TOP node path"},
+  1151→                    "include_scheduler": {"type": "boolean", "description": "Include scheduler info (default: true)"},
+  1152→                    "include_dependencies": {"type": "boolean", "description": "Include upstream check (default: true)"},
+  1153→                },
+  1154→                "required": ["node"],
+  1155→            },
+  1156→        ),
+  1157→        Tool(
+  1158→            name="tops_pipeline_status",
+  1159→            description=(
+  1160→                "Full health check for a TOP network: per-node status, "
+  1161→                "aggregate stats, issues, and suggestions."
+  1162→            ),
+  1163→            inputSchema={
+  1164→                "type": "object",
+  1165→                "properties": {
+  1166→                    "topnet_path": {"type": "string", "description": "TOP network path"},
+  1167→                    "include_items": {"type": "boolean", "description": "Include per-node work items (default: false)"},
+  1168→                },
+  1169→                "required": ["topnet_path"],
+  1170→            },
+  1171→        ),
+  1172→        # -- TOPS / PDG (Phase 5: Streaming & Render Integration) --
+  1173→        Tool(
+  1174→            name="tops_monitor_stream",
+  1175→            description=(
+  1176→                "Start, stop, or check status of event-driven TOPS cook monitoring. "
+  1177→                "Push-based alternative to polling \u2014 registers PDG event callbacks "
+  1178→                "that track work_item_started, work_item_completed, work_item_failed, "
+  1179→                "cook_progress, and cook_complete events. "
+  1180→                "Use action='start' to begin, action='status' to check, action='stop' to end."
+  1181→            ),
+  1182→            inputSchema={
+  1183→                "type": "object",
+  1184→                "properties": {
+  1185→                    "node": {"type": "string", "description": "TOP node or network path to monitor"},
+  1186→                    "action": {
+  1187→                        "type": "string",
+  1188→                        "enum": ["start", "stop", "status"],
+  1189→                        "description": "Action: start monitoring, stop monitoring, or check status (default: start)",
+  1190→                    },
+  1191→                    "monitor_id": {
+  1192→                        "type": "string",
+  1193→                        "description": "Monitor ID (required for stop/status, returned by start)",
+  1194→                    },
+  1195→                },
+  1196→                "required": ["node"],
+  1197→            },
+  1198→        ),
+  1199→        Tool(
+  1200→            name="tops_render_sequence",
+  1201→            description=(
+  1202→                "Render a frame sequence via TOPS/PDG. Single-call interface for "
+  1203→                "'render frames 1\u201348'. Validates the Solaris stage, creates (or reuses) "
+  1204→                "a TOPS network with ROP fetch, sets frame range and render settings, "
+  1205→                "generates work items, and starts the cook. Returns a job_id for tracking. "
+  1206→                "Idempotent \u2014 reuses existing network if one matches."
+  1207→            ),
+  1208→            inputSchema={
+  1209→                "type": "object",
+  1210→                "properties": {
+  1211→                    "start_frame": {"type": "integer", "description": "First frame to render"},
+  1212→                    "end_frame": {"type": "integer", "description": "Last frame to render (inclusive)"},
+  1213→                    "step": {"type": "integer", "description": "Frame step (default: 1)"},
+  1214→                    "camera": {"type": "string", "description": "Camera USD prim path (e.g. /cameras/render_cam)"},
+  1215→                    "output_dir": {"type": "string", "description": "Output directory for rendered frames"},
+  1216→                    "output_prefix": {"type": "string", "description": "Filename prefix (default: render)"},
+  1217→                    "rop_node": {"type": "string", "description": "ROP node path (auto-discovers if omitted)"},
+  1218→                    "topnet_path": {"type": "string", "description": "Existing TOP network path to reuse"},
+  1219→                    "pixel_samples": {"type": "integer", "description": "Override pixel samples"},
+  1220→                    "resolution": {
+  1221→                        "type": "array",
+  1222→                        "items": {"type": "integer"},
+  1223→                        "description": "Override resolution [width, height]",
+  1224→                    },
+  1225→                    "blocking": {"type": "boolean", "description": "Wait for cook to complete (default: false)"},
+  1226→                },
+  1227→                "required": ["start_frame", "end_frame"],
+  1228→            },
+  1229→        ),
+  1230→        Tool(
+  1231→            name="tops_multi_shot",
+  1232→            description=(
+  1233→                "Create a TOPS network for multi-shot rendering. Accepts a list "
+  1234→                "of shot definitions (name, frame range, camera, overrides), creates "
+  1235→                "per-shot work items in a genericgenerator, feeds into ropfetch for "
+  1236→                "rendering, partitions results by shot name. Returns a job_id for monitoring."
+  1237→            ),
+  1238→            inputSchema={
+  1239→                "type": "object",
+  1240→                "properties": {
+  1241→                    "shots": {
+  1242→                        "type": "array",
+  1243→                        "items": {
+  1244→                            "type": "object",
+  1245→                            "properties": {
+  1246→                                "name": {"type": "string", "description": "Shot name (e.g. sq010_sh010)"},
+  1247→                                "frame_start": {"type": "integer", "description": "First frame (default: 1001)"},
+  1248→                                "frame_end": {"type": "integer", "description": "Last frame (default: 1048)"},
+  1249→                                "camera": {"type": "string", "description": "Camera USD prim path"},
+  1250→                                "overrides": {"type": "object", "description": "Shot-specific parameter overrides"},
+  1251→                            },
+  1252→                            "required": ["name"],
+  1253→                        },
+  1254→                        "description": "List of shot definitions",
+  1255→                    },
+  1256→                    "topnet_path": {"type": "string", "description": "Existing TOP network path to reuse"},
+  1257→                    "renderer": {"type": "string", "description": "Renderer (default: karma_xpu)"},
+  1258→                    "output_dir": {"type": "string", "description": "Base output directory (default: $HIP/render)"},
+  1259→                    "camera_pattern": {"type": "string", "description": "Camera path template (default: /cameras/{shot}_cam)"},
+  1260→                    "rop_node": {"type": "string", "description": "ROP node path (auto-discovers if omitted)"},
+  1261→                    "blocking": {"type": "boolean", "description": "Wait for cook to complete (default: false)"},
+  1262→                    "encode_movie": {"type": "boolean", "description": "Add ffmpeg encode per shot (default: false)"},
+  1263→                },
+  1264→                "required": ["shots"],
+  1265→            },
+  1266→        ),
+  1267→        # -- USD Scene Assembly --
+  1268→        Tool(
+  1269→            name="houdini_reference_usd",
+  1270→            description=(
+  1271→                "Import a USD file into the stage via reference, payload, or sublayer. "
+  1272→                "Payload mode uses deferred loading for heavy assets. "
+  1273→                "For Karma rendering, sublayer is the most reliable import mode."
+  1274→            ),
+  1275→            inputSchema={
+  1276→                "type": "object",
+  1277→                "properties": {
+  1278→                    "file": {"type": "string", "description": "Path to USD file (.usd, .usdc, .usda)"},
+  1279→                    "prim_path": {"type": "string", "description": "Target prim path for reference. Default: /"},
+  1280→                    "mode": {"type": "string", "enum": ["reference", "payload", "sublayer"],
+  1281→                             "description": "Import mode: reference (default), payload (deferred load), or sublayer (most Karma-compatible)"},
+  1282→                    "parent": {"type": "string", "description": "Parent LOP network path. Default: /stage"},
+  1283→                },
+  1284→                "required": ["file"],
+  1285→            },
+  1286→        ),
+  1287→        Tool(
+  1288→            name="houdini_query_prims",
+  1289→            description=(
+  1290→                "Query USD stage prims with filtering by type, purpose, and name pattern. "
+  1291→                "Returns matching prims with their paths, types, and metadata."
+  1292→            ),
+  1293→            inputSchema={
+  1294→                "type": "object",
+  1295→                "properties": {
+  1296→                    "node": {"type": "string", "description": "LOP node path. If omitted, uses current selection."},
+  1297→                    "root_path": {"type": "string", "description": "USD prim path to start walking from (default: /)"},
+  1298→                    "prim_type": {"type": "string", "description": "Filter by USD type name (e.g. 'Mesh', 'DomeLight', 'Material')"},
+  1299→                    "purpose": {"type": "string", "description": "Filter by purpose (e.g. 'default', 'render', 'proxy', 'guide')"},
+  1300→                    "name_pattern": {"type": "string", "description": "Regex or substring filter on prim name"},
+  1301→                    "max_depth": {"type": "integer", "description": "Max traversal depth (default: 10)"},
+  1302→                    "limit": {"type": "integer", "description": "Max prims to return (default: 100)"},
+  1303→                },
+  1304→                "required": [],
+  1305→            },
+  1306→        ),
+  1307→        Tool(
+  1308→            name="houdini_manage_variant_set",
+  1309→            description=(
+  1310→                "Manage USD variant sets on a prim: list, create, or select variants. "
+  1311→                "Use 'list' to see existing variant sets, 'create' to add a new set "
+  1312→                "with named variants, or 'select' to switch the active variant."
+  1313→            ),
+  1314→            inputSchema={
+  1315→                "type": "object",
+  1316→                "properties": {
+  1317→                    "node": {"type": "string", "description": "LOP node path. If omitted, uses current selection."},
+  1318→                    "prim_path": {"type": "string", "description": "USD prim path to manage variants on"},
+  1319→                    "action": {"type": "string", "enum": ["list", "create", "select"],
+  1320→                               "description": "Action to perform (default: list)"},
+  1321→                    "variant_set": {"type": "string", "description": "Variant set name (required for create/select)"},
+  1322→                    "variants": {"type": "array", "items": {"type": "string"},
+  1323→                                 "description": "Variant names to create (required for create action)"},
+  1324→                    "variant": {"type": "string", "description": "Variant to select (required for select action)"},
+  1325→                },
+  1326→                "required": ["prim_path"],
+  1327→            },
+  1328→        ),
+  1329→        Tool(
+  1330→            name="houdini_manage_collection",
+  1331→            description=(
+  1332→                "Manage USD collections on a prim for light linking, material assignment, "
+  1333→                "and grouping. Use 'list' to see existing collections, 'create' to make a "
+  1334→                "new collection with include/exclude paths, 'add'/'remove' to modify paths."
+  1335→            ),
+  1336→            inputSchema={
+  1337→                "type": "object",
+  1338→                "properties": {
+  1339→                    "node": {"type": "string", "description": "LOP node path. If omitted, uses current selection."},
+  1340→                    "prim_path": {"type": "string", "description": "USD prim path to manage collections on"},
+  1341→                    "action": {"type": "string", "enum": ["list", "create", "add", "remove"],
+  1342→                               "description": "Action to perform (default: list)"},
+  1343→                    "collection_name": {"type": "string", "description": "Collection name (required for create/add/remove)"},
+  1344→                    "paths": {"type": "array", "items": {"type": "string"},
+  1345→                              "description": "Prim paths to include (required for create/add/remove)"},
+  1346→                    "exclude_paths": {"type": "array", "items": {"type": "string"},
+  1347→                                      "description": "Prim paths to exclude (optional, create only)"},
+  1348→                    "expansion_rule": {"type": "string", "enum": ["expandPrims", "expandPrimsAndProperties", "explicitOnly"],
+  1349→                                       "description": "Collection expansion rule (default: expandPrims)"},
+  1350→                },
+  1351→                "required": ["prim_path"],
+  1352→            },
+  1353→        ),
+  1354→        # -- Materials --
+  1355→        Tool(
+  1356→            name="houdini_create_textured_material",
+  1357→            description=(
+  1358→                "Create a production MaterialX material with texture file inputs. "
+  1359→                "Supports diffuse, roughness, metalness, normal, opacity, and displacement maps. "
+  1360→                "Handles UDIM textures and UV coordinate wiring automatically."
+  1361→            ),
+  1362→            inputSchema={
+  1363→                "type": "object",
+  1364→                "properties": {
+  1365→                    "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+  1366→                    "name": {"type": "string", "description": "Material name (default: textured_material)"},
+  1367→                    "diffuse_map": {"type": "string", "description": "Path to diffuse/albedo texture file"},
+  1368→                    "roughness_map": {"type": "string", "description": "Path to roughness texture file"},
+  1369→                    "metalness_map": {"type": "string", "description": "Path to metalness texture file"},
+  1370→                    "normal_map": {"type": "string", "description": "Path to normal map texture file"},
+  1371→                    "displacement_map": {"type": "string", "description": "Path to displacement map texture file"},
+  1372→                    "opacity_map": {"type": "string", "description": "Path to opacity/alpha texture file"},
+  1373→                    "roughness": {"type": "number", "description": "Scalar roughness fallback if no texture (0-1)"},
+  1374→                    "metalness": {"type": "number", "description": "Scalar metalness fallback if no texture (0-1)"},
+  1375→                    "geo_pattern": {"type": "string", "description": "Optional geometry prim pattern to auto-assign material"},
+  1376→                },
+  1377→                "required": [],
+  1378→            },
+  1379→        ),
+  1380→        Tool(
+  1381→            name="houdini_create_material",
+  1382→            description=(
+  1383→                "Create a material with a shader in the LOP network. "
+  1384→                "When reporting back, share what was created \u2014 "
+  1385→                "'Set up a new brushed metal material at /materials/chrome'."
+  1386→            ),
+  1387→            inputSchema={
+  1388→                "type": "object",
+  1389→                "properties": {
+  1390→                    "node": {
+  1391→                        "type": "string",
+  1392→                        "description": "LOP node to wire after. If omitted, uses current selection.",
+  1393→                    },
+  1394→                    "name": {
+  1395→                        "type": "string",
+  1396→                        "description": "Material name (default: 'material')",
+  1397→                    },
+  1398→                    "shader_type": {
+  1399→                        "type": "string",
+  1400→                        "description": "Shader node type (default: 'mtlxstandard_surface')",
+  1401→                    },
+  1402→                    "base_color": {
+  1403→                        "type": "array",
+  1404→                        "items": {"type": "number"},
+  1405→                        "description": "[r, g, b] floats 0-1",
+  1406→                    },
+  1407→                    "metalness": {
+  1408→                        "type": "number",
+  1409→                        "description": "Metalness value 0-1",
+  1410→                    },
+  1411→                    "roughness": {
+  1412→                        "type": "number",
+  1413→                        "description": "Roughness value 0-1",
+  1414→                    },
+  1415→                    "opacity": {
+  1416→                        "type": "number",
+  1417→                        "description": "Opacity 0-1 (1=fully opaque)",
+  1418→                    },
+  1419→                    "emission": {
+  1420→                        "type": "number",
+  1421→                        "description": "Emission weight 0-1",
+  1422→                    },
+  1423→                    "emission_color": {
+  1424→                        "type": "array",
+  1425→                        "items": {"type": "number"},
+  1426→                        "description": "Emission color [r, g, b] 0-1",
+  1427→                    },
+  1428→                    "subsurface": {
+  1429→                        "type": "number",
+  1430→                        "description": "Subsurface scattering weight 0-1",
+  1431→                    },
+  1432→                    "subsurface_color": {
+  1433→                        "type": "array",
+  1434→                        "items": {"type": "number"},
+  1435→                        "description": "Subsurface color [r, g, b] 0-1",
+  1436→                    },
+  1437→                },
+  1438→                "required": [],
+  1439→            },
+  1440→        ),
+  1441→        Tool(
+  1442→            name="houdini_configure_light_linking",
+  1443→            description=(
+  1444→                "Configure light linking between lights and geometry via USD collections. "
+  1445→                "Control which geometry a light illuminates or casts shadows on."
+  1446→            ),
+  1447→            inputSchema={
+  1448→                "type": "object",
+  1449→                "properties": {
+  1450→                    "node": {"type": "string", "description": "LOP node path. If omitted, uses current selection."},
+  1451→                    "light_path": {"type": "string", "description": "USD prim path of the light"},
+  1452→                    "action": {
+  1453→                        "type": "string",
+  1454→                        "enum": ["include", "exclude", "shadow_include", "shadow_exclude", "reset"],
+  1455→                        "description": "Light linking action (default: include)",
+  1456→                    },
+  1457→                    "geo_paths": {
+  1458→                        "type": "array",
+  1459→                        "items": {"type": "string"},
+  1460→                        "description": "Geometry prim paths to include/exclude (not needed for reset)",
+  1461→                    },
+  1462→                },
+  1463→                "required": ["light_path"],
+  1464→            },
+  1465→        ),
+  1466→        Tool(
+  1467→            name="houdini_assign_material",
+  1468→            description=(
+  1469→                "Assign a material to geometry prims. Creates an assign node wired into "
+  1470→                "the graph. Confirm what got connected \u2014 'Bound the chrome material to "
+  1471→                "all meshes under /World/props'."
+  1472→            ),
+  1473→            inputSchema={
+  1474→                "type": "object",
+  1475→                "properties": {
+  1476→                    "node": {
+  1477→                        "type": "string",
+  1478→                        "description": "LOP node to wire after. If omitted, uses current selection.",
+  1479→                    },
+  1480→                    "prim_pattern": {
+  1481→                        "type": "string",
+  1482→                        "description": "Geometry prim path or pattern (e.g. '/World/geo/*')",
+  1483→                    },
+  1484→                    "material_path": {
+  1485→                        "type": "string",
+  1486→                        "description": "USD material path (e.g. '/materials/plastic')",
+  1487→                    },
+  1488→                },
+  1489→                "required": ["prim_pattern", "material_path"],
+  1490→            },
+  1491→        ),
+  1492→        Tool(
+  1493→            name="houdini_read_material",
+  1494→            description=(
+  1495→                "Read what material is assigned to a prim and its shader settings. "
+  1496→                "Present findings naturally \u2014 'That mesh is using a gold material "
+  1497→                "with roughness at 0.3'."
+  1498→            ),
+  1499→            inputSchema={
+  1500→                "type": "object",
+  1501→                "properties": {
+  1502→                    "node": {
+  1503→                        "type": "string",
+  1504→                        "description": "LOP node to read stage from. If omitted, uses current selection.",
+  1505→                    },
+  1506→                    "prim_path": {
+  1507→                        "type": "string",
+  1508→                        "description": "USD prim to inspect",
+  1509→                    },
+  1510→                },
+  1511→                "required": ["prim_path"],
+  1512→            },
+  1513→        ),
+  1514→        # -- Knowledge / RAG --
+  1515→        Tool(
+  1516→            name="synapse_knowledge_lookup",
+  1517→            description=(
+  1518→                "Look up Houdini knowledge: parameter names, node types, "
+  1519→                "workflow guides, FX setup, rendering, and lighting. "
+  1520→                "Uses the RAG index for fast, grounded answers. "
+  1521→                "Use this before guessing parameter names or node types \u2014 "
+  1522→                "it's faster and more reliable than trial and error."
+  1523→            ),
+  1524→            inputSchema={
+  1525→                "type": "object",
+  1526→                "properties": {
+  1527→                    "query": {
+  1528→                        "type": "string",
+  1529→                        "description": "Natural language query (e.g. 'dome light intensity parameter', 'pyro setup chain')",
+  1530→                    },
+  1531→                },
+  1532→                "required": ["query"],
+  1533→            },
+  1534→        ),
+  1535→        # -- Introspection --
+  1536→        Tool(
+  1537→            name="synapse_inspect_selection",
+  1538→            description=(
+  1539→                "Inspect the currently selected nodes in detail \u2014 modified parameters, "
+  1540→                "connections, geometry stats, warnings/errors, and the upstream input graph. "
+  1541→                "Start here to understand what the artist is working on before making changes."
+  1542→            ),
+  1543→            inputSchema={
+  1544→                "type": "object",
+  1545→                "properties": {
+  1546→                    "depth": {
+  1547→                        "type": "integer",
+  1548→                        "description": "How many levels of input nodes to traverse (default: 1). Use 0 for just the selected nodes, 2+ to see deeper upstream context.",
+  1549→                    },
+  1550→                },
+  1551→                "required": [],
+  1552→            },
+  1553→        ),
+  1554→        Tool(
+  1555→            name="synapse_inspect_scene",
+  1556→            description=(
+  1557→                "Get a bird's-eye view of the Houdini scene \u2014 node tree, context breakdown "
+  1558→                "(SOP/LOP/OBJ counts), warnings/errors, and sticky notes. "
+  1559→                "Use this to orient in an unfamiliar scene before diving into specifics."
+  1560→            ),
+  1561→            inputSchema={
+  1562→                "type": "object",
+  1563→                "properties": {
+  1564→                    "root": {
+  1565→                        "type": "string",
+  1566→                        "description": "Starting node path (default: '/'). Use '/obj' or '/stage' to focus on a specific context.",
+  1567→                    },
+  1568→                    "max_depth": {
+  1569→                        "type": "integer",
+  1570→                        "description": "How deep to traverse the hierarchy (default: 3).",
+  1571→                    },
+  1572→                    "context_filter": {
+  1573→                        "type": "string",
+  1574→                        "description": "Only include nodes of this category (e.g. 'Sop', 'Lop', 'Object').",
+  1575→                    },
+  1576→                },
+  1577→                "required": [],
+  1578→            },
+  1579→        ),
+  1580→        Tool(
+  1581→            name="synapse_inspect_node",
+  1582→            description=(
+  1583→                "Deep-dive into a single node \u2014 every parameter (grouped by folder), "
+  1584→                "expressions, keyframes, VEX/Python code, geometry attributes with samples, "
+  1585→                "spare parameters, and HDA info. Use this when you need the full picture "
+  1586→                "of how a specific node is configured."
+  1587→            ),
+  1588→            inputSchema={
+  1589→                "type": "object",
+  1590→                "properties": {
+  1591→                    "node": {
+  1592→                        "type": "string",
+  1593→                        "description": "Full path to the node (e.g. '/obj/geo1/mountain1').",
+  1594→                    },
+  1595→                    "include_code": {
+  1596→                        "type": "boolean",
+  1597→                        "description": "Include VEX/Python code from wrangle/script nodes (default: true).",
+  1598→                    },
+  1599→                    "include_geometry": {
+  1600→                        "type": "boolean",
+  1601→                        "description": "Include geometry attribute summary (default: true).",
+  1602→                    },
+  1603→                    "include_expressions": {
+  1604→                        "type": "boolean",
+  1605→                        "description": "Include parameter expressions and keyframe info (default: true).",
+  1606→                    },
+  1607→                },
+  1608→                "required": ["node"],
+  1609→            },
+  1610→        ),
+  1611→        # -- Memory --
+  1612→        Tool(
+  1613→            name="synapse_context",
+  1614→            description=(
+  1615→                "Get project context from Synapse memory (shot info, decisions, notes). "
+  1616→                "Check this at the start of a session to understand the project history."
+  1617→            ),
+  1618→            inputSchema={"type": "object", "properties": {}, "required": []},
+  1619→        ),
+  1620→        Tool(
+  1621→            name="synapse_search",
+  1622→            description=(
+  1623→                "Search project memory for relevant entries. "
+  1624→                "Helps avoid repeating past mistakes or rediscovering solutions."
+  1625→            ),
+  1626→            inputSchema={
+  1627→                "type": "object",
+  1628→                "properties": {
+  1629→                    "query": {
+  1630→                        "type": "string",
+  1631→                        "description": "Search query",
+  1632→                    },
+  1633→                },
+  1634→                "required": ["query"],
+  1635→            },
+  1636→        ),
+  1637→        Tool(
+  1638→            name="synapse_recall",
+  1639→            description=(
+  1640→                "Recall relevant memories for a given context or question. "
+  1641→                "Use before starting work to surface past decisions and learnings."
+  1642→            ),
+  1643→            inputSchema={
+  1644→                "type": "object",
+  1645→                "properties": {
+  1646→                    "query": {
+  1647→                        "type": "string",
+  1648→                        "description": "Context or question to recall memories for",
+  1649→                    },
+  1650→                },
+  1651→                "required": ["query"],
+  1652→            },
+  1653→        ),
+  1654→        Tool(
+  1655→            name="synapse_decide",
+  1656→            description=(
+  1657→                "Record a decision in project memory with reasoning. "
+  1658→                "Future sessions will benefit from knowing why a choice was made."
+  1659→            ),
+  1660→            inputSchema={
+  1661→                "type": "object",
+  1662→                "properties": {
+  1663→                    "decision": {
+  1664→                        "type": "string",
+  1665→                        "description": "The decision made",
+  1666→                    },
+  1667→                    "reasoning": {
+  1668→                        "type": "string",
+  1669→                        "description": "Why this decision was made",
+  1670→                    },
+  1671→                    "alternatives": {
+  1672→                        "type": "string",
+  1673→                        "description": "Alternatives that were considered",
+  1674→                    },
+  1675→                },
+  1676→                "required": ["decision"],
+  1677→            },
+  1678→        ),
+  1679→        Tool(
+  1680→            name="synapse_add_memory",
+  1681→            description=(
+  1682→                "Add a memory entry to the project (note, context, reference, etc.). "
+  1683→                "Good for capturing insights, gotchas, or creative direction for future reference."
+  1684→            ),
+  1685→            inputSchema={
+  1686→                "type": "object",
+  1687→                "properties": {
+  1688→                    "content": {
+  1689→                        "type": "string",
+  1690→                        "description": "Memory content to store",
+  1691→                    },
+  1692→                    "memory_type": {
+  1693→                        "type": "string",
+  1694→                        "description": "Type of memory (note, context, reference, task). Default: note",
+  1695→                    },
+  1696→                    "tags": {
+  1697→                        "type": "array",
+  1698→                        "items": {"type": "string"},
+  1699→                        "description": "Optional tags for categorization",
+  1700→                    },
+  1701→                },
+  1702→                "required": ["content"],
+  1703→            },
+  1704→        ),
+  1705→        # -- Scene Memory (Living Memory System) --
+  1706→        Tool(
+  1707→            name="synapse_project_setup",
+  1708→            description=(
+  1709→                "Initialize or load SYNAPSE project structure for the current scene. "
+  1710→                "Creates claude/ directories, seeds memory files, loads existing context. "
+  1711→                "Idempotent. Call this after synapse_ping to load full scene context."
+  1712→            ),
+  1713→            inputSchema={
+  1714→                "type": "object",
+  1715→                "properties": {
+  1716→                    "force_refresh": {
+  1717→                        "type": "boolean",
+  1718→                        "description": "Force re-read all memory files even if cached. Default: false",
+  1719→                    },
+  1720→                },
+  1721→            },
+  1722→        ),
+  1723→        Tool(
+  1724→            name="synapse_memory_write",
+  1725→            description=(
+  1726→                "Write a memory entry to scene or project memory. "
+  1727→                "Handles markdown vs USD format automatically."
+  1728→            ),
+  1729→            inputSchema={
+  1730→                "type": "object",
+  1731→                "properties": {
+  1732→                    "entry_type": {
+  1733→                        "type": "string",
+  1734→                        "enum": [
+  1735→                            "decision", "parameter_experiment", "blocker",
+  1736→                            "blocker_resolved", "asset_reference", "wedge_result",
+  1737→                            "note", "session_end",
+  1738→                        ],
+  1739→                        "description": "Type of memory entry",
+  1740→                    },
+  1741→                    "content": {
+  1742→                        "type": "object",
+  1743→                        "description": "Entry content -- structure depends on entry_type",
+  1744→                    },
+  1745→                    "scope": {
+  1746→                        "type": "string",
+  1747→                        "enum": ["scene", "project", "both"],
+  1748→                        "description": "Where to write. Default: scene",
+  1749→                    },
+  1750→                },
+  1751→                "required": ["entry_type", "content"],
+  1752→            },
+  1753→        ),
+  1754→        Tool(
+  1755→            name="synapse_memory_query",
+  1756→            description=(
+  1757→                "Query scene or project memory. Text search in Charmander (markdown), "
+  1758→                "structured queries in Charmeleon+ (USD)."
+  1759→            ),
+  1760→            inputSchema={
+  1761→                "type": "object",
+  1762→                "properties": {
+  1763→                    "query": {
+  1764→                        "type": "string",
+  1765→                        "description": "Search query",
+  1766→                    },
+  1767→                    "scope": {
+  1768→                        "type": "string",
+  1769→                        "enum": ["scene", "project", "all"],
+  1770→                        "description": "Search scope. Default: all",
+  1771→                    },
+  1772→                    "type_filter": {
+  1773→                        "type": "string",
+  1774→                        "enum": [
+  1775→                            "all", "decisions", "parameters",
+  1776→                            "blockers", "assets", "sessions",
+  1777→                        ],
+  1778→                        "description": "Filter by entry type. Default: all",
+  1779→                    },
+  1780→                },
+  1781→                "required": ["query"],
+  1782→            },
+  1783→        ),
+  1784→        Tool(
+  1785→            name="synapse_memory_status",
+  1786→            description=(
+  1787→                "Get memory system status: evolution stage, file sizes, "
+  1788→                "session count, agent state."
+  1789→            ),
+  1790→            inputSchema={
+  1791→                "type": "object",
+  1792→                "properties": {},
+  1793→            },
+  1794→        ),
+  1795→        # -- Evolution --
+  1796→        Tool(
+  1797→            name="synapse_evolve_memory",
+  1798→            description=(
+  1799→                "Manually trigger memory evolution (Charmander->Charmeleon "
+  1800→                "or Charmeleon->Charizard). Use dry_run=true to preview."
+  1801→            ),
+  1802→            inputSchema={
+  1803→                "type": "object",
+  1804→                "properties": {
+  1805→                    "scope": {"type": "string", "enum": ["scene", "project"]},
+  1806→                    "target_stage": {"type": "string", "enum": ["charmeleon", "charizard"]},
+  1807→                    "dry_run": {"type": "boolean", "description": "Preview without evolving. Default: true"},
+  1808→                },
+  1809→            },
+  1810→        ),
+  1811→        # -- Batch --
+  1812→        Tool(
+  1813→            name="synapse_batch",
+  1814→            description=(
+  1815→                "Execute multiple Synapse commands in a single round-trip. "
+  1816→                "Each command runs in declared order. Wraps in a single undo group "
+  1817→                "by default so Ctrl+Z reverts the whole batch."
+  1818→            ),
+  1819→            inputSchema={
+  1820→                "type": "object",
+  1821→                "properties": {
+  1822→                    "commands": {
+  1823→                        "type": "array",
+  1824→                        "items": {
+  1825→                            "type": "object",
+  1826→                            "properties": {
+  1827→                                "type": {"type": "string", "description": "Command type (e.g. 'create_node', 'set_parm')"},
+  1828→                                "payload": {"type": "object", "description": "Command payload"},
+  1829→                            },
+  1830→                            "required": ["type"],
+  1831→                        },
+  1832→                        "description": "List of commands to execute in order",
+  1833→                    },
+  1834→                    "atomic": {
+  1835→                        "type": "boolean",
+  1836→                        "description": "Wrap in single undo group (default: true)",
+  1837→                    },
+  1838→                    "stop_on_error": {
+  1839→                        "type": "boolean",
+  1840→                        "description": "Stop on first error (default: false)",
+  1841→                    },
+  1842→                },
+  1843→                "required": ["commands"],
+  1844→            },
+  1845→        ),
+  1846→        # -- Metrics / Stats --
+  1847→        Tool(
+  1848→            name="synapse_metrics",
+  1849→            description=(
+  1850→                "Get Synapse metrics in Prometheus text format. "
+  1851→                "Includes per-tier request counts, latencies, circuit breaker state, "
+  1852→                "and memory store size. Use for observability and debugging."
+  1853→            ),
+  1854→            inputSchema={
+  1855→                "type": "object",
+  1856→                "properties": {},
+  1857→                "required": [],
+  1858→            },
+  1859→        ),
+  1860→        Tool(
+  1861→            name="synapse_router_stats",
+  1862→            description=(
+  1863→                "Get tier cascade routing statistics. Shows per-tier counts, latencies, "
+  1864→                "epoch adaptation state, cache hit rates, and knowledge index coverage. "
+  1865→                "Helps the LLM reason about its own routing performance."
+  1866→            ),
+  1867→            inputSchema={
+  1868→                "type": "object",
+  1869→                "properties": {},
+  1870→                "required": [],
+  1871→            },
+  1872→        ),
+  1873→        Tool(
+  1874→            name="synapse_list_recipes",
+  1875→            description=(
+  1876→                "List all available recipes with names, descriptions, trigger patterns, "
+  1877→                "and categories. Artists can ask 'what recipes are available?' to discover "
+  1878→                "pre-built automation workflows."
+  1879→            ),
+  1880→            inputSchema={
+  1881→                "type": "object",
+  1882→                "properties": {},
+  1883→                "required": [],
+  1884→            },
+  1885→        ),
+  1886→        Tool(
+  1887→            name="synapse_live_metrics",
+  1888→            description=(
+  1889→                "Get live metrics snapshot: scene health, routing performance, "
+  1890→                "resilience state, and session stats. Pass history_count > 0 for "
+  1891→                "historical snapshots (newest first)."
+  1892→            ),
+  1893→            inputSchema={
+  1894→                "type": "object",
+  1895→                "properties": {
+  1896→                    "history_count": {
+  1897→                        "type": "integer",
+  1898→                        "description": "Number of historical snapshots to return (0 = latest only)",
+  1899→                    },
+  1900→                },
+  1901→                "required": [],
+  1902→            },
+  1903→        ),
+  1904→        # -- Render Farm --
+  1905→        Tool(
+  1906→            name="synapse_render_sequence",
+  1907→            description=(
+  1908→                "Render a frame range with per-frame validation, automatic issue "
+  1909→                "diagnosis, and self-improving fixes. Learns from each render to "
+  1910→                "start smarter next time."
+  1911→            ),
+  1912→            inputSchema={
+  1913→                "type": "object",
+  1914→                "properties": {
+  1915→                    "rop": {
+  1916→                        "type": "string",
+  1917→                        "description": "ROP node path (auto-discovers if omitted)",
+  1918→                    },
+  1919→                    "start_frame": {
+  1920→                        "type": "integer",
+  1921→                        "description": "First frame to render",
+  1922→                    },
+  1923→                    "end_frame": {
+  1924→                        "type": "integer",
+  1925→                        "description": "Last frame to render (inclusive)",
+  1926→                    },
+  1927→                    "step": {
+  1928→                        "type": "integer",
+  1929→                        "description": "Frame step (default: 1)",
+  1930→                    },
+  1931→                    "auto_fix": {
+  1932→                        "type": "boolean",
+  1933→                        "description": "Auto-diagnose and fix issues (default: true)",
+  1934→                    },
+  1935→                    "max_retries": {
+  1936→                        "type": "integer",
+  1937→                        "description": "Max retries per frame (default: 3)",
+  1938→                    },
+  1939→                },
+  1940→                "required": ["start_frame", "end_frame"],
+  1941→            },
+  1942→        ),
+  1943→        Tool(
+  1944→            name="synapse_render_farm_status",
+  1945→            description=(
+  1946→                "Check progress of a running render farm job: running state, "
+  1947→                "scene tags, current frame."
+  1948→            ),
+  1949→            inputSchema={
+  1950→                "type": "object",
+  1951→                "properties": {},
+  1952→                "required": [],
+  1953→            },
+  1954→        ),
+  1955→        # -- Autonomous Render --
+  1956→        Tool(
+  1957→            name="synapse_autonomous_render",
+  1958→            description=(
+  1959→                "Execute an autonomous render loop: plan the render from intent, "
+  1960→                "validate the scene, execute via TOPS, evaluate quality, and "
+  1961→                "re-render if needed. Returns a full report with plan, evaluation, "
+  1962→                "decisions, and success flag."
+  1963→            ),
+  1964→            inputSchema={
+  1965→                "type": "object",
+  1966→                "properties": {
+  1967→                    "intent": {
+  1968→                        "type": "string",
+  1969→                        "description": "What to render (e.g., 'render frames 1-48', 'render turntable with ARRI Alexa 35 at 50mm')",
+  1970→                    },
+  1971→                    "max_iterations": {
+  1972→                        "type": "integer",
+  1973→                        "default": 3,
+  1974→                        "description": "Max re-render attempts if quality check fails",
+  1975→                    },
+  1976→                    "quality_threshold": {
+  1977→                        "type": "number",
+  1978→                        "default": 0.85,
+  1979→                        "description": "Minimum quality score (0.0-1.0) for frames to pass",
+  1980→                    },
+  1981→                },
+  1982→                "required": ["intent"],
+  1983→            },
+  1984→        ),
+  1985→        # -- Solaris Ordering Validation --
+  1986→        Tool(
+  1987→            name="synapse_validate_ordering",
+  1988→            description=(
+  1989→                "Walk a LOP network backwards from the render node, detecting "
+  1990→                "ambiguous merge points where input order affects USD opinion "
+  1991→                "strength. Flags merge and sublayer LOPs with 2+ inputs as "
+  1992→                "potential ordering issues. Use this before rendering to catch "
+  1993→                "unintended layer composition problems."
+  1994→            ),
+  1995→            inputSchema={
+  1996→                "type": "object",
+  1997→                "properties": {
+  1998→                    "node": {
+  1999→                        "type": "string",
+  2000→                        "description": "Starting node path (render ROP or Karma LOP). Auto-discovers if omitted.",
+  2001→                    },
+  2002→                    "max_depth": {
+  2003→                        "type": "integer",
+  2004→                        "description": "Maximum traversal depth (default: 50)",
+  2005→                    },
+  2006→                },
+  2007→                "required": [],
+  2008→            },
+  2009→        ),
+  2010→    ]
+  2011→
+  2012→
+  2013→# ---------------------------------------------------------------------------
+  2014→# Tool dispatch
+  2015→# ---------------------------------------------------------------------------
+  2016→
+  2017→# Map MCP tool name → (synapse_command_type, payload_builder)
+  2018→# payload_builder receives the MCP arguments dict and returns the Synapse payload dict
+  2019→
+  2020→def _passthrough(_args: dict) -> dict:
+  2021→    return {}
+  2022→
+  2023→
+  2024→def _execute_python_payload(args: dict) -> dict:
+  2025→    # MCP uses 'code', Synapse handler resolves 'content'
+  2026→    p = {"content": args["code"]}
+  2027→    if "dry_run" in args:
+  2028→        p["dry_run"] = args["dry_run"]
+  2029→    if "atomic" in args:
+  2030→        p["atomic"] = args["atomic"]
+  2031→    return p
+  2032→
+  2033→
+  2034→def _stage_info_payload(args: dict) -> dict:
+  2035→    p = {}
+  2036→    if "node" in args:
+  2037→        p["node"] = args["node"]
+  2038→    return p
+  2039→
+  2040→
+  2041→def _decide_payload(args: dict) -> dict:
+  2042→    p = {"decision": args["decision"]}
+  2043→    if "reasoning" in args:
+  2044→        p["reasoning"] = args["reasoning"]
+  2045→    if "alternatives" in args:
+  2046→        alt = args["alternatives"]
+  2047→        p["alternatives"] = [a.strip() for a in alt.split(",") if a.strip()] if isinstance(alt, str) else alt
+  2048→    return p
+  2049→
+  2050→
+  2051→def _add_memory_payload(args: dict) -> dict:
+  2052→    p = {"content": args["content"]}
+  2053→    if "memory_type" in args:
+  2054→        p["memory_type"] = args["memory_type"]
+  2055→    if "tags" in args:
+  2056→        p["tags"] = args["tags"]
+  2057→    return p
+  2058→
+  2059→
+  2060→def _identity(a: dict) -> dict:
+  2061→    return a
+  2062→
+  2063→
+  2064→TOOL_DISPATCH: dict[str, tuple[str, callable]] = {
+  2065→    "synapse_ping":          ("ping",            _passthrough),
+  2066→    "synapse_health":        ("get_health",      _passthrough),
+  2067→    "houdini_scene_info":    ("get_scene_info",  _passthrough),
+  2068→    "houdini_get_selection": ("get_selection",    _passthrough),
+  2069→    "houdini_create_node":   ("create_node",     _identity),
+  2070→    "houdini_delete_node":   ("delete_node",     lambda a: {"node": a["node"]}),
+  2071→    "houdini_connect_nodes": ("connect_nodes",   _identity),
+  2072→    "houdini_get_parm":      ("get_parm",        lambda a: {"node": a["node"], "parm": a["parm"]}),
+  2073→    "houdini_set_parm":      ("set_parm",        lambda a: {"node": a["node"], "parm": a["parm"], "value": a["value"]}),
+  2074→    "houdini_execute_python":("execute_python",  _execute_python_payload),
+  2075→    "houdini_execute_vex":   ("execute_vex",    _identity),
+  2076→    "houdini_stage_info":    ("get_stage_info",  _stage_info_payload),
+  2077→    "houdini_get_usd_attribute": ("get_usd_attribute", lambda a: {
+  2078→        k: a[k] for k in ("node", "prim_path", "attribute_name") if k in a
+  2079→    }),
+  2080→    "houdini_set_usd_attribute": ("set_usd_attribute", lambda a: {
+  2081→        k: a[k] for k in ("node", "prim_path", "attribute_name", "value") if k in a
+  2082→    }),
+  2083→    "houdini_create_usd_prim": ("create_usd_prim", lambda a: {
+  2084→        k: a[k] for k in ("node", "prim_path", "prim_type") if k in a
+  2085→    }),
+  2086→    "houdini_modify_usd_prim": ("modify_usd_prim", lambda a: {
+  2087→        k: a[k] for k in ("node", "prim_path", "kind", "purpose", "active") if k in a
+  2088→    }),
+  2089→    "houdini_capture_viewport": ("capture_viewport", _identity),
+  2090→    "houdini_render":           ("render",           _identity),
+  2091→    "houdini_set_keyframe":     ("set_keyframe",     _identity),
+  2092→    "houdini_render_settings":  ("render_settings",  _identity),
+  2093→    "houdini_wedge":         ("wedge",          _identity),
+  2094→    "tops_get_work_items":        ("tops_get_work_items",        _identity),
+  2095→    "tops_get_dependency_graph":  ("tops_get_dependency_graph",  _identity),
+  2096→    "tops_get_cook_stats":        ("tops_get_cook_stats",        _identity),
+  2097→    "tops_cook_node":             ("tops_cook_node",             _identity),
+  2098→    "tops_generate_items":        ("tops_generate_items",        _identity),
+  2099→    "tops_configure_scheduler":   ("tops_configure_scheduler",   _identity),
+  2100→    "tops_cancel_cook":           ("tops_cancel_cook",           _identity),
+  2101→    "tops_dirty_node":            ("tops_dirty_node",            _identity),
+  2102→    "tops_setup_wedge":           ("tops_setup_wedge",           _identity),
+  2103→    "tops_batch_cook":            ("tops_batch_cook",            _identity),
+  2104→    "tops_query_items":           ("tops_query_items",           _identity),
+  2105→    "tops_cook_and_validate":     ("tops_cook_and_validate",     _identity),
+  2106→    "tops_diagnose":              ("tops_diagnose",              _identity),
+  2107→    "tops_pipeline_status":       ("tops_pipeline_status",       _identity),
+  2108→    "tops_monitor_stream":        ("tops_monitor_stream",        _identity),
+  2109→    "tops_render_sequence":       ("tops_render_sequence",       _identity),
+  2110→    "tops_multi_shot":            ("tops_multi_shot",            _identity),
+  2111→    "houdini_reference_usd": ("reference_usd",  _identity),
+  2112→    "houdini_query_prims":   ("query_prims",    _identity),
+  2113→    "houdini_manage_variant_set": ("manage_variant_set", _identity),
+  2114→    "houdini_manage_collection": ("manage_collection", _identity),
+  2115→    "houdini_configure_light_linking": ("configure_light_linking", _identity),
+  2116→    "houdini_create_textured_material": ("create_textured_material", _identity),
+  2117→    "houdini_create_material":  ("create_material",  _identity),
+  2118→    "houdini_assign_material":  ("assign_material",  _identity),
+  2119→    "houdini_read_material":    ("read_material",    _identity),
+  2120→    "synapse_validate_frame":   ("validate_frame",   _identity),
+  2121→    "synapse_configure_render_passes": ("configure_render_passes", _identity),
+  2122→    "synapse_knowledge_lookup": ("knowledge_lookup", lambda a: {"query": a["query"]}),
+  2123→    "synapse_inspect_selection": ("inspect_selection", _identity),
+  2124→    "synapse_inspect_scene":    ("inspect_scene",     _identity),
+  2125→    "synapse_inspect_node":     ("inspect_node",      _identity),
+  2126→    "synapse_context":       ("context",         _passthrough),
+  2127→    "synapse_search":        ("search",          lambda a: {"query": a["query"]}),
+  2128→    "synapse_recall":        ("recall",          lambda a: {"query": a["query"]}),
+  2129→    "synapse_decide":        ("decide",          _decide_payload),
+  2130→    "synapse_add_memory":    ("add_memory",      _add_memory_payload),
+  2131→    "synapse_batch":         ("batch_commands",  _identity),
+  2132→    "synapse_metrics":       ("get_metrics",     _passthrough),
+  2133→    "synapse_router_stats":  ("router_stats",    _passthrough),
+  2134→    "synapse_list_recipes":  ("list_recipes",    _passthrough),
+  2135→    "synapse_live_metrics":  ("get_live_metrics", _identity),
+  2136→    "synapse_project_setup": ("project_setup",   _identity),
+  2137→    "synapse_memory_write":  ("memory_write",    _identity),
+  2138→    "synapse_memory_query":  ("memory_query",    _identity),
+  2139→    "synapse_memory_status": ("memory_status",   _passthrough),
+  2140→    "synapse_evolve_memory": ("evolve_memory",   _passthrough),
+  2141→    "synapse_render_sequence":    ("render_sequence",      _identity),
+  2142→    "synapse_render_farm_status": ("render_farm_status",   _passthrough),
+  2143→    "synapse_autonomous_render":  ("autonomous_render",    _identity),
+  2144→    "synapse_validate_ordering": ("solaris_validate_ordering", _identity),
+  2145→}
+  2146→
+  2147→
+  2148→@server.call_tool()
+  2149→async def call_tool(name: str, arguments: dict):
+  2150→    """Dispatch MCP tool call to Synapse via WebSocket."""
+  2151→    if name not in TOOL_DISPATCH:
+  2152→        return [TextContent(type="text", text=f"I don't recognize the tool '{name}' \u2014 check the available tools list")]
+  2153→
+  2154→    cmd_type, build_payload = TOOL_DISPATCH[name]
+  2155→
+  2156→    try:
+  2157→        payload = build_payload(arguments)
+  2158→        data = await send_command(cmd_type, payload)
+  2159→
+  2160→        # Image-producing tools: read file and return as ImageContent
+  2161→        if name in ("houdini_capture_viewport", "houdini_render"):
+  2162→            import base64
+  2163→            image_path = data.get("image_path", "")
+  2164→            try:
+  2165→                with open(image_path, "rb") as f:
+  2166→                    b64 = base64.b64encode(f.read()).decode("utf-8")
+  2167→                mime = "image/jpeg" if data.get("format") == "jpeg" else "image/png"
+  2168→                meta = {
+  2169→                    "width": data.get("width"),
+  2170→                    "height": data.get("height"),
+  2171→                    "format": data.get("format"),
+  2172→                }
+  2173→                # Include render-specific metadata
+  2174→                if "engine" in data:
+  2175→                    meta["rop"] = data.get("rop")
+  2176→                    meta["rop_type"] = data.get("rop_type")
+  2177→                    meta["engine"] = data.get("engine")
+  2178→                return [
+  2179→                    ImageContent(type="image", data=b64, mimeType=mime),
+  2180→                    TextContent(type="text", text=_dumps_str(meta)),
+  2181→                ]
+  2182→            except FileNotFoundError:
+  2183→                return [TextContent(type="text", text=(
+  2184→                    f"The capture ran but the image file wasn't found at {image_path} \u2014 "
+  2185→                    "it may have been cleaned up or the path changed"
+  2186→                ))]
+  2187→
+  2188→        return [TextContent(type="text", text=_dumps_str(data))]
+  2189→    except ConnectionError as e:
+  2190→        return [TextContent(type="text", text=(
+  2191→            f"Couldn't reach Synapse \u2014 {e}"
+  2192→        ))]
+  2193→    except RuntimeError as e:
+  2194→        return [TextContent(type="text", text=f"Synapse hit a snag: {e}")]
+  2195→    except Exception as e:
+  2196→        logger.exception("Unexpected error in tool %s", name)
+  2197→        return [TextContent(type="text", text=f"Something unexpected happened: {e}")]
+  2198→
+  2199→
+  2200→# ---------------------------------------------------------------------------
+  2201→# Entry point
+  2202→# ---------------------------------------------------------------------------
+  2203→
+  2204→async def _warmup():
+  2205→    """Pre-connect to Synapse on startup — makes first tool call instant."""
+  2206→    global _ws_connection
+  2207→    try:
+  2208→        _ws_connection = await websockets.connect(
+  2209→            SYNAPSE_URL,
+  2210→            open_timeout=3.0,
+  2211→            close_timeout=1.0,
+  2212→            ping_interval=None,
+  2213→            compression=None,
+  2214→            max_size=None,
+  2215→        )
+  2216→        await _auth_handshake(_ws_connection)
+  2217→        _start_recv_loop()
+  2218→        logger.info("Warmup: connected to %s", SYNAPSE_URL)
+  2219→    except Exception:
+  2220→        logger.info("Warmup: Synapse not available yet (will retry on first tool call)")
+  2221→
+  2222→
+  2223→def _atexit_cleanup():
+  2224→    """Close the persistent WebSocket on interpreter shutdown."""
+  2225→    global _ws_connection
+  2226→    if _ws_connection is not None:
+  2227→        try:
+  2228→            loop = asyncio.get_event_loop()
+  2229→            if not loop.is_closed():
+  2230→                loop.run_until_complete(_ws_connection.close())
+  2231→        except Exception:
+  2232→            pass
+  2233→        _ws_connection = None
+  2234→    _signal_all_pending(ConnectionError("MCP server shutting down"))
+  2235→
+  2236→atexit.register(_atexit_cleanup)
+  2237→
+  2238→
+  2239→async def main():
+  2240→    """Run the Synapse MCP server on stdio."""
+  2241→    # Fire-and-forget warmup — stdio server starts accepting immediately
+  2242→    asyncio.get_running_loop().create_task(_warmup())
+  2243→    async with stdio_server() as (read_stream, write_stream):
+  2244→        await server.run(
+  2245→            read_stream,
+  2246→            write_stream,
+  2247→            server.create_initialization_options(),
+  2248→        )
+  2249→
+  2250→
+  2251→if __name__ == "__main__":
+  2252→    # Logging to stderr only — never print to stdout (corrupts stdio JSON-RPC)
+  2253→    logging.basicConfig(
+  2254→        level=logging.INFO,
+  2255→        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+  2256→        stream=__import__("sys").stderr,
+  2257→    )
+  2258→    asyncio.run(main())
+  2259→

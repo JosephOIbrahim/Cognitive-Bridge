@@ -1,0 +1,22 @@
+"""Clean up orphaned build nodes in Houdini."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        code = r"""
+import hou
+obj = hou.node("/obj")
+destroyed = []
+for child in obj.children():
+    if child.name().startswith("__cinema") or child.name().startswith("__debug") or child.name().startswith("__test"):
+        destroyed.append(child.name())
+        child.destroy()
+result = {"destroyed": destroyed}
+"""
+        r = await client.execute_python(code, timeout=15)
+        print("Cleaned up:", r)
+
+asyncio.run(main())

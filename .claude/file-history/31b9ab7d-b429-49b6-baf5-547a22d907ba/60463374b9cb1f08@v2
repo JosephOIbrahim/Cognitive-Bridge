@@ -1,0 +1,95 @@
+/**
+ * Vimeo Utilities
+ * - Shared player loader (deduplicates dynamic import across 5 components)
+ * - API metadata fetcher
+ */
+
+// Re-export the Player type for components
+export type { default as VimeoPlayerType } from '@vimeo/player';
+
+// Cached import promise — ensures only one network request for the chunk
+let cachedPlayerImport: Promise<typeof import('@vimeo/player')> | null = null;
+
+/**
+ * Load the Vimeo Player constructor via dynamic import.
+ * Deduplicates across all callers — the chunk is fetched once.
+ */
+export function loadVimeoPlayer() {
+  if (!cachedPlayerImport) {
+    cachedPlayerImport = import('@vimeo/player');
+  }
+  return cachedPlayerImport.then(m => m.default);
+}
+
+interface VimeoVideo {
+  name: string;
+  description: string | null;
+  uri: string;
+  duration: number;
+}
+
+/**
+ * Fetch video metadata from Vimeo API
+ * @param videoId - The Vimeo video ID
+ * @returns Video metadata including title and description
+ */
+export async function fetchVimeoVideo(videoId: string): Promise<VimeoVideo | null> {
+  const accessToken = process.env.VIMEO_ACCESS_TOKEN;
+
+  if (!accessToken) {
+    console.warn('VIMEO_ACCESS_TOKEN not configured');
+    return null;
+  }
+
+  try {
+    const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
+      headers: {
+        'Authorization': `bearer ${accessToken}`,
+        'Accept': 'application/vnd.vimeo.*+json;version=3.4'
+      }
+    });
+
+    if (!response.ok) {
+      console.error(`Vimeo API error for video ${videoId}: ${response.statusText}`);
+      return null;
+    }
+
+    const data = await response.json();
+
+    return {
+      name: data.name,
+      description: data.description,
+      uri: data.uri,
+      duration: data.duration
+    };
+  } catch (error) {
+    console.error(`Error fetching Vimeo video ${videoId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Batch fetch multiple Vimeo videos
+ * @param videoIds - Array of Vimeo video IDs
+ * @returns Map of videoId to video metadata
+ */
+export async function fetchVimeoVideos(videoIds: string[]): Promise<Map<string, VimeoVideo>> {
+  const videoMap = new Map<string, VimeoVideo>();
+
+  // Fetch all videos in parallel
+  const results = await Promise.all(
+    videoIds.map(async (videoId) => {
+      const video = await fetchVimeoVideo(videoId);
+      return { videoId, video };
+    })
+  );
+
+  // Build map
+  results.forEach(({ videoId, video }) => {
+    if (video) {
+      videoMap.set(videoId, video);
+    }
+  });
+
+  return videoMap;
+}

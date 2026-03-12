@@ -1,0 +1,175 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import Player from '@vimeo/player';
+
+/**
+ * VIDEO PLAYER - Modal and Embedded Vimeo Player
+ *
+ * Consistency guarantees:
+ * 1. Deterministic initialization with timeout (12s max)
+ * 2. Error event listener for runtime failures
+ * 3. Proper cleanup on unmount
+ */
+
+// Timeout for player initialization (12 seconds - supports slow connections)
+const INIT_TIMEOUT_MS = 12000;
+
+interface VideoPlayerProps {
+  videoId: string;
+  videoHash?: string; // Privacy hash for private Vimeo videos
+  title: string;
+  onClose: () => void;
+  isModal?: boolean; // If true, renders as modal overlay. If false, renders as embedded player
+}
+
+export function VideoPlayer({ videoId, videoHash, title, onClose, isModal = true }: VideoPlayerProps) {
+  const playerRef = useRef<HTMLDivElement>(null);
+  const vimeoPlayerRef = useRef<Player | null>(null);
+  const [initError, setInitError] = useState(false);
+
+  useEffect(() => {
+    if (!playerRef.current) return;
+
+    let isMounted = true;
+
+    // Always use URL format for consistent embed behavior across all videos
+    // URL format works better with Vimeo's embed domain restrictions
+    const videoUrl = videoHash
+      ? `https://vimeo.com/${videoId}/${videoHash}`
+      : `https://vimeo.com/${videoId}`;
+
+    const initPlayer = async () => {
+      try {
+        vimeoPlayerRef.current = new Player(playerRef.current!, {
+          url: videoUrl as `https://vimeo.com/${string}`,
+          width: 1280,
+          responsive: true,
+          autoplay: isModal, // Only autoplay in modal mode
+          color: '6a6a6a',
+          controls: true
+        });
+
+        // Race between ready() and timeout
+        const readyPromise = vimeoPlayerRef.current.ready();
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('VideoPlayer initialization timeout')), INIT_TIMEOUT_MS);
+        });
+
+        await Promise.race([readyPromise, timeoutPromise]);
+
+        if (!isMounted) {
+          vimeoPlayerRef.current?.destroy();
+          return;
+        }
+
+        // Add error event listener for runtime failures
+        vimeoPlayerRef.current.on('error', (error) => {
+          console.error('VideoPlayer: Player error', videoId, error);
+        });
+      } catch (err) {
+        console.error('VideoPlayer: Player init failed', videoId, err);
+        if (isMounted) {
+          setInitError(true);
+        }
+      }
+    };
+
+    initPlayer();
+
+    return () => {
+      isMounted = false;
+      vimeoPlayerRef.current?.destroy();
+    };
+  }, [videoId, videoHash, isModal]);
+
+  // Close on Escape key (only for modal)
+  useEffect(() => {
+    if (!isModal) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose, isModal]);
+
+  // Error fallback component
+  const ErrorFallback = () => (
+    <div
+      className="w-full flex items-center justify-center"
+      style={{
+        aspectRatio: '16/9',
+        backgroundColor: 'var(--bg-card)',
+        color: 'var(--text-muted)'
+      }}
+    >
+      <span>Video unavailable</span>
+    </div>
+  );
+
+  // Embedded player (for project page)
+  if (!isModal) {
+    return (
+      <div className="w-full">
+        {initError ? (
+          <ErrorFallback />
+        ) : (
+          <div
+            ref={playerRef}
+            className="w-full"
+            style={{aspectRatio: '16/9'}}
+          />
+        )}
+        {title && (
+          <div className="mt-6">
+            <h2 className="text-xl md:text-2xl font-light" style={{color: 'var(--text-muted)'}}>
+              {title}
+            </h2>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Modal player (for grid overlay)
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8"
+      style={{backgroundColor: 'rgba(0, 0, 0, 0.9)'}}
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-6xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute -top-12 right-0 text-white hover:opacity-70 transition-opacity text-sm"
+          aria-label="Close video"
+        >
+          Close ×
+        </button>
+
+        {initError ? (
+          <ErrorFallback />
+        ) : (
+          <div
+            ref={playerRef}
+            className="w-full"
+            style={{aspectRatio: '16/9'}}
+          />
+        )}
+
+        {title && (
+          <div className="mt-6 text-white">
+            <h2 className="text-xl md:text-2xl font-light" style={{color: 'var(--text-secondary)'}}>
+              {title}
+            </h2>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

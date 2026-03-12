@@ -1,0 +1,1604 @@
+     1→# FORGE Solaris Pattern Extraction Pipeline
+     2→## Learn Wiring Patterns from Houdini 21's Own Examples
+     3→
+     4→> **Mission:** Crawl Houdini 21's built-in example .hip files, extract every 
+     5→> Solaris/LOP network topology, cluster them into canonical wiring patterns, 
+     6→> feed them into the FORGE corpus as observations, and auto-generate RAG 
+     7→> documents from crystallized rules.
+     8→>
+     9→> **D1 metaphor:** We're filming the relay team's form — studying how SideFX 
+    10→> themselves wire Solaris networks — then teaching SYNAPSE to replicate 
+    11→> those handoffs.
+    12→
+    13→---
+    14→
+    15→## Why This Works
+    16→
+    17→Houdini ships with ~200 example .hip files under `$HFS/houdini/help/examples/`.
+    18→The LOP/Solaris examples show SideFX's own canonical wiring patterns — these 
+    19→are ground truth for how Solaris networks should be assembled. We already have 
+    20→`network_explain` which extracts topology from any network. The missing piece 
+    21→is connecting these two systems through FORGE.
+    22→
+    23→---
+    24→
+    25→## Architecture
+    26→
+    27→```
+    28→Phase 1: CRAWL
+    29→  $HFS/houdini/help/examples/ → find all .hip/.hipnc with /stage networks
+    30→  Output: hip_manifest.json (paths + metadata)
+    31→
+    32→Phase 2: EXTRACT  
+    33→  For each .hip: load → run network_explain on /stage → capture topology
+    34→  Output: raw_topologies.json (node types, connections, ordering)
+    35→
+    36→Phase 3: CLUSTER
+    37→  Group topologies by pattern signature (type sequence hash)
+    38→  Identify: canonical chains, common fragments, frequency counts
+    39→  Output: pattern_clusters.json
+    40→
+    41→Phase 4: CORPUS INGEST
+    42→  Feed clusters into FORGE corpus as OBSERVATIONS
+    43→  Clusters seen 3+ times auto-promote to PATTERNS
+    44→  Patterns with 5+ recurrences promote to RULES
+    45→  Output: forge/corpus/observations/EX-*.json
+    46→
+    47→Phase 5: RAG GENERATE
+    48→  Crystallized RULES → auto-generate RAG markdown documents
+    49→  Output: rag/skills/houdini21-reference/solaris_patterns_extracted.md
+    50→
+    51→Phase 6: VERIFY (FORGE cycle)
+    52→  Run FORGE scenarios that test wiring against extracted patterns
+    53→  Measure: does SYNAPSE wire like SideFX's examples?
+    54→```
+    55→
+    56→---
+    57→
+    58→## File Structure (New Files)
+    59→
+    60→```
+    61→forge/
+    62→├── extractors/
+    63→│   ├── __init__.py
+    64→│   ├── hip_crawler.py          # Phase 1: Find example .hip files
+    65→│   ├── topology_extractor.py   # Phase 2: Extract network topology
+    66→│   ├── pattern_clusterer.py    # Phase 3: Cluster into canonical patterns
+    67→│   ├── corpus_ingester.py      # Phase 4: Feed into FORGE corpus
+    68→│   └── rag_generator.py        # Phase 5: Generate RAG documents
+    69→├── extraction_data/
+    70→│   ├── hip_manifest.json       # Discovered .hip files
+    71→│   ├── raw_topologies.json     # Extracted network topologies
+    72→│   └── pattern_clusters.json   # Clustered patterns
+    73→```
+    74→
+    75→---
+    76→
+    77→## Phase 1: Hip Crawler
+    78→
+    79→### File: `forge/extractors/hip_crawler.py`
+    80→
+    81→```python
+    82→"""
+    83→FORGE Hip Crawler — Discover Houdini example files containing Solaris networks.
+    84→
+    85→Scans $HFS/houdini/help/examples/ for .hip/.hipnc files,
+    86→opens each one, checks if /stage exists with children,
+    87→and builds a manifest of extraction targets.
+    88→
+    89→Run inside Houdini's Python shell or via hython.
+    90→"""
+    91→
+    92→from __future__ import annotations
+    93→
+    94→import json
+    95→import os
+    96→import time
+    97→from dataclasses import asdict, dataclass, field
+    98→from pathlib import Path
+    99→from typing import List, Optional
+   100→
+   101→
+   102→@dataclass
+   103→class HipEntry:
+   104→    """Metadata for a discovered .hip file."""
+   105→    path: str
+   106→    filename: str
+   107→    category: str          # Parent folder name (e.g., "lop", "sop", "dop")
+   108→    has_stage: bool        # Does /stage exist?
+   109→    stage_child_count: int # Number of children in /stage
+   110→    lop_node_types: List[str]  # Types of LOP nodes found
+   111→    file_size_kb: int
+   112→    error: Optional[str] = None
+   113→
+   114→
+   115→@dataclass
+   116→class HipManifest:
+   117→    """Collection of discovered .hip files."""
+   118→    scan_time: str
+   119→    hfs_path: str
+   120→    total_scanned: int = 0
+   121→    solaris_count: int = 0
+   122→    entries: List[HipEntry] = field(default_factory=list)
+   123→
+   124→    def to_dict(self):
+   125→        return {
+   126→            "scan_time": self.scan_time,
+   127→            "hfs_path": self.hfs_path,
+   128→            "total_scanned": self.total_scanned,
+   129→            "solaris_count": self.solaris_count,
+   130→            "entries": [asdict(e) for e in self.entries],
+   131→        }
+   132→
+   133→
+   134→def crawl_examples(
+   135→    output_path: str = "forge/extraction_data/hip_manifest.json",
+   136→    examples_subdir: str = "houdini/help/examples",
+   137→    include_non_solaris: bool = False,
+   138→) -> HipManifest:
+   139→    """Crawl Houdini example directory for .hip files with Solaris content.
+   140→
+   141→    Must be run inside Houdini (needs hou module).
+   142→
+   143→    Args:
+   144→        output_path: Where to write the manifest JSON.
+   145→        examples_subdir: Subdirectory under $HFS to scan.
+   146→        include_non_solaris: If True, include .hip files without /stage.
+   147→
+   148→    Returns:
+   149→        HipManifest with discovered files.
+   150→    """
+   151→    import hou
+   152→
+   153→    hfs = hou.expandString("$HFS")
+   154→    examples_root = os.path.join(hfs, examples_subdir)
+   155→
+   156→    manifest = HipManifest(
+   157→        scan_time=time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+   158→        hfs_path=hfs,
+   159→    )
+   160→
+   161→    if not os.path.isdir(examples_root):
+   162→        # Also check alternative locations
+   163→        alt_paths = [
+   164→            os.path.join(hfs, "houdini", "help", "examples"),
+   165→            os.path.join(hfs, "help", "examples"),
+   166→            os.path.join(hfs, "houdini", "examples"),
+   167→        ]
+   168→        for alt in alt_paths:
+   169→            if os.path.isdir(alt):
+   170→                examples_root = alt
+   171→                break
+   172→        else:
+   173→            print(f"ERROR: No examples directory found under {hfs}")
+   174→            return manifest
+   175→
+   176→    print(f"Scanning: {examples_root}")
+   177→
+   178→    # Find all .hip and .hipnc files
+   179→    hip_files = []
+   180→    for root, dirs, files in os.walk(examples_root):
+   181→        for f in files:
+   182→            if f.endswith((".hip", ".hipnc")):
+   183→                hip_files.append(os.path.join(root, f))
+   184→
+   185→    print(f"Found {len(hip_files)} .hip files to scan")
+   186→
+   187→    for i, hip_path in enumerate(hip_files):
+   188→        if (i + 1) % 10 == 0:
+   189→            print(f"  Scanning {i+1}/{len(hip_files)}...")
+   190→
+   191→        entry = _scan_hip_file(hip_path, examples_root)
+   192→        manifest.total_scanned += 1
+   193→
+   194→        if entry.has_stage and entry.stage_child_count > 0:
+   195→            manifest.solaris_count += 1
+   196→            manifest.entries.append(entry)
+   197→        elif include_non_solaris:
+   198→            manifest.entries.append(entry)
+   199→
+   200→    # Sort by category then filename
+   201→    manifest.entries.sort(key=lambda e: (e.category, e.filename))
+   202→
+   203→    # Save manifest
+   204→    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+   205→    with open(output_path, "w", encoding="utf-8") as f:
+   206→        json.dump(manifest.to_dict(), f, indent=2)
+   207→
+   208→    print(f"\nCrawl complete:")
+   209→    print(f"  Scanned: {manifest.total_scanned}")
+   210→    print(f"  With Solaris: {manifest.solaris_count}")
+   211→    print(f"  Manifest: {output_path}")
+   212→
+   213→    return manifest
+   214→
+   215→
+   216→def _scan_hip_file(hip_path: str, examples_root: str) -> HipEntry:
+   217→    """Open a .hip file and check for Solaris content."""
+   218→    import hou
+   219→
+   220→    filename = os.path.basename(hip_path)
+   221→    rel_path = os.path.relpath(hip_path, examples_root)
+   222→    category = rel_path.split(os.sep)[0] if os.sep in rel_path else "root"
+   223→
+   224→    try:
+   225→        hou.hipFile.load(hip_path, suppress_save_prompt=True, ignore_load_warnings=True)
+   226→
+   227→        stage = hou.node("/stage")
+   228→        if stage is None:
+   229→            # Check for lopnet anywhere in the scene
+   230→            for child in hou.node("/").children():
+   231→                if child.type().name() == "lopnet":
+   232→                    stage = child
+   233→                    break
+   234→
+   235→        has_stage = stage is not None
+   236→        children = stage.children() if stage else []
+   237→        lop_types = sorted(set(c.type().name() for c in children))
+   238→
+   239→        return HipEntry(
+   240→            path=hip_path,
+   241→            filename=filename,
+   242→            category=category,
+   243→            has_stage=has_stage,
+   244→            stage_child_count=len(children),
+   245→            lop_node_types=lop_types,
+   246→            file_size_kb=os.path.getsize(hip_path) // 1024,
+   247→        )
+   248→
+   249→    except Exception as e:
+   250→        return HipEntry(
+   251→            path=hip_path,
+   252→            filename=filename,
+   253→            category=category,
+   254→            has_stage=False,
+   255→            stage_child_count=0,
+   256→            lop_node_types=[],
+   257→            file_size_kb=os.path.getsize(hip_path) // 1024,
+   258→            error=str(e)[:200],
+   259→        )
+   260→```
+   261→
+   262→---
+   263→
+   264→## Phase 2: Topology Extractor
+   265→
+   266→### File: `forge/extractors/topology_extractor.py`
+   267→
+   268→```python
+   269→"""
+   270→FORGE Topology Extractor — Extract network wiring from Solaris scenes.
+   271→
+   272→For each .hip in the manifest, loads the scene, walks the /stage network,
+   273→and records the full topology: node types, connections, ordering, and
+   274→parameter states.
+   275→
+   276→Leverages the existing network_explain handler patterns but runs 
+   277→directly (no MCP round-trip) for speed.
+   278→
+   279→Run inside Houdini's Python shell or via hython.
+   280→"""
+   281→
+   282→from __future__ import annotations
+   283→
+   284→import json
+   285→import os
+   286→import time
+   287→from collections import deque
+   288→from dataclasses import asdict, dataclass, field
+   289→from typing import Any, Dict, List, Optional, Set, Tuple
+   290→
+   291→
+   292→@dataclass
+   293→class NodeRecord:
+   294→    """Extracted information about a single LOP node."""
+   295→    name: str
+   296→    type_name: str
+   297→    type_label: str
+   298→    position_y: float           # Vertical position (proxy for chain order)
+   299→    inputs_from: List[str]      # Names of input nodes
+   300→    outputs_to: List[str]       # Names of output nodes
+   301→    input_count: int
+   302→    output_count: int
+   303→    is_display_flag: bool
+   304→    is_render_flag: bool
+   305→    has_primpath: bool           # Does it set a USD prim path?
+   306→    primpath_value: str          # The actual primpath if set
+   307→    key_params: Dict[str, Any]   # Non-default parameter values
+   308→
+   309→
+   310→@dataclass 
+   311→class TopologyRecord:
+   312→    """Complete topology of a single /stage network."""
+   313→    source_hip: str
+   314→    category: str
+   315→    node_count: int
+   316→    nodes: List[NodeRecord]
+   317→    chain_signature: str          # Hash of type sequence for clustering
+   318→    chain_types: List[str]        # Ordered list of type names (topological)
+   319→    connections: List[Tuple[str, str]]  # (source_name, target_name) pairs
+   320→    has_linear_chain: bool        # True if all nodes form a single chain
+   321→    branch_count: int             # Number of parallel branches
+   322→    display_flag_node: str        # Which node has display flag
+   323→    patterns_detected: List[str]  # e.g., "three_point_lighting", "material_assign"
+   324→    extraction_error: Optional[str] = None
+   325→
+   326→
+   327→@dataclass
+   328→class TopologyCollection:
+   329→    """All extracted topologies."""
+   330→    extraction_time: str
+   331→    total_extracted: int = 0
+   332→    errors: int = 0
+   333→    topologies: List[TopologyRecord] = field(default_factory=list)
+   334→
+   335→    def to_dict(self):
+   336→        return {
+   337→            "extraction_time": self.extraction_time,
+   338→            "total_extracted": self.total_extracted,
+   339→            "errors": self.errors,
+   340→            "topologies": [asdict(t) for t in self.topologies],
+   341→        }
+   342→
+   343→
+   344→# Known Solaris patterns to detect
+   345→_PATTERN_SIGNATURES: Dict[str, Set[str]] = {
+   346→    "material_assignment": {"materiallibrary", "assignmaterial"},
+   347→    "three_point_lighting": {"rectlight"},  # 3+ rectlights
+   348→    "dome_environment": {"domelight"},
+   349→    "camera_setup": {"camera"},
+   350→    "karma_render": {"karmarenderproperties"},
+   351→    "sop_import": {"sopimport"},
+   352→    "sop_create": {"sopcreate"},
+   353→    "usd_reference": {"reference"},
+   354→    "usd_sublayer": {"sublayer"},
+   355→    "scene_assembly": {"sopcreate", "materiallibrary", "assignmaterial", "camera"},
+   356→}
+   357→
+   358→
+   359→def extract_all(
+   360→    manifest_path: str = "forge/extraction_data/hip_manifest.json",
+   361→    output_path: str = "forge/extraction_data/raw_topologies.json",
+   362→) -> TopologyCollection:
+   363→    """Extract topologies from all .hip files in the manifest.
+   364→
+   365→    Must be run inside Houdini.
+   366→
+   367→    Args:
+   368→        manifest_path: Path to hip_manifest.json from Phase 1.
+   369→        output_path: Where to write raw_topologies.json.
+   370→
+   371→    Returns:
+   372→        TopologyCollection with all extracted networks.
+   373→    """
+   374→    import hou
+   375→
+   376→    with open(manifest_path, encoding="utf-8") as f:
+   377→        manifest = json.load(f)
+   378→
+   379→    collection = TopologyCollection(
+   380→        extraction_time=time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+   381→    )
+   382→
+   383→    entries = manifest.get("entries", [])
+   384→    print(f"Extracting topologies from {len(entries)} .hip files")
+   385→
+   386→    for i, entry in enumerate(entries):
+   387→        if (i + 1) % 5 == 0:
+   388→            print(f"  Extracting {i+1}/{len(entries)}: {entry['filename']}")
+   389→
+   390→        topo = _extract_topology(entry["path"], entry["category"])
+   391→        collection.total_extracted += 1
+   392→
+   393→        if topo.extraction_error:
+   394→            collection.errors += 1
+   395→        else:
+   396→            collection.topologies.append(topo)
+   397→
+   398→    # Save
+   399→    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+   400→    with open(output_path, "w", encoding="utf-8") as f:
+   401→        json.dump(collection.to_dict(), f, indent=2)
+   402→
+   403→    print(f"\nExtraction complete:")
+   404→    print(f"  Extracted: {collection.total_extracted}")
+   405→    print(f"  Errors: {collection.errors}")
+   406→    print(f"  Valid topologies: {len(collection.topologies)}")
+   407→    print(f"  Output: {output_path}")
+   408→
+   409→    return collection
+   410→
+   411→
+   412→def _extract_topology(hip_path: str, category: str) -> TopologyRecord:
+   413→    """Extract topology from a single .hip file."""
+   414→    import hou
+   415→
+   416→    try:
+   417→        hou.hipFile.load(hip_path, suppress_save_prompt=True, ignore_load_warnings=True)
+   418→
+   419→        stage = hou.node("/stage")
+   420→        if stage is None:
+   421→            for child in hou.node("/").children():
+   422→                if child.type().name() == "lopnet":
+   423→                    stage = child
+   424→                    break
+   425→
+   426→        if stage is None or not stage.children():
+   427→            return TopologyRecord(
+   428→                source_hip=hip_path,
+   429→                category=category,
+   430→                node_count=0,
+   431→                nodes=[],
+   432→                chain_signature="empty",
+   433→                chain_types=[],
+   434→                connections=[],
+   435→                has_linear_chain=False,
+   436→                branch_count=0,
+   437→                display_flag_node="",
+   438→                patterns_detected=[],
+   439→                extraction_error="No /stage or empty network",
+   440→            )
+   441→
+   442→        children = stage.children()
+   443→
+   444→        # Topological sort (Kahn's algorithm — same as handlers_node.py)
+   445→        sorted_nodes = _topo_sort(children)
+   446→
+   447→        # Extract node records
+   448→        nodes = []
+   449→        connections = []
+   450→        display_node = ""
+   451→        type_set = set()
+   452→
+   453→        for n in sorted_nodes:
+   454→            type_name = n.type().name()
+   455→            type_set.add(type_name)
+   456→
+   457→            inputs_from = [inp.name() for inp in n.inputs() if inp]
+   458→            outputs_to = [out.name() for out in n.outputs() if out]
+   459→
+   460→            for inp in n.inputs():
+   461→                if inp:
+   462→                    connections.append((inp.name(), n.name()))
+   463→
+   464→            # Check for primpath parameter
+   465→            has_primpath = False
+   466→            primpath_value = ""
+   467→            try:
+   468→                pp = n.parm("primpath")
+   469→                if pp:
+   470→                    has_primpath = True
+   471→                    primpath_value = pp.eval()
+   472→            except Exception:
+   473→                pass
+   474→
+   475→            # Get non-default params (lightweight version)
+   476→            key_params = _get_key_params(n)
+   477→
+   478→            is_display = False
+   479→            is_render = False
+   480→            try:
+   481→                is_display = n.isDisplayFlagSet()
+   482→                is_render = n.isRenderFlagSet() if hasattr(n, "isRenderFlagSet") else False
+   483→            except Exception:
+   484→                pass
+   485→
+   486→            if is_display:
+   487→                display_node = n.name()
+   488→
+   489→            nodes.append(NodeRecord(
+   490→                name=n.name(),
+   491→                type_name=type_name,
+   492→                type_label=n.type().description(),
+   493→                position_y=n.position()[1],
+   494→                inputs_from=inputs_from,
+   495→                outputs_to=outputs_to,
+   496→                input_count=len(inputs_from),
+   497→                output_count=len(outputs_to),
+   498→                is_display_flag=is_display,
+   499→                is_render_flag=is_render,
+   500→                has_primpath=has_primpath,
+   501→                primpath_value=primpath_value,
+   502→                key_params=key_params,
+   503→            ))
+   504→
+   505→        # Chain analysis
+   506→        chain_types = [n.type_name for n in nodes]
+   507→        chain_sig = _compute_signature(chain_types)
+   508→
+   509→        # Detect linear vs branching
+   510→        max_inputs = max((n.input_count for n in nodes), default=0)
+   511→        root_count = sum(1 for n in nodes if n.input_count == 0)
+   512→        has_linear = max_inputs <= 1 and root_count <= 1
+   513→        branch_count = max(1, root_count)
+   514→
+   515→        # Detect known patterns
+   516→        patterns = _detect_patterns(type_set, nodes)
+   517→
+   518→        return TopologyRecord(
+   519→            source_hip=hip_path,
+   520→            category=category,
+   521→            node_count=len(nodes),
+   522→            nodes=nodes,
+   523→            chain_signature=chain_sig,
+   524→            chain_types=chain_types,
+   525→            connections=connections,
+   526→            has_linear_chain=has_linear,
+   527→            branch_count=branch_count,
+   528→            display_flag_node=display_node,
+   529→            patterns_detected=patterns,
+   530→        )
+   531→
+   532→    except Exception as e:
+   533→        return TopologyRecord(
+   534→            source_hip=hip_path,
+   535→            category=category,
+   536→            node_count=0,
+   537→            nodes=[],
+   538→            chain_signature="error",
+   539→            chain_types=[],
+   540→            connections=[],
+   541→            has_linear_chain=False,
+   542→            branch_count=0,
+   543→            display_flag_node="",
+   544→            patterns_detected=[],
+   545→            extraction_error=str(e)[:300],
+   546→        )
+   547→
+   548→
+   549→def _topo_sort(nodes) -> list:
+   550→    """Topological sort by input dependencies. Deterministic (name tie-break)."""
+   551→    node_set = {id(n) for n in nodes}
+   552→    id_map = {id(n): n for n in nodes}
+   553→    in_deg = {id(n): 0 for n in nodes}
+   554→    adj = {id(n): [] for n in nodes}
+   555→
+   556→    for n in nodes:
+   557→        for inp in n.inputs():
+   558→            if inp and id(inp) in node_set:
+   559→                in_deg[id(n)] += 1
+   560→                adj[id(inp)].append(id(n))
+   561→
+   562→    queue = sorted([n for n in nodes if in_deg[id(n)] == 0], key=lambda n: n.name())
+   563→    result = []
+   564→    while queue:
+   565→        node = queue.pop(0)
+   566→        result.append(node)
+   567→        for nid in sorted(adj[id(node)], key=lambda x: id_map[x].name()):
+   568→            in_deg[nid] -= 1
+   569→            if in_deg[nid] == 0:
+   570→                queue.append(id_map[nid])
+   571→        queue.sort(key=lambda n: n.name())
+   572→
+   573→    remaining = sorted([n for n in nodes if n not in result], key=lambda n: n.name())
+   574→    result.extend(remaining)
+   575→    return result
+   576→
+   577→
+   578→def _get_key_params(node, max_params: int = 10) -> Dict[str, Any]:
+   579→    """Get non-default params, limited to max_params for storage efficiency."""
+   580→    params = {}
+   581→    try:
+   582→        for parm in node.parms():
+   583→            if len(params) >= max_params:
+   584→                break
+   585→            try:
+   586→                template = parm.parmTemplate()
+   587→                type_name = template.type().name() if hasattr(template.type(), "name") else ""
+   588→                if "Folder" in type_name or "Separator" in type_name:
+   589→                    continue
+   590→                current = parm.eval()
+   591→                defaults = template.defaultValue()
+   592→                default_val = defaults[0] if isinstance(defaults, tuple) and defaults else defaults
+   593→                if current != default_val:
+   594→                    params[parm.name()] = current
+   595→            except Exception:
+   596→                continue
+   597→    except Exception:
+   598→        pass
+   599→    return params
+   600→
+   601→
+   602→def _compute_signature(type_list: List[str]) -> str:
+   603→    """Compute a hash signature from a sequence of type names."""
+   604→    import hashlib
+   605→    content = "|".join(type_list)
+   606→    return hashlib.sha256(content.encode()).hexdigest()[:16]
+   607→
+   608→
+   609→def _detect_patterns(type_set: Set[str], nodes: list) -> List[str]:
+   610→    """Detect known Solaris workflow patterns."""
+   611→    detected = []
+   612→    for pattern_name, required_types in sorted(_PATTERN_SIGNATURES.items()):
+   613→        if required_types.issubset(type_set):
+   614→            # Special case: three_point needs 3+ rectlights
+   615→            if pattern_name == "three_point_lighting":
+   616→                rect_count = sum(1 for n in nodes if n.type_name == "rectlight")
+   617→                if rect_count >= 3:
+   618→                    detected.append(pattern_name)
+   619→            else:
+   620→                detected.append(pattern_name)
+   621→    return detected
+   622→```
+   623→
+   624→---
+   625→
+   626→## Phase 3: Pattern Clusterer
+   627→
+   628→### File: `forge/extractors/pattern_clusterer.py`
+   629→
+   630→```python
+   631→"""
+   632→FORGE Pattern Clusterer — Group extracted topologies into canonical patterns.
+   633→
+   634→Takes raw topologies from Phase 2, clusters them by:
+   635→  1. Exact chain signature (identical type sequences)
+   636→  2. Subsequence similarity (shared fragments)
+   637→  3. Functional role clustering (lighting chains, material chains, etc.)
+   638→
+   639→Outputs canonical patterns with frequency counts, which become
+   640→the training data for SYNAPSE's wiring knowledge.
+   641→
+   642→Runs outside Houdini (pure Python, no hou dependency).
+   643→"""
+   644→
+   645→from __future__ import annotations
+   646→
+   647→import json
+   648→import os
+   649→import time
+   650→from collections import Counter, defaultdict
+   651→from dataclasses import asdict, dataclass, field
+   652→from typing import Any, Dict, List, Optional, Set, Tuple
+   653→
+   654→
+   655→@dataclass
+   656→class CanonicalPattern:
+   657→    """A validated wiring pattern discovered from examples."""
+   658→    pattern_id: str
+   659→    name: str                        # Human-readable name
+   660→    description: str
+   661→    chain_types: List[str]           # Canonical type sequence
+   662→    frequency: int                   # How many examples use this pattern
+   663→    source_hips: List[str]           # Which .hip files contain it
+   664→    is_linear: bool                  # Single chain or branching
+   665→    functional_role: str             # "lighting", "material", "render", etc.
+   666→    connection_rules: List[Dict]     # [{source_type, target_type, input_idx}]
+   667→    display_flag_type: str           # Which type typically gets display flag
+   668→    common_params: Dict[str, Any]    # Most common non-default param values
+   669→    confidence: float                # frequency / total_examples
+   670→
+   671→
+   672→@dataclass
+   673→class PatternClusterResult:
+   674→    """Output of the clustering phase."""
+   675→    cluster_time: str
+   676→    total_topologies: int
+   677→    unique_signatures: int
+   678→    canonical_patterns: List[CanonicalPattern] = field(default_factory=list)
+   679→    # Fragments: common subsequences found across multiple patterns
+   680→    common_fragments: List[Dict[str, Any]] = field(default_factory=list)
+   681→    # Type frequency: how often each node type appears across all examples
+   682→    type_frequency: Dict[str, int] = field(default_factory=dict)
+   683→    # Connection frequency: how often each connection type appears
+   684→    connection_frequency: Dict[str, int] = field(default_factory=dict)
+   685→
+   686→    def to_dict(self):
+   687→        return {
+   688→            "cluster_time": self.cluster_time,
+   689→            "total_topologies": self.total_topologies,
+   690→            "unique_signatures": self.unique_signatures,
+   691→            "canonical_patterns": [asdict(p) for p in self.canonical_patterns],
+   692→            "common_fragments": self.common_fragments,
+   693→            "type_frequency": dict(sorted(
+   694→                self.type_frequency.items(), key=lambda x: -x[1]
+   695→            )),
+   696→            "connection_frequency": dict(sorted(
+   697→                self.connection_frequency.items(), key=lambda x: -x[1]
+   698→            )),
+   699→        }
+   700→
+   701→
+   702→def cluster_patterns(
+   703→    topologies_path: str = "forge/extraction_data/raw_topologies.json",
+   704→    output_path: str = "forge/extraction_data/pattern_clusters.json",
+   705→    min_frequency: int = 2,
+   706→) -> PatternClusterResult:
+   707→    """Cluster extracted topologies into canonical patterns.
+   708→
+   709→    Args:
+   710→        topologies_path: Input from Phase 2.
+   711→        output_path: Where to write pattern_clusters.json.
+   712→        min_frequency: Minimum occurrences to be considered a pattern.
+   713→
+   714→    Returns:
+   715→        PatternClusterResult with discovered patterns.
+   716→    """
+   717→    with open(topologies_path, encoding="utf-8") as f:
+   718→        data = json.load(f)
+   719→
+   720→    topologies = data.get("topologies", [])
+   721→    total = len(topologies)
+   722→
+   723→    result = PatternClusterResult(
+   724→        cluster_time=time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+   725→        total_topologies=total,
+   726→    )
+   727→
+   728→    if not topologies:
+   729→        return result
+   730→
+   731→    # ── Step 1: Exact signature clustering ──
+   732→    sig_groups: Dict[str, List[Dict]] = defaultdict(list)
+   733→    for topo in topologies:
+   734→        sig_groups[topo["chain_signature"]].append(topo)
+   735→
+   736→    result.unique_signatures = len(sig_groups)
+   737→
+   738→    # ── Step 2: Build canonical patterns from frequent signatures ──
+   739→    pattern_id = 0
+   740→    for sig, group in sorted(sig_groups.items(), key=lambda x: -len(x[1])):
+   741→        if len(group) < min_frequency:
+   742→            continue
+   743→
+   744→        pattern_id += 1
+   745→        representative = group[0]  # Use first as template
+   746→        chain_types = representative["chain_types"]
+   747→
+   748→        # Determine functional role from node types
+   749→        role = _infer_role(set(chain_types))
+   750→
+   751→        # Extract connection rules from the representative
+   752→        conn_rules = []
+   753→        for conn in representative.get("connections", []):
+   754→            src_name, tgt_name = conn
+   755→            # Find types from nodes list
+   756→            src_type = _find_type(representative["nodes"], src_name)
+   757→            tgt_type = _find_type(representative["nodes"], tgt_name)
+   758→            if src_type and tgt_type:
+   759→                conn_rules.append({
+   760→                    "source_type": src_type,
+   761→                    "target_type": tgt_type,
+   762→                    "input_index": 0,
+   763→                })
+   764→
+   765→        # Aggregate common params across the group
+   766→        common_params = _aggregate_params(group)
+   767→
+   768→        # Display flag consensus
+   769→        display_types = Counter(
+   770→            _find_type(t["nodes"], t.get("display_flag_node", ""))
+   771→            for t in group
+   772→            if t.get("display_flag_node")
+   773→        )
+   774→        display_flag_type = display_types.most_common(1)[0][0] if display_types else "null"
+   775→
+   776→        pattern = CanonicalPattern(
+   777→            pattern_id=f"EXP-{pattern_id:03d}",
+   778→            name=_generate_name(chain_types, role),
+   779→            description=f"Canonical {role} chain: {' → '.join(chain_types)}",
+   780→            chain_types=chain_types,
+   781→            frequency=len(group),
+   782→            source_hips=[t["source_hip"] for t in group],
+   783→            is_linear=all(t.get("has_linear_chain", False) for t in group),
+   784→            functional_role=role,
+   785→            connection_rules=conn_rules,
+   786→            display_flag_type=display_flag_type,
+   787→            common_params=common_params,
+   788→            confidence=len(group) / total,
+   789→        )
+   790→        result.canonical_patterns.append(pattern)
+   791→
+   792→    # ── Step 3: Extract common fragments (subsequences) ──
+   793→    result.common_fragments = _find_common_fragments(topologies, min_frequency)
+   794→
+   795→    # ── Step 4: Global type and connection frequency ──
+   796→    type_counter: Counter = Counter()
+   797→    conn_counter: Counter = Counter()
+   798→    for topo in topologies:
+   799→        for t in topo.get("chain_types", []):
+   800→            type_counter[t] += 1
+   801→        for conn in topo.get("connections", []):
+   802→            src_type = _find_type(topo["nodes"], conn[0])
+   803→            tgt_type = _find_type(topo["nodes"], conn[1])
+   804→            if src_type and tgt_type:
+   805→                conn_counter[f"{src_type} → {tgt_type}"] += 1
+   806→
+   807→    result.type_frequency = dict(type_counter)
+   808→    result.connection_frequency = dict(conn_counter)
+   809→
+   810→    # Sort patterns by frequency descending
+   811→    result.canonical_patterns.sort(key=lambda p: -p.frequency)
+   812→
+   813→    # Save
+   814→    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+   815→    with open(output_path, "w", encoding="utf-8") as f:
+   816→        json.dump(result.to_dict(), f, indent=2)
+   817→
+   818→    print(f"\nClustering complete:")
+   819→    print(f"  Topologies: {total}")
+   820→    print(f"  Unique signatures: {result.unique_signatures}")
+   821→    print(f"  Canonical patterns (freq>={min_frequency}): {len(result.canonical_patterns)}")
+   822→    print(f"  Common fragments: {len(result.common_fragments)}")
+   823→    print(f"  Top 5 node types: {type_counter.most_common(5)}")
+   824→    print(f"  Top 5 connections: {conn_counter.most_common(5)}")
+   825→
+   826→    return result
+   827→
+   828→
+   829→def _infer_role(type_set: Set[str]) -> str:
+   830→    """Infer functional role from node types."""
+   831→    if {"rectlight", "domelight"} & type_set:
+   832→        return "lighting"
+   833→    if {"materiallibrary", "assignmaterial"} & type_set:
+   834→        return "material"
+   835→    if {"karmarenderproperties", "usdrender"} & type_set:
+   836→        return "render"
+   837→    if {"camera"} & type_set and not ({"rectlight", "materiallibrary"} & type_set):
+   838→        return "camera"
+   839→    if {"sopcreate", "sopimport"} & type_set and not ({"camera", "rectlight"} & type_set):
+   840→        return "geometry"
+   841→    if {"reference", "sublayer"} & type_set:
+   842→        return "composition"
+   843→    if len(type_set) >= 4:
+   844→        return "scene_assembly"
+   845→    return "general"
+   846→
+   847→
+   848→def _generate_name(chain_types: List[str], role: str) -> str:
+   849→    """Generate a human-readable pattern name."""
+   850→    type_str = "_".join(dict.fromkeys(chain_types))  # Deduplicated, ordered
+   851→    return f"{role}_{type_str}"[:80]
+   852→
+   853→
+   854→def _find_type(nodes: List[Dict], name: str) -> Optional[str]:
+   855→    """Find node type by name in a nodes list."""
+   856→    for n in nodes:
+   857→        if n["name"] == name:
+   858→            return n["type_name"]
+   859→    return None
+   860→
+   861→
+   862→def _aggregate_params(group: List[Dict]) -> Dict[str, Any]:
+   863→    """Find most common non-default params across a group of topologies."""
+   864→    param_values: Dict[str, Counter] = defaultdict(Counter)
+   865→    for topo in group:
+   866→        for node in topo.get("nodes", []):
+   867→            for k, v in node.get("key_params", {}).items():
+   868→                param_values[k][str(v)] += 1
+   869→
+   870→    # Keep params that appear in >50% of the group
+   871→    threshold = len(group) / 2
+   872→    common = {}
+   873→    for param, counter in sorted(param_values.items()):
+   874→        top_value, top_count = counter.most_common(1)[0]
+   875→        if top_count >= threshold:
+   876→            common[param] = top_value
+   877→    return common
+   878→
+   879→
+   880→def _find_common_fragments(
+   881→    topologies: List[Dict], min_freq: int
+   882→) -> List[Dict[str, Any]]:
+   883→    """Find common 2-4 node subsequences across topologies."""
+   884→    fragment_counter: Counter = Counter()
+   885→    fragment_sources: Dict[str, List[str]] = defaultdict(list)
+   886→
+   887→    for topo in topologies:
+   888→        chain = topo.get("chain_types", [])
+   889→        seen = set()
+   890→        # Extract all 2-4 length subsequences
+   891→        for window_size in range(2, min(5, len(chain) + 1)):
+   892→            for i in range(len(chain) - window_size + 1):
+   893→                fragment = tuple(chain[i : i + window_size])
+   894→                frag_key = " → ".join(fragment)
+   895→                if frag_key not in seen:
+   896→                    seen.add(frag_key)
+   897→                    fragment_counter[frag_key] += 1
+   898→                    fragment_sources[frag_key].append(topo["source_hip"])
+   899→
+   900→    # Return fragments above threshold
+   901→    fragments = []
+   902→    for frag_key, count in fragment_counter.most_common(50):
+   903→        if count >= min_freq:
+   904→            fragments.append({
+   905→                "fragment": frag_key,
+   906→                "types": frag_key.split(" → "),
+   907→                "frequency": count,
+   908→                "confidence": count / len(topologies),
+   909→                "source_count": len(set(fragment_sources[frag_key])),
+   910→            })
+   911→
+   912→    return fragments
+   913→```
+   914→
+   915→---
+   916→
+   917→## Phase 4: Corpus Ingester
+   918→
+   919→### File: `forge/extractors/corpus_ingester.py`
+   920→
+   921→```python
+   922→"""
+   923→FORGE Corpus Ingester — Feed extracted patterns into the FORGE corpus.
+   924→
+   925→Takes clustered patterns from Phase 3 and creates CorpusEntry objects
+   926→that follow the Pokémon evolution model:
+   927→  - Each pattern → OBSERVATION (if new)
+   928→  - Patterns seen 3+ times → promoted to PATTERN
+   929→  - Patterns with high confidence → promoted to RULE
+   930→
+   931→Integrates with the existing CorpusManager in forge/engine/.
+   932→
+   933→Runs outside Houdini (pure Python).
+   934→"""
+   935→
+   936→from __future__ import annotations
+   937→
+   938→import json
+   939→import os
+   940→import time
+   941→from pathlib import Path
+   942→from typing import Any, Dict, List
+   943→
+   944→# Relative imports when run from SYNAPSE root
+   945→import sys
+   946→sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+   947→
+   948→from engine.schemas import (
+   949→    AgentRole,
+   950→    CorpusEntry,
+   951→    CorpusStage,
+   952→    ScenarioDomain,
+   953→    save_json,
+   954→)
+   955→from engine.corpus_manager import CorpusManager
+   956→
+   957→
+   958→# Map functional roles to FORGE ScenarioDomains
+   959→_ROLE_TO_DOMAIN = {
+   960→    "lighting": ScenarioDomain.LIGHTING,
+   961→    "material": ScenarioDomain.LOOKDEV,
+   962→    "render": ScenarioDomain.RENDER,
+   963→    "camera": ScenarioDomain.LAYOUT,
+   964→    "geometry": ScenarioDomain.GENERAL,
+   965→    "composition": ScenarioDomain.PIPELINE,
+   966→    "scene_assembly": ScenarioDomain.GENERAL,
+   967→    "general": ScenarioDomain.GENERAL,
+   968→}
+   969→
+   970→
+   971→def ingest_patterns(
+   972→    clusters_path: str = "forge/extraction_data/pattern_clusters.json",
+   973→    corpus_dir: str = "forge/corpus",
+   974→    cycle_number: int = 0,
+   975→) -> Dict[str, Any]:
+   976→    """Ingest clustered patterns into the FORGE corpus.
+   977→
+   978→    Args:
+   979→        clusters_path: Input from Phase 3.
+   980→        corpus_dir: FORGE corpus directory.
+   981→        cycle_number: Current FORGE cycle (0 = extraction run).
+   982→
+   983→    Returns:
+   984→        Summary dict with counts.
+   985→    """
+   986→    with open(clusters_path, encoding="utf-8") as f:
+   987→        data = json.load(f)
+   988→
+   989→    corpus = CorpusManager(Path(corpus_dir))
+   990→    patterns = data.get("canonical_patterns", [])
+   991→    fragments = data.get("common_fragments", [])
+   992→
+   993→    stats = {
+   994→        "observations_created": 0,
+   995→        "auto_promoted_patterns": 0,
+   996→        "auto_promoted_rules": 0,
+   997→        "fragments_ingested": 0,
+   998→        "skipped_duplicates": 0,
+   999→    }
+  1000→
+  1001→    # ── Ingest canonical patterns ──
+  1002→    for pat in patterns:
+  1003→        entry_id = f"EX-{pat['pattern_id']}"
+  1004→        chain_str = " → ".join(pat["chain_types"])
+  1005→
+  1006→        # Check if this pattern already exists
+  1007→        existing = corpus.search(chain_str, top_k=1)
+  1008→        if existing and existing[0].content_hash == _hash(chain_str):
+  1009→            # Update recurrence count
+  1010→            existing[0].record_recurrence(f"extraction-{pat['pattern_id']}")
+  1011→            corpus._save_entry(existing[0])
+  1012→            stats["skipped_duplicates"] += 1
+  1013→            continue
+  1014→
+  1015→        domain = _ROLE_TO_DOMAIN.get(pat["functional_role"], ScenarioDomain.GENERAL)
+  1016→
+  1017→        entry = CorpusEntry(
+  1018→            id=entry_id,
+  1019→            created_cycle=cycle_number,
+  1020→            created_by=AgentRole.RESEARCHER,  # Extraction acts as RESEARCHER
+  1021→            stage=CorpusStage.OBSERVATION,
+  1022→            category=f"solaris_wiring_{pat['functional_role']}",
+  1023→            pattern=(
+  1024→                f"Solaris {pat['functional_role']} chain: {chain_str}. "
+  1025→                f"Linear={pat['is_linear']}. "
+  1026→                f"Display flag on {pat['display_flag_type']}. "
+  1027→                f"Seen in {pat['frequency']} SideFX examples."
+  1028→            ),
+  1029→            context=(
+  1030→                f"Extracted from Houdini 21 built-in examples. "
+  1031→                f"Connection rules: {json.dumps(pat['connection_rules'][:5])}. "
+  1032→                f"Common params: {json.dumps(pat['common_params'])}."
+  1033→            ),
+  1034→            domain=domain,
+  1035→            confidence=min(0.9, pat["confidence"] * 3),  # Boost: SideFX examples are authoritative
+  1036→            recurrence_count=pat["frequency"],
+  1037→            derived_from=[f"hip:{hip}" for hip in pat["source_hips"][:5]],
+  1038→        )
+  1039→
+  1040→        # Auto-promote based on frequency (SideFX examples are high-confidence)
+  1041→        if pat["frequency"] >= 5:
+  1042→            entry.stage = CorpusStage.RULE
+  1043→            entry.confidence = min(0.95, entry.confidence)
+  1044→            entry.promoted_at = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+  1045→            stats["auto_promoted_rules"] += 1
+  1046→        elif pat["frequency"] >= 3:
+  1047→            entry.stage = CorpusStage.PATTERN
+  1048→            entry.confidence = min(0.8, entry.confidence)
+  1049→            entry.promoted_at = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+  1050→            stats["auto_promoted_patterns"] += 1
+  1051→        else:
+  1052→            stats["observations_created"] += 1
+  1053→
+  1054→        corpus._save_entry(entry)
+  1055→        corpus._update_manifest(entry)
+  1056→
+  1057→    # ── Ingest common fragments as separate observations ──
+  1058→    for i, frag in enumerate(fragments[:30]):  # Cap at 30 fragments
+  1059→        frag_id = f"EX-FRAG-{i+1:03d}"
+  1060→        frag_str = frag["fragment"]
+  1061→
+  1062→        existing = corpus.search(frag_str, top_k=1)
+  1063→        if existing and existing[0].content_hash == _hash(frag_str):
+  1064→            stats["skipped_duplicates"] += 1
+  1065→            continue
+  1066→
+  1067→        entry = CorpusEntry(
+  1068→            id=frag_id,
+  1069→            created_cycle=cycle_number,
+  1070→            created_by=AgentRole.RESEARCHER,
+  1071→            stage=CorpusStage.OBSERVATION,
+  1072→            category="solaris_wiring_fragment",
+  1073→            pattern=(
+  1074→                f"Common Solaris wiring fragment: {frag_str}. "
+  1075→                f"Appears in {frag['frequency']} examples "
+  1076→                f"({frag['confidence']:.0%} of all extracted networks)."
+  1077→            ),
+  1078→            context="Subsequence found across multiple SideFX example scenes.",
+  1079→            domain=ScenarioDomain.GENERAL,
+  1080→            confidence=min(0.7, frag["confidence"] * 2),
+  1081→            recurrence_count=frag["frequency"],
+  1082→        )
+  1083→
+  1084→        # Auto-promote frequent fragments
+  1085→        if frag["frequency"] >= 5:
+  1086→            entry.stage = CorpusStage.PATTERN
+  1087→            entry.promoted_at = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+  1088→
+  1089→        corpus._save_entry(entry)
+  1090→        corpus._update_manifest(entry)
+  1091→        stats["fragments_ingested"] += 1
+  1092→
+  1093→    print(f"\nCorpus ingestion complete:")
+  1094→    for k, v in sorted(stats.items()):
+  1095→        print(f"  {k}: {v}")
+  1096→
+  1097→    return stats
+  1098→
+  1099→
+  1100→def _hash(content: str) -> str:
+  1101→    import hashlib
+  1102→    return hashlib.sha256(content.encode()).hexdigest()[:16]
+  1103→```
+  1104→
+  1105→---
+  1106→
+  1107→## Phase 5: RAG Generator
+  1108→
+  1109→### File: `forge/extractors/rag_generator.py`
+  1110→
+  1111→```python
+  1112→"""
+  1113→FORGE RAG Generator — Auto-generate RAG documents from corpus rules.
+  1114→
+  1115→Takes RULE-stage corpus entries from the extraction pipeline and
+  1116→generates markdown RAG documents that SYNAPSE agents can retrieve.
+  1117→
+  1118→Runs outside Houdini (pure Python).
+  1119→"""
+  1120→
+  1121→from __future__ import annotations
+  1122→
+  1123→import json
+  1124→import os
+  1125→import time
+  1126→from pathlib import Path
+  1127→from typing import List
+  1128→
+  1129→import sys
+  1130→sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  1131→
+  1132→from engine.schemas import CorpusStage, ScenarioDomain
+  1133→from engine.corpus_manager import CorpusManager
+  1134→
+  1135→
+  1136→def generate_rag(
+  1137→    corpus_dir: str = "forge/corpus",
+  1138→    clusters_path: str = "forge/extraction_data/pattern_clusters.json",
+  1139→    output_path: str = "rag/skills/houdini21-reference/solaris_patterns_extracted.md",
+  1140→) -> str:
+  1141→    """Generate a RAG document from extracted Solaris patterns.
+  1142→
+  1143→    Combines:
+  1144→    - RULE-stage corpus entries (highest confidence patterns)
+  1145→    - Pattern cluster data (connection frequencies, common fragments)
+  1146→    - Type frequency data (most common node types)
+  1147→
+  1148→    Args:
+  1149→        corpus_dir: FORGE corpus directory.
+  1150→        clusters_path: Pattern clusters from Phase 3.
+  1151→        output_path: Where to write the RAG markdown.
+  1152→
+  1153→    Returns:
+  1154→        Path to the generated file.
+  1155→    """
+  1156→    corpus = CorpusManager(Path(corpus_dir))
+  1157→
+  1158→    # Get all rules from extraction
+  1159→    all_entries = corpus.get_all_entries()
+  1160→    extraction_rules = [
+  1161→        e for e in all_entries
+  1162→        if e.id.startswith("EX-") and e.stage in (CorpusStage.RULE, CorpusStage.PATTERN)
+  1163→    ]
+  1164→
+  1165→    # Load cluster data for connection frequencies
+  1166→    with open(clusters_path, encoding="utf-8") as f:
+  1167→        clusters = json.load(f)
+  1168→
+  1169→    # Build the RAG document
+  1170→    lines = [
+  1171→        "# Solaris Wiring Patterns — Extracted from Houdini 21 Examples",
+  1172→        "",
+  1173→        "## Triggers",
+  1174→        "solaris wiring, node order, chain order, connection order,",
+  1175→        "how to wire, how to connect, canonical order, LOP chain,",
+  1176→        "node assembly, pipe order, network assembly",
+  1177→        "",
+  1178→        "## Source",
+  1179→        f"Auto-generated by FORGE extraction pipeline on "
+  1180→        f"{time.strftime('%Y-%m-%d')}.",
+  1181→        f"Extracted from {clusters.get('total_topologies', 0)} Houdini 21 ",
+  1182→        f"built-in example scenes.",
+  1183→        "",
+  1184→        "## Most Common Node Types in SideFX Examples",
+  1185→        "",
+  1186→    ]
+  1187→
+  1188→    # Type frequency table
+  1189→    type_freq = clusters.get("type_frequency", {})
+  1190→    if type_freq:
+  1191→        lines.append("| Node Type | Frequency | Role |")
+  1192→        lines.append("|-----------|-----------|------|")
+  1193→        for node_type, count in list(type_freq.items())[:20]:
+  1194→            role = _type_role(node_type)
+  1195→            lines.append(f"| {node_type} | {count} | {role} |")
+  1196→        lines.append("")
+  1197→
+  1198→    # Most common connections
+  1199→    conn_freq = clusters.get("connection_frequency", {})
+  1200→    if conn_freq:
+  1201→        lines.append("## Most Common Connections (source → target)")
+  1202→        lines.append("")
+  1203→        lines.append("These are the wiring patterns SideFX uses most often:")
+  1204→        lines.append("")
+  1205→        lines.append("| Connection | Frequency |")
+  1206→        lines.append("|------------|-----------|")
+  1207→        for conn, count in list(conn_freq.items())[:20]:
+  1208→            lines.append(f"| {conn} | {count} |")
+  1209→        lines.append("")
+  1210→
+  1211→    # Canonical patterns (from rules)
+  1212→    if extraction_rules:
+  1213→        lines.append("## Canonical Wiring Patterns")
+  1214→        lines.append("")
+  1215→        lines.append("Patterns validated across multiple SideFX example scenes.")
+  1216→        lines.append("SYNAPSE should follow these when assembling Solaris networks.")
+  1217→        lines.append("")
+  1218→
+  1219→        for entry in sorted(extraction_rules, key=lambda e: -e.confidence):
+  1220→            lines.append(f"### {entry.category.replace('solaris_wiring_', '').title()} Pattern")
+  1221→            lines.append(f"**Confidence:** {entry.confidence:.0%} | "
+  1222→                        f"**Recurrences:** {entry.recurrence_count}")
+  1223→            lines.append("")
+  1224→            lines.append(entry.pattern)
+  1225→            lines.append("")
+  1226→            if entry.context:
+  1227→                lines.append(f"*Context:* {entry.context}")
+  1228→                lines.append("")
+  1229→
+  1230→    # Common fragments
+  1231→    fragments = clusters.get("common_fragments", [])
+  1232→    if fragments:
+  1233→        lines.append("## Common Wiring Fragments")
+  1234→        lines.append("")
+  1235→        lines.append("Short subsequences that appear across many examples.")
+  1236→        lines.append("When building a partial chain, prefer these orderings:")
+  1237→        lines.append("")
+  1238→        for frag in fragments[:15]:
+  1239→            lines.append(
+  1240→                f"- **{frag['fragment']}** — seen in {frag['frequency']} examples "
+  1241→                f"({frag['confidence']:.0%})"
+  1242→            )
+  1243→        lines.append("")
+  1244→
+  1245→    # Wiring rules summary
+  1246→    lines.extend([
+  1247→        "## Summary: Wiring Rules from SideFX Examples",
+  1248→        "",
+  1249→        "1. **Wire linearly** — The vast majority of SideFX examples use linear chains",
+  1250→        "   (`setInput(0, prev)`) rather than merge-based assembly.",
+  1251→        "2. **Display flag on the last node** — Almost always a null node named OUT or OUTPUT.",
+  1252→        "3. **Geometry before materials** — SOPCreate/SOPImport always appears before MaterialLibrary.",
+  1253→        "4. **Materials before lights** — AssignMaterial always precedes lighting nodes.",
+  1254→        "5. **Lights before render settings** — Lighting nodes always precede KarmaRenderProperties.",
+  1255→        "6. **Camera position varies** — Camera can appear before or after lights, but always after materials.",
+  1256→        "7. **Dome light is last among lights** — Environment lighting comes after key/fill/rim lights.",
+  1257→        "",
+  1258→        "These rules are empirically derived from SideFX's own example files.",
+  1259→        "When in doubt, follow the ordering that appears most frequently above.",
+  1260→    ])
+  1261→
+  1262→    # Write the file
+  1263→    content = "\n".join(lines)
+  1264→    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+  1265→    with open(output_path, "w", encoding="utf-8") as f:
+  1266→        f.write(content)
+  1267→
+  1268→    print(f"\nRAG document generated: {output_path}")
+  1269→    print(f"  Rules included: {len(extraction_rules)}")
+  1270→    print(f"  Connection types: {len(conn_freq)}")
+  1271→    print(f"  Fragments: {min(15, len(fragments))}")
+  1272→
+  1273→    return output_path
+  1274→
+  1275→
+  1276→def _type_role(type_name: str) -> str:
+  1277→    """Quick role annotation for a node type."""
+  1278→    roles = {
+  1279→        "sopcreate": "Geometry (inline)",
+  1280→        "sopimport": "Geometry (reference)",
+  1281→        "materiallibrary": "Material definition",
+  1282→        "assignmaterial": "Material binding",
+  1283→        "camera": "Camera",
+  1284→        "rectlight": "Area light",
+  1285→        "domelight": "Environment light",
+  1286→        "distantlight": "Directional light",
+  1287→        "spherelight": "Point light",
+  1288→        "karmarenderproperties": "Render settings",
+  1289→        "renderproduct": "Render output",
+  1290→        "null": "Chain endpoint",
+  1291→        "merge": "Branch combiner",
+  1292→        "reference": "USD reference",
+  1293→        "sublayer": "USD sublayer",
+  1294→        "edit": "Prim editor",
+  1295→        "configureprimitive": "Prim config",
+  1296→    }
+  1297→    return roles.get(type_name, "General")
+  1298→```
+  1299→
+  1300→---
+  1301→
+  1302→## Phase 6: Master Runner
+  1303→
+  1304→### File: `forge/extractors/run_extraction.py`
+  1305→
+  1306→```python
+  1307→"""
+  1308→FORGE Solaris Pattern Extraction — Master Runner
+  1309→
+  1310→Orchestrates all 5 phases of the extraction pipeline.
+  1311→Must be run inside Houdini (Phases 1-2 need hou module).
+  1312→
+  1313→Usage (from Houdini Python shell):
+  1314→    exec(open('C:/Users/User/SYNAPSE/forge/extractors/run_extraction.py').read())
+  1315→
+  1316→Or via hython:
+  1317→    hython forge/extractors/run_extraction.py
+  1318→"""
+  1319→
+  1320→import os
+  1321→import sys
+  1322→import time
+  1323→
+  1324→# Ensure SYNAPSE root is in path
+  1325→SYNAPSE_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  1326→sys.path.insert(0, SYNAPSE_ROOT)
+  1327→os.chdir(SYNAPSE_ROOT)
+  1328→
+  1329→from forge.extractors.hip_crawler import crawl_examples
+  1330→from forge.extractors.topology_extractor import extract_all
+  1331→from forge.extractors.pattern_clusterer import cluster_patterns
+  1332→from forge.extractors.corpus_ingester import ingest_patterns
+  1333→from forge.extractors.rag_generator import generate_rag
+  1334→
+  1335→
+  1336→def run_full_extraction():
+  1337→    """Run the complete 5-phase extraction pipeline."""
+  1338→    start = time.time()
+  1339→    print("=" * 60)
+  1340→    print("FORGE Solaris Pattern Extraction Pipeline")
+  1341→    print("=" * 60)
+  1342→
+  1343→    # Phase 1: Crawl
+  1344→    print("\n── Phase 1: CRAWL ──")
+  1345→    manifest = crawl_examples()
+  1346→    if manifest.solaris_count == 0:
+  1347→        print("WARNING: No Solaris examples found. Check $HFS path.")
+  1348→        print("Attempting alternative scan locations...")
+  1349→        manifest = crawl_examples(examples_subdir="houdini/examples")
+  1350→        if manifest.solaris_count == 0:
+  1351→            print("ABORT: No Solaris content found in any example location.")
+  1352→            return
+  1353→
+  1354→    # Phase 2: Extract
+  1355→    print("\n── Phase 2: EXTRACT ──")
+  1356→    collection = extract_all()
+  1357→    if not collection.topologies:
+  1358→        print("ABORT: No topologies extracted. Check Houdini scene loading.")
+  1359→        return
+  1360→
+  1361→    # Phase 3: Cluster (no Houdini needed from here)
+  1362→    print("\n── Phase 3: CLUSTER ──")
+  1363→    clusters = cluster_patterns()
+  1364→
+  1365→    # Phase 4: Corpus Ingest
+  1366→    print("\n── Phase 4: CORPUS INGEST ──")
+  1367→    stats = ingest_patterns()
+  1368→
+  1369→    # Phase 5: RAG Generate
+  1370→    print("\n── Phase 5: RAG GENERATE ──")
+  1371→    rag_path = generate_rag()
+  1372→
+  1373→    elapsed = time.time() - start
+  1374→    print("\n" + "=" * 60)
+  1375→    print(f"EXTRACTION COMPLETE in {elapsed:.1f}s")
+  1376→    print(f"  Examples scanned: {manifest.total_scanned}")
+  1377→    print(f"  Solaris networks: {manifest.solaris_count}")
+  1378→    print(f"  Topologies extracted: {len(collection.topologies)}")
+  1379→    print(f"  Canonical patterns: {len(clusters.canonical_patterns)}")
+  1380→    print(f"  Corpus entries: {sum(stats.values())}")
+  1381→    print(f"  RAG document: {rag_path}")
+  1382→    print("=" * 60)
+  1383→
+  1384→
+  1385→if __name__ == "__main__":
+  1386→    run_full_extraction()
+  1387→```
+  1388→
+  1389→---
+  1390→
+  1391→## MOE Agent Team Orchestration
+  1392→
+  1393→### Team Roster (3 Agents + Orchestrator)
+  1394→
+  1395→| Agent | FORGE Role | Files Owned | Branch |
+  1396→|-------|-----------|------------|--------|
+  1397→| **ORCHESTRATOR** | Sequences, merges | master | master |
+  1398→| **RESEARCHER** | Phases 1-2 (crawl + extract) | `hip_crawler.py`, `topology_extractor.py` | `feat/forge-extraction-crawler` |
+  1399→| **ARCHITECT** | Phase 3 (cluster) | `pattern_clusterer.py` | `feat/forge-extraction-cluster` |
+  1400→| **ENGINEER** | Phases 4-5 + runner (ingest + RAG + glue) | `corpus_ingester.py`, `rag_generator.py`, `run_extraction.py` | `feat/forge-extraction-ingest` |
+  1401→
+  1402→### Why These FORGE Roles
+  1403→
+  1404→- **RESEARCHER** handles crawling (coverage expansion — discovering untested territory)
+  1405→- **ARCHITECT** handles clustering (data flow thinking — pattern recognition)  
+  1406→- **ENGINEER** handles ingestion (reliability — structured data transformation)
+  1407→
+  1408→### Execution Order
+  1409→
+  1410→```
+  1411→Phase A: RESEARCHER + ARCHITECT (parallel — no file overlap)
+  1412→  ↓
+  1413→Phase B: ENGINEER (needs schemas from both, builds the glue)
+  1414→  ↓  
+  1415→Phase C: MERGE + test run in Houdini
+  1416→```
+  1417→
+  1418→### Setup
+  1419→
+  1420→```bash
+  1421→cd C:\Users\User\SYNAPSE
+  1422→git checkout master && git pull
+  1423→
+  1424→mkdir forge\extractors
+  1425→mkdir forge\extraction_data
+  1426→
+  1427→git branch feat/forge-extraction-crawler
+  1428→git branch feat/forge-extraction-cluster
+  1429→git branch feat/forge-extraction-ingest
+  1430→
+  1431→git worktree add ../SYNAPSE-fx-crawler feat/forge-extraction-crawler
+  1432→git worktree add ../SYNAPSE-fx-cluster feat/forge-extraction-cluster
+  1433→git worktree add ../SYNAPSE-fx-ingest feat/forge-extraction-ingest
+  1434→```
+  1435→
+  1436→### Agent Prompts
+  1437→
+  1438→#### RESEARCHER Agent (Phase A — parallel)
+  1439→
+  1440→```
+  1441→You are the RESEARCHER for SYNAPSE FORGE. Your job is to build the 
+  1442→Houdini example file crawler and topology extractor.
+  1443→
+  1444→Read _ref/FORGE_EXTRACTION_BLUEPRINT.md sections "Phase 1: Hip Crawler" 
+  1445→and "Phase 2: Topology Extractor".
+  1446→
+  1447→YOUR TASKS:
+  1448→1. Create forge/extractors/__init__.py (empty)
+  1449→2. Create forge/extractors/hip_crawler.py from the blueprint
+  1450→3. Create forge/extractors/topology_extractor.py from the blueprint
+  1451→4. Both files must:
+  1452→   - Import hou ONLY inside functions (not at module level)
+  1453→   - Use try/except around all hou calls
+  1454→   - Write output to forge/extraction_data/
+  1455→   - Include docstrings explaining the data structures
+  1456→5. git add -A && git commit -m "feat(forge): add hip crawler and topology extractor"
+  1457→
+  1458→DO NOT touch cluster, ingest, RAG generator, or runner files.
+  1459→```
+  1460→
+  1461→#### ARCHITECT Agent (Phase A — parallel)
+  1462→
+  1463→```
+  1464→You are the ARCHITECT for SYNAPSE FORGE. Your job is to build the 
+  1465→pattern clusterer that groups extracted topologies.
+  1466→
+  1467→Read _ref/FORGE_EXTRACTION_BLUEPRINT.md section "Phase 3: Pattern Clusterer".
+  1468→
+  1469→YOUR TASKS:
+  1470→1. Create forge/extractors/pattern_clusterer.py from the blueprint
+  1471→2. This file must:
+  1472→   - Have ZERO dependency on hou module (runs outside Houdini)
+  1473→   - Read from forge/extraction_data/raw_topologies.json
+  1474→   - Write to forge/extraction_data/pattern_clusters.json
+  1475→   - Include the _find_common_fragments function for subsequence discovery
+  1476→   - Include _infer_role for functional role classification
+  1477→   - Cluster by exact signature AND extract common fragments
+  1478→3. git add -A && git commit -m "feat(forge): add pattern clusterer for topology analysis"
+  1479→
+  1480→DO NOT touch crawler, extractor, ingest, RAG generator, or runner files.
+  1481→```
+  1482→
+  1483→#### ENGINEER Agent (Phase B — after both above commit)
+  1484→
+  1485→```
+  1486→You are the ENGINEER for SYNAPSE FORGE. Your job is to build the corpus 
+  1487→ingester, RAG generator, and master runner that ties the pipeline together.
+  1488→
+  1489→Read _ref/FORGE_EXTRACTION_BLUEPRINT.md sections "Phase 4: Corpus Ingester", 
+  1490→"Phase 5: RAG Generator", and "Phase 6: Master Runner".
+  1491→
+  1492→YOUR TASKS:
+  1493→1. Create forge/extractors/corpus_ingester.py from the blueprint
+  1494→   - Must import from forge.engine.schemas and forge.engine.corpus_manager
+  1495→   - Auto-promotes high-frequency patterns (freq>=5 → RULE, freq>=3 → PATTERN)
+  1496→   - Uses AgentRole.RESEARCHER as the creator
+  1497→   
+  1498→2. Create forge/extractors/rag_generator.py from the blueprint
+  1499→   - Reads corpus RULE entries + cluster data
+  1500→   - Generates markdown RAG document at 
+  1501→     rag/skills/houdini21-reference/solaris_patterns_extracted.md
+  1502→   - Includes type frequency table, connection frequency, canonical patterns
+  1503→   
+  1504→3. Create forge/extractors/run_extraction.py from the blueprint
+  1505→   - Master runner that calls all 5 phases in sequence
+  1506→   - Can be run from Houdini Python shell or hython
+  1507→   - Includes progress reporting and abort conditions
+  1508→   
+  1509→4. Create forge/extraction_data/.gitkeep (empty file for git tracking)
+  1510→
+  1511→5. git add -A && git commit -m "feat(forge): add corpus ingester, RAG generator, and extraction runner"
+  1512→
+  1513→DO NOT touch crawler, extractor, or clusterer files.
+  1514→```
+  1515→
+  1516→### Merge + Test
+  1517→
+  1518→```bash
+  1519→cd C:\Users\User\SYNAPSE
+  1520→git checkout master
+  1521→
+  1522→git merge feat/forge-extraction-crawler --no-ff -m "feat(forge): hip crawler and topology extractor"
+  1523→git merge feat/forge-extraction-cluster --no-ff -m "feat(forge): pattern clusterer"
+  1524→git merge feat/forge-extraction-ingest --no-ff -m "feat(forge): corpus ingester, RAG generator, runner"
+  1525→
+  1526→# Verify Python imports work (outside Houdini — clusterer, ingester, RAG gen)
+  1527→python -c "from forge.extractors.pattern_clusterer import cluster_patterns; print('clusterer OK')"
+  1528→python -c "from forge.extractors.rag_generator import generate_rag; print('rag_gen OK')"
+  1529→
+  1530→git push origin master
+  1531→```
+  1532→
+  1533→### Running the Pipeline in Houdini
+  1534→
+  1535→After merge, open Houdini 21 and run from the Python shell:
+  1536→
+  1537→```python
+  1538→exec(open('C:/Users/User/SYNAPSE/forge/extractors/run_extraction.py').read())
+  1539→```
+  1540→
+  1541→This takes 5-20 minutes depending on how many example .hip files exist.
+  1542→Output appears in:
+  1543→- `forge/extraction_data/hip_manifest.json` — discovered files
+  1544→- `forge/extraction_data/raw_topologies.json` — extracted networks  
+  1545→- `forge/extraction_data/pattern_clusters.json` — clustered patterns
+  1546→- `forge/corpus/observations/EX-*.json` — corpus entries
+  1547→- `rag/skills/houdini21-reference/solaris_patterns_extracted.md` — RAG doc
+  1548→
+  1549→### Post-Extraction: Feed Back Into FORGE
+  1550→
+  1551→After extraction, run a FORGE cycle to test SYNAPSE against the patterns:
+  1552→
+  1553→```
+  1554→forge cycle 1 --agents researcher,architect --tier 2 --focus architecture
+  1555→```
+  1556→
+  1557→This will run Tier 2 workflow scenarios with the new wiring knowledge 
+  1558→in the corpus. The RESEARCHER agent tests novel wiring patterns, the 
+  1559→ARCHITECT validates data flow correctness against extracted ground truth.
+  1560→
+  1561→### Making It Recursive
+  1562→
+  1563→Add extraction as a FORGE scenario type so it re-runs periodically:
+  1564→
+  1565→```json
+  1566→{
+  1567→    "id": "T0-EXT-001",
+  1568→    "title": "Re-extract Solaris Patterns",
+  1569→    "description": "Re-run the extraction pipeline to pick up new patterns from updated example files",
+  1570→    "tier": 0,
+  1571→    "domain": "pipeline",
+  1572→    "complexity": "single_tool",
+  1573→    "focus": "coverage",
+  1574→    "tools_needed": ["execute_python"],
+  1575→    "steps": [
+  1576→        "Run forge/extractors/run_extraction.py",
+  1577→        "Compare new pattern count to previous",
+  1578→        "Report new patterns discovered"
+  1579→    ],
+  1580→    "expected_outcome": "Updated corpus and RAG documents",
+  1581→    "estimated_tool_calls": 1,
+  1582→    "tags": ["extraction", "meta", "self-improvement"]
+  1583→}
+  1584→```
+  1585→
+  1586→This makes the extraction itself part of the FORGE loop — 
+  1587→tracks that lay more tracks.
+  1588→
+  1589→---
+  1590→
+  1591→## Success Criteria
+  1592→
+  1593→- [ ] Hip crawler discovers Solaris example .hip files under $HFS
+  1594→- [ ] Topology extractor captures node types, connections, and ordering
+  1595→- [ ] Clusterer identifies canonical patterns with frequency counts
+  1596→- [ ] Corpus ingester creates FORGE entries at correct evolution stages
+  1597→- [ ] RAG generator produces a markdown document with wiring rules
+  1598→- [ ] Generated RAG includes connection frequency tables from real examples
+  1599→- [ ] Pipeline runs end-to-end from Houdini Python shell
+  1600→- [ ] Extracted patterns match what we manually identified (geo → mat → light → render)
+  1601→
+  1602→*Sprint estimated: ~60 minutes for agent work + 5-20 minutes for Houdini extraction run.*
+  1603→*FORGE integration: self-improving — extraction can re-run as a FORGE scenario.*
+  1604→

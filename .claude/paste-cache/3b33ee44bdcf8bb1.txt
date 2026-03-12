@@ -1,0 +1,867 @@
+# SYNAPSE Tool Parity + Memory Pipeline — Claude Code MOE Plan v2
+
+> **Repo:** `C:\Users\User\SYNAPSE`
+> **Agents:** 8 (ALPHA through HOTEL)
+> **Phases:** 4
+> **Goal:** Full tool-calling parity, memory pipeline rename, shot login, prompt-to-HDA
+
+---
+
+## What's New in v2
+
+| Addition | Agent | Why |
+|----------|-------|-----|
+| Memory evolution rename | FOXTROT | Replace Pokémon names with VFX pipeline terms: **flat → structured → composed** |
+| Shot Login | GOLF | One-click context hydration — load 3 memory layers when opening a hip file |
+| Prompt-to-HDA | HOTEL | `/hda` command in panel — natural language → packaged HDA with clean parameters |
+
+---
+
+## Naming Convention: Memory Evolution Stages
+
+Old (Pokémon) → New (VFX Pipeline):
+
+| Old | New | Format | Description |
+|-----|-----|--------|-------------|
+| Charmander | **flat** | `memory.md` | Plain markdown. Session notes, decisions as text. |
+| Charmeleon | **structured** | `memory.usd` | USD stage with typed prims. Sessions, decisions, parameters as scene graph data. |
+| Charizard | **composed** | `memory.usd` + sublayers | USD with composition arcs. Scene memory sublayers project memory. Cross-shot queryable. |
+
+The terms are self-describing. A TD reads "flat → structured → composed" and
+immediately knows: flat text evolves into structured data evolves into composed
+USD layers. No cultural reference needed.
+
+---
+
+## Complete File Map
+
+```
+TOOL PARITY (same as v1):
+  python/synapse/panel/tool_bridge.py       ALPHA    Schema converter
+  python/synapse/panel/tool_executor.py     BRAVO    Main-thread executor
+  python/synapse/panel/claude_worker.py     CHARLIE  Streaming + tool loop
+  python/synapse/panel/system_prompt.py     DELTA    System prompt builder
+  houdini/python_panels/synapse_panel.pypanel  ECHO  Wire everything together
+
+NEW:
+  python/synapse/memory/evolution.py        FOXTROT  Rename (modify)
+  python/synapse/memory/scene_memory.py     FOXTROT  Rename (modify)
+  python/synapse/memory/store.py            FOXTROT  Rename (modify)
+  shared/evolution.py                       FOXTROT  Rename (modify)
+  tests/test_chat_panel.py                  FOXTROT  Rename (modify)
+  tests/test_mcp_protocol.py                FOXTROT  Rename (modify)
+  python/synapse/panel/shot_login.py        GOLF     Shot login (create)
+  python/synapse/panel/prompt_to_hda.py     HOTEL    HDA workflow (create)
+```
+
+---
+
+## Dependency Graph
+
+```
+ALPHA (tool_bridge) ──┬──→ CHARLIE (claude_worker) ──┐
+                      │                               │
+                      └──→ BRAVO (tool_executor)  ────┼──→ ECHO (panel wiring)
+                                                      │
+DELTA (system_prompt) ────────────────────────────────┤
+                                                      │
+FOXTROT (memory rename) ─────────────────────────────┤
+                                                      │
+GOLF (shot login) ────────────────────────────────────┤
+                                                      │
+HOTEL (prompt-to-hda) ───────────────────────────────┘
+```
+
+**Phase 1** (parallel, no deps): ALPHA + DELTA + FOXTROT
+**Phase 2** (needs ALPHA): BRAVO + CHARLIE
+**Phase 3** (no deps on Phase 2): GOLF + HOTEL
+**Phase 4** (needs all): ECHO
+
+FOXTROT, GOLF, and HOTEL have zero dependencies on the tool parity agents.
+GOLF and HOTEL can run any time before ECHO. Grouping them in Phase 3
+keeps phases clean, but they could also run in Phase 1 if you want speed.
+
+---
+
+## PHASE 1 — Parallel Agents
+
+### AGENT ALPHA — Tool Schema Bridge
+
+```
+I need you to create a tool schema bridge module for the SYNAPSE project.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- The file python/synapse/mcp/_tool_registry.py contains 102 MCP tool definitions
+  in a list called TOOL_DEFS. Each entry is a tuple:
+  (name, command_type, payload_builder, description, inputSchema, read_only, destructive, idempotent)
+- It also exports TOOL_DISPATCH: dict mapping name → (command_type, payload_builder)
+- The Anthropic API expects tools in a different format than MCP
+
+YOUR TASK:
+Create python/synapse/panel/tool_bridge.py
+
+This module converts TOOL_DEFS to Anthropic API tool format. Pure data transform,
+no Houdini dependency, no hou imports.
+
+REQUIREMENTS:
+
+1. Function get_anthropic_tools() -> list[dict]
+   Returns tool definitions in Anthropic format:
+   {
+       "name": "houdini_create_node",
+       "description": "Create a new node...",
+       "input_schema": {  # NOTE: Anthropic uses input_schema, NOT inputSchema
+           "type": "object",
+           "properties": {...},
+           "required": [...]
+       }
+   }
+   Cache the result at module level since TOOL_DEFS is immutable.
+
+2. Function get_tool_dispatch(tool_name: str) -> tuple | None
+   Returns (command_type, payload_builder) from TOOL_DISPATCH, or None.
+
+3. Function get_tool_count() -> int
+   Returns total number of tools (for health checks).
+
+4. Import from synapse.mcp._tool_registry only. No other synapse imports.
+   No hou import. No Qt import.
+
+5. Build the cache at import time (module-level code).
+   Make the cache a tuple (immutable) after building.
+
+6. Add the group-info tools too. Read mcp_server.py lines 480-488 —
+   there are 6 additional "synapse_group_*" tools that return knowledge
+   preambles. Include them with empty input_schema:
+   {"type": "object", "properties": {}, "required": []}
+   Their descriptions should start with "[TOOL GROUP]".
+   You'll need to import the group knowledge from mcp_tools_scene,
+   mcp_tools_render, mcp_tools_usd, mcp_tools_tops, mcp_tools_memory,
+   mcp_tools_cops modules (each has a GROUP_KNOWLEDGE string).
+   Handle ImportError gracefully — if any module is missing, skip that group tool.
+
+VERIFY:
+- Read python/synapse/mcp/_tool_registry.py to understand TOOL_DEFS format
+- Run: python -c "from synapse.panel.tool_bridge import get_anthropic_tools; t=get_anthropic_tools(); print(f'{len(t)} tools'); print(t[0])"
+  Expected: 102+ tools, first tool should have name/description/input_schema keys
+- Verify input_schema (not inputSchema) is used in output
+
+DO NOT modify any existing files. Only create python/synapse/panel/tool_bridge.py
+```
+
+---
+
+### AGENT DELTA — System Prompt Builder
+
+```
+I need you to create a system prompt builder for the SYNAPSE Houdini panel.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- TONE.md at repo root contains the voice/personality guide for the co-pilot
+- The panel calls the Anthropic API directly and needs a system prompt that
+  includes: identity, TONE.md content, tool usage guidance, and scene context
+- The panel gathers context: network path, selected nodes, frame number, hip file
+
+YOUR TASK:
+Create python/synapse/panel/system_prompt.py
+
+REQUIREMENTS:
+
+1. Function build_system_prompt(context: dict) -> str
+   Args: context dict with keys: network, selection (list), frame (int), hip (str)
+   Returns: Complete system prompt string.
+
+2. The prompt MUST include these sections (joined with double newlines):
+
+   a) IDENTITY — Tell Claude it IS SYNAPSE, embedded inside Houdini 21, with
+      FULL tool access. Emphasize: "When asked to BUILD something, USE TOOLS.
+      Don't describe steps — execute them." This is the most important part.
+      Artists expect action, not documentation.
+
+   b) TONE — Load TONE.md content. Search for it at:
+      - {repo_root}/TONE.md (relative to this file: ../../../TONE.md)
+      - C:/Users/User/SYNAPSE/TONE.md
+      - ~/.synapse/TONE.md
+      Cache after first load. If not found, skip this section (don't error).
+
+   c) TOOL GUIDANCE — Rules for tool usage:
+      - When asked to create/build/setup → USE TOOLS immediately
+      - When asked to explain/teach → respond with text
+      - After creating nodes → briefly confirm what was built
+      - If a tool fails → explain what happened, suggest fix
+      - Chain multiple tools for complex requests
+      - Use houdini_inspect_node to discover parameter names before setting them
+        (especially for USD/Solaris nodes with encoded names like xn__inputsintensity_i0a)
+      - Always set the display/render flag on the last node in a chain
+      - For Solaris networks: prefer creating standard LOP nodes over execute_python
+
+   d) SCENE CONTEXT — Current state: network, selection, frame, file.
+      Format cleanly. If selection is >5 nodes, truncate with "+N more".
+
+3. No hou import. No Qt import. Pure Python + file I/O.
+
+4. Use _load_tone() as a cached helper. Load once, return cached string after.
+
+VERIFY:
+- Read TONE.md to understand the voice guide content
+- Run: python -c "from synapse.panel.system_prompt import build_system_prompt; p=build_system_prompt({'network':'/stage','selection':[],'frame':1,'hip':'test.hip'}); print(p[:500])"
+- Verify the output starts with identity, includes tool guidance, ends with context
+
+DO NOT modify any existing files. Only create python/synapse/panel/system_prompt.py
+```
+
+---
+
+### AGENT FOXTROT — Memory Evolution Rename
+
+```
+I need you to rename the memory evolution stages in SYNAPSE from Pokémon
+names to VFX pipeline terminology.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- The memory system has 3 evolution stages for scene memory files:
+  Currently: charmander (markdown) → charmeleon (USD) → charizard (composed USD)
+  New names: flat (markdown) → structured (USD) → composed (composed USD)
+- These names appear in code, docstrings, comments, tests, and USD metadata
+
+RENAME MAP:
+  "charmander"  → "flat"
+  "charmeleon"  → "structured"
+  "charizard"   → "composed"
+  "Charmander"  → "Flat"
+  "Charmeleon"  → "Structured"
+  "Charizard"   → "Composed"
+  "Pokémon"     → "pipeline"
+  "Pokemon"     → "pipeline"
+
+Also update docstring metaphors:
+  "Charmander -> Charmeleon -> Charizard" → "Flat → Structured → Composed"
+  "The Pokémon Model" → "Memory Evolution Pipeline" or similar
+
+FILES TO MODIFY (and only these):
+  python/synapse/memory/evolution.py       (~15 replacements)
+  python/synapse/memory/scene_memory.py    (~20 replacements)
+  python/synapse/memory/store.py           (~2 replacements)
+  shared/evolution.py                      (~10 replacements)
+  tests/test_chat_panel.py                 (~10 replacements)
+  tests/test_mcp_protocol.py               (~1 replacement)
+
+IMPORTANT RULES:
+1. This is a PURE RENAME. Do not change any logic, structure, or behavior.
+2. The USD metadata values stored on disk also change:
+   "synapse:evolution": "charmeleon" → "synapse:evolution": "structured"
+   "synapse:evolution": "charizard" → "synapse:evolution": "composed"
+   "synapse:evolution_stage": "charmeleon" → "synapse:evolution_stage": "structured"
+3. Function names change:
+   evolve_to_charmeleon → evolve_to_structured
+   evolve_to_charizard → evolve_to_composed
+4. Dict keys change:
+   EVOLUTION_TRIGGERS["charmeleon"] → EVOLUTION_TRIGGERS["structured"]
+5. Update ALL docstrings and comments that reference the old names.
+6. Keep companion markdown header comments updated:
+   "# Scene Memory (Charmeleon - auto-generated)" → "# Scene Memory (Structured - auto-generated)"
+
+APPROACH:
+For each file:
+1. Read the entire file
+2. Apply the rename map (case-sensitive, whole-word where possible)
+3. Write the file back
+4. Verify: grep for any remaining "charmander|charmeleon|charizard" (should be zero)
+
+VERIFY:
+- grep -rni "charmander\|charmeleon\|charizard\|pokemon\|pokémon" python/synapse/memory/ shared/ tests/test_chat_panel.py tests/test_mcp_protocol.py
+  Expected: ZERO matches
+- Run existing tests if available:
+  python -m pytest tests/test_chat_panel.py -v -k evolution 2>/dev/null || echo "Tests may need Houdini"
+- Read the modified files to confirm logic is identical, only names changed.
+
+DO NOT create any new files. Only modify the files listed above.
+DO NOT change any logic — this is purely a naming refactor.
+```
+
+---
+
+## PHASE 2 — After Phase 1 Complete
+
+### AGENT BRAVO — Main-Thread Tool Executor
+
+```
+I need you to create a main-thread tool executor for the SYNAPSE Houdini panel.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- The panel runs inside Houdini. hou.* calls MUST happen on the main thread.
+- The Claude API worker runs on a QThread and cannot call hou.* directly.
+- We need a Qt signal/slot bridge: worker emits signal → executor runs on main thread.
+- python/synapse/panel/tool_bridge.py (already created) provides:
+    get_tool_dispatch(name) → (command_type, payload_builder) or None
+- python/synapse/server/handlers.py provides:
+    SynapseHandler class with .handle(SynapseCommand) → SynapseResponse
+- python/synapse/core/protocol.py provides:
+    SynapseCommand(type, id, payload, sequence, timestamp)
+    SynapseResponse(id, success, data, error)
+
+YOUR TASK:
+Create python/synapse/panel/tool_executor.py
+
+REQUIREMENTS:
+
+1. Class ToolExecutor(QtCore.QObject) — lives on the main thread (created by panel).
+
+2. A ToolRequest class with fields:
+   - tool_use_id: str (from Anthropic API tool_use block)
+   - tool_name: str
+   - tool_input: dict
+   - result: Any (set by executor)
+   - error: str or None (set by executor)
+   - done: threading.Event() (set by executor when complete)
+
+   The worker thread creates a ToolRequest, emits a signal, then calls
+   request.done.wait(timeout=30.0) to block until the main thread finishes.
+
+3. Slot execute_tool(self, request: ToolRequest):
+   Decorated with @QtCore.Slot(object)
+   This runs on the main thread (via Qt's AutoConnection from QThread signal).
+
+   Steps:
+   a) Call get_tool_dispatch(request.tool_name) to get (cmd_type, payload_builder)
+   b) Build payload: payload = payload_builder(request.tool_input)
+   c) Create SynapseCommand(type=cmd_type, id="panel-{name}-{timestamp}", payload=payload)
+   d) Call self._handler.handle(command) → SynapseResponse
+   e) If response.success: set request.result = response.data
+      If not: set request.error = response.error
+   f) ALWAYS call request.done.set() in a finally block
+
+4. Lazy-load SynapseHandler in _get_handler(). Don't import at module level
+   because hou may not be available yet. Cache after first successful import.
+   If import fails, set request.error and return.
+
+5. Handle exceptions gracefully. Log with logging module. Never let an
+   exception escape without calling request.done.set() — the worker thread
+   would hang forever.
+
+6. Import Qt from PySide6 with PySide2 fallback (try/except pattern).
+   Import threading for Event.
+
+VERIFY:
+- Read python/synapse/panel/tool_bridge.py to see get_tool_dispatch API
+- Read python/synapse/server/handlers.py lines 217-317 to see SynapseHandler.handle()
+- Read python/synapse/core/protocol.py lines 196-276 to see SynapseCommand/SynapseResponse
+- Run: python -c "from synapse.panel.tool_executor import ToolExecutor, ToolRequest; print('Import OK')"
+  (This will work outside Houdini since hou import is lazy)
+
+DO NOT modify any existing files. Only create python/synapse/panel/tool_executor.py
+```
+
+---
+
+### AGENT CHARLIE — Claude Worker v2 (Streaming + Tool Loop)
+
+```
+I need you to create a Claude API streaming worker with full tool-use loop support.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- python/synapse/panel/tool_bridge.py (already created) provides:
+    get_anthropic_tools() → list[dict] (102 tool definitions in Anthropic format)
+- python/synapse/panel/tool_executor.py (already created) provides:
+    ToolRequest class with: tool_use_id, tool_name, tool_input, result, error, done (Event)
+    ToolExecutor class with: execute_tool(request) slot
+- The panel connects: worker.tool_requested → executor.execute_tool
+- The worker runs on a QThread. It CANNOT call hou.* directly.
+- Communication with main thread is via: emit signal with ToolRequest, then
+  call request.done.wait(timeout=30) to block until executor completes.
+
+YOUR TASK:
+Create python/synapse/panel/claude_worker.py
+
+This replaces the simple streaming worker in the panel with a full
+tool-use conversation loop.
+
+REQUIREMENTS:
+
+1. Class ClaudeWorker(QThread) with signals:
+   - token_received(str)     — text tokens for streaming display
+   - stream_done()           — conversation complete
+   - stream_error(str)       — error message
+   - tool_requested(object)  — emits ToolRequest for main-thread execution
+   - tool_status(str, str)   — (tool_name, status) where status is "running"/"done"/"error"
+
+2. Constructor: __init__(self, messages, system_prompt="", parent=None)
+   - Copy messages list (we'll mutate during tool loop)
+   - Load tools via get_anthropic_tools()
+   - Store abort flag
+
+3. Method abort(self) — sets self._abort = True
+
+4. Method run(self) — entry point:
+   - Get API key from os.environ["ANTHROPIC_API_KEY"]
+   - Call _conversation_loop(api_key)
+   - Emit stream_done on success, stream_error on exception
+
+5. Method _conversation_loop(self, api_key):
+   THE CORE LOOP. Repeats until stop_reason != "tool_use" or max 25 iterations:
+
+   a) Call _stream_request(api_key) → (stop_reason, content_blocks)
+   b) If stop_reason == "tool_use":
+      - Append {"role": "assistant", "content": content_blocks} to messages
+      - For each tool_use block in content_blocks:
+        * Create ToolRequest from block's id, name, input
+        * Emit tool_status(name, "running")
+        * Emit tool_requested(request)
+        * Call request.done.wait(timeout=30.0)
+        * If timed out: set request.error = "timed out"
+        * Emit tool_status(name, "done" or "error")
+        * Build tool_result dict: {type, tool_use_id, content, is_error}
+        * Content should be JSON string if result is dict, else str
+      - Append {"role": "user", "content": [tool_result_1, tool_result_2, ...]}
+      - Continue loop (make another API call)
+   c) If stop_reason is "end_turn" or "max_tokens": return (done)
+
+6. Method _stream_request(self, api_key) → (stop_reason, content_blocks):
+   Makes ONE streaming API call. Returns all content blocks accumulated.
+
+   - Build request body with model="claude-sonnet-4-20250514", max_tokens=4096,
+     stream=True, messages=self._messages, tools=self._tools
+   - If self._system: add "system" field
+   - Use http.client.HTTPSConnection (stdlib, no dependencies)
+   - POST to api.anthropic.com /v1/messages with headers:
+     Content-Type: application/json
+     x-api-key: {api_key}
+     anthropic-version: 2023-06-01
+   - Parse SSE stream. Track state:
+     * content_blocks: list accumulating all blocks
+     * current_block: the block being built (text or tool_use)
+     * current_text: accumulator for text content or JSON input
+     * stop_reason: from message_delta event
+
+   - SSE event handling:
+     "content_block_start" → start new block (text or tool_use)
+       For tool_use: capture id and name from content_block
+     "content_block_delta" →
+       text_delta: emit token_received, append to current text block
+       input_json_delta: append partial_json to current_text (tool input accumulator)
+     "content_block_stop" → finalize block:
+       For tool_use: parse accumulated current_text as JSON → block["input"]
+       Append to content_blocks
+     "message_delta" → capture stop_reason
+
+   - Return (stop_reason, content_blocks)
+
+7. Method get_messages(self) → list:
+   Returns copy of current messages (for panel to sync history after tool loops).
+
+8. Use timeout=60 on HTTPSConnection (tool-use responses take longer).
+
+9. Check self._abort at every loop iteration and in the SSE read loop.
+
+IMPORTANT DETAILS:
+- The Anthropic streaming format for tool_use accumulates the input JSON
+  across multiple "input_json_delta" events. You must concatenate all
+  partial_json strings, then JSON.parse the full string at content_block_stop.
+- Multiple tool_use blocks can appear in a single response (parallel tool use).
+  Process ALL of them before sending tool_results back.
+- tool_result messages go in the "user" role, not "assistant".
+- The tool_results for multiple tools go in a SINGLE user message as a list.
+
+VERIFY:
+- Read python/synapse/panel/tool_bridge.py to see get_anthropic_tools() output format
+- Read python/synapse/panel/tool_executor.py to see ToolRequest class fields
+- Run: python -c "from synapse.panel.claude_worker import ClaudeWorker; print('Import OK')"
+
+DO NOT modify any existing files. Only create python/synapse/panel/claude_worker.py
+```
+
+---
+
+## PHASE 3 — After Phase 1, Parallel with Phase 2
+
+### AGENT GOLF — Shot Login (Context Hydration)
+
+```
+I need you to create a Shot Login module for the SYNAPSE Houdini panel.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- SYNAPSE has a 3-layer memory system:
+  Layer 1: Cognitive Substrate (global behavior — system prompt, not files)
+  Layer 2: Project Memory at $JOB/claude/project.md (or project.usd if evolved)
+  Layer 3: Scene Memory at $HIP/claude/memory.md (or memory.usd if evolved)
+
+  IMPORTANT: Evolution stages are named: "flat" (markdown), "structured" (USD),
+  "composed" (USD + composition arcs). NOT Pokémon names.
+
+- When an artist opens a hip file, SYNAPSE should automatically hydrate context
+  from all available memory layers — like logging into a shot in a VFX pipeline.
+- The existing memory module is at python/synapse/memory/scene_memory.py
+  Key functions: load_memory(), get_evolution_stage(), get_memory_status()
+- The existing memory module is at python/synapse/memory/evolution.py
+  Key functions: should_evolve(), evolve_to_structured(), evolve_to_composed()
+
+YOUR TASK:
+Create python/synapse/panel/shot_login.py
+
+This module handles the "shot login" workflow — loading context from all
+memory layers when the panel initializes or when the hip file changes.
+
+REQUIREMENTS:
+
+1. Function shot_login(hip_path: str = "") -> dict
+   Main entry point. Returns a context dict that gets injected into the
+   system prompt for all subsequent Claude API calls.
+
+   Steps:
+   a) Determine paths:
+      - scene_dir: dirname of hip_path (or hou.hipFile.path())
+      - project_dir: $JOB if set, otherwise walk up from scene_dir looking for
+        a directory containing a "claude/" folder
+      - claude_scene: {scene_dir}/claude/
+      - claude_project: {project_dir}/claude/
+   b) Initialize missing directories (create claude/ if it doesn't exist)
+   c) Initialize missing memory files (create memory.md with header if missing)
+   d) Load project memory (if exists) → project_context string
+   e) Load scene memory (if exists) → scene_context string
+   f) Check evolution stage for both
+   g) Return dict with:
+      {
+          "project_dir": str,
+          "scene_dir": str,
+          "project_context": str,  # loaded project memory content
+          "scene_context": str,    # loaded scene memory content
+          "project_evolution": str, # "flat", "structured", or "composed"
+          "scene_evolution": str,   # "flat", "structured", or "composed"
+          "hip_file": str,
+          "logged_in": True,
+      }
+
+2. Function check_login_needed(current_hip: str, last_hip: str) -> bool
+   Returns True if the hip file changed and we need to re-login.
+
+3. Function format_memory_for_prompt(login_data: dict) -> str
+   Converts the login data into a formatted string suitable for appending
+   to the system prompt. Should include:
+   - Project context (if available)
+   - Scene context (if available)
+   - Brief status line: "Memory: project=flat, scene=structured"
+
+4. Function ensure_claude_dir(base_dir: str) -> str
+   Idempotently create {base_dir}/claude/ directory. Returns path to it.
+
+5. Function init_scene_memory(claude_dir: str, hip_name: str) -> None
+   Create initial memory.md with header if it doesn't exist.
+   Header should include: hip file name, creation date, schema version.
+
+6. hou import is OPTIONAL (wrapped in try/except). The module should work
+   without hou for testing. When hou is available, use hou.hipFile.path()
+   and hou.getenv("JOB") for path resolution.
+
+7. All file operations must be idempotent and non-destructive.
+   Never delete or overwrite existing memory files.
+   Use the _ProcessFileLock pattern from scene_memory.py for thread safety
+   (or just use threading.Lock — the panel is single-process).
+
+8. Import from synapse.memory.scene_memory for load_memory, get_evolution_stage.
+   Handle ImportError gracefully — if synapse.memory isn't available,
+   return a minimal login dict with logged_in=False.
+
+VERIFY:
+- Read python/synapse/memory/scene_memory.py to understand load_memory() API
+- Read python/synapse/memory/evolution.py to understand evolution stages
+  NOTE: stages are "flat"/"structured"/"composed" (not Pokémon names)
+- Run: python -c "from synapse.panel.shot_login import shot_login; print(shot_login())"
+  Expected: dict with logged_in key (may be False outside Houdini)
+
+DO NOT modify any existing files. Only create python/synapse/panel/shot_login.py
+```
+
+---
+
+### AGENT HOTEL — Prompt-to-HDA
+
+```
+I need you to create a Prompt-to-HDA workflow module for the SYNAPSE panel.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- SYNAPSE already has an hda_package tool that creates HDAs from a description:
+  Tool name: houdini_hda_package
+  It takes: description, name, category, save_path, nodes (internal network),
+  connections, promoted_parms, inputs
+  See: python/synapse/mcp/_tool_registry.py (search for "hda_package")
+  Handler: python/synapse/server/handlers_hda.py (_handle_hda_package)
+
+- The panel will have a /hda command that:
+  1. Takes a natural language description from the user
+  2. Asks Claude to design the HDA (node types, connections, parameters)
+  3. Claude calls hda_package tool with the complete specification
+  4. Returns the packaged .hda file path
+
+- The existing tool chain can already create the HDA. What's missing is the
+  ORCHESTRATION layer that helps Claude design a GOOD HDA from a prompt:
+  - Choosing the right internal nodes for the task
+  - Setting up proper parameter interfaces (promoted parms)
+  - Connecting nodes correctly
+  - Setting sensible defaults
+  - Picking the right category (Sop/Lop/Object/Driver/Top)
+
+YOUR TASK:
+Create python/synapse/panel/prompt_to_hda.py
+
+This module provides:
+1. HDA design guidance injected into the system prompt when /hda is active
+2. A structured workflow that the panel orchestrates
+
+REQUIREMENTS:
+
+1. Constant HDA_DESIGN_PROMPT -> str
+   A detailed system prompt addendum that teaches Claude how to design HDAs.
+   This gets appended to the system prompt when the user types /hda.
+
+   It should include:
+   a) HDA design principles:
+      - Clean parameter interface — only expose what artists need
+      - Sensible defaults on every parameter
+      - Internal nodes should be standard Houdini nodes (not execute_python)
+      - Naming: operator_name is lowercase_underscore, label is Title Case
+      - Version starts at 1.0.0
+      - Save path defaults to $HIP/hda/ or $HOUDINI_USER_PREF_DIR/hda/
+
+   b) Category selection guide:
+      - "Sop" — geometry operations (most common)
+      - "Lop" — USD/Solaris scene composition
+      - "Object" — object-level containers
+      - "Driver" — render/output operators
+      - "Top" — PDG/TOPS task operators
+
+   c) Common SOP HDA recipes (node chains for frequent requests):
+      - Scatter points: grid → scatter → copytopoints
+      - Deform: input → mountain → smooth → output
+      - Fracture: input → voronoifracture → assemble → output
+      - UV layout: input → uvflatten → uvlayout → output
+
+   d) Common LOP HDA recipes:
+      - Light rig: env_light + distant_light + dome_light → merge
+      - Material setup: materiallibrary → assignmaterial
+      - Render setup: karma_rop with standard settings
+
+   e) Parameter promotion rules:
+      - Always promote the "primary control" of each internal node
+      - Group related parameters with folders
+      - Use descriptive labels (not internal names)
+      - Include min/max ranges where appropriate
+
+   f) The hda_package tool schema reference (so Claude knows the exact format):
+      - nodes: [{type, name, parms}, ...]
+      - connections: [[src_name, dst_name, dst_input_idx], ...]
+      - promoted_parms: [{node, parm, label}, ...]
+      - Use "__input0" as src_name for subnet input connection
+
+2. Function parse_hda_command(text: str) -> dict
+   Parse the /hda command input.
+   "/hda scatter points on a grid with density control" →
+   {
+       "description": "scatter points on a grid with density control",
+       "raw": "/hda scatter points on a grid with density control"
+   }
+
+3. Function build_hda_messages(description: str, context: dict) -> list:
+   Build the initial messages list for the HDA design conversation.
+   The user message should be structured to guide Claude:
+   "Design and build an HDA: {description}
+    Current network: {context[network]}
+    Use the hda_package tool to create it. Save to $HIP/hda/ if no path specified."
+
+4. Function default_save_path(name: str) -> str
+   Returns a default save path for the HDA.
+   Uses $HIP/hda/{name}.hda if HIP is available, otherwise
+   $HOUDINI_USER_PREF_DIR/hda/{name}.hda.
+   Creates the directory if it doesn't exist.
+   hou import is optional (try/except).
+
+5. Constant HDA_RECIPES -> dict
+   A lookup of common HDA patterns keyed by keywords.
+   Used for fast-path matching — if the user says "scatter",
+   Claude can use the scatter recipe as a starting point.
+   Format:
+   {
+       "scatter": {
+           "category": "Sop",
+           "nodes": [...],
+           "connections": [...],
+           "promoted_parms": [...]
+       },
+       ...
+   }
+   Include at least 6 recipes: scatter, fracture, deform, uv_layout,
+   light_rig, material_setup.
+
+VERIFY:
+- Read python/synapse/mcp/_tool_registry.py search for "hda_package" to see the tool schema
+- Read python/synapse/server/handlers_hda.py to see _handle_hda_package implementation
+- Run: python -c "from synapse.panel.prompt_to_hda import HDA_DESIGN_PROMPT, parse_hda_command; print(parse_hda_command('/hda scatter points')); print(len(HDA_DESIGN_PROMPT))"
+
+DO NOT modify any existing files. Only create python/synapse/panel/prompt_to_hda.py
+```
+
+---
+
+## PHASE 4 — After All Agents Complete
+
+### AGENT ECHO — Panel Wiring (Updated for v2)
+
+```
+I need you to modify the SYNAPSE Houdini panel to wire in the new tool
+execution system, shot login, and prompt-to-HDA workflow.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- The file houdini/python_panels/synapse_panel.pypanel is a single-file Qt panel (v6.1)
+- It currently has an INLINE ClaudeWorker class that only streams text (no tools)
+- These new modules have been created:
+    python/synapse/panel/tool_bridge.py — get_anthropic_tools(), get_tool_dispatch()
+    python/synapse/panel/tool_executor.py — ToolExecutor (QObject), ToolRequest
+    python/synapse/panel/claude_worker.py — ClaudeWorker (QThread) with tool loop
+    python/synapse/panel/system_prompt.py — build_system_prompt(context)
+    python/synapse/panel/shot_login.py — shot_login(), format_memory_for_prompt()
+    python/synapse/panel/prompt_to_hda.py — HDA_DESIGN_PROMPT, parse_hda_command(),
+                                            build_hda_messages(), default_save_path()
+
+YOUR TASK:
+Modify houdini/python_panels/synapse_panel.pypanel to use all new modules.
+
+CHANGES REQUIRED:
+
+1. REMOVE the inline ClaudeWorker class (the entire class definition).
+   It's replaced by synapse.panel.claude_worker.ClaudeWorker.
+
+2. ADD synapse python path setup near the top of the script (after imports):
+   ```python
+   import sys as _sys
+   for _p in [
+       os.path.join(os.path.expanduser("~"), "SYNAPSE", "python"),
+       os.environ.get("SYNAPSE_ROOT", ""),
+   ]:
+       if _p and _p not in _sys.path and os.path.isdir(_p):
+           _sys.path.insert(0, _p)
+   ```
+
+3. In SynapsePanel.__init__, ADD:
+   ```python
+   self._tool_executor = None  # lazy init
+   self._login_data = None     # shot login context
+   self._last_hip = ""         # track hip changes for re-login
+   ```
+   And trigger initial shot login:
+   ```python
+   self._do_shot_login()
+   ```
+
+4. ADD methods:
+   - _ensure_tool_executor(self) — lazy-init ToolExecutor
+   - _do_shot_login(self) — calls shot_login(), stores result, displays status
+   - _on_tool_status(self, tool_name, status) — shows tool indicators in chat
+
+5. REPLACE _chat() method to:
+   - Import new ClaudeWorker + build_system_prompt
+   - Build system prompt WITH memory context from shot login
+   - Connect tool_requested → executor.execute_tool
+   - Connect tool_status → _on_tool_status
+
+6. ADD /hda command to _route_cmd():
+   ```python
+   elif cmd == "/hda":
+       if not arg:
+           self._display.append(_html_system("Usage: /hda describe what you want"))
+           return
+       self._display.append(_html_user_msg("/hda " + arg, time.strftime("%H:%M")))
+       self._do_hda(arg)
+   ```
+
+7. ADD _do_hda(self, description) method:
+   - Import from prompt_to_hda: HDA_DESIGN_PROMPT, parse_hda_command, build_hda_messages
+   - Build system prompt with HDA_DESIGN_PROMPT appended
+   - Build messages via build_hda_messages()
+   - Launch ClaudeWorker with HDA-specific system prompt
+   - Same tool execution flow as _chat() (tools create the actual HDA)
+
+8. ADD /login command to _route_cmd():
+   Forces a re-login (useful when switching hip files without restarting panel).
+
+9. ADD _html_tool_status() template function (compact inline indicator).
+
+10. UPDATE _on_done() to sync conversation history from worker.
+
+11. UPDATE context timer to check for hip file changes and re-login.
+
+12. ADD fallback: if importing new modules fails, keep old inline behavior.
+
+13. UPDATE welcome screen to mention /hda command:
+    Add to the hint line: /hda
+
+14. UPDATE the /clear help line to include /hda and /login.
+
+IMPORTANT:
+- All new imports must be LAZY (inside functions or try/except).
+- DO NOT change the visual design, styles, layout, or fonts.
+- DO NOT change existing slash commands behavior.
+- DO NOT change server connect/disconnect.
+- Validate XML after changes: the script is inside CDATA in XML.
+
+VERIFY:
+- Read current synapse_panel.pypanel for full structure
+- Read each new module's API
+- python -c "import xml.etree.ElementTree as ET; ET.parse('houdini/python_panels/synapse_panel.pypanel')"
+- Extract script, compile() it
+- Grep for stale "ClaudeWorker" class definition (should be gone)
+
+ONLY modify houdini/python_panels/synapse_panel.pypanel
+```
+
+---
+
+## Execution Checklist
+
+```
+PHASE 1 (parallel):
+  [ ] ALPHA  — tool_bridge.py created, 102+ tools verified
+  [ ] DELTA  — system_prompt.py created, builds correctly
+  [ ] FOXTROT — all Pokémon refs removed, "flat/structured/composed" verified
+
+PHASE 2 (after Phase 1):
+  [ ] BRAVO   — tool_executor.py imports clean
+  [ ] CHARLIE — claude_worker.py imports clean
+
+PHASE 3 (parallel with Phase 2):
+  [ ] GOLF   — shot_login.py created, returns login dict
+  [ ] HOTEL  — prompt_to_hda.py created, recipes + prompt verified
+
+PHASE 4 (after all):
+  [ ] ECHO   — panel XML valid, Python compiles
+  [ ] TEST   — "hi" → text response
+  [ ] TEST   — "create a null in /obj" → node created via tool
+  [ ] TEST   — "build a solaris network" → multi-tool chain
+  [ ] TEST   — /hda scatter points → HDA created and installed
+  [ ] TEST   — /scene and /inspect still work
+  [ ] TEST   — /login triggers re-login
+  [ ] TEST   — memory status appears in welcome/login message
+  [ ] GREP   — zero "charmander|charmeleon|charizard" in codebase
+```
+
+---
+
+## Risk Register
+
+| Risk | Mitigation |
+|------|-----------|
+| 102 tool schemas exceed API context | Test token count. If >50K, filter by network context as follow-up. |
+| Tool loop runs forever | 25-iteration cap. 30s per-tool timeout. |
+| Main thread blocks on slow tool | 30s timeout on request.done.wait(). |
+| hou not available at import | All hou imports are lazy. |
+| Worker thread hangs | finally: request.done.set() — always signals. |
+| Shot login fails on new scene | All operations idempotent. Creates missing dirs/files. |
+| HDA save path doesn't exist | default_save_path() creates directory. |
+| Memory rename breaks USD files on disk | Existing files keep old metadata until next evolution. New files use new names. Add migration note to README. |
+| Pokémon refs in user-facing docs/README | Separate doc cleanup pass — not in this sprint. |

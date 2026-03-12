@@ -1,0 +1,49 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
+import Player from '@vimeo/player';
+
+interface EmbeddedVideoPlayerProps {
+  videoId: string;
+  videoHash?: string; // Privacy hash for private Vimeo videos
+}
+
+export function EmbeddedVideoPlayer({ videoId, videoHash }: EmbeddedVideoPlayerProps) {
+  const playerRef = useRef<HTMLDivElement>(null);
+  const vimeoPlayerRef = useRef<Player | null>(null);
+
+  useEffect(() => {
+    if (!playerRef.current) return;
+
+    // Always use URL format for consistent embed behavior across all videos
+    // URL format works better with Vimeo's embed domain restrictions
+    const videoUrl = videoHash
+      ? `https://vimeo.com/${videoId}/${videoHash}`
+      : `https://vimeo.com/${videoId}`;
+
+    vimeoPlayerRef.current = new Player(playerRef.current, {
+      url: videoUrl as `https://vimeo.com/${string}`,
+      width: 1280,
+      responsive: true,
+      autoplay: false,
+      color: '6a6a6a',
+      controls: true
+    });
+
+    return () => {
+      vimeoPlayerRef.current?.destroy();
+    };
+  }, [videoId, videoHash]);
+
+  return (
+    <div
+      ref={playerRef}
+      className="w-full project-video-player"
+      style={{
+        aspectRatio: '16/9',
+        borderRadius: '6px',
+        overflow: 'hidden'
+      }}
+    />
+  );
+}

@@ -1,0 +1,160 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  getProcessPostsByCategory,
+  categoryLabels,
+  type ProcessCategory
+} from '@/lib/process-posts';
+import AccordionCategory from '@/components/AccordionCategory';
+import ProcessThumbnail from '@/components/ProcessThumbnail';
+
+/**
+ * PROCESS Page - Accordion-Style Category Reveal
+ *
+ * Four categories with hover/tap to expand:
+ * - Case Studies: Project deep dives
+ * - Tools: Downloadable tools
+ * - Research: Blog-style methodology posts
+ * - Experiments: Visual scenes/prototypes
+ *
+ * Desktop: Hover to expand (150ms delay, sticky)
+ * Mobile: Tap to toggle
+ */
+
+const CATEGORY_ORDER: ProcessCategory[] = [
+  'case-studies',
+  'tools',
+  'research',
+  'experiments'
+];
+
+export default function ProcessPage() {
+  const [introVisible, setIntroVisible] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  // Default to CASE STUDIES open on page load
+  const [expandedCategory, setExpandedCategory] = useState<ProcessCategory | null>('case-studies');
+
+  // Detect reduced motion preference
+  useEffect(() => {
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(motionQuery.matches);
+    const handleMotionChange = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    motionQuery.addEventListener('change', handleMotionChange);
+    return () => motionQuery.removeEventListener('change', handleMotionChange);
+  }, []);
+
+  // Trigger intro animation on mount
+  useEffect(() => {
+    const timer = setTimeout(() => setIntroVisible(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Get posts for each category
+  const categoryPosts = CATEGORY_ORDER.map(cat => ({
+    category: cat,
+    posts: getProcessPostsByCategory(cat)
+  }));
+
+  // Handle toggle - cascading behavior: closing one opens the next
+  const handleToggle = (category: ProcessCategory) => {
+    setExpandedCategory(prev => {
+      if (prev === category) {
+        // Closing current category - cascade to next
+        const currentIndex = CATEGORY_ORDER.indexOf(category);
+        const nextIndex = currentIndex + 1;
+        // If there's a next category, open it; otherwise close all
+        return nextIndex < CATEGORY_ORDER.length ? CATEGORY_ORDER[nextIndex] : null;
+      } else {
+        // Opening a different category
+        return category;
+      }
+    });
+  };
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: '#141414' }}>
+      <main
+        className="mx-auto pb-32"
+        style={{
+          maxWidth: 'var(--max-content-width)',
+          paddingTop: 'clamp(100px, 8vw + 60px, 180px)',
+          paddingLeft: 'var(--side-padding)',
+          paddingRight: 'var(--side-padding)'
+        }}
+      >
+        {/* Hero Statement */}
+        {/* Mobile: 48px margin, Desktop: 76px */}
+        <section className="mb-12 sm:mb-[76px]">
+          <h1
+            style={{
+              color: '#a0a0a0',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: 'clamp(22px, 3.5vw, 38px)',
+              lineHeight: 1.3,
+              letterSpacing: '0.01em',
+              maxWidth: '900px',
+              opacity: introVisible ? 1 : 0,
+              transform: introVisible ? 'translateY(0)' : 'translateY(30px)',
+              transition: prefersReducedMotion ? 'none' : 'opacity 550ms cubic-bezier(0.25, 0.1, 0.25, 1) 100ms, transform 550ms cubic-bezier(0.25, 0.1, 0.25, 1) 100ms'
+            }}
+          >
+            Behind the final frame: tools built, problems solved, and the thinking that shapes the work.
+          </h1>
+        </section>
+
+        {/* Accordion Categories */}
+        <div
+          style={{
+            opacity: introVisible ? 1 : 0,
+            transform: introVisible ? 'translateY(0)' : 'translateY(20px)',
+            transition: prefersReducedMotion ? 'none' : 'opacity 550ms ease 200ms, transform 550ms ease 200ms'
+          }}
+        >
+          {categoryPosts.map(({ category, posts }) => (
+            <AccordionCategory
+              key={category}
+              title={categoryLabels[category]}
+              count={posts.length}
+              isExpanded={expandedCategory === category}
+              onToggle={() => handleToggle(category)}
+              prefersReducedMotion={prefersReducedMotion}
+            >
+              {/* Item List - vertical stack like INFO page */}
+              {/* Mobile: 24px gap, Desktop: 32px gap */}
+              {/* Pentagram-style generous vertical rhythm */}
+              <div className="flex flex-col gap-8 sm:gap-12">
+                {posts.map((post) => (
+                  <ProcessThumbnail
+                    key={post.id}
+                    slug={post.slug}
+                    title={post.title}
+                    excerpt={post.excerpt}
+                    version={post.version}
+                    thumbnail={post.thumbnail}
+                    githubUrl={post.githubUrl}
+                  />
+                ))}
+              </div>
+
+              {/* Empty state */}
+              {posts.length === 0 && (
+                <p
+                  style={{
+                    color: '#5a5a5a',
+                    fontFamily: 'var(--font-display)',
+                    fontSize: '14px',
+                    fontStyle: 'italic'
+                  }}
+                >
+                  Coming soon.
+                </p>
+              )}
+            </AccordionCategory>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}

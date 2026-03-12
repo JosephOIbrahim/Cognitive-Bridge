@@ -1,0 +1,140 @@
+// TranslatorsHUD.h
+// Main HUD class connecting BridgeComponent to UI widgets
+// Part of The Translators Card - Claude Code → UE5.7 Bridge
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/HUD.h"
+#include "../BridgeComponent.h"
+#include "TranslatorsHUD.generated.h"
+
+// Forward declarations
+class UW_QuestionDisplay;
+class UW_ProgressIndicator;
+class UUserWidget;
+
+/**
+ * ATranslatorsHUD - Main game HUD
+ *
+ * Responsibilities:
+ * 1. Find and connect to BridgeComponent
+ * 2. Create and manage UI widgets
+ * 3. Handle BridgeComponent events
+ * 4. Track response timing
+ * 5. Send answers back to bridge
+ *
+ * ThinkingMachines Compliance:
+ * - FIXED event binding order
+ * - Deterministic widget creation
+ * - Consistent state machine flow
+ */
+UCLASS()
+class TRANSLATORSCARD_API ATranslatorsHUD : public AHUD
+{
+    GENERATED_BODY()
+
+public:
+    ATranslatorsHUD();
+
+    // === CONFIGURATION ===
+
+    /** Widget class for question display (set in Blueprint child) */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Translators|Config")
+    TSubclassOf<UW_QuestionDisplay> QuestionDisplayClass;
+
+    /** Widget class for connecting message */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Translators|Config")
+    TSubclassOf<UUserWidget> ConnectingWidgetClass;
+
+    /** Widget class for finale screen */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Translators|Config")
+    TSubclassOf<UUserWidget> FinaleWidgetClass;
+
+    // === STATE ===
+
+    /** Is the bridge connected? */
+    UPROPERTY(BlueprintReadOnly, Category = "Translators|State")
+    bool bIsBridgeConnected = false;
+
+    /** Is the questionnaire complete? */
+    UPROPERTY(BlueprintReadOnly, Category = "Translators|State")
+    bool bIsComplete = false;
+
+    // === FUNCTIONS ===
+
+    /** Manually trigger acknowledgment (call from Blueprint if needed) */
+    UFUNCTION(BlueprintCallable, Category = "Translators|Bridge")
+    void SendAcknowledgment();
+
+    virtual void Tick(float DeltaSeconds) override;
+
+protected:
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+    // === EVENT HANDLERS ===
+
+    /** Called when bridge is ready */
+    UFUNCTION()
+    void OnBridgeReady(int32 TotalQuestions);
+
+    /** Called when a question is received */
+    UFUNCTION()
+    void OnQuestionReceived(const FString& QuestionJson);
+
+    /** Called when transition is received */
+    UFUNCTION()
+    void OnTransitionReceived(const FString& Direction, const FString& NextScene);
+
+    /** Called when finale is received */
+    UFUNCTION()
+    void OnFinaleReceived(const FString& UsdPath);
+
+    /** Called when user selects an answer */
+    UFUNCTION()
+    void OnAnswerSelected(int32 OptionIndex);
+
+    // === WIDGETS ===
+
+    UPROPERTY()
+    UW_QuestionDisplay* QuestionWidget;
+
+    UPROPERTY()
+    UUserWidget* ConnectingWidget;
+
+    UPROPERTY()
+    UUserWidget* FinaleWidget;
+
+private:
+    /** Find BridgeComponent in the world */
+    UBridgeComponent* FindBridgeComponent();
+
+    /** Create UI widgets */
+    void CreateWidgets();
+
+    /** Show connecting message */
+    void ShowConnectingScreen();
+
+    /** Hide connecting, show question */
+    void ShowQuestionScreen();
+
+    /** Show finale screen */
+    void ShowFinaleScreen(const FString& Message);
+
+    /** Reference to bridge component */
+    UPROPERTY()
+    UBridgeComponent* BridgeComponent;
+
+    /** Handle keyboard input for option selection */
+    void HandleKeyInput();
+
+    /** Time when current question was shown */
+    float QuestionStartTime = 0.0f;
+
+    /** Current question data */
+    FTranslatorsQuestion CurrentQuestion;
+
+    /** Total questions for progress tracking */
+    int32 TotalQuestions = 8;
+};

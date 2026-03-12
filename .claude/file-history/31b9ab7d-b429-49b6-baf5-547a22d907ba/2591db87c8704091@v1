@@ -1,0 +1,565 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { EmbeddedVideoPlayer } from './EmbeddedVideoPlayer';
+import { projects, type Project } from '@/lib/projects';
+
+/**
+ * COLOR HIERARCHY MANTRA:
+ * - PRIMARY (--text-primary): Titles, role titles, key info
+ * - SECONDARY (--grey-500): Descriptions, body content
+ * - TERTIARY (--text-dim): Labels, metadata, footnotes
+ *
+ * Information hierarchy = Color hierarchy
+ */
+
+interface ProjectDetailContentProps {
+  project: Project;
+}
+
+export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
+  const [showProcess, setShowProcess] = useState(false);
+
+  // Check if project has process/insights content OR credits (both go under SHOW PROCESS)
+  const hasProcessContent = project.lightingIntent || project.challenge || project.approach || project.reference || (project.credits && project.credits.length > 0);
+
+  // Find next project for navigation
+  const currentIndex = projects.findIndex(p => p.slug === project.slug);
+  const nextProject = currentIndex < projects.length - 1 ? projects[currentIndex + 1] : projects[0];
+  const prevProject = currentIndex > 0 ? projects[currentIndex - 1] : projects[projects.length - 1];
+
+  // Build metadata line
+  const metadataItems = [
+    project.year,
+    project.client,
+    project.role,
+  ].filter(Boolean);
+
+  return (
+    <article>
+      {/* Project Type Tag - Pentagram style: subtle, no background */}
+      {project.projectType && (
+        <div className="mb-8">
+          <span
+            className="text-xs uppercase tracking-widest"
+            style={{
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 600,
+              letterSpacing: '0.18em'
+            }}
+          >
+            {project.projectType}
+          </span>
+        </div>
+      )}
+
+      {/* Title - Editorial serif style */}
+      <h1
+        className="text-4xl md:text-5xl lg:text-6xl"
+        style={{
+          color: 'var(--grey-50)',
+          fontWeight: 400,
+          fontFamily: 'var(--font-lora)',
+          fontStyle: 'italic',
+          letterSpacing: '0.01em',
+          lineHeight: 1.1,
+          marginBottom: 'var(--space-sm)'
+        }}
+      >
+        {project.title}
+      </h1>
+
+      {/* Metadata Line: Year • Client • Role - TERTIARY */}
+      {metadataItems.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-x-3"
+          style={{
+            color: 'var(--text-dim)',
+            marginBottom: 'var(--space-md)'
+          }}
+        >
+          {metadataItems.map((item, index) => (
+            <span key={index} className="flex items-center">
+              {index > 0 && (
+                <span className="mr-3" style={{ color: 'var(--grey-800)' }}>•</span>
+              )}
+              <span
+                className="text-sm"
+                style={{
+                  fontFamily: 'var(--font-open-sans)',
+                  fontWeight: 400
+                }}
+              >
+                {item}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* MY ROLE - Editorial typography, no container */}
+      {(project.myRole || project.responsibilities) && (
+        <div
+          style={{
+            marginBottom: 'var(--space-md)',
+            paddingTop: 'var(--space-xs)',
+            borderTop: '1px solid var(--border-subtle)'
+          }}
+        >
+          {/* Role Title - PRIMARY, leads the section */}
+          {project.myRole && (
+            <p
+              style={{
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 500,
+                fontSize: 'clamp(17px, 1.8vw, 20px)',
+                letterSpacing: '0.01em',
+                marginBottom: project.shotCount ? '4px' : 'var(--space-tiny)'
+              }}
+            >
+              {project.myRole}
+            </p>
+          )}
+
+          {/* Shot Count - TERTIARY, subtle metadata */}
+          {project.shotCount && (
+            <p
+              style={{
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 500,
+                fontSize: '13px',
+                letterSpacing: '0.02em',
+                marginBottom: 'var(--space-tiny)'
+              }}
+            >
+              {project.shotCount} shots
+            </p>
+          )}
+
+          {/* Responsibilities - SECONDARY, flowing text */}
+          {project.responsibilities && project.responsibilities.length > 0 && (
+            <p
+              style={{
+                color: 'var(--grey-500)',
+                fontFamily: 'var(--font-open-sans)',
+                fontWeight: 400,
+                fontSize: '15px',
+                lineHeight: 1.7,
+                marginTop: 'var(--space-tiny)'
+              }}
+            >
+              {project.responsibilities.join(' · ')}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Full Video Player - User-controlled playback (autoplay hero is above) */}
+      <div style={{ marginBottom: 'var(--space-md)' }}>
+        <div className="relative w-full">
+          <EmbeddedVideoPlayer videoId={project.videoId} videoHash={project.videoHash} />
+        </div>
+      </div>
+
+      {/* Description - SECONDARY */}
+      {project.description && (
+        <div style={{ marginBottom: 'var(--space-lg)', maxWidth: '780px' }}>
+          <p
+            className="text-lg md:text-xl"
+            style={{
+              color: 'var(--grey-500)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              lineHeight: 1.75,
+              letterSpacing: '0.01em'
+            }}
+          >
+            {project.description}
+          </p>
+        </div>
+      )}
+
+      {/* Process Section - Collapsible (like Credits) */}
+      {hasProcessContent && (
+        <div className="mb-16">
+          {/* Process Toggle - SECONDARY */}
+          <button
+            onClick={() => setShowProcess(!showProcess)}
+            className="group flex items-center gap-3 transition-all duration-200"
+            style={{ color: 'var(--grey-500)' }}
+          >
+            <span
+              className="text-sm uppercase tracking-wide"
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 600,
+                letterSpacing: '0.15em'
+              }}
+            >
+              {showProcess ? 'Hide Details' : 'Project Details'}
+            </span>
+            <span
+              className="transition-transform duration-200"
+              style={{
+                fontSize: '12px',
+                transform: showProcess ? 'rotate(180deg)' : 'rotate(0deg)'
+              }}
+            >
+              ▼
+            </span>
+          </button>
+
+          {/* Expandable Process Content */}
+          <div
+            className={`overflow-hidden transition-all duration-400 ease-out ${
+              showProcess ? 'max-h-[2000px] opacity-100 mt-8' : 'max-h-0 opacity-0 mt-0'
+            }`}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {project.lightingIntent && (
+                <div>
+                  <p
+                    className="text-xs uppercase mb-2"
+                    style={{
+                      color: 'var(--text-dim)',
+                      fontFamily: 'var(--font-display)',
+                      fontWeight: 600,
+                      letterSpacing: '0.15em'
+                    }}
+                  >
+                    Intent
+                  </p>
+                  <p
+                    className="text-sm leading-relaxed"
+                    style={{
+                      color: 'var(--grey-500)',
+                      fontFamily: 'var(--font-open-sans)'
+                    }}
+                  >
+                    {project.lightingIntent}
+                  </p>
+                </div>
+              )}
+
+              {project.challenge && (
+                <div>
+                  <p
+                    className="text-xs uppercase mb-2"
+                    style={{
+                      color: 'var(--text-dim)',
+                      fontFamily: 'var(--font-display)',
+                      fontWeight: 600,
+                      letterSpacing: '0.15em'
+                    }}
+                  >
+                    Challenge
+                  </p>
+                  <p
+                    className="text-sm leading-relaxed"
+                    style={{
+                      color: 'var(--grey-500)',
+                      fontFamily: 'var(--font-open-sans)'
+                    }}
+                  >
+                    {project.challenge}
+                  </p>
+                </div>
+              )}
+
+              {project.approach && (
+                <div>
+                  <p
+                    className="text-xs uppercase mb-2"
+                    style={{
+                      color: 'var(--text-dim)',
+                      fontFamily: 'var(--font-display)',
+                      fontWeight: 600,
+                      letterSpacing: '0.15em'
+                    }}
+                  >
+                    Approach
+                  </p>
+                  <p
+                    className="text-sm leading-relaxed"
+                    style={{
+                      color: 'var(--grey-500)',
+                      fontFamily: 'var(--font-open-sans)'
+                    }}
+                  >
+                    {project.approach}
+                  </p>
+                </div>
+              )}
+
+              {project.reference && (
+                <div>
+                  <p
+                    className="text-xs uppercase mb-2"
+                    style={{
+                      color: 'var(--text-dim)',
+                      fontFamily: 'var(--font-display)',
+                      fontWeight: 600,
+                      letterSpacing: '0.15em'
+                    }}
+                  >
+                    Reference
+                  </p>
+                  <p
+                    className="text-sm leading-relaxed"
+                    style={{
+                      color: 'var(--grey-500)',
+                      fontFamily: 'var(--font-open-sans)'
+                    }}
+                  >
+                    {project.reference}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Credits - Child of Process, no toggle */}
+            {project.credits && project.credits.length > 0 && (
+              <div className="mt-10 pt-8" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                <p
+                  className="text-xs uppercase mb-4"
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                    letterSpacing: '0.15em'
+                  }}
+                >
+                  Credits
+                </p>
+                <div className="space-y-1">
+                  {project.credits.map((credit, index) => (
+                    <p
+                      key={index}
+                      className="text-sm leading-relaxed"
+                      style={{
+                        color: 'var(--grey-500)',
+                        fontFamily: 'var(--font-open-sans)'
+                      }}
+                    >
+                      {credit}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Breakdown Videos */}
+      {project.breakdownVideos && project.breakdownVideos.length > 0 && (
+        <div className="mb-16">
+          {project.breakdownVideos.map((video, index) => (
+            <div key={video.videoId} className="mb-16">
+              {/* Breakdown Section Label */}
+              <p
+                className="text-xs uppercase mb-6"
+                style={{
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  letterSpacing: '0.15em'
+                }}
+              >
+                Behind the Scenes
+              </p>
+
+              {/* Breakdown video title */}
+              <h2
+                className="text-2xl md:text-3xl mb-4"
+                style={{
+                  color: 'var(--grey-50)',
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-display)',
+                  letterSpacing: '0.01em'
+                }}
+              >
+                {video.title}
+              </h2>
+
+              {/* Breakdown video description - SECONDARY */}
+              {video.description && (
+                <p
+                  className="text-base leading-relaxed mb-8 max-w-3xl"
+                  style={{
+                    color: 'var(--grey-500)',
+                    fontFamily: 'var(--font-open-sans)',
+                    fontWeight: 400
+                  }}
+                >
+                  {video.description}
+                </p>
+              )}
+
+              {/* Breakdown video player */}
+              <div className="relative w-full">
+                <EmbeddedVideoPlayer videoId={video.videoId} videoHash={video.videoHash} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Related Projects - Subtle, based on shared disciplines */}
+      {(() => {
+        // Find projects with overlapping disciplines, excluding current and adjacent
+        const excludeSlugs = new Set([project.slug, prevProject.slug, nextProject.slug]);
+        const relatedProjects = projects
+          .filter(p => !excludeSlugs.has(p.slug))
+          .filter(p => p.disciplines.some(d =>
+            project.disciplines.map(pd => pd.toLowerCase()).includes(d.toLowerCase())
+          ))
+          .slice(0, 3);
+
+        if (relatedProjects.length === 0) return null;
+
+        return (
+          <div style={{ marginBottom: 'clamp(64px, 5vw + 32px, 96px)' }}>
+            <p
+              style={{
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 600,
+                fontSize: '11px',
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                marginBottom: 'var(--space-xs)'
+              }}
+            >
+              Related Work
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+              {relatedProjects.map((related) => (
+                <Link
+                  key={related.slug}
+                  href={`/projects/${related.slug}`}
+                  className="group"
+                  style={{ textDecoration: 'none' }}
+                >
+                  {/* Related title - PRIMARY */}
+                  <p
+                    style={{
+                      color: 'var(--text-primary)',
+                      fontFamily: 'var(--font-display)',
+                      fontWeight: 400,
+                      fontSize: '18px',
+                      letterSpacing: '0.01em',
+                      lineHeight: 1.3,
+                      marginBottom: related.projectType ? 'var(--space-tiny)' : '0',
+                      transition: 'color 0.25s ease'
+                    }}
+                    className="group-hover:text-white"
+                  >
+                    {related.title}
+                  </p>
+                  {related.projectType && (
+                    <p
+                      style={{
+                        color: 'var(--text-dim)',
+                        fontFamily: 'var(--font-display)',
+                        fontWeight: 600,
+                        fontSize: '11px',
+                        letterSpacing: '0.18em',
+                        textTransform: 'uppercase'
+                      }}
+                    >
+                      {related.projectType}
+                    </p>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Project Navigation */}
+      <div className="pt-16 mt-16">
+        <div className="flex justify-between items-center">
+          {/* Previous Project */}
+          <Link
+            href={`/projects/${prevProject.slug}`}
+            className="group flex items-center gap-3 transition-opacity hover:opacity-70"
+          >
+            <span
+              className="text-lg"
+              style={{ color: 'var(--text-dim)' }}
+            >
+              ←
+            </span>
+            <div className="text-left">
+              {/* Label - TERTIARY */}
+              <p
+                className="text-xs uppercase mb-1"
+                style={{
+                  color: 'var(--text-dim)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  letterSpacing: '0.15em'
+                }}
+              >
+                Previous
+              </p>
+              {/* Title - SECONDARY */}
+              <p
+                className="text-sm"
+                style={{
+                  color: 'var(--grey-500)',
+                  fontFamily: 'var(--font-open-sans)'
+                }}
+              >
+                {prevProject.title}
+              </p>
+            </div>
+          </Link>
+
+          {/* Next Project */}
+          <Link
+            href={`/projects/${nextProject.slug}`}
+            className="group flex items-center gap-3 transition-opacity hover:opacity-70"
+          >
+            <div className="text-right">
+              {/* Label - TERTIARY */}
+              <p
+                className="text-xs uppercase mb-1"
+                style={{
+                  color: 'var(--text-dim)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  letterSpacing: '0.15em'
+                }}
+              >
+                Next Project
+              </p>
+              {/* Title - SECONDARY */}
+              <p
+                className="text-sm"
+                style={{
+                  color: 'var(--grey-500)',
+                  fontFamily: 'var(--font-open-sans)'
+                }}
+              >
+                {nextProject.title}
+              </p>
+            </div>
+            <span
+              className="text-lg"
+              style={{ color: 'var(--text-dim)' }}
+            >
+              →
+            </span>
+          </Link>
+        </div>
+      </div>
+    </article>
+  );
+}

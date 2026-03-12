@@ -1,0 +1,38 @@
+{
+  "id": "2026-02-18_proposal_002",
+  "timestamp": "2026-02-18T12:34:58.009464",
+  "category": "momentum",
+  "proposal_type": "TUNE",
+  "severity": "high",
+  "title": "Tune momentum: Recurring crash trigger 'stopped' \u2014 substrate crash predicti",
+  "description": "Recurring crash trigger 'stopped' \u2014 substrate crash prediction may not be catching this early enough",
+  "rationale": "Add this trigger to crash prediction warning signs if not already present, or lower the intervention threshold for this signal.",
+  "evidence": "Crash trigger 'stopped' appeared 3 times",
+  "risk_assessment": "Medium risk. Momentum tuning affects flow experience. Monitor for 3 sessions after applying.",
+  "edits": [
+    {
+      "operation": "add",
+      "target_path": "CrashPredictionTuning",
+      "target_attr": "markdown_content",
+      "attr_type": "string",
+      "new_value": "Crash prediction: 'stopped' signal (user disengaging/ceasing work) is a pre-crash indicator. Route to SAFETY -> SIGNAL -> EXPERT (Restorer). Intervene at 'stopped' signal, do not wait for full crash state. If energy is low, offer permission to stop entirely."
+    },
+    {
+      "operation": "add",
+      "target_path": "CrashPredictionTuning",
+      "target_attr": "priority",
+      "attr_type": "int",
+      "new_value": 36
+    },
+    {
+      "operation": "add",
+      "target_path": "CrashPredictionTuning",
+      "target_attr": "enabled",
+      "attr_type": "bool",
+      "new_value": true
+    }
+  ],
+  "status": "applied",
+  "approved_at": "2026-02-18T12:41:14.331978",
+  "applied_at": "2026-02-18T12:41:14.412568"
+}

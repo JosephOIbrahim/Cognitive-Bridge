@@ -1,0 +1,72 @@
+# Phase 4: Polish — Implementation Plan
+
+## Context
+
+All 5 HDAs are built and G6 integration test passed. Phase 4 is the final polish pass before the Cinema Camera Rig v4.0 is artist-ready. Four deliverables from the architecture spec (TASK 4.1-4.4).
+
+## Task 4.1: HDA Parameter UI Polish
+
+**File:** `scripts/python/cinema_camera/builders/build_camera_rig_orchestrator.py` (both paths)
+
+Add help strings to ~15 parms currently missing them, add label separators between logical groups, and improve generic distortion help strings.
+
+Changes:
+- **Lens tab**: Add help to `t_stop` ("T-stop = f-stop / lens transmission. Lower = more light.")
+- **Distortion tab**: Replace generic "Distortion coefficient from LensSpec." with per-coefficient help (K1=barrel/pincushion, K2=higher-order radial, K3=6th-order, P1/P2=tangential decentering, squeeze_uniformity=horizontal vs vertical falloff)
+- **Camera Body tab**: Add help to `resolution_x/y`, `exposure_index`, `native_iso`
+- **Biomechanics tab**: Add help to `moment_arm_cm`, `spring_constant`, `damping_ratio`, `lag_frames`, `enable_handheld`, `shake_amplitude_deg`, `shake_frequency_hz`. Add `LabelParmTemplate` separator before shake sub-group.
+- **Post-Processing tab**: Add help to all 7 parms. Add separator before noise sub-group.
+- Mark `effective_squeeze` as non-editable via `setIsHidden(False)` + disable-when rule tied to always-true (read-only indicator)
+
+Rebuild HDA via Synapse after edits. Verify parm count unchanged.
+
+## Task 4.2: Entrance Pupil Viewport Overlay
+
+**File:** `scripts/python/cinema_camera/builders/build_camera_rig_orchestrator.py`
+
+Add guide geometry inside the HDA at the entrance pupil pivot position. This is the simplest reliable approach — a small sphere + axis lines at the pivot null, using Houdini's built-in guide geometry on the null node.
+
+Changes:
+- Set the `entrance_pupil_pivot` null's display geometry to "Axes + Origin" (or add a small sphere SOP child with display flag) so the nodal point is visible in the viewport
+- Set null control type to `circles` with scale tied to a reasonable fixed size
+- Add a `LabelParmTemplate` on the Lens tab showing the computed pivot offset for quick reference
+
+This avoids the complexity of a Python viewer state while giving artists a clear visual marker for the nodal point.
+
+## Task 4.3: Documentation
+
+**File:** `cinema_camera/USAGE_GUIDE.md` (new, artist-facing)
+
+Create a concise usage guide covering:
+- What the rig does (1 paragraph)
+- How to drop it into a scene (Solaris workflow)
+- Parameter reference (6 tabs, key parms explained)
+- Animated focus pull workflow (keyframe focus_distance_m)
+- Cooke /i metadata fields
+- Known limitations
+
+## Task 4.4: Example .hip File
+
+**Via Synapse** — build programmatically and save.
+
+Create `cinema_camera/examples/cinema_rig_focus_pull_example.hip`:
+- `cinema::camera_rig::2.0` instance at `/obj/camera_rig`
+- Cooke 50mm on ALEXA 35 defaults
+- Focus distance animated 10m -> 0.5m over 96 frames (shows squeeze breathing)
+- Simple reference scene: grid + sphere + torus at varying depths
+- Karma XPU render settings at 1920x1080
+- Sticky notes explaining the setup
+
+## Execution Order
+
+1. Task 4.1 (UI polish) — edit builder, rebuild HDA
+2. Task 4.2 (viewport overlay) — edit builder, rebuild HDA (same rebuild as 4.1)
+3. Task 4.4 (example .hip) — create via Synapse
+4. Task 4.3 (docs) — write USAGE_GUIDE.md last (references final parm names)
+
+## Verification
+
+- Rebuild HDA and verify all parms still propagate (re-run G6 propagation check)
+- Verify guide geometry visible on entrance_pupil_pivot in viewport
+- Open example .hip and confirm it loads without errors
+- Spot-check help strings appear in Houdini parameter tooltip

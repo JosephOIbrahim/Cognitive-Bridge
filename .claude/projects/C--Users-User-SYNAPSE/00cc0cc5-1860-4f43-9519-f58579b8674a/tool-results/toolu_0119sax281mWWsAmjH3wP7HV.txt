@@ -1,0 +1,1090 @@
+     1→"""Tests for the MCP protocol layer (Phase 1 MVP).
+     2→
+     3→Tests: JSON-RPC parsing, session management, tool dispatch,
+     4→error handling, He2025 determinism.
+     5→
+     6→No Houdini required — MCPServer is tested with a mocked handler.
+     7→"""
+     8→
+     9→import importlib.util
+    10→import json
+    11→import sys
+    12→import types
+    13→from pathlib import Path
+    14→from unittest.mock import MagicMock, patch
+    15→
+    16→import pytest
+    17→
+    18→
+    19→# ---------------------------------------------------------------------------
+    20→# Bootstrap: load MCP modules without Houdini
+    21→# ---------------------------------------------------------------------------
+    22→
+    23→_base = Path(__file__).resolve().parent.parent / "python" / "synapse"
+    24→
+    25→# Ensure package stubs exist
+    26→for mod_name, mod_path in [
+    27→    ("synapse", _base),
+    28→    ("synapse.core", _base / "core"),
+    29→    ("synapse.server", _base / "server"),
+    30→    ("synapse.session", _base / "session"),
+    31→    ("synapse.mcp", _base / "mcp"),
+    32→]:
+    33→    if mod_name not in sys.modules:
+    34→        pkg = types.ModuleType(mod_name)
+    35→        pkg.__path__ = [str(mod_path)]
+    36→        sys.modules[mod_name] = pkg
+    37→
+    38→# Load core modules the MCP layer depends on
+    39→_core_modules = {
+    40→    "synapse.core.protocol": _base / "core" / "protocol.py",
+    41→    "synapse.core.aliases": _base / "core" / "aliases.py",
+    42→}
+    43→
+    44→for mod_name, fpath in _core_modules.items():
+    45→    if mod_name not in sys.modules:
+    46→        spec = importlib.util.spec_from_file_location(mod_name, fpath)
+    47→        mod = importlib.util.module_from_spec(spec)
+    48→        sys.modules[mod_name] = mod
+    49→        spec.loader.exec_module(mod)
+    50→
+    51→# Load MCP modules (registry must load before tools.py which imports from it)
+    52→_mcp_modules = {
+    53→    "synapse.mcp._tool_registry": _base / "mcp" / "_tool_registry.py",
+    54→    "synapse.mcp.protocol": _base / "mcp" / "protocol.py",
+    55→    "synapse.mcp.session": _base / "mcp" / "session.py",
+    56→    "synapse.mcp.tools": _base / "mcp" / "tools.py",
+    57→    "synapse.mcp.resources": _base / "mcp" / "resources.py",
+    58→    "synapse.mcp.server": _base / "mcp" / "server.py",
+    59→}
+    60→
+    61→for mod_name, fpath in _mcp_modules.items():
+    62→    if mod_name not in sys.modules:
+    63→        spec = importlib.util.spec_from_file_location(mod_name, fpath)
+    64→        mod = importlib.util.module_from_spec(spec)
+    65→        sys.modules[mod_name] = mod
+    66→        spec.loader.exec_module(mod)
+    67→
+    68→protocol_mod = sys.modules["synapse.mcp.protocol"]
+    69→session_mod = sys.modules["synapse.mcp.session"]
+    70→tools_mod = sys.modules["synapse.mcp.tools"]
+    71→server_mod = sys.modules["synapse.mcp.server"]
+    72→
+    73→
+    74→# ---------------------------------------------------------------------------
+    75→# Helpers
+    76→# ---------------------------------------------------------------------------
+    77→
+    78→def _jsonrpc(method, params=None, msg_id=1):
+    79→    """Build a JSON-RPC 2.0 request as bytes."""
+    80→    msg = {"jsonrpc": "2.0", "method": method, "id": msg_id}
+    81→    if params is not None:
+    82→        msg["params"] = params
+    83→    return json.dumps(msg, sort_keys=True).encode("utf-8")
+    84→
+    85→
+    86→def _notification(method, params=None):
+    87→    """Build a JSON-RPC 2.0 notification (no id)."""
+    88→    msg = {"jsonrpc": "2.0", "method": method}
+    89→    if params is not None:
+    90→        msg["params"] = params
+    91→    return json.dumps(msg, sort_keys=True).encode("utf-8")
+    92→
+    93→
+    94→def _parse_response(body):
+    95→    """Parse response bytes to dict."""
+    96→    return json.loads(body)
+    97→
+    98→
+    99→# ---------------------------------------------------------------------------
+   100→# Fixtures
+   101→# ---------------------------------------------------------------------------
+   102→
+   103→@pytest.fixture
+   104→def mock_handler():
+   105→    """Create a mock SynapseHandler."""
+   106→    handler = MagicMock()
+   107→    response = MagicMock()
+   108→    response.success = True
+   109→    response.data = {"status": "ok"}
+   110→    response.error = None
+   111→    handler.handle.return_value = response
+   112→    return handler
+   113→
+   114→
+   115→@pytest.fixture
+   116→def server(mock_handler):
+   117→    """Create an MCPServer with a mocked handler."""
+   118→    return server_mod.MCPServer(handler=mock_handler)
+   119→
+   120→
+   121→# ===========================================================================
+   122→# Tests: JSON-RPC Protocol (protocol.py)
+   123→# ===========================================================================
+   124→
+   125→class TestJsonRpcParsing:
+   126→    def test_valid_request(self):
+   127→        body = _jsonrpc("tools/list")
+   128→        msg = protocol_mod.parse_request(body)
+   129→        assert msg["method"] == "tools/list"
+   130→        assert msg["jsonrpc"] == "2.0"
+   131→        assert msg["id"] == 1
+   132→
+   133→    def test_invalid_json_raises_parse_error(self):
+   134→        with pytest.raises(protocol_mod.JsonRpcParseError):
+   135→            protocol_mod.parse_request(b"not json")
+   136→
+   137→    def test_missing_jsonrpc_version(self):
+   138→        body = json.dumps({"method": "test", "id": 1}).encode()
+   139→        with pytest.raises(protocol_mod.JsonRpcInvalidRequest):
+   140→            protocol_mod.parse_request(body)
+   141→
+   142→    def test_wrong_jsonrpc_version(self):
+   143→        body = json.dumps({"jsonrpc": "1.0", "method": "test", "id": 1}).encode()
+   144→        with pytest.raises(protocol_mod.JsonRpcInvalidRequest):
+   145→            protocol_mod.parse_request(body)
+   146→
+   147→    def test_missing_method(self):
+   148→        body = json.dumps({"jsonrpc": "2.0", "id": 1}).encode()
+   149→        with pytest.raises(protocol_mod.JsonRpcInvalidRequest):
+   150→            protocol_mod.parse_request(body)
+   151→
+   152→    def test_non_object_request(self):
+   153→        body = json.dumps([1, 2, 3]).encode()
+   154→        with pytest.raises(protocol_mod.JsonRpcInvalidRequest):
+   155→            protocol_mod.parse_request(body)
+   156→
+   157→    def test_notification_detection(self):
+   158→        assert protocol_mod.is_notification({"method": "test"}) is True
+   159→        assert protocol_mod.is_notification({"method": "test", "id": 1}) is False
+   160→
+   161→    def test_result_response_format(self):
+   162→        body = protocol_mod.jsonrpc_result(42, {"answer": True})
+   163→        resp = json.loads(body)
+   164→        assert resp["jsonrpc"] == "2.0"
+   165→        assert resp["id"] == 42
+   166→        assert resp["result"]["answer"] is True
+   167→
+   168→    def test_error_response_format(self):
+   169→        body = protocol_mod.jsonrpc_error(1, -32600, "Bad request")
+   170→        resp = json.loads(body)
+   171→        assert resp["error"]["code"] == -32600
+   172→        assert resp["error"]["message"] == "Bad request"
+   173→
+   174→    def test_error_response_with_data(self):
+   175→        body = protocol_mod.jsonrpc_error(1, -32603, "Oops", {"detail": "x"})
+   176→        resp = json.loads(body)
+   177→        assert resp["error"]["data"]["detail"] == "x"
+   178→
+   179→    def test_error_from_exception(self):
+   180→        exc = protocol_mod.JsonRpcInvalidParams("bad arg")
+   181→        body = protocol_mod.error_from_exception(5, exc)
+   182→        resp = json.loads(body)
+   183→        assert resp["id"] == 5
+   184→        assert resp["error"]["code"] == protocol_mod.INVALID_PARAMS
+   185→
+   186→
+   187→# ===========================================================================
+   188→# Tests: Session Management (session.py)
+   189→# ===========================================================================
+   190→
+   191→class TestSessionManager:
+   192→    def test_create_session(self):
+   193→        mgr = session_mod.MCPSessionManager()
+   194→        sid = mgr.create_session({"name": "test-client"})
+   195→        assert sid.startswith("mcp-session-")
+   196→        assert mgr.active_count == 1
+   197→
+   198→    def test_get_session(self):
+   199→        mgr = session_mod.MCPSessionManager()
+   200→        sid = mgr.create_session()
+   201→        session = mgr.get_session(sid)
+   202→        assert session is not None
+   203→        assert session.session_id == sid
+   204→
+   205→    def test_get_nonexistent_session(self):
+   206→        mgr = session_mod.MCPSessionManager()
+   207→        assert mgr.get_session("does-not-exist") is None
+   208→
+   209→    def test_mark_initialized(self):
+   210→        mgr = session_mod.MCPSessionManager()
+   211→        sid = mgr.create_session()
+   212→        assert mgr.mark_initialized(sid) is True
+   213→        assert mgr.get_session(sid).initialized is True
+   214→
+   215→    def test_mark_initialized_missing(self):
+   216→        mgr = session_mod.MCPSessionManager()
+   217→        assert mgr.mark_initialized("nope") is False
+   218→
+   219→    def test_destroy_session(self):
+   220→        mgr = session_mod.MCPSessionManager()
+   221→        sid = mgr.create_session()
+   222→        assert mgr.destroy_session(sid) is True
+   223→        assert mgr.get_session(sid) is None
+   224→        assert mgr.active_count == 0
+   225→
+   226→    def test_destroy_nonexistent(self):
+   227→        mgr = session_mod.MCPSessionManager()
+   228→        assert mgr.destroy_session("nope") is False
+   229→
+   230→    def test_sequential_ids(self):
+   231→        """He2025: IDs must be sequential, not random."""
+   232→        mgr = session_mod.MCPSessionManager()
+   233→        id1 = mgr.create_session()
+   234→        id2 = mgr.create_session()
+   235→        # Extract numeric suffix
+   236→        n1 = int(id1.split("-")[-1])
+   237→        n2 = int(id2.split("-")[-1])
+   238→        assert n2 == n1 + 1
+   239→
+   240→    def test_session_to_dict(self):
+   241→        mgr = session_mod.MCPSessionManager()
+   242→        sid = mgr.create_session({"name": "claude"})
+   243→        session = mgr.get_session(sid)
+   244→        d = session.to_dict()
+   245→        assert d["session_id"] == sid
+   246→        assert d["client_info"]["name"] == "claude"
+   247→        assert d["protocol_version"] == "2025-06-18"
+   248→
+   249→
+   250→# ===========================================================================
+   251→# Tests: Tool Registry (tools.py)
+   252→# ===========================================================================
+   253→
+   254→class TestToolRegistry:
+   255→    def test_get_tools_returns_list(self):
+   256→        tools = tools_mod.get_tools()
+   257→        assert isinstance(tools, list)
+   258→        assert len(tools) >= 70  # 80 tools registered
+   259→
+   260→    def test_tool_count_minimum(self):
+   261→        """Ensure we don't accidentally lose tools during refactoring."""
+   262→        tools = tools_mod.get_tools()
+   263→        assert len(tools) >= 80, f"Expected >= 80 tools, got {len(tools)}"
+   264→
+   265→    def test_tools_sorted_by_name(self):
+   266→        """He2025: tool list must be sorted."""
+   267→        tools = tools_mod.get_tools()
+   268→        names = [t["name"] for t in tools]
+   269→        assert names == sorted(names)
+   270→
+   271→    def test_tool_has_required_fields(self):
+   272→        tools = tools_mod.get_tools()
+   273→        for tool in tools:
+   274→            assert "name" in tool
+   275→            assert "description" in tool
+   276→            assert "inputSchema" in tool
+   277→            assert "annotations" in tool
+   278→
+   279→    def test_has_tool(self):
+   280→        assert tools_mod.has_tool("synapse_ping") is True
+   281→        assert tools_mod.has_tool("houdini_create_node") is True
+   282→        assert tools_mod.has_tool("nonexistent_tool") is False
+   283→
+   284→    def test_get_tool_names(self):
+   285→        names = tools_mod.get_tool_names()
+   286→        assert "synapse_ping" in names
+   287→        assert "houdini_render" in names
+   288→        assert names == sorted(names)
+   289→
+   290→    def test_dispatch_unknown_tool(self):
+   291→        handler = MagicMock()
+   292→        result = tools_mod.dispatch_tool(handler, "fake_tool", {})
+   293→        assert result["isError"] is True
+   294→        assert "Unknown tool" in result["content"][0]["text"]
+   295→
+   296→    def test_dispatch_success(self):
+   297→        handler = MagicMock()
+   298→        response = MagicMock()
+   299→        response.success = True
+   300→        response.data = {"pong": True}
+   301→        handler.handle.return_value = response
+   302→
+   303→        result = tools_mod.dispatch_tool(handler, "synapse_ping", {})
+   304→        assert "isError" not in result or result.get("isError") is not True
+   305→        assert result["content"][0]["type"] == "text"
+   306→
+   307→    def test_dispatch_error(self):
+   308→        handler = MagicMock()
+   309→        response = MagicMock()
+   310→        response.success = False
+   311→        response.error = "Something went wrong"
+   312→        response.data = None
+   313→        handler.handle.return_value = response
+   314→
+   315→        result = tools_mod.dispatch_tool(handler, "synapse_ping", {})
+   316→        assert result["isError"] is True
+   317→        assert "Something went wrong" in result["content"][0]["text"]
+   318→
+   319→    def test_validate_frame_registered(self):
+   320→        assert tools_mod.has_tool("synapse_validate_frame") is True
+   321→
+   322→    def test_annotations_structure(self):
+   323→        tools = tools_mod.get_tools()
+   324→        for tool in tools:
+   325→            ann = tool["annotations"]
+   326→            assert "readOnlyHint" in ann
+   327→            assert "destructiveHint" in ann
+   328→            assert "idempotentHint" in ann
+   329→            assert ann["openWorldHint"] is False
+   330→
+   331→
+   332→# ===========================================================================
+   333→# Tests: Tool Registry Parity (_tool_registry.py)
+   334→# ===========================================================================
+   335→
+   336→class TestToolRegistryParity:
+   337→    def test_tool_registry_parity(self):
+   338→        """Both transports must serve the same tools from the shared registry."""
+   339→        from synapse.mcp._tool_registry import TOOL_DEFS, TOOL_DISPATCH, TOOL_JSON
+   340→        from synapse.mcp.tools import get_tools, get_tool_names, has_tool
+   341→
+   342→        # Registry internal consistency
+   343→        assert len(TOOL_DEFS) == len(TOOL_DISPATCH)
+   344→        assert len(TOOL_DEFS) == len(TOOL_JSON)
+   345→
+   346→        # Public API matches registry
+   347→        assert len(get_tools()) == len(TOOL_DEFS)
+   348→        assert len(get_tool_names()) == len(TOOL_DEFS)
+   349→
+   350→        # Every tool is findable
+   351→        for name, *_ in TOOL_DEFS:
+   352→            assert has_tool(name), f"has_tool('{name}') returned False"
+   353→
+   354→        # No duplicate names
+   355→        names = [t[0] for t in TOOL_DEFS]
+   356→        assert len(names) == len(set(names))
+   357→
+   358→
+   359→# ===========================================================================
+   360→# Tests: MCP Server (server.py)
+   361→# ===========================================================================
+   362→
+   363→class TestInitialize:
+   364→    def test_initialize_returns_capabilities(self, server):
+   365→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   366→        resp_body, headers = server.handle_request(body)
+   367→
+   368→        assert resp_body is not None
+   369→        resp = _parse_response(resp_body)
+   370→        assert "result" in resp
+   371→        result = resp["result"]
+   372→        assert result["protocolVersion"] == "2025-06-18"
+   373→        assert "tools" in result["capabilities"]
+   374→        assert result["serverInfo"]["name"] == "synapse"
+   375→
+   376→    def test_initialize_returns_session_id(self, server):
+   377→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   378→        _, headers = server.handle_request(body)
+   379→        assert "Mcp-Session-Id" in headers
+   380→        assert headers["Mcp-Session-Id"].startswith("mcp-session-")
+   381→
+   382→    def test_initialize_creates_session(self, server):
+   383→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   384→        _, headers = server.handle_request(body)
+   385→        assert server.active_sessions == 1
+   386→
+   387→
+   388→class TestToolsList:
+   389→    def test_tools_list_requires_session(self, server):
+   390→        body = _jsonrpc("tools/list")
+   391→        resp_body, _ = server.handle_request(body, session_id=None)
+   392→        resp = _parse_response(resp_body)
+   393→        assert "error" in resp
+   394→        assert resp["error"]["code"] == protocol_mod.SESSION_INVALID
+   395→
+   396→    def test_tools_list_with_valid_session(self, server):
+   397→        # Initialize first
+   398→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   399→        _, headers = server.handle_request(init_body)
+   400→        sid = headers["Mcp-Session-Id"]
+   401→
+   402→        # List tools
+   403→        list_body = _jsonrpc("tools/list", {}, msg_id=2)
+   404→        resp_body, _ = server.handle_request(list_body, session_id=sid)
+   405→        resp = _parse_response(resp_body)
+   406→        assert "result" in resp
+   407→        assert "tools" in resp["result"]
+   408→        assert len(resp["result"]["tools"]) >= 80
+   409→
+   410→    def test_tools_list_invalid_session(self, server):
+   411→        body = _jsonrpc("tools/list")
+   412→        resp_body, _ = server.handle_request(body, session_id="bad-session")
+   413→        resp = _parse_response(resp_body)
+   414→        assert "error" in resp
+   415→        assert resp["error"]["code"] == protocol_mod.SESSION_INVALID
+   416→
+   417→
+   418→class TestToolsCall:
+   419→    def test_tools_call_dispatches(self, server):
+   420→        # Initialize
+   421→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   422→        _, headers = server.handle_request(init_body)
+   423→        sid = headers["Mcp-Session-Id"]
+   424→
+   425→        # Call ping
+   426→        call_body = _jsonrpc("tools/call", {
+   427→            "name": "synapse_ping",
+   428→            "arguments": {},
+   429→        }, msg_id=2)
+   430→        resp_body, _ = server.handle_request(call_body, session_id=sid)
+   431→        resp = _parse_response(resp_body)
+   432→        assert "result" in resp
+   433→
+   434→    def test_tools_call_missing_name(self, server):
+   435→        # Initialize
+   436→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   437→        _, headers = server.handle_request(init_body)
+   438→        sid = headers["Mcp-Session-Id"]
+   439→
+   440→        # Call without name
+   441→        call_body = _jsonrpc("tools/call", {"arguments": {}}, msg_id=2)
+   442→        resp_body, _ = server.handle_request(call_body, session_id=sid)
+   443→        resp = _parse_response(resp_body)
+   444→        assert "error" in resp
+   445→        assert resp["error"]["code"] == protocol_mod.INVALID_PARAMS
+   446→
+   447→    def test_tool_error_propagated_as_jsonrpc_error(self):
+   448→        """C3a: dispatch_tool isError must surface as JSON-RPC error, not success."""
+   449→        # Handler that returns failure from dispatch_tool
+   450→        handler = MagicMock()
+   451→        response = MagicMock()
+   452→        response.success = False
+   453→        response.error = "Couldn't find node /obj/missing"
+   454→        response.data = None
+   455→        handler.handle.return_value = response
+   456→
+   457→        srv = server_mod.MCPServer(handler=handler)
+   458→
+   459→        # Initialize to get a session
+   460→        # Override handler temporarily to let init succeed
+   461→        init_response = MagicMock()
+   462→        init_response.success = True
+   463→        init_response.data = {"stage": "charmander"}
+   464→        handler.handle.return_value = init_response
+   465→
+   466→        init_body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}}, msg_id=1)
+   467→        _, headers = srv.handle_request(init_body)
+   468→        sid = headers["Mcp-Session-Id"]
+   469→
+   470→        # Now set handler to return failure for the tool call
+   471→        fail_response = MagicMock()
+   472→        fail_response.success = False
+   473→        fail_response.error = "Couldn't find node /obj/missing"
+   474→        fail_response.data = None
+   475→        handler.handle.return_value = fail_response
+   476→
+   477→        # Call a tool that will fail
+   478→        call_body = _jsonrpc("tools/call", {
+   479→            "name": "synapse_ping",
+   480→            "arguments": {},
+   481→        }, msg_id=2)
+   482→        resp_body, _ = srv.handle_request(call_body, session_id=sid)
+   483→        resp = _parse_response(resp_body)
+   484→
+   485→        # Must be a JSON-RPC error, NOT a success with isError in content
+   486→        assert "error" in resp, "Tool failure must produce JSON-RPC error response"
+   487→        assert "result" not in resp, "Tool failure must NOT produce a result"
+   488→        assert resp["error"]["code"] == protocol_mod.INTERNAL_ERROR
+   489→        assert "Couldn't find node" in resp["error"]["message"]
+   490→
+   491→
+   492→class TestPing:
+   493→    def test_ping_returns_empty(self, server):
+   494→        # Initialize
+   495→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   496→        _, headers = server.handle_request(init_body)
+   497→        sid = headers["Mcp-Session-Id"]
+   498→
+   499→        # Ping
+   500→        ping_body = _jsonrpc("ping", {}, msg_id=2)
+   501→        resp_body, _ = server.handle_request(ping_body, session_id=sid)
+   502→        resp = _parse_response(resp_body)
+   503→        assert resp["result"] == {}
+   504→
+   505→
+   506→class TestNotifications:
+   507→    def test_notification_returns_none(self, server):
+   508→        # Initialize first
+   509→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   510→        _, headers = server.handle_request(init_body)
+   511→        sid = headers["Mcp-Session-Id"]
+   512→
+   513→        body = _notification("notifications/initialized")
+   514→        resp_body, _ = server.handle_request(body, session_id=sid)
+   515→        assert resp_body is None
+   516→
+   517→    def test_unknown_notification_ignored(self, server):
+   518→        body = _notification("notifications/unknown")
+   519→        resp_body, _ = server.handle_request(body)
+   520→        assert resp_body is None
+   521→
+   522→
+   523→class TestMethodNotFound:
+   524→    def test_unknown_method(self, server):
+   525→        # Initialize
+   526→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   527→        _, headers = server.handle_request(init_body)
+   528→        sid = headers["Mcp-Session-Id"]
+   529→
+   530→        body = _jsonrpc("prompts/list", {}, msg_id=2)
+   531→        resp_body, _ = server.handle_request(body, session_id=sid)
+   532→        resp = _parse_response(resp_body)
+   533→        assert "error" in resp
+   534→        assert resp["error"]["code"] == protocol_mod.METHOD_NOT_FOUND
+   535→
+   536→
+   537→class TestErrorHandling:
+   538→    def test_invalid_json(self, server):
+   539→        resp_body, _ = server.handle_request(b"not json")
+   540→        resp = _parse_response(resp_body)
+   541→        assert "error" in resp
+   542→        assert resp["error"]["code"] == protocol_mod.PARSE_ERROR
+   543→
+   544→    def test_missing_jsonrpc_field(self, server):
+   545→        body = json.dumps({"method": "test", "id": 1}).encode()
+   546→        resp_body, _ = server.handle_request(body)
+   547→        resp = _parse_response(resp_body)
+   548→        assert "error" in resp
+   549→        assert resp["error"]["code"] == protocol_mod.INVALID_REQUEST
+   550→
+   551→
+   552→class TestSessionLifecycle:
+   553→    def test_full_lifecycle(self, server):
+   554→        # Initialize
+   555→        init_body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}}, msg_id=1)
+   556→        _, headers = server.handle_request(init_body)
+   557→        sid = headers["Mcp-Session-Id"]
+   558→        assert server.active_sessions == 1
+   559→
+   560→        # Destroy
+   561→        server.destroy_session(sid)
+   562→        assert server.active_sessions == 0
+   563→
+   564→        # Tools call should fail with destroyed session
+   565→        call_body = _jsonrpc("tools/list", {}, msg_id=2)
+   566→        resp_body, _ = server.handle_request(call_body, session_id=sid)
+   567→        resp = _parse_response(resp_body)
+   568→        assert "error" in resp
+   569→
+   570→
+   571→class TestHe2025Determinism:
+   572→    def test_response_keys_sorted(self, server):
+   573→        """He2025: all JSON responses must have sorted keys."""
+   574→        body = _jsonrpc("initialize", {}, msg_id=1)
+   575→        resp_body, _ = server.handle_request(body)
+   576→        # Parse as raw string and verify key order
+   577→        raw = resp_body.decode("utf-8") if isinstance(resp_body, bytes) else resp_body
+   578→        resp = json.loads(raw)
+   579→        # Top-level keys should be sorted
+   580→        keys = list(resp.keys())
+   581→        assert keys == sorted(keys)
+   582→
+   583→    def test_tools_list_sorted(self, server):
+   584→        """He2025: tool list must be sorted by name."""
+   585→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   586→        _, headers = server.handle_request(init_body)
+   587→        sid = headers["Mcp-Session-Id"]
+   588→
+   589→        list_body = _jsonrpc("tools/list", {}, msg_id=2)
+   590→        resp_body, _ = server.handle_request(list_body, session_id=sid)
+   591→        resp = _parse_response(resp_body)
+   592→        names = [t["name"] for t in resp["result"]["tools"]]
+   593→        assert names == sorted(names)
+   594→
+   595→
+   596→# ===========================================================================
+   597→# Tests: Resources (resources.py)
+   598→# ===========================================================================
+   599→
+   600→class TestResourcesList:
+   601→    def test_resources_list_returns_resources(self, server):
+   602→        # Initialize
+   603→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   604→        _, headers = server.handle_request(init_body)
+   605→        sid = headers["Mcp-Session-Id"]
+   606→
+   607→        # List resources
+   608→        body = _jsonrpc("resources/list", {}, msg_id=2)
+   609→        resp_body, _ = server.handle_request(body, session_id=sid)
+   610→        resp = _parse_response(resp_body)
+   611→        assert "result" in resp
+   612→        resources = resp["result"]["resources"]
+   613→        assert len(resources) >= 3  # at least 3 static resources
+   614→
+   615→    def test_resources_sorted_by_uri(self, server):
+   616→        """He2025: resources must be sorted by URI."""
+   617→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   618→        _, headers = server.handle_request(init_body)
+   619→        sid = headers["Mcp-Session-Id"]
+   620→
+   621→        body = _jsonrpc("resources/list", {}, msg_id=2)
+   622→        resp_body, _ = server.handle_request(body, session_id=sid)
+   623→        resp = _parse_response(resp_body)
+   624→        uris = [r["uri"] for r in resp["result"]["resources"]]
+   625→        assert uris == sorted(uris)
+   626→
+   627→    def test_initialize_includes_resources_capability(self, server):
+   628→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   629→        resp_body, _ = server.handle_request(body)
+   630→        resp = _parse_response(resp_body)
+   631→        assert "resources" in resp["result"]["capabilities"]
+   632→
+   633→
+   634→class TestResourceTemplatesList:
+   635→    def test_resource_templates_returns_templates(self, server):
+   636→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   637→        _, headers = server.handle_request(init_body)
+   638→        sid = headers["Mcp-Session-Id"]
+   639→
+   640→        body = _jsonrpc("resources/templates/list", {}, msg_id=2)
+   641→        resp_body, _ = server.handle_request(body, session_id=sid)
+   642→        resp = _parse_response(resp_body)
+   643→        assert "result" in resp
+   644→        templates = resp["result"]["resourceTemplates"]
+   645→        assert len(templates) >= 9  # 9 resource templates (7 + 2 Phase 4)
+   646→
+   647→    def test_tops_status_template_exists(self, server):
+   648→        """Phase 4: tops status resource template should be listed."""
+   649→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   650→        _, headers = server.handle_request(init_body)
+   651→        sid = headers["Mcp-Session-Id"]
+   652→
+   653→        body = _jsonrpc("resources/templates/list", {}, msg_id=2)
+   654→        resp_body, _ = server.handle_request(body, session_id=sid)
+   655→        resp = _parse_response(resp_body)
+   656→        templates = resp["result"]["resourceTemplates"]
+   657→        uris = [t["uriTemplate"] for t in templates]
+   658→        assert "houdini://tops/{topnet_path}/status" in uris
+   659→        assert "houdini://tops/{node_path}/diagnosis" in uris
+   660→
+   661→
+   662→# ===========================================================================
+   663→# Tests: Auth Integration
+   664→# ===========================================================================
+   665→
+   666→class TestAuthIntegration:
+   667→    def test_auth_module_exists(self):
+   668→        """The auth module should be importable."""
+   669→        auth_path = _base / "server" / "auth.py"
+   670→        assert auth_path.exists()
+   671→
+   672→    def test_no_key_passes(self, server):
+   673→        """With no auth key, requests should pass through."""
+   674→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   675→        resp_body, headers = server.handle_request(body)
+   676→        resp = _parse_response(resp_body)
+   677→        assert "result" in resp
+   678→
+   679→    def test_authenticate_function(self):
+   680→        """authenticate() with no key should return True."""
+   681→        if "synapse.server.auth" not in sys.modules:
+   682→            auth_path = _base / "server" / "auth.py"
+   683→            spec = importlib.util.spec_from_file_location("synapse.server.auth", auth_path)
+   684→            mod = importlib.util.module_from_spec(spec)
+   685→            sys.modules["synapse.server.auth"] = mod
+   686→            spec.loader.exec_module(mod)
+   687→        auth_mod = sys.modules["synapse.server.auth"]
+   688→        # Reset cache for clean test
+   689→        auth_mod.reset_auth_cache()
+   690→        # No key configured -> always passes
+   691→        assert auth_mod.authenticate("any-token") is True
+   692→
+   693→    def test_authenticate_rejects_bad_token(self):
+   694→        """authenticate() with explicit key should reject wrong token."""
+   695→        auth_mod = sys.modules["synapse.server.auth"]
+   696→        assert auth_mod.authenticate("wrong", "correct-key") is False
+   697→        assert auth_mod.authenticate("correct-key", "correct-key") is True
+   698→
+   699→
+   700→class TestPhase4MCPTools:
+   701→    """Phase 4: Verify cook_and_validate, diagnose, pipeline_status in MCP."""
+   702→
+   703→    def test_phase4_tools_in_tools_list(self, server):
+   704→        """All 3 Phase 4 tools should appear in tools/list."""
+   705→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   706→        _, headers = server.handle_request(init_body)
+   707→        sid = headers["Mcp-Session-Id"]
+   708→
+   709→        body = _jsonrpc("tools/list", {}, msg_id=2)
+   710→        resp_body, _ = server.handle_request(body, session_id=sid)
+   711→        resp = _parse_response(resp_body)
+   712→        tool_names = [t["name"] for t in resp["result"]["tools"]]
+   713→
+   714→        assert "tops_cook_and_validate" in tool_names
+   715→        assert "tops_diagnose" in tool_names
+   716→        assert "tops_pipeline_status" in tool_names
+   717→
+   718→    def test_phase4_tool_annotations(self):
+   719→        """Phase 4 annotations: cook_and_validate destructive, diagnose/status read-only."""
+   720→        tools = {t["name"]: t for t in tools_mod.get_tools()}
+   721→
+   722→        # cook_and_validate is destructive
+   723→        cv = tools["tops_cook_and_validate"]
+   724→        assert cv["annotations"]["readOnlyHint"] is False
+   725→        assert cv["annotations"]["destructiveHint"] is True
+   726→
+   727→        # diagnose is read-only
+   728→        diag = tools["tops_diagnose"]
+   729→        assert diag["annotations"]["readOnlyHint"] is True
+   730→        assert diag["annotations"]["destructiveHint"] is False
+   731→
+   732→        # pipeline_status is read-only
+   733→        ps = tools["tops_pipeline_status"]
+   734→        assert ps["annotations"]["readOnlyHint"] is True
+   735→        assert ps["annotations"]["destructiveHint"] is False
+   736→
+   737→
+   738→class TestNetworkExplainMCPTool:
+   739→    """Verify network_explain tool registration in MCP layer."""
+   740→
+   741→    def test_network_explain_in_tools_list(self):
+   742→        """network_explain should appear in the tool registry."""
+   743→        assert tools_mod.has_tool("houdini_network_explain")
+   744→
+   745→    def test_network_explain_tool_definition(self):
+   746→        """Tool definition should have correct annotations."""
+   747→        tools = {t["name"]: t for t in tools_mod.get_tools()}
+   748→        ne = tools["houdini_network_explain"]
+   749→
+   750→        assert ne["annotations"]["readOnlyHint"] is True
+   751→        assert ne["annotations"]["destructiveHint"] is False
+   752→        assert ne["annotations"]["idempotentHint"] is True
+   753→
+   754→        # Required param
+   755→        assert "root_path" in ne["inputSchema"]["properties"]
+   756→        assert "root_path" in ne["inputSchema"]["required"]
+   757→
+   758→    def test_network_explain_dispatch(self):
+   759→        """Dispatch should map root_path to node in payload."""
+   760→        handler = MagicMock()
+   761→        response = MagicMock()
+   762→        response.success = True
+   763→        response.data = {"status": "ok", "node_count": 0}
+   764→        handler.handle.return_value = response
+   765→
+   766→        result = tools_mod.dispatch_tool(
+   767→            handler, "houdini_network_explain",
+   768→            {"root_path": "/obj/geo1"},
+   769→        )
+   770→        assert "isError" not in result or result.get("isError") is not True
+   771→
+   772→        # Verify the command sent to handler has "node" not "root_path"
+   773→        call_args = handler.handle.call_args[0][0]
+   774→        assert call_args.payload.get("node") == "/obj/geo1"
+   775→
+   776→
+   777→class TestModuleSingleton:
+   778→    def test_get_mcp_server_returns_same_instance(self):
+   779→        # Reset singleton
+   780→        server_mod._mcp_server = None
+   781→        s1 = server_mod.get_mcp_server()
+   782→        s2 = server_mod.get_mcp_server()
+   783→        assert s1 is s2
+   784→        # Cleanup
+   785→        server_mod._mcp_server = None
+   786→
+   787→
+   788→# ===========================================================================
+   789→# Tests: P1 Intelligence — Enriched Instructions
+   790→# ===========================================================================
+   791→
+   792→class TestP1EnrichedInstructions:
+   793→    """P1: Verify MCP initialize instructions include workflow protocol."""
+   794→
+   795→    def test_instructions_include_workflow(self, server):
+   796→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   797→        resp_body, _ = server.handle_request(body)
+   798→        resp = _parse_response(resp_body)
+   799→        instructions = resp["result"]["instructions"]
+   800→        assert "inspect before mutating" in instructions
+   801→
+   802→    def test_instructions_include_one_mutation(self, server):
+   803→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   804→        resp_body, _ = server.handle_request(body)
+   805→        resp = _parse_response(resp_body)
+   806→        instructions = resp["result"]["instructions"]
+   807→        assert "One mutation per tool call" in instructions
+   808→
+   809→    def test_instructions_include_usd_convention(self, server):
+   810→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   811→        resp_body, _ = server.handle_request(body)
+   812→        resp = _parse_response(resp_body)
+   813→        instructions = resp["result"]["instructions"]
+   814→        assert "xn__inputsintensity_i0a" in instructions
+   815→
+   816→    def test_instructions_include_lighting_law(self, server):
+   817→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   818→        resp_body, _ = server.handle_request(body)
+   819→        resp = _parse_response(resp_body)
+   820→        instructions = resp["result"]["instructions"]
+   821→        assert "Intensity is ALWAYS 1.0" in instructions
+   822→
+   823→    def test_instructions_include_session_start(self, server):
+   824→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   825→        resp_body, _ = server.handle_request(body)
+   826→        resp = _parse_response(resp_body)
+   827→        instructions = resp["result"]["instructions"]
+   828→        assert "synapse_project_setup" in instructions
+   829→
+   830→
+   831→# ===========================================================================
+   832→# Tests: P1 Intelligence — Enriched Tool Descriptions
+   833→# ===========================================================================
+   834→
+   835→class TestP1EnrichedDescriptions:
+   836→    """P1: Verify critical tool descriptions are enriched."""
+   837→
+   838→    def test_project_setup_description_first_in_session(self):
+   839→        tools = {t["name"]: t for t in tools_mod.get_tools()}
+   840→        desc = tools["synapse_project_setup"]["description"]
+   841→        assert "FIRST" in desc
+   842→
+   843→    def test_execute_python_description_one_mutation(self):
+   844→        tools = {t["name"]: t for t in tools_mod.get_tools()}
+   845→        desc = tools["houdini_execute_python"]["description"]
+   846→        assert "ONE mutation" in desc
+   847→
+   848→    def test_set_parm_description_encoded_names(self):
+   849→        tools = {t["name"]: t for t in tools_mod.get_tools()}
+   850→        desc = tools["houdini_set_parm"]["description"]
+   851→        assert "xn__inputsintensity_i0a" in desc
+   852→
+   853→
+   854→# ===========================================================================
+   855→# Tests: P1 Intelligence — Auto-Init Project Context
+   856→# ===========================================================================
+   857→
+   858→class TestP1AutoInitProjectContext:
+   859→    """P1: Verify project context auto-loads on session start."""
+   860→
+   861→    def test_session_has_project_context_attribute(self):
+   862→        """MCPSession should have a project_context slot."""
+   863→        mgr = session_mod.MCPSessionManager()
+   864→        sid = mgr.create_session({"name": "test"})
+   865→        session = mgr.get_session(sid)
+   866→        assert hasattr(session, "project_context")
+   867→        assert session.project_context is None
+   868→
+   869→    def test_auto_init_calls_project_setup(self):
+   870→        """Initialize should attempt to call project_setup."""
+   871→        handler = MagicMock()
+   872→        response = MagicMock()
+   873→        response.success = True
+   874→        response.data = {"stage": "charmander", "scene_memory": {}}
+   875→        handler.handle.return_value = response
+   876→
+   877→        srv = server_mod.MCPServer(handler=handler)
+   878→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   879→        resp_body, headers = srv.handle_request(body)
+   880→
+   881→        # Verify handler.handle was called (for project_setup auto-init)
+   882→        assert handler.handle.called
+   883→        # Verify the command was project_setup
+   884→        call_args = handler.handle.call_args_list[0][0][0]
+   885→        assert call_args.type == "project_setup"
+   886→
+   887→    def test_auto_init_caches_context_on_session(self):
+   888→        """Project context should be cached on the MCPSession."""
+   889→        handler = MagicMock()
+   890→        response = MagicMock()
+   891→        response.success = True
+   892→        response.data = {"stage": "charmander", "scene_memory": {"entries": []}}
+   893→        handler.handle.return_value = response
+   894→
+   895→        srv = server_mod.MCPServer(handler=handler)
+   896→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   897→        _, headers = srv.handle_request(body)
+   898→
+   899→        sid = headers["Mcp-Session-Id"]
+   900→        session = srv._sessions.get_session(sid)
+   901→        assert session.project_context is not None
+   902→
+   903→    def test_auto_init_failure_doesnt_break_init(self):
+   904→        """If project_setup fails, initialize should still succeed."""
+   905→        handler = MagicMock()
+   906→        handler.handle.side_effect = Exception("Houdini not ready")
+   907→
+   908→        srv = server_mod.MCPServer(handler=handler)
+   909→        body = _jsonrpc("initialize", {"clientInfo": {"name": "test"}})
+   910→        resp_body, headers = srv.handle_request(body)
+   911→
+   912→        resp = _parse_response(resp_body)
+   913→        assert "result" in resp
+   914→        assert "Mcp-Session-Id" in headers
+   915→
+   916→
+   917→# ===========================================================================
+   918→# Tests: P1 Intelligence — Project Context Resource
+   919→# ===========================================================================
+   920→
+   921→class TestP1ProjectContextResource:
+   922→    """P1: Verify synapse://project/context resource is registered."""
+   923→
+   924→    def test_project_context_resource_exists(self, server):
+   925→        """synapse://project/context should appear in resources/list."""
+   926→        init_body = _jsonrpc("initialize", {}, msg_id=1)
+   927→        _, headers = server.handle_request(init_body)
+   928→        sid = headers["Mcp-Session-Id"]
+   929→
+   930→        body = _jsonrpc("resources/list", {}, msg_id=2)
+   931→        resp_body, _ = server.handle_request(body, session_id=sid)
+   932→        resp = _parse_response(resp_body)
+   933→        uris = [r["uri"] for r in resp["result"]["resources"]]
+   934→        assert "synapse://project/context" in uris
+   935→
+   936→    def test_project_context_resource_has_description(self):
+   937→        """Resource should have a meaningful description."""
+   938→        from synapse.mcp.resources import get_resources
+   939→        resources = get_resources()
+   940→        ctx_resource = [r for r in resources if r["uri"] == "synapse://project/context"]
+   941→        assert len(ctx_resource) == 1
+   942→        assert "project memory" in ctx_resource[0]["description"].lower()
+   943→
+   944→
+   945→# ===========================================================================
+   946→# Tests: P1 Intelligence — Tool Group Modules
+   947→# ===========================================================================
+   948→
+   949→class TestP1ToolGroupModules:
+   950→    """P1: Verify tool group modules are importable and consistent."""
+   951→
+   952→    def test_scene_group_importable(self):
+   953→        """mcp_tools_scene should be importable."""
+   954→        import importlib
+   955→        _repo = Path(__file__).resolve().parent.parent
+   956→        sys.path.insert(0, str(_repo))
+   957→        try:
+   958→            mod = importlib.import_module("mcp_tools_scene")
+   959→            assert hasattr(mod, "GROUP_KNOWLEDGE")
+   960→            assert hasattr(mod, "TOOL_NAMES")
+   961→            assert hasattr(mod, "DISPATCH_KEYS")
+   962→            assert len(mod.TOOL_NAMES) > 0
+   963→        finally:
+   964→            sys.path.pop(0)
+   965→
+   966→    def test_render_group_importable(self):
+   967→        import importlib
+   968→        _repo = Path(__file__).resolve().parent.parent
+   969→        sys.path.insert(0, str(_repo))
+   970→        try:
+   971→            mod = importlib.import_module("mcp_tools_render")
+   972→            assert "LIGHTING LAW" in mod.GROUP_KNOWLEDGE or "Intensity" in mod.GROUP_KNOWLEDGE
+   973→            assert "houdini_render" in mod.TOOL_NAMES
+   974→        finally:
+   975→            sys.path.pop(0)
+   976→
+   977→    def test_usd_group_importable(self):
+   978→        import importlib
+   979→        _repo = Path(__file__).resolve().parent.parent
+   980→        sys.path.insert(0, str(_repo))
+   981→        try:
+   982→            mod = importlib.import_module("mcp_tools_usd")
+   983→            assert "xn__inputs" in mod.GROUP_KNOWLEDGE
+   984→            assert "houdini_stage_info" in mod.TOOL_NAMES
+   985→        finally:
+   986→            sys.path.pop(0)
+   987→
+   988→    def test_tops_group_importable(self):
+   989→        import importlib
+   990→        _repo = Path(__file__).resolve().parent.parent
+   991→        sys.path.insert(0, str(_repo))
+   992→        try:
+   993→            mod = importlib.import_module("mcp_tools_tops")
+   994→            assert "tops_cook_node" in mod.TOOL_NAMES
+   995→        finally:
+   996→            sys.path.pop(0)
+   997→
+   998→    def test_memory_group_importable(self):
+   999→        import importlib
+  1000→        _repo = Path(__file__).resolve().parent.parent
+  1001→        sys.path.insert(0, str(_repo))
+  1002→        try:
+  1003→            mod = importlib.import_module("mcp_tools_memory")
+  1004→            assert "synapse_project_setup" in mod.TOOL_NAMES
+  1005→            assert "FIRST" in mod.GROUP_KNOWLEDGE or "project_setup" in mod.GROUP_KNOWLEDGE
+  1006→        finally:
+  1007→            sys.path.pop(0)
+  1008→
+  1009→    def test_all_tools_covered_by_groups(self):
+  1010→        """Every tool in the registry should belong to exactly one group."""
+  1011→        import importlib
+  1012→        _repo = Path(__file__).resolve().parent.parent
+  1013→        sys.path.insert(0, str(_repo))
+  1014→        try:
+  1015→            all_group_tools = set()
+  1016→            for mod_name in ["mcp_tools_scene", "mcp_tools_render", "mcp_tools_usd",
+  1017→                             "mcp_tools_tops", "mcp_tools_memory", "mcp_tools_cops"]:
+  1018→                mod = importlib.import_module(mod_name)
+  1019→                for name in mod.TOOL_NAMES:
+  1020→                    assert name not in all_group_tools, f"Duplicate: {name}"
+  1021→                    all_group_tools.add(name)
+  1022→
+  1023→            # Every tool in the registry should be in a group
+  1024→            registry_tools = set(tools_mod.get_tool_names())
+  1025→            missing = registry_tools - all_group_tools
+  1026→            assert not missing, f"Tools not in any group: {missing}"
+  1027→        finally:
+  1028→            sys.path.pop(0)
+  1029→
+  1030→
+  1031→# =========================================================================
+  1032→# Tests: Safe / Progressive Render MCP tools
+  1033→# =========================================================================
+  1034→
+  1035→class TestSafeRenderMCPTools:
+  1036→    """Verify safe_render and render_progressively are properly registered in MCP."""
+  1037→
+  1038→    def test_safe_render_in_tools_list(self):
+  1039→        assert tools_mod.has_tool("synapse_safe_render")
+  1040→
+  1041→    def test_render_progressively_in_tools_list(self):
+  1042→        assert tools_mod.has_tool("synapse_render_progressively")
+  1043→
+  1044→    def test_safe_render_annotations(self):
+  1045→        tools = tools_mod.get_tools()
+  1046→        tool = next(t for t in tools if t["name"] == "synapse_safe_render")
+  1047→        assert tool["annotations"]["readOnlyHint"] is False
+  1048→        assert tool["annotations"]["destructiveHint"] is True
+  1049→
+  1050→    def test_render_progressively_annotations(self):
+  1051→        tools = tools_mod.get_tools()
+  1052→        tool = next(t for t in tools if t["name"] == "synapse_render_progressively")
+  1053→        assert tool["annotations"]["readOnlyHint"] is False
+  1054→        assert tool["annotations"]["destructiveHint"] is True
+  1055→
+  1056→    def test_safe_render_schema(self):
+  1057→        tools = tools_mod.get_tools()
+  1058→        tool = next(t for t in tools if t["name"] == "synapse_safe_render")
+  1059→        props = tool["inputSchema"]["properties"]
+  1060→        assert "rop_path" in props
+  1061→        assert "soho_foreground" in props
+  1062→
+  1063→    def test_render_progressively_schema(self):
+  1064→        tools = tools_mod.get_tools()
+  1065→        tool = next(t for t in tools if t["name"] == "synapse_render_progressively")
+  1066→        props = tool["inputSchema"]["properties"]
+  1067→        assert "rop_path" in props
+  1068→        assert "resolution" in props
+  1069→        assert "samples" in props
+  1070→
+  1071→    def test_safe_render_dispatch(self):
+  1072→        response = MagicMock()
+  1073→        response.success = True
+  1074→        response.data = {"passed": True}
+  1075→        handler = MagicMock()
+  1076→        handler.handle.return_value = response
+  1077→        result = tools_mod.dispatch_tool(handler, "synapse_safe_render", {})
+  1078→        assert "isError" not in result
+  1079→        assert len(result["content"]) == 1
+  1080→
+  1081→    def test_render_progressively_dispatch(self):
+  1082→        response = MagicMock()
+  1083→        response.success = True
+  1084→        response.data = {"success": True}
+  1085→        handler = MagicMock()
+  1086→        handler.handle.return_value = response
+  1087→        result = tools_mod.dispatch_tool(handler, "synapse_render_progressively", {})
+  1088→        assert "isError" not in result
+  1089→        assert len(result["content"]) == 1
+  1090→

@@ -1,0 +1,396 @@
+"""
+iterate.py -- Main orchestrator for the Substrate Iteration System.
+
+This is the entry point. Claude Code runs this with a command:
+
+    python iterate.py evaluate           # Analyze only
+    python iterate.py propose            # Analyze + generate proposals
+    python iterate.py iterate            # Full loop (analyze -> propose -> present)
+    python iterate.py apply <proposal>   # Apply approved proposal
+    python iterate.py diff               # Show USD <-> MD drift
+    python iterate.py status             # Show system state
+    python iterate.py rollback <backup>  # Restore from backup
+
+The system is designed for Claude Code to orchestrate:
+1. User drops session captures into captures/
+2. User tells Claude Code: "iterate on my substrate"
+3. Claude Code runs this script, reviews output, presents to user
+"""
+
+import sys
+import json
+from pathlib import Path
+from datetime import datetime
+
+# Ensure stdout can handle Unicode on Windows cp1252 consoles
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(errors='replace')
+
+# Add scripts dir to path
+sys.path.insert(0, str(Path(__file__).parent / "scripts"))
+
+from session_parser import parse_capture_dir, analyze_sessions, save_analysis
+from substrate_evaluator import evaluate, save_report, load_analysis
+from substrate_proposer import generate_proposals
+from substrate_deployer import apply_proposal, rollback, load_config
+from usd_ops import read_stage, diff_files, UsdStage
+
+
+# ── Paths ────────────────────────────────────────────────────────────────────
+
+BASE_DIR = Path(__file__).parent
+CAPTURES_DIR = BASE_DIR / "captures"
+PROPOSALS_DIR = BASE_DIR / "proposals"
+HISTORY_DIR = BASE_DIR / "history"
+
+
+# ── Commands ─────────────────────────────────────────────────────────────────
+
+def cmd_evaluate(config: dict):
+    """Parse captures -> analyze -> report. No proposals generated."""
+    print("=" * 60)
+    print("  SUBSTRATE EVALUATOR -- Analysis Only")
+    print("=" * 60)
+    
+    # Parse captures
+    captures = parse_capture_dir(str(CAPTURES_DIR))
+    if not captures:
+        print(f"\nNo captures found in {CAPTURES_DIR}/")
+        print("Drop session capture .txt files there and re-run.")
+        return
+    
+    print(f"\n  Parsed {len(captures)} session captures.")
+    
+    # Analyze
+    analysis = analyze_sessions(captures)
+    analysis_path = CAPTURES_DIR / "_analysis.json"
+    save_analysis(analysis, str(analysis_path))
+    print(f"  Analysis saved to {analysis_path}")
+    
+    # Evaluate against substrate
+    substrate = _load_substrate(config)
+    report = evaluate(analysis, substrate)
+    report.timestamp = datetime.now().isoformat()
+    
+    report_path = BASE_DIR / "_eval_report.json"
+    save_report(report, str(report_path))
+    
+    # Print findings
+    print(f"\n  {report.summary}\n")
+    _print_findings(report.findings)
+
+
+def cmd_propose(config: dict):
+    """Parse -> analyze -> evaluate -> generate proposals."""
+    print("=" * 60)
+    print("  SUBSTRATE PROPOSER -- Generating Proposals")
+    print("=" * 60)
+    
+    # Parse & analyze
+    captures = parse_capture_dir(str(CAPTURES_DIR))
+    if not captures:
+        print(f"\nNo captures found in {CAPTURES_DIR}/")
+        return
+    
+    print(f"\n  Parsed {len(captures)} session captures.")
+    analysis = analyze_sessions(captures)
+    
+    # Evaluate
+    substrate = _load_substrate(config)
+    report = evaluate(analysis, substrate)
+    report.timestamp = datetime.now().isoformat()
+    
+    if not report.findings:
+        print("\n  No findings -- substrate appears well-calibrated for current session data. [OK]")
+        return
+    
+    print(f"\n  {report.summary}")
+    
+    # Generate proposals
+    PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
+    proposals = generate_proposals(report.findings, substrate, str(PROPOSALS_DIR))
+    
+    print(f"\n  Generated {len(proposals)} proposals in {PROPOSALS_DIR}/\n")
+    for p in proposals:
+        icon = {"critical": "!!", "high": "! ", "medium": "* ", "low": "- "}.get(p.severity, "  ")
+        print(f"  {icon} {p.id}")
+        print(f"    {p.title}")
+        print(f"    -> {PROPOSALS_DIR / p.id}.md")
+        print()
+    
+    print("  Review the .md files, set status to 'approved' in the .json,")
+    print("  then run: python iterate.py apply <proposal_id>")
+
+
+def cmd_iterate(config: dict):
+    """Full loop: parse -> analyze -> evaluate -> propose -> present summary."""
+    print("=" * 60)
+    print("  SUBSTRATE ITERATION -- Full Loop")
+    print("=" * 60)
+    
+    # This is the same as propose, but with a cleaner summary for Claude Code
+    captures = parse_capture_dir(str(CAPTURES_DIR))
+    if not captures:
+        print(f"\nNo captures in {CAPTURES_DIR}/. Nothing to iterate on.")
+        return
+    
+    print(f"\n  Sessions: {len(captures)}")
+    analysis = analyze_sessions(captures)
+    
+    substrate = _load_substrate(config)
+    report = evaluate(analysis, substrate)
+    report.timestamp = datetime.now().isoformat()
+    
+    # Save report
+    report_path = BASE_DIR / "_eval_report.json"
+    save_report(report, str(report_path))
+    
+    if not report.findings:
+        print("  Finding: No issues detected. Substrate is tracking well. [OK]")
+        return
+    
+    # Generate proposals
+    PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
+    proposals = generate_proposals(report.findings, substrate, str(PROPOSALS_DIR))
+    
+    # Print iteration summary
+    print(f"\n  {report.summary}")
+    print()
+    
+    critical = [p for p in proposals if p.severity == "critical"]
+    high = [p for p in proposals if p.severity == "high"]
+    medium = [p for p in proposals if p.severity == "medium"]
+    low = [p for p in proposals if p.severity == "low"]
+    
+    if critical:
+        print("  !! CRITICAL -- Address immediately:")
+        for p in critical:
+            print(f"     {p.id}: {p.title}")
+
+    if high:
+        print("  !  HIGH -- Address soon:")
+        for p in high:
+            print(f"     {p.id}: {p.title}")
+
+    if medium:
+        print("  *  MEDIUM -- Review when convenient:")
+        for p in medium:
+            print(f"     {p.id}: {p.title}")
+
+    if low:
+        print("  -  LOW -- Optional:")
+        for p in low:
+            print(f"     {p.id}: {p.title}")
+    
+    print(f"\n  Proposals written to {PROPOSALS_DIR}/")
+    print("  Review .md files for full details.")
+
+
+def cmd_apply(config: dict, target: str):
+    """Apply an approved proposal."""
+    # Find the proposal file
+    proposal_path = _find_proposal(target)
+    if not proposal_path:
+        print(f"Proposal not found: {target}")
+        print(f"Looked in: {PROPOSALS_DIR}/")
+        return
+    
+    print(f"Applying: {proposal_path}")
+    config["history_dir"] = str(HISTORY_DIR)
+    result = apply_proposal(str(proposal_path), config)
+    
+    if result["success"]:
+        print(f"\n✅ Applied {result['proposal_id']}")
+        print(f"   Changes: {len(result['changes_made'])}")
+        for change in result["changes_made"]:
+            print(f"   *{change}")
+        print(f"   Backup: {result['backup_path']}")
+        if result["diffs"]:
+            print(f"   Diffs:")
+            for d in result["diffs"]:
+                print(f"   *{d}")
+    else:
+        print(f"\n❌ Failed: {result['proposal_id']}")
+        for err in result["errors"]:
+            print(f"   {err}")
+
+
+def cmd_diff(config: dict):
+    """Show drift between USD source and current MD output."""
+    print("=" * 60)
+    print("  SUBSTRATE DIFF -- USD <-> MD Sync Check")
+    print("=" * 60)
+    
+    # This would need the converter to generate a "what MD should look like" 
+    # and compare against the actual MD. For now, just verify USD is parseable.
+    substrate = _load_substrate(config)
+    if substrate:
+        root = substrate.get_prim("CognitiveSubstrate")
+        if root:
+            version = root.get_attr("version")
+            print(f"\n  USD source loaded successfully.")
+            print(f"  Version: {version.value if version else 'unknown'}")
+            print(f"  Root children: {list(root.children.keys())}")
+        else:
+            print("\n  ⚠ USD loaded but no CognitiveSubstrate root prim found.")
+    else:
+        print("\n  ⚠ Could not load USD substrate. Check config paths.")
+
+
+def cmd_status(config: dict):
+    """Show system state."""
+    print("=" * 60)
+    print("  SUBSTRATE ITERATION -- Status")
+    print("=" * 60)
+    
+    # Captures
+    capture_files = list(CAPTURES_DIR.glob("*.txt")) if CAPTURES_DIR.exists() else []
+    print(f"\n  Captures: {len(capture_files)} files in {CAPTURES_DIR}/")
+    
+    # Proposals
+    proposal_files = list(PROPOSALS_DIR.glob("*.json")) if PROPOSALS_DIR.exists() else []
+    pending = 0
+    approved = 0
+    applied = 0
+    for pf in proposal_files:
+        try:
+            data = json.loads(pf.read_text())
+            status = data.get("status", "unknown")
+            if status == "pending":
+                pending += 1
+            elif status == "approved":
+                approved += 1
+            elif status == "applied":
+                applied += 1
+        except:
+            pass
+    
+    print(f"  Proposals: {len(proposal_files)} total ({pending} pending, {approved} approved, {applied} applied)")
+    
+    # History
+    history_files = list(HISTORY_DIR.glob("applied_*.json")) if HISTORY_DIR.exists() else []
+    print(f"  History: {len(history_files)} applied changes")
+    
+    # Substrate
+    substrate = _load_substrate(config)
+    if substrate:
+        print(f"  Substrate: [OK] loaded")
+    else:
+        print(f"  Substrate: [FAIL] not found (check config)")
+
+
+def cmd_rollback(config: dict, target: str):
+    """Rollback to a backup."""
+    backup_path = Path(target)
+    if not backup_path.exists():
+        # Try in history dir
+        backup_path = HISTORY_DIR / target
+    
+    if not backup_path.exists():
+        print(f"Backup not found: {target}")
+        return
+    
+    result = rollback(str(backup_path), config)
+    if result["success"]:
+        print(f"✅ Rolled back to {backup_path}")
+    else:
+        for err in result["errors"]:
+            print(f"   Error: {err}")
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _load_substrate(config: dict) -> UsdStage:
+    """Load the current substrate from USD source."""
+    path = config.get("substrate_core", "")
+    if path and Path(path).exists():
+        return read_stage(path)
+    
+    # Fallback: try to find it relative to this script
+    local = BASE_DIR.parent / "cognitive_substrate" / "core_substrate_v7.usda"
+    if local.exists():
+        return read_stage(str(local))
+    
+    return UsdStage()  # Empty stage
+
+
+def _find_proposal(target: str) -> Path:
+    """Find a proposal file by ID or path."""
+    # Direct path
+    if Path(target).exists():
+        return Path(target)
+    
+    # By ID in proposals dir
+    for ext in [".json", ""]:
+        candidate = PROPOSALS_DIR / f"{target}{ext}"
+        if candidate.exists():
+            return candidate
+    
+    # Glob match
+    matches = list(PROPOSALS_DIR.glob(f"*{target}*.json"))
+    if len(matches) == 1:
+        return matches[0]
+    
+    return None
+
+
+def _print_findings(findings: list):
+    """Pretty-print evaluation findings."""
+    for f in findings:
+        icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}.get(f.severity, "⚪")
+        print(f"  {icon} [{f.category}] {f.description}")
+        print(f"    Evidence: {f.evidence}")
+        print(f"    Action: {f.suggested_action}")
+        print(f"    Scope: {f.proposal_type} @ {f.substrate_path}")
+        print()
+
+
+# ── Entry Point ──────────────────────────────────────────────────────────────
+
+def main():
+    if len(sys.argv) < 2:
+        print("Substrate Iteration System")
+        print()
+        print("Commands:")
+        print("  evaluate            Parse captures, analyze, report findings")
+        print("  propose             Evaluate + generate proposal files")
+        print("  iterate             Full loop: evaluate -> propose -> present")
+        print("  apply <proposal>    Apply an approved proposal")
+        print("  diff                Check USD <-> MD sync")
+        print("  status              Show system state")
+        print("  rollback <backup>   Restore from backup")
+        sys.exit(0)
+    
+    command = sys.argv[1]
+    config = load_config()
+    
+    # Ensure dirs exist
+    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    
+    if command == "evaluate":
+        cmd_evaluate(config)
+    elif command == "propose":
+        cmd_propose(config)
+    elif command == "iterate":
+        cmd_iterate(config)
+    elif command == "apply":
+        if len(sys.argv) < 3:
+            print("Usage: iterate.py apply <proposal_id_or_path>")
+            sys.exit(1)
+        cmd_apply(config, sys.argv[2])
+    elif command == "diff":
+        cmd_diff(config)
+    elif command == "status":
+        cmd_status(config)
+    elif command == "rollback":
+        if len(sys.argv) < 3:
+            print("Usage: iterate.py rollback <backup_path>")
+            sys.exit(1)
+        cmd_rollback(config, sys.argv[2])
+    else:
+        print(f"Unknown command: {command}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

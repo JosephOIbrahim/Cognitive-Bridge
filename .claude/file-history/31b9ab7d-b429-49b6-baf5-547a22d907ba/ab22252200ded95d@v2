@@ -1,0 +1,26 @@
+'use client';
+
+import { ReactNode } from 'react';
+import { useIsMobile } from '@/lib/hooks/useIsMobile';
+
+interface ProjectContentWrapperProps {
+  children: ReactNode;
+}
+
+export function ProjectContentWrapper({ children }: ProjectContentWrapperProps) {
+  const { isMobile } = useIsMobile();
+  const heroHeight = isMobile ? '50vh' : '70vh';
+
+  return (
+    <div
+      className="min-h-screen relative"
+      style={{
+        marginTop: heroHeight,
+        zIndex: 50,
+        backgroundColor: '#141414'
+      }}
+    >
+      {children}
+    </div>
+  );
+}

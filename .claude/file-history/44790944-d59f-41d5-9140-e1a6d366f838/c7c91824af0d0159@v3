@@ -1,0 +1,909 @@
+{
+  "semantic_index": {
+    "description": "Fast lookup index mapping topics to documentation locations",
+    "indexing_strategy": "Topic -> Documents -> Agent Relevance",
+    "topics": {
+      "api": {
+        "primary_doc": "api_reference/core/*.md",
+        "related_docs": [
+          "api_reference/classes/*.md",
+          "api_reference/functions/*.md",
+          "tutorials/best_practices/*.md"
+        ],
+        "keywords": [
+          "api",
+          "function",
+          "class",
+          "method",
+          "hdk"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.95,
+          "VexAuditor": 0.6,
+          "GraphTracer": 0.4
+        },
+        "common_queries": [
+          "SOP_Node API",
+          "How do I use GU_Detail?",
+          "HDK function reference"
+        ]
+      },
+      "attributes": {
+        "primary_doc": "geometry_reference/point_attributes.md",
+        "related_docs": [
+          "geometry_reference/primitive_attributes.md",
+          "geometry_reference/detail_attributes.md",
+          "api_reference/core/attributes.md",
+          "vex_reference/attributes.md"
+        ],
+        "keywords": [
+          "attributes",
+          "point",
+          "primitive",
+          "detail",
+          "@P",
+          "@N"
+        ],
+        "agent_relevance": {
+          "GraphTracer": 0.95,
+          "VexAuditor": 0.85,
+          "Librarian": 0.7
+        },
+        "common_queries": [
+          "What is @P?",
+          "How do I create custom attributes?",
+          "What attributes does scatter create?",
+          "Point vs primitive attributes"
+        ]
+      },
+      "copy": {
+        "primary_doc": "node_reference/sop_nodes/copy.md",
+        "related_docs": [
+          "node_reference/sop_nodes/scatter.md",
+          "performance_reference/complexity_analysis.md",
+          "tutorials/best_practices/instancing.md"
+        ],
+        "keywords": [
+          "copy",
+          "duplicate",
+          "instancing",
+          "instances"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.8,
+          "VexAuditor": 0.3
+        },
+        "common_queries": [
+          "How do I copy geometry?",
+          "Copy vs Scatter - which should I use?",
+          "How many copies can I make?"
+        ],
+        "performance_notes": "Linear scaling with copy count, instance overhead"
+      },
+      "geometry": {
+        "primary_doc": "geometry_reference/geometry_types.md",
+        "related_docs": [
+          "geometry_reference/operations.md",
+          "geometry_reference/constraints.md",
+          "node_reference/sop_nodes/*.md"
+        ],
+        "keywords": [
+          "geometry",
+          "mesh",
+          "polygon",
+          "points",
+          "primitives"
+        ],
+        "agent_relevance": {
+          "GraphTracer": 0.95,
+          "Librarian": 0.8,
+          "VexAuditor": 0.5
+        },
+        "common_queries": [
+          "What are geometry types?",
+          "Polygon vs mesh?",
+          "How do I manipulate geometry?"
+        ]
+      },
+      "machine_learning": {
+        "primary_doc": "machine_learning/ml_fundamentals.md",
+        "related_docs": [
+          "machine_learning/neural_networks_in_houdini.md",
+          "machine_learning/training_data.md",
+          "machine_learning/example_networks/*.hiplc",
+          "tutorials/example_files/H21_ML_*.hiplc"
+        ],
+        "keywords": [
+          "machine learning",
+          "neural network",
+          "ml",
+          "ai"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.85,
+          "VexAuditor": 0.4,
+          "GraphTracer": 0.3
+        },
+        "common_queries": [
+          "How do I use machine learning in Houdini?",
+          "Neural networks in Houdini",
+          "ML examples and workflows"
+        ]
+      },
+      "mpm_auto_sleep": {
+        "primary_doc": "tutorials/workflow_guides/mpm_auto_sleep.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_auto_sleep.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/02_auto_sleep.md"
+        ],
+        "keywords": [
+          "mpm",
+          "auto_sleep",
+          "optimization",
+          "performance",
+          "simulation",
+          "rest_state"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does auto sleep work?",
+          "MPM Auto Sleep tutorial",
+          "MPM auto sleep Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_building_attack": {
+        "primary_doc": "tutorials/workflow_guides/mpm_building_attack.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_building_attack.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/17_building_attack.md"
+        ],
+        "keywords": [
+          "mpm",
+          "building",
+          "attack",
+          "destruction",
+          "large_scale",
+          "fracture",
+          "collapse"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does building attack work?",
+          "MPM Building Attack tutorial",
+          "MPM building attack Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_car_rain": {
+        "primary_doc": "tutorials/workflow_guides/mpm_car_rain.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_car_rain.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/13_car_rain.md"
+        ],
+        "keywords": [
+          "mpm",
+          "car",
+          "rain",
+          "water",
+          "environment",
+          "surface_tension",
+          "droplets"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does car rain work?",
+          "MPM Car Rain tutorial",
+          "MPM car rain Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_continuous_emission": {
+        "primary_doc": "tutorials/workflow_guides/mpm_continuous_emission.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_continuous_emission.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/03_continuous_emission.md"
+        ],
+        "keywords": [
+          "mpm",
+          "continuous_emission",
+          "particle_emission",
+          "source",
+          "fluid_source"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does continuous emission work?",
+          "MPM Continuous Emission tutorial",
+          "MPM continuous emission Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_creature_breach": {
+        "primary_doc": "tutorials/workflow_guides/mpm_creature_breach.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_creature_breach.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/15_creature_breach.md"
+        ],
+        "keywords": [
+          "mpm",
+          "creature",
+          "breach",
+          "water",
+          "splash",
+          "character_fx",
+          "ocean"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does creature breach work?",
+          "MPM Creature Breach tutorial",
+          "MPM creature breach Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_deforming_colliders": {
+        "primary_doc": "tutorials/workflow_guides/mpm_deforming_colliders.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_deforming_colliders.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/05_deforming_colliders.md"
+        ],
+        "keywords": [
+          "mpm",
+          "deforming_colliders",
+          "collision",
+          "animated_geometry",
+          "rbd"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does deforming colliders work?",
+          "MPM Deforming Colliders tutorial",
+          "MPM deforming colliders Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_destruction_workflow": {
+        "primary_doc": "tutorials/workflow_guides/mpm_destruction_workflow.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_destruction_workflow.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/10_destruction_workflow.md"
+        ],
+        "keywords": [
+          "mpm",
+          "destruction",
+          "workflow",
+          "fracture",
+          "rbd",
+          "pipeline",
+          "production"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does destruction workflow work?",
+          "MPM Destruction Workflow tutorial",
+          "MPM destruction workflow Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_friction_stickiness": {
+        "primary_doc": "tutorials/workflow_guides/mpm_friction_stickiness.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_friction_stickiness.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/04_friction_stickiness.md"
+        ],
+        "keywords": [
+          "mpm",
+          "friction",
+          "stickiness",
+          "material_properties",
+          "collision",
+          "adhesion"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does friction and stickiness work?",
+          "MPM Friction and Stickiness tutorial",
+          "MPM friction stickiness Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_mpmdebrissource": {
+        "primary_doc": "tutorials/workflow_guides/mpm_mpmdebrissource.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_mpmdebrissource.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/07_mpmdebrissource.md"
+        ],
+        "keywords": [
+          "mpm",
+          "mpmdebrissource",
+          "debris",
+          "secondary_elements",
+          "chunks",
+          "fragments"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does debris source work?",
+          "MPM Debris Source tutorial",
+          "MPM mpmdebrissource Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_mpmdeformpieces": {
+        "primary_doc": "tutorials/workflow_guides/mpm_mpmdeformpieces.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_mpmdeformpieces.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/09_mpmdeformpieces.md"
+        ],
+        "keywords": [
+          "mpm",
+          "mpmdeformpieces",
+          "deformation",
+          "pieces",
+          "chunks",
+          "post_simulation"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does deform pieces work?",
+          "MPM Deform Pieces tutorial",
+          "MPM mpmdeformpieces Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_mpmpostfracture": {
+        "primary_doc": "tutorials/workflow_guides/mpm_mpmpostfracture.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_mpmpostfracture.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/08_mpmpostfracture.md"
+        ],
+        "keywords": [
+          "mpm",
+          "mpmpostfracture",
+          "fracture",
+          "voronoi",
+          "destruction",
+          "post_simulation"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does post fracture work?",
+          "MPM Post Fracture tutorial",
+          "MPM mpmpostfracture Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_mpmsurface": {
+        "primary_doc": "tutorials/workflow_guides/mpm_mpmsurface.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_mpmsurface.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/06_mpmsurface.md"
+        ],
+        "keywords": [
+          "mpm",
+          "mpmsurface",
+          "meshing",
+          "surface_extraction",
+          "post_simulation",
+          "particle_to_mesh"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does surface meshing work?",
+          "MPM Surface Meshing tutorial",
+          "MPM mpmsurface Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_overview": {
+        "primary_doc": "tutorials/workflow_guides/mpm_overview.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/00_overview.md"
+        ],
+        "keywords": [
+          "mpm",
+          "overview",
+          "houdini_21",
+          "masterclass",
+          "new_features",
+          "mpm_solver"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does h21 masterclass overview work?",
+          "MPM H21 Masterclass Overview tutorial",
+          "MPM overview Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_paintball_impact": {
+        "primary_doc": "tutorials/workflow_guides/mpm_paintball_impact.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_paintball_impact.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/11_paintball_impact.md"
+        ],
+        "keywords": [
+          "mpm",
+          "paintball",
+          "impact",
+          "splatter",
+          "viscous_fluid",
+          "collision"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does paintball impact work?",
+          "MPM Paintball Impact tutorial",
+          "MPM paintball impact Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_pumpkin_smash": {
+        "primary_doc": "tutorials/workflow_guides/mpm_pumpkin_smash.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_pumpkin_smash.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/12_pumpkin_smash.md"
+        ],
+        "keywords": [
+          "mpm",
+          "pumpkin",
+          "smash",
+          "destruction",
+          "organic",
+          "fracture",
+          "debris"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does pumpkin smash work?",
+          "MPM Pumpkin Smash tutorial",
+          "MPM pumpkin smash Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_surface_tension": {
+        "primary_doc": "tutorials/workflow_guides/mpm_surface_tension.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_surface_tension.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/01_surface_tension.md"
+        ],
+        "keywords": [
+          "mpm",
+          "surface_tension",
+          "fluid_sim",
+          "droplets",
+          "mpm_solver",
+          "viscosity"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does surface tension work?",
+          "MPM Surface Tension tutorial",
+          "MPM surface tension Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_train_wreck": {
+        "primary_doc": "tutorials/workflow_guides/mpm_train_wreck.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_train_wreck.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/16_train_wreck.md"
+        ],
+        "keywords": [
+          "mpm",
+          "train",
+          "wreck",
+          "destruction",
+          "large_scale",
+          "rbd",
+          "debris"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does train wreck work?",
+          "MPM Train Wreck tutorial",
+          "MPM train wreck Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "mpm_wolf_snow": {
+        "primary_doc": "tutorials/workflow_guides/mpm_wolf_snow.md",
+        "related_docs": [
+          "tutorials/workflow_guides/mpm_wolf_snow.md",
+          "tutorials/workflow_guides/mpm_overview.md",
+          "_raw_documentation/mpm_masterclass/14_wolf_snow.md"
+        ],
+        "keywords": [
+          "mpm",
+          "wolf",
+          "snow",
+          "character_interaction",
+          "deformation",
+          "particles"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.75,
+          "VexAuditor": 0.45
+        },
+        "common_queries": [
+          "How does wolf snow work?",
+          "MPM Wolf Snow tutorial",
+          "MPM wolf snow Houdini 21"
+        ],
+        "source_type": "youtube_video",
+        "series": "SideFX MPM H21 Masterclass"
+      },
+      "performance": {
+        "primary_doc": "performance_reference/optimization_strategies.md",
+        "related_docs": [
+          "performance_reference/complexity_analysis.md",
+          "performance_reference/memory_usage.md",
+          "performance_reference/cook_time_profiling.md",
+          "vex_reference/performance.md"
+        ],
+        "keywords": [
+          "performance",
+          "optimization",
+          "slow",
+          "bottleneck",
+          "fast"
+        ],
+        "agent_relevance": {
+          "VexAuditor": 0.85,
+          "GraphTracer": 0.8,
+          "Librarian": 0.6
+        },
+        "common_queries": [
+          "Why is my cook time slow?",
+          "How do I optimize my network?",
+          "What's the bottleneck?",
+          "Performance optimization tips",
+          "How many points can I handle?"
+        ]
+      },
+      "scatter": {
+        "primary_doc": "node_reference/sop_nodes/scatter.md",
+        "related_docs": [
+          "node_reference/sop_nodes/copy.md",
+          "performance_reference/optimization_strategies.md",
+          "tutorials/workflow_guides/scatter_optimization.md",
+          "vex_reference/examples/performance_optimization.md"
+        ],
+        "keywords": [
+          "scatter",
+          "copy",
+          "instancing",
+          "duplicate",
+          "copies"
+        ],
+        "agent_relevance": {
+          "Librarian": 0.95,
+          "VexAuditor": 0.4,
+          "GraphTracer": 0.85
+        },
+        "common_queries": [
+          "How do I use scatter?",
+          "How do I optimize scatter for 10M points?",
+          "What's the difference between scatter and copy?",
+          "Scatter node slow - why?",
+          "Scatter performance bottleneck"
+        ],
+        "performance_notes": "Bottleneck: attribute iteration, copy count scaling"
+      },
+      "vex": {
+        "primary_doc": "vex_reference/fundamentals.md",
+        "related_docs": [
+          "vex_reference/functions.md",
+          "vex_reference/attributes.md",
+          "vex_reference/types.md",
+          "vex_reference/performance.md",
+          "vex_reference/examples/basic_patterns.md",
+          "tutorials/best_practices/vex_optimization.md"
+        ],
+        "keywords": [
+          "vex",
+          "wrangle",
+          "vop",
+          "expression",
+          "code",
+          "syntax",
+          "type",
+          "control flow"
+        ],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "Librarian": 0.7,
+          "GraphTracer": 0.3
+        },
+        "common_queries": [
+          "How do I write VEX code?",
+          "What's the syntax for VEX?",
+          "How do I access point attributes in VEX?",
+          "VEX optimization tips",
+          "Common VEX patterns",
+          "VEX data types",
+          "VEX control flow"
+        ]
+      },
+      "vex_attributes": {
+        "primary_doc": "vex_reference/attributes.md",
+        "related_docs": [
+          "vex_reference/fundamentals.md",
+          "geometry_reference/point_attributes.md",
+          "vex_reference/functions.md"
+        ],
+        "keywords": [
+          "vex",
+          "attribute",
+          "@P",
+          "@N",
+          "@Cd",
+          "point",
+          "prim",
+          "vertex",
+          "detail",
+          "group",
+          "prefix",
+          "type binding",
+          "intrinsic"
+        ],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "GraphTracer": 0.9,
+          "Librarian": 0.7
+        },
+        "common_queries": [
+          "How do I read attributes in VEX?",
+          "What is @P?",
+          "How do I create custom attributes?",
+          "VEX type prefixes",
+          "How to access second input in VEX",
+          "VEX groups"
+        ]
+      },
+      "vex_functions": {
+        "primary_doc": "vex_reference/functions.md",
+        "related_docs": [
+          "vex_reference/fundamentals.md",
+          "vex_reference/attributes.md",
+          "vex_reference/examples/basic_patterns.md"
+        ],
+        "keywords": [
+          "vex",
+          "function",
+          "signature",
+          "pcfind",
+          "noise",
+          "lerp",
+          "fit",
+          "addpoint",
+          "removepoint",
+          "nearpoint",
+          "chramp",
+          "channel"
+        ],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "Librarian": 0.8,
+          "GraphTracer": 0.4
+        },
+        "common_queries": [
+          "VEX function list",
+          "What VEX function does X?",
+          "pcfind parameters",
+          "How to use chramp",
+          "VEX noise functions",
+          "VEX math functions"
+        ]
+      },
+      "vex_patterns": {
+        "primary_doc": "vex_reference/examples/basic_patterns.md",
+        "related_docs": [
+          "vex_reference/functions.md",
+          "vex_reference/attributes.md",
+          "tutorials/best_practices/vex_optimization.md"
+        ],
+        "keywords": [
+          "vex",
+          "pattern",
+          "example",
+          "snippet",
+          "recipe",
+          "deform",
+          "color",
+          "noise",
+          "spiral",
+          "wave",
+          "group",
+          "solver",
+          "transfer"
+        ],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "Librarian": 0.6,
+          "GraphTracer": 0.5
+        },
+        "common_queries": [
+          "VEX examples",
+          "Common VEX patterns",
+          "How to deform with VEX",
+          "VEX color by attribute",
+          "VEX point generation",
+          "VEX solver pattern"
+        ]
+      },
+      "vex_performance": {
+        "primary_doc": "vex_reference/performance.md",
+        "related_docs": [
+          "performance_reference/optimization_strategies.md",
+          "vex_reference/functions.md",
+          "vex_reference/examples/basic_patterns.md"
+        ],
+        "keywords": [
+          "vex",
+          "performance",
+          "optimization",
+          "speed",
+          "slow",
+          "fast",
+          "bottleneck",
+          "pcfind",
+          "distance2",
+          "parallel"
+        ],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "GraphTracer": 0.7,
+          "Librarian": 0.5
+        },
+        "common_queries": [
+          "How to make VEX faster",
+          "VEX optimization tips",
+          "Why is my wrangle slow?",
+          "pcfind vs nearpoints performance",
+          "VEX memory optimization"
+        ],
+        "performance_notes": "VEX compiles to native SIMD; avoid branching, use squared distances, prefer pcfind over nearpoints"
+      },
+      "vex_types": {
+        "primary_doc": "vex_reference/types.md",
+        "related_docs": [
+          "vex_reference/fundamentals.md",
+          "vex_reference/functions.md"
+        ],
+        "keywords": [
+          "vex",
+          "type",
+          "conversion",
+          "cast",
+          "vector",
+          "matrix",
+          "quaternion",
+          "vector4",
+          "matrix3",
+          "int",
+          "float",
+          "string",
+          "array"
+        ],
+        "agent_relevance": {
+          "VexAuditor": 0.9,
+          "Librarian": 0.75,
+          "GraphTracer": 0.3
+        },
+        "common_queries": [
+          "VEX data types",
+          "How to convert types in VEX",
+          "What is vector4?",
+          "Quaternion in VEX",
+          "Matrix operations in VEX"
+        ]
+      }
+    }
+  }
+}

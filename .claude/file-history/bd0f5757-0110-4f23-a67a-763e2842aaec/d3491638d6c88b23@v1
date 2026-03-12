@@ -1,0 +1,111 @@
+# Verify Loop — Implementation Plan
+
+## Context
+
+The VERIFY layer is the weakest link in comfyui-agent (13 tests, 4 tools). After `execute_workflow` returns output filenames, nothing happens automatically — no file validation, no quality analysis, no outcome recording. The agent must manually chain 3-4 tool calls to close the execute→verify→learn loop. This plan adds a single `verify_execution` tool that closes that gap, plus a lightweight `get_output_path` utility and an `auto_verify` flag on `execute_with_progress`.
+
+## Files to Create
+
+### `agent/tools/verify_execution.py` — New module (2 tools)
+
+**Tool 1: `get_output_path`** — Resolves ComfyUI output filename → absolute path.
+
+```
+Input:  {filename: str, subfolder?: str}
+Output: {filename, subfolder, absolute_path, exists, size_bytes, error}
+```
+
+Path construction: `COMFYUI_DATABASE / "output" / subfolder / filename`. Uses `validate_path()` from `_util.py`. Already covered by `_SAFE_DIRS` (includes `COMFYUI_DATABASE.resolve()`).
+
+**Tool 2: `verify_execution`** — Post-execution verification + outcome recording.
+
+```
+Input:  {prompt_id: str, analyze?: bool=False, session?: str="default",
+         render_time_s?: float, goal_id?: str}
+Output: {prompt_id, status, outputs: [{filename, subfolder, absolute_path,
+         exists, size_bytes, size_ok}], output_count, all_exist,
+         vision_analysis: dict|null, outcome_recorded: bool,
+         workflow_hash, key_params, render_time_s, message}
+```
+
+Implementation:
+1. Fetch `/history/{prompt_id}` via httpx (same pattern as `comfy_execute.py`)
+2. Resolve each output to absolute path, stat file
+3. Extract `key_params` from `workflow_patch.get_current_workflow()` — scan nodes for `CheckpointLoaderSimple` (model), `KSampler` (steps, cfg, sampler, scheduler), `EmptyLatentImage` (resolution). If no workflow loaded, `key_params = {}`
+4. If `analyze=True` and image outputs exist: call `brain.handle("analyze_image", ...)` via top-level `tools.handle()` dispatcher (avoids circular imports)
+5. Call `brain.handle("record_outcome", ...)` with extracted params
+6. Return structured report
+
+Internal helper `_verify_prompt(...)` returns a dict (not JSON string) so `execute_with_progress` can call it directly.
+
+### `tests/test_verify_execution.py` — New test file (~16 tests)
+
+- `TestGetOutputPath` (4 tests): basic resolution, subfolder, file not found, empty filename
+- `TestVerifyExecution` (8 tests): basic verify, file missing, no history, ComfyUI down, with analyze=True, analyze=False skips vision, key_params extraction from workflow, render_time passthrough
+- `TestAutoVerify` (3 tests): auto_verify=False, auto_verify=True, skipped on error status
+
+All mocked — httpx, file stat, brain handles.
+
+## Files to Modify
+
+### `agent/tools/comfy_execute.py`
+
+Add `auto_verify`, `session`, `goal_id` params to `execute_with_progress` schema. In `_handle_execute_with_progress`: if `auto_verify=True` and status is `"complete"`, call `_verify_prompt()` and attach result as `result["verification"]`. Lazy import to avoid circular.
+
+Schema additions to `execute_with_progress`:
+```python
+"auto_verify": {"type": "boolean", "description": "..."},
+"session": {"type": "string", "description": "Session name for verify. Default 'default'."},
+"goal_id": {"type": "string", "description": "Goal ID from planner."},
+```
+
+### `agent/tools/__init__.py`
+
+Add `verify_execution` to imports and `_MODULES` tuple. Update docstring from "41 tools" to "43 tools".
+
+### `agent/brain/_protocol.py`
+
+Add `dispatch_brain_message(msg: dict) -> None` function. Routes `source=vision, target=memory` messages to `record_outcome` via lazy import of `tools.handle`. Fire-and-forget: catches all exceptions, logs warning on failure.
+
+### `agent/brain/vision.py`
+
+Two call sites (lines 263-274 and 331-341): after `brain_message()`, add `dispatch_brain_message(msg)` call. Import from `._protocol`.
+
+### `tests/test_tools_registry.py`
+
+- Update `test_total_tool_count`: 60 → 62
+- Add `"get_output_path"` and `"verify_execution"` to `expected` set in `test_expected_tools_present`
+
+### `tests/test_brain_vision.py` (or `test_brain_integration.py`)
+
+Add 2 tests for `dispatch_brain_message`: verify it calls `record_outcome`, verify it never raises.
+
+## Implementation Order
+
+1. **Create `agent/tools/verify_execution.py`** — self-contained, testable in isolation
+2. **Register in `agent/tools/__init__.py`** — import + add to `_MODULES`
+3. **Create `tests/test_verify_execution.py`** — run, verify green
+4. **Update `tests/test_tools_registry.py`** — 60 → 62, add new names
+5. **Add `dispatch_brain_message` to `agent/brain/_protocol.py`**
+6. **Update `agent/brain/vision.py`** — wire dispatch at both call sites
+7. **Add `auto_verify` to `agent/tools/comfy_execute.py`**
+8. **Run full suite** — expect 497 + ~18 new = ~515 tests, all green
+
+## Key Design Decisions
+
+- **`verify_execution` in intelligence layer, not brain**: It orchestrates across layers (calls brain handles). Putting it in brain would create circular imports. Same location as `comfy_execute.py`.
+- **`analyze=False` by default**: Vision API calls cost tokens and take 120s. Auto-verify records the outcome to memory without the API cost. Artist opts in to vision when they want quality analysis.
+- **`auto_verify` only on `execute_with_progress`**: This tool already returns `total_time_s` (needed for `render_time_s`). The simpler `execute_workflow` stays unchanged.
+- **Dispatch is fire-and-forget**: Memory failures never crash vision analysis. Matches prior behavior where messages were silently discarded.
+- **`key_params` from live workflow, not history**: `/history` doesn't contain workflow nodes. The loaded workflow is always correct in a normal edit→execute→verify sequence.
+
+## Verification
+
+After implementation:
+```bash
+python -m pytest tests/ -v                           # full suite (~515 tests)
+python -m pytest tests/test_verify_execution.py -v   # new tests only
+python -m pytest tests/test_tools_registry.py -v     # count + names
+python -m pytest tests/test_brain_vision.py -v       # dispatch wiring
+ruff check agent/ tests/                             # lint
+```

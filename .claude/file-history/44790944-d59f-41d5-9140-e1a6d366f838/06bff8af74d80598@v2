@@ -1,0 +1,194 @@
+---
+title: VEX Language Fundamentals
+category: vex_reference
+subcategory: fundamentals
+keywords: [vex, syntax, basics, wrangle, types, variables, control flow, preprocessor]
+agent_relevance:
+  VexAuditor: 0.95
+  Librarian: 0.8
+  GraphTracer: 0.3
+related_documents:
+  - path: vex_reference/attributes.md
+    reason: "Attribute access is VEX's primary interface to geometry"
+  - path: vex_reference/functions.md
+    reason: "Built-in function reference"
+  - path: vex_reference/types.md
+    reason: "Data type details and conversions"
+common_queries:
+  - "How do I write VEX?"
+  - "VEX syntax basics"
+  - "What is a wrangle?"
+  - "VEX vs HScript"
+  - "VEX data types"
+prerequisites: []
+---
+
+# VEX Language Fundamentals
+
+VEX (Vector EXpression) is Houdini's high-performance shading and geometry manipulation language. It compiles to native code and runs in parallel across points, primitives, vertices, or detail.
+
+## Execution Contexts
+
+VEX runs inside **wrangle nodes** (Attribute Wrangle, Volume Wrangle, etc.) or **VOP networks** that compile down to VEX.
+
+| Context | Wrangle Node | Runs Over | Variables Available |
+|---------|-------------|-----------|-------------------|
+| SOP | Attribute Wrangle | Points, Prims, Vertices, Detail | `@ptnum`, `@numpt`, `@primnum`, `@numprim` |
+| DOP | Gas Field Wrangle | Voxels | `@ix`, `@iy`, `@iz`, `@resx`, `@resy`, `@resz` |
+| CHOP | Channel Wrangle | Samples | `@C`, `@I`, `@Time` |
+| COP | Pixel Wrangle | Pixels | `@IX`, `@IY`, `@RESX`, `@RESY` |
+
+**Run-over modes** (SOP context):
+- **Points** (default) -- code runs once per point, `@ptnum` is current point index
+- **Primitives** -- code runs once per prim, `@primnum` is current prim index
+- **Vertices** -- code runs once per vertex, `@vtxnum` is current vertex index
+- **Detail** -- code runs once for entire geometry (global operations)
+
+## Data Types
+
+```vex
+// Scalar types
+int i = 42;
+float f = 3.14;
+string s = "hello";
+
+// Vector types
+vector2 uv = {0.5, 0.5};          // 2 floats (u, v)
+vector pos = {1.0, 2.0, 3.0};     // 3 floats (x, y, z)
+vector4 q = {0, 0, 0, 1};         // 4 floats (quaternion/homogeneous)
+
+// Matrix types
+matrix2 m2 = ident();             // 2x2
+matrix3 m3 = ident();             // 3x3 (rotation/scale)
+matrix  m4 = ident();             // 4x4 (full transform)
+
+// Arrays
+int nums[] = {1, 2, 3};
+float vals[] = array(0.1, 0.2);
+string names[] = {"a", "b"};
+vector pts[] = {};                 // Empty vector array
+```
+
+## Type Prefixes (@-binding)
+
+When reading/writing geometry attributes via `@` shorthand, prefix declares type:
+
+| Prefix | Type | Example | Default If New |
+|--------|------|---------|----------------|
+| (none) | float | `@density` | 0.0 |
+| `f@` | float | `f@density` | 0.0 |
+| `i@` | int | `i@id` | 0 |
+| `v@` | vector | `v@velocity` | {0,0,0} |
+| `u@` | vector2 | `u@uv` | {0,0} |
+| `p@` | vector4 | `p@orient` | {0,0,0,0} |
+| `s@` | string | `s@name` | "" |
+| `2@` | matrix2 | `2@mtx` | identity |
+| `3@` | matrix3 | `3@transform` | identity |
+| `4@` | matrix | `4@xform` | identity |
+
+**Important**: The prefix is only needed on the **first use** of an attribute in your code. After that, VEX knows the type.
+
+## Control Flow
+
+```vex
+// Conditionals
+if (condition) {
+    // ...
+} else if (other) {
+    // ...
+} else {
+    // ...
+}
+
+// Ternary
+float val = condition ? a : b;
+
+// For loop
+for (int i = 0; i < n; i++) {
+    // ...
+}
+
+// Foreach (arrays)
+int pts[] = neighbours(0, @ptnum);
+foreach (int pt; pts) {
+    vector pos = point(0, "P", pt);
+}
+
+// While
+while (condition) {
+    // ...
+}
+
+// Break / Continue
+for (int i = 0; i < 100; i++) {
+    if (skip_condition) continue;
+    if (done_condition) break;
+}
+```
+
+## Inputs and Outputs
+
+Wrangle nodes have up to 4 geometry inputs, accessed by index:
+
+```vex
+// Input 0 (default, wired to first input)
+vector pos = point(0, "P", @ptnum);
+
+// Input 1 (second input)
+vector target = point(1, "P", @ptnum);
+
+// Input 2, 3
+float val = prim(2, "density", @primnum);
+string name = detail(3, "name");
+```
+
+**Output**: Writing to `@attribute` modifies the output geometry. Point wrangle output is always input 0's geometry with modifications applied.
+
+## Preprocessor
+
+```vex
+// Include files
+#include <math.h>
+#include <voplib.h>
+
+// Defines
+#define PI 3.14159265
+#define TWO_PI (2.0 * PI)
+#define SQR(x) ((x) * (x))
+```
+
+## Functions
+
+```vex
+// User-defined functions (declared before main code)
+float remap(float val; float omin, omax, nmin, nmax) {
+    float t = clamp((val - omin) / (omax - omin), 0, 1);
+    return lerp(nmin, nmax, t);
+}
+
+// Overloaded by type
+vector remap(vector val; float omin, omax, nmin, nmax) {
+    return set(
+        remap(val.x, omin, omax, nmin, nmax),
+        remap(val.y, omin, omax, nmin, nmax),
+        remap(val.z, omin, omax, nmin, nmax)
+    );
+}
+```
+
+**Note**: VEX uses semicolons to separate parameter types in function signatures (not commas between same-type params).
+
+## VEX vs HScript Expressions
+
+| Feature | VEX (Wrangles) | HScript (Parameter Fields) |
+|---------|----------------|---------------------------|
+| Speed | Compiled, parallel | Interpreted, serial |
+| Geometry access | Full read/write | Read-only via `point()` |
+| Use case | Heavy processing | Simple parameter expressions |
+| Syntax | C-like | `$F`, `ch("parm")` |
+| Variables | `@P`, `@ptnum` | `$PT`, `$NPT` |
+
+**Rule of thumb**: If you need to process more than a few hundred points or modify geometry, use VEX. If you need a simple expression in a parameter field, HScript is fine.
+
+---
+*Houdini 21 VEX Reference -- Fundamentals*

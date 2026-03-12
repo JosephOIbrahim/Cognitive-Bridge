@@ -1,0 +1,51 @@
+#usda 1.0
+(
+    doc = """Lossless Signal Architecture Root
+    Version: 10.0.0
+    Architecture: Two-pass lossless conversion with anchor invariance
+
+    This root file composes the cognitive substrate layers with
+    explicit anchor/modulated phase classification for lossless
+    signal preservation.
+
+    Composition order (USD sublayer semantics):
+    - Stronger opinions listed FIRST
+    - Weaker opinions listed LAST
+    - LIVRPS resolution: LOCAL > INHERITS > VARIANTSETS > REFERENCES > PAYLOADS > SPECIALIZES
+    """
+    subLayers = [
+        # GRAFTS (stronger opinion -- listed first in USD sublayer order)
+        @./grafts/graft_deepseek_v32.usda@,
+
+        # CORE with lossless metadata
+        @./lossless_core.usda@,
+
+        # BASE (weakest opinion)
+        @./core_substrate_v7.usda@
+    ]
+)
+
+def "LosslessMetadata" (
+    doc = "Lossless architecture metadata"
+)
+{
+    string architecture_version = "10.0.0"
+    string signal_model = "two_pass_residual"
+    string gain_equation = "g = 1 + s * d"
+    string hash_algorithm = "sha256"
+    int cognitive_tile_size = 32
+
+    # Anchor phases - NEVER modulated
+    string[] anchor_phases = ["CONSTITUTIONAL", "SAFETY", "CONSENT", "KNOWLEDGE"]
+
+    # Modulated phases - gain-modulated by injection
+    string[] modulated_phases = ["COST", "SIGNAL", "PROJECT", "EXPERT", "DOMAIN", "DEFAULT"]
+
+    # Lossless guarantees
+    bool identity_at_zero = true
+    bool anchor_invariance = true
+    bool reconstruction_exact = true
+    bool fidelity_one = true
+    bool deterministic = true
+    bool continuous = true
+}

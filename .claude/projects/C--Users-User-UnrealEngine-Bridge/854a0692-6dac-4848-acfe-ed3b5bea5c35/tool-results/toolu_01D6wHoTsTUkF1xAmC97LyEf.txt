@@ -1,0 +1,1414 @@
+    50→# CONFIGURATION
+    51→# ═══════════════════════════════════════════════════════════════════════════════
+    52→
+    53→DEFAULT_BRIDGE_PATH = Path.home() / ".translators"
+    54→BRIDGE_STATE_FILE = "bridge_state.usda"
+    55→BRIDGE_VERSION = "2.0.0"
+    56→
+    57→
+    58→# ═══════════════════════════════════════════════════════════════════════════════
+    59→# ATOMIC FILE I/O
+    60→# ═══════════════════════════════════════════════════════════════════════════════
+    61→
+    62→@contextmanager
+    63→def _file_lock(file_path: Path, timeout: float = 5.0):
+    64→    """Advisory file lock using msvcrt on Windows, fcntl on Unix.
+    65→
+    66→    Acquires an exclusive lock on a .lock file adjacent to the target.
+    67→    Falls back to no-op if locking is unavailable.
+    68→    """
+    69→    lock_path = file_path.with_suffix(file_path.suffix + ".lock")
+    70→    lock_fd = None
+    71→    try:
+    72→        lock_fd = open(lock_path, "w", encoding="utf-8")
+    73→        try:
+    74→            import msvcrt
+    75→            import time
+    76→            deadline = time.monotonic() + timeout
+    77→            while True:
+    78→                try:
+    79→                    msvcrt.locking(lock_fd.fileno(), msvcrt.LK_NBLCK, 1)
+    80→                    break
+    81→                except OSError:
+    82→                    if time.monotonic() >= deadline:
+    83→                        logger.warning("File lock timeout on %s", file_path.name)
+    84→                        break
+    85→                    time.sleep(0.05)
+    86→        except ImportError:
+    87→            try:
+    88→                import fcntl
+    89→                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+    90→            except ImportError:
+    91→                pass  # No locking available — proceed without
+    92→        yield
+    93→    finally:
+    94→        if lock_fd is not None:
+    95→            try:
+    96→                try:
+    97→                    import msvcrt
+    98→                    msvcrt.locking(lock_fd.fileno(), msvcrt.LK_UNLCK, 1)
+    99→                except (ImportError, OSError):
+   100→                    pass
+   101→                lock_fd.close()
+   102→            except OSError:
+   103→                pass
+   104→
+   105→
+   106→def _atomic_write(file_path: Path, content: str) -> None:
+   107→    """Write content to file atomically via tmp + os.replace (NTFS-safe), with file locking."""
+   108→    parent = file_path.parent
+   109→    with _file_lock(file_path):
+   110→        fd, tmp_path = tempfile.mkstemp(dir=str(parent), suffix=".tmp", prefix=".bridge_")
+   111→        try:
+   112→            with os.fdopen(fd, "w", encoding="utf-8") as f:
+   113→                f.write(content)
+   114→            os.replace(tmp_path, str(file_path))
+   115→        except BaseException:
+   116→            # Clean up temp file on any failure
+   117→            try:
+   118→                os.unlink(tmp_path)
+   119→            except OSError:
+   120→                pass
+   121→            raise
+   122→
+   123→
+   124→def _safe_read(file_path: Path, retries: int = 3, delay: float = 0.05) -> Optional[str]:
+   125→    """Read file with retry on Windows file-lock errors."""
+   126→    import time
+   127→    for attempt in range(retries):
+   128→        try:
+   129→            return file_path.read_text(encoding="utf-8")
+   130→        except (PermissionError, OSError):
+   131→            if attempt < retries - 1:
+   132→                time.sleep(delay * (2 ** attempt))  # Exponential backoff
+   133→    return None
+   134→
+   135→
+   136→# ═══════════════════════════════════════════════════════════════════════════════
+   137→# CORE USD FUNCTIONS (using pxr when available)
+   138→# ═══════════════════════════════════════════════════════════════════════════════
+   139→
+   140→def _validate_bridge_path(bridge_path: Optional[Path]) -> Path:
+   141→    """Validate and resolve a bridge path, preventing path traversal.
+   142→
+   143→    All bridge file operations MUST go through this function to ensure
+   144→    files stay within the expected bridge directory.
+   145→    """
+   146→    base_path = (bridge_path or DEFAULT_BRIDGE_PATH).resolve()
+   147→    allowed_root = DEFAULT_BRIDGE_PATH.resolve()
+   148→    try:
+   149→        base_path.relative_to(allowed_root)
+   150→    except ValueError:
+   151→        raise ValueError(
+   152→            f"Bridge path '{base_path}' is outside the allowed directory '{allowed_root}'. "
+   153→            f"Path traversal is not permitted."
+   154→        )
+   155→    return base_path
+   156→
+   157→
+   158→def get_bridge_file_path(bridge_path: Optional[Path] = None) -> Path:
+   159→    """Get path to bridge_state.usda."""
+   160→    base_path = _validate_bridge_path(bridge_path)
+   161→    return base_path / BRIDGE_STATE_FILE
+   162→
+   163→
+   164→def ensure_bridge_directory(bridge_path: Optional[Path] = None) -> Path:
+   165→    """Ensure bridge directory exists."""
+   166→    base_path = _validate_bridge_path(bridge_path)
+   167→    base_path.mkdir(parents=True, exist_ok=True)
+   168→    return base_path
+   169→
+   170→
+   171→def get_timestamp() -> str:
+   172→    """Get ISO 8601 timestamp."""
+   173→    from datetime import timezone
+   174→    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+   175→
+   176→
+   177→# ═══════════════════════════════════════════════════════════════════════════════
+   178→# QUESTION WRITING
+   179→# ═══════════════════════════════════════════════════════════════════════════════
+   180→
+   181→def write_question_usda(
+   182→    question_id: str,
+   183→    text: str,
+   184→    options: List[Dict[str, str]],
+   185→    index: int,
+   186→    total: int,
+   187→    scene: str = "",
+   188→    bridge_path: Optional[Path] = None
+   189→) -> Path:
+   190→    """
+   191→    Write a question to bridge_state.usda.
+   192→
+   193→    Args:
+   194→        question_id: Unique identifier for the question (e.g., "load", "ground")
+   195→        text: Question text to display
+   196→        options: List of dicts with 'label' and 'direction' keys
+   197→        index: 0-based question index
+   198→        total: Total number of questions
+   199→        scene: Scene identifier for visual transitions
+   200→        bridge_path: Optional custom bridge directory
+   201→
+   202→    Returns:
+   203→        Path to the written USDA file
+   204→
+   205→    Example:
+   206→        write_question_usda(
+   207→            question_id="load",
+   208→            text="When working on a complex problem, do you prefer to...",
+   209→            options=[
+   210→                {"label": "Break it into small pieces", "direction": "low"},
+   211→                {"label": "See the full picture first", "direction": "high"},
+   212→                {"label": "Jump between both", "direction": "mid"}
+   213→            ],
+   214→            index=0,
+   215→            total=8
+   216→        )
+   217→    """
+   218→    ensure_bridge_directory(bridge_path)
+   219→    file_path = get_bridge_file_path(bridge_path)
+   220→    timestamp = get_timestamp()
+   221→
+   222→    if HAS_PXR:
+   223→        return _write_question_pxr(
+   224→            file_path, question_id, text, options, index, total, scene, timestamp
+   225→        )
+   226→    else:
+   227→        return _write_question_text(
+   228→            file_path, question_id, text, options, index, total, scene, timestamp
+   229→        )
+   230→
+   231→
+   232→def _write_question_pxr(
+   233→    file_path: Path,
+   234→    question_id: str,
+   235→    text: str,
+   236→    options: List[Dict[str, str]],
+   237→    index: int,
+   238→    total: int,
+   239→    scene: str,
+   240→    timestamp: str
+   241→) -> Path:
+   242→    """Write question using pxr USD library."""
+   243→    # Create or open stage
+   244→    if file_path.exists():
+   245→        stage = Usd.Stage.Open(str(file_path))
+   246→    else:
+   247→        stage = Usd.Stage.CreateNew(str(file_path))
+   248→        stage.SetDefaultPrim(stage.DefinePrim("/BridgeState", "Xform"))
+   249→
+   250→    root = stage.GetPrimAtPath("/BridgeState")
+   251→
+   252→    # Set variants for state machine
+   253→    vsets = root.GetVariantSets()
+   254→    if vsets.HasVariantSet("sync_status"):
+   255→        vsets.GetVariantSet("sync_status").SetVariantSelection("question_pending")
+   256→    if vsets.HasVariantSet("message_type"):
+   257→        vsets.GetVariantSet("message_type").SetVariantSelection("question")
+   258→
+   259→    # Write message data
+   260→    msg_prim = stage.GetPrimAtPath("/BridgeState/Message")
+   261→    if msg_prim:
+   262→        msg_prim.GetAttribute("type").Set("question")
+   263→        msg_prim.GetAttribute("index").Set(index)
+   264→        msg_prim.GetAttribute("total").Set(total)
+   265→        msg_prim.GetAttribute("timestamp").Set(timestamp)
+   266→        msg_prim.GetAttribute("question_id").Set(question_id)
+   267→        msg_prim.GetAttribute("text").Set(text)
+   268→        msg_prim.GetAttribute("scene").Set(scene)
+   269→        msg_prim.GetAttribute("progress_display").Set(f"{index + 1}/{total}")
+   270→
+   271→    # Write options
+   272→    for i, opt in enumerate(options[:3]):
+   273→        opt_prim = stage.GetPrimAtPath(f"/BridgeState/Options/Option_{i}")
+   274→        if opt_prim:
+   275→            opt_prim.GetAttribute("index").Set(i)
+   276→            opt_prim.GetAttribute("label").Set(opt.get("label", ""))
+   277→            opt_prim.GetAttribute("direction").Set(opt.get("direction", ""))
+   278→            opt_prim.GetAttribute("semantic_tag").Set(opt.get("semantic_tag", ""))
+   279→
+   280→    stage.Save()
+   281→    return file_path
+   282→
+   283→
+   284→def _update_question_incremental(
+   285→    file_path: Path,
+   286→    question_id: str,
+   287→    text: str,
+   288→    options: List[Dict[str, str]],
+   289→    index: int,
+   290→    total: int,
+   291→    scene: str,
+   292→    timestamp: str
+   293→) -> bool:
+   294→    """Incrementally update an existing bridge_state.usda (patch, not rewrite).
+   295→
+   296→    Returns True if successful, False if full rewrite needed (file missing/corrupt).
+   297→    """
+   298→    content = _safe_read(file_path)
+   299→    if content is None or 'def Xform "Message"' not in content:
+   300→        return False
+   301→
+   302→    def esc(s: str) -> str:
+   303→        return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+   304→
+   305→    # 1. Update variants
+   306→    content = re.sub(r'(string sync_status = ")[^"]*(")', r'\g<1>question_pending\g<2>', content)
+   307→    content = re.sub(r'(string message_type = ")[^"]*(")', r'\g<1>question\g<2>', content)
+   308→
+   309→    # 2. Replace Message prim
+   310→    new_message = f'''def Xform "Message" {{
+   311→        string type = "question"
+   312→        int index = {index}
+   313→        int total = {total}
+   314→        string timestamp = "{timestamp}"
+   315→        string question_id = "{esc(question_id)}"
+   316→        string text = "{esc(text)}"
+   317→        string scene = "{esc(scene)}"
+   318→        string progress_display = "{index + 1}/{total}"
+   319→    }}'''
+   320→    content = re.sub(r'def Xform "Message"[^}]*\}', new_message, content, flags=re.DOTALL)
+   321→
+   322→    # 3. Replace Options prim (rebuild with new options)
+   323→    options_inner = ""
+   324→    for i, opt in enumerate(options[:3]):
+   325→        label = esc(opt.get("label", ""))
+   326→        direction = esc(opt.get("direction", ""))
+   327→        semantic_tag = esc(opt.get("semantic_tag", ""))
+   328→        options_inner += f'''
+   329→        def Xform "Option_{i}" {{
+   330→            int index = {i}
+   331→            string label = "{label}"
+   332→            string direction = "{direction}"
+   333→            string semantic_tag = "{semantic_tag}"
+   334→        }}
+   335→'''
+   336→    new_options = f'def Xform "Options" {{{options_inner}    }}'
+   337→    content = re.sub(r'def Xform "Options"[^}]*(?:\{[^}]*\}[^}]*)*\}', new_options, content, flags=re.DOTALL)
+   338→
+   339→    # 4. Reset answer prim for new question
+   340→    new_answer = '''def Xform "Answer" {
+   341→        string question_id = ""
+   342→        int option_index = -1
+   343→        double response_time_ms = 0.0
+   344→        string selected_label = ""
+   345→        string selected_direction = ""
+   346→        string timestamp = ""
+   347→    }'''
+   348→    content = re.sub(r'def Xform "Answer"[^}]*\}', new_answer, content, flags=re.DOTALL)
+   349→
+   350→    _atomic_write(file_path, content)
+   351→    return True
+   352→
+   353→
+   354→def _write_question_text(
+   355→    file_path: Path,
+   356→    question_id: str,
+   357→    text: str,
+   358→    options: List[Dict[str, str]],
+   359→    index: int,
+   360→    total: int,
+   361→    scene: str,
+   362→    timestamp: str
+   363→) -> Path:
+   364→    """Write question using text-based USDA generation (fallback when pxr unavailable).
+   365→
+   366→    Tries incremental update first; falls back to full rewrite if file doesn't exist.
+   367→    """
+   368→    # Try incremental update if file already exists
+   369→    if file_path.exists():
+   370→        if _update_question_incremental(file_path, question_id, text, options, index, total, scene, timestamp):
+   371→            return file_path
+   372→
+   373→    # Escape strings for USDA
+   374→    def escape_usda_string(s: str) -> str:
+   375→        return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+   376→
+   377→    options_usda = ""
+   378→    for i, opt in enumerate(options[:3]):
+   379→        label = escape_usda_string(opt.get("label", ""))
+   380→        direction = escape_usda_string(opt.get("direction", ""))
+   381→        semantic_tag = escape_usda_string(opt.get("semantic_tag", ""))
+   382→        options_usda += f'''
+   383→        def Xform "Option_{i}" {{
+   384→            int index = {i}
+   385→            string label = "{label}"
+   386→            string direction = "{direction}"
+   387→            string semantic_tag = "{semantic_tag}"
+   388→        }}
+   389→'''
+   390→
+   391→    usda_content = f'''#usda 1.0
+   392→(
+   393→    defaultPrim = "BridgeState"
+   394→    doc = "CC↔UE5 Bridge Communication - Generated {timestamp}"
+   395→)
+   396→
+   397→def Xform "BridgeState" (
+   398→    kind = "assembly"
+   399→    variants = {{
+   400→        string sync_status = "question_pending"
+   401→        string message_type = "question"
+   402→    }}
+   403→    prepend variantSets = ["sync_status", "message_type"]
+   404→    customData = {{
+   405→        string bridge_version = "{BRIDGE_VERSION}"
+   406→        string protocol = "USD-native"
+   407→        string generator = "UEBridge"
+   408→    }}
+   409→)
+   410→{{
+   411→    variantSet "sync_status" = {{
+   412→        "idle" {{ }}
+   413→        "question_pending" {{
+   414→            double timeout_seconds = 300.0
+   415→            string pending_since = "{timestamp}"
+   416→        }}
+   417→        "answer_received" {{ string received_at = "" }}
+   418→        "transition" {{ string transition_direction = "" }}
+   419→        "complete" {{ string completion_time = "" }}
+   420→        "error" {{ string error_message = ""; string error_code = "" }}
+   421→    }}
+   422→
+   423→    variantSet "message_type" = {{
+   424→        "none" {{ }}
+   425→        "question" {{ }}
+   426→        "answer" {{ }}
+   427→        "transition" {{ }}
+   428→        "finale" {{ }}
+   429→        "ack" {{ }}
+   430→        "ready" {{ }}
+   431→    }}
+   432→
+   433→    def Xform "Message" {{
+   434→        string type = "question"
+   435→        int index = {index}
+   436→        int total = {total}
+   437→        string timestamp = "{timestamp}"
+   438→        string question_id = "{escape_usda_string(question_id)}"
+   439→        string text = "{escape_usda_string(text)}"
+   440→        string scene = "{escape_usda_string(scene)}"
+   441→        string progress_display = "{index + 1}/{total}"
+   442→    }}
+   443→
+   444→    def Xform "Options" {{
+   445→{options_usda}
+   446→    }}
+   447→
+   448→    def Xform "Answer" {{
+   449→        string question_id = ""
+   450→        int option_index = -1
+   451→        double response_time_ms = 0.0
+   452→        string selected_label = ""
+   453→        string selected_direction = ""
+   454→        string timestamp = ""
+   455→    }}
+   456→
+   457→    def Xform "Transition" {{
+   458→        string direction = ""
+   459→        string next_scene = ""
+   460→        float progress = 0.0
+   461→        string from_question_id = ""
+   462→    }}
+   463→
+   464→    def Xform "Finale" {{
+   465→        string message = ""
+   466→        string usd_path = ""
+   467→        string checksum = ""
+   468→        int total_questions = {total}
+   469→        int questions_answered = 0
+   470→    }}
+   471→
+   472→    def Xform "Ready" {{
+   473→        int total_questions = {total}
+   474→        string first_scene = "{escape_usda_string(scene)}"
+   475→        string bridge_version = "{BRIDGE_VERSION}"
+   476→        string protocol = "USD-native"
+   477→    }}
+   478→
+   479→    def Xform "Ack" {{
+   480→        bool ready = false
+   481→        string ue_version = ""
+   482→        string project = ""
+   483→        string timestamp = ""
+   484→    }}
+   485→
+   486→    def Xform "BehavioralSignals" {{
+   487→        double last_response_time_ms = 0.0
+   488→        double average_response_time_ms = 0.0
+   489→        int hesitation_count = 0
+   490→        bool long_hesitation_detected = false
+   491→        int rapid_click_count = 0
+   492→        int skip_count = 0
+   493→        int back_navigation_count = 0
+   494→        string detected_state = "focused"
+   495→        string recommended_expert = "Direct"
+   496→        string burnout_level = "GREEN"
+   497→        string momentum_phase = "cold_start"
+   498→    }}
+   499→
+   500→    def Xform "CognitiveState" {{
+   501→        string placeholder = "Reference to cognitive_profile.usda"
+   502→    }}
+   503→}}
+   504→'''
+   505→
+   506→    _atomic_write(file_path, usda_content)
+   507→    return file_path
+   508→
+   509→
+   510→# ═══════════════════════════════════════════════════════════════════════════════
+   511→# ANSWER READING
+   512→# ═══════════════════════════════════════════════════════════════════════════════
+   513→
+   514→def read_answer_usda(bridge_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+   515→    """
+   516→    Read answer from bridge_state.usda.
+   517→
+   518→    Returns:
+   519→        Dict with answer data or None if no answer available.
+   520→        {
+   521→            "question_id": str,
+   522→            "option_index": int,
+   523→            "response_time_ms": float,
+   524→            "selected_label": str,
+   525→            "selected_direction": str,
+   526→            "timestamp": str
+   527→        }
+   528→    """
+   529→    file_path = get_bridge_file_path(bridge_path)
+   530→
+   531→    if not file_path.exists():
+   532→        return None
+   533→
+   534→    if HAS_PXR:
+   535→        return _read_answer_pxr(file_path)
+   536→    else:
+   537→        return _read_answer_text(file_path)
+   538→
+   539→
+   540→def _read_answer_pxr(file_path: Path) -> Optional[Dict[str, Any]]:
+   541→    """Read answer using pxr USD library."""
+   542→    try:
+   543→        stage = Usd.Stage.Open(str(file_path))
+   544→
+   545→        # Check if answer is pending
+   546→        root = stage.GetPrimAtPath("/BridgeState")
+   547→        vsets = root.GetVariantSets()
+   548→        if vsets.HasVariantSet("sync_status"):
+   549→            status = vsets.GetVariantSet("sync_status").GetVariantSelection()
+   550→            if status != "answer_received":
+   551→                return None
+   552→
+   553→        # Read answer data
+   554→        answer_prim = stage.GetPrimAtPath("/BridgeState/Answer")
+   555→        if not answer_prim:
+   556→            return None
+   557→
+   558→        question_id = answer_prim.GetAttribute("question_id").Get()
+   559→        option_index = answer_prim.GetAttribute("option_index").Get()
+   560→
+   561→        if option_index < 0:
+   562→            return None
+   563→
+   564→        return {
+   565→            "question_id": question_id,
+   566→            "option_index": option_index,
+   567→            "response_time_ms": answer_prim.GetAttribute("response_time_ms").Get(),
+   568→            "selected_label": answer_prim.GetAttribute("selected_label").Get(),
+   569→            "selected_direction": answer_prim.GetAttribute("selected_direction").Get(),
+   570→            "timestamp": answer_prim.GetAttribute("timestamp").Get(),
+   571→        }
+   572→
+   573→    except Exception as e:
+   574→        print(f"[USD Bridge] Error reading answer: {e}")
+   575→        return None
+   576→
+   577→
+   578→def _read_answer_text(file_path: Path) -> Optional[Dict[str, Any]]:
+   579→    """Read answer using text parsing (fallback when pxr unavailable)."""
+   580→    try:
+   581→        content = _safe_read(file_path)
+   582→        if content is None:
+   583→            return None
+   584→
+   585→        # Check sync_status variant
+   586→        sync_match = re.search(r'string sync_status = "([^"]*)"', content)
+   587→        if not sync_match or sync_match.group(1) != "answer_received":
+   588→            return None
+   589→
+   590→        # Find Answer prim section
+   591→        answer_section_match = re.search(
+   592→            r'def Xform "Answer"[^{]*\{([^}]*)\}',
+   593→            content,
+   594→            re.DOTALL
+   595→        )
+   596→        if not answer_section_match:
+   597→            return None
+   598→
+   599→        answer_section = answer_section_match.group(1)
+   600→
+   601→        # Parse attributes
+   602→        def get_attr(pattern: str, default: Any = "") -> Any:
+   603→            match = re.search(pattern, answer_section)
+   604→            return match.group(1) if match else default
+   605→
+   606→        question_id = get_attr(r'string question_id = "([^"]*)"')
+   607→        option_index = int(get_attr(r'int option_index = (-?\d+)', "-1"))
+   608→
+   609→        if option_index < 0:
+   610→            return None
+   611→
+   612→        return {
+   613→            "question_id": question_id,
+   614→            "option_index": option_index,
+   615→            "response_time_ms": float(get_attr(r'double response_time_ms = ([\d.]+)', "0.0")),
+   616→            "selected_label": get_attr(r'string selected_label = "([^"]*)"'),
+   617→            "selected_direction": get_attr(r'string selected_direction = "([^"]*)"'),
+   618→            "timestamp": get_attr(r'string timestamp = "([^"]*)"'),
+   619→        }
+   620→
+   621→    except Exception as e:
+   622→        print(f"[USD Bridge] Error reading answer (text): {e}")
+   623→        return None
+   624→
+   625→
+   626→# ═══════════════════════════════════════════════════════════════════════════════
+   627→# VARIANT SETTING (STATE MACHINE)
+   628→# ═══════════════════════════════════════════════════════════════════════════════
+   629→
+   630→def set_variant(
+   631→    variant_set: str,
+   632→    variant: str,
+   633→    bridge_path: Optional[Path] = None
+   634→) -> bool:
+   635→    """
+   636→    Set USD variant selection (state machine transition).
+   637→
+   638→    Args:
+   639→        variant_set: "sync_status" or "message_type"
+   640→        variant: Target variant value
+   641→        bridge_path: Optional custom bridge directory
+   642→
+   643→    Returns:
+   644→        True if successful, False otherwise
+   645→
+   646→    Example:
+   647→        set_variant("sync_status", "question_pending")
+   648→        set_variant("message_type", "answer")
+   649→    """
+   650→    file_path = get_bridge_file_path(bridge_path)
+   651→
+   652→    if not file_path.exists():
+   653→        return False
+   654→
+   655→    if HAS_PXR:
+   656→        return _set_variant_pxr(file_path, variant_set, variant)
+   657→    else:
+   658→        return _set_variant_text(file_path, variant_set, variant)
+   659→
+   660→
+   661→def _set_variant_pxr(file_path: Path, variant_set: str, variant: str) -> bool:
+   662→    """Set variant using pxr USD library."""
+   663→    try:
+   664→        stage = Usd.Stage.Open(str(file_path))
+   665→        root = stage.GetPrimAtPath("/BridgeState")
+   666→        vsets = root.GetVariantSets()
+   667→
+   668→        if vsets.HasVariantSet(variant_set):
+   669→            vsets.GetVariantSet(variant_set).SetVariantSelection(variant)
+   670→            stage.Save()
+   671→            return True
+   672→        return False
+   673→
+   674→    except Exception as e:
+   675→        print(f"[USD Bridge] Error setting variant: {e}")
+   676→        return False
+   677→
+   678→
+   679→def _set_variant_text(file_path: Path, variant_set: str, variant: str) -> bool:
+   680→    """Set variant using text replacement (fallback)."""
+   681→    try:
+   682→        content = _safe_read(file_path)
+   683→        if content is None:
+   684→            return False
+   685→
+   686→        # Replace variant selection in the variants = {...} block
+   687→        pattern = rf'(string {variant_set} = ")[^"]*(")'
+   688→        replacement = rf'\g<1>{variant}\g<2>'
+   689→        new_content = re.sub(pattern, replacement, content)
+   690→
+   691→        if new_content == content:
+   692→            return False
+   693→
+   694→        _atomic_write(file_path, new_content)
+   695→        return True
+   696→
+   697→    except Exception as e:
+   698→        print(f"[USD Bridge] Error setting variant (text): {e}")
+   699→        return False
+   700→
+   701→
+   702→# ═══════════════════════════════════════════════════════════════════════════════
+   703→# TRANSITION WRITING
+   704→# ═══════════════════════════════════════════════════════════════════════════════
+   705→
+   706→def write_transition_usda(
+   707→    direction: str,
+   708→    next_scene: str,
+   709→    progress: float = 0.0,
+   710→    from_question_id: str = "",
+   711→    bridge_path: Optional[Path] = None
+   712→) -> bool:
+   713→    """
+   714→    Write transition state to bridge_state.usda.
+   715→
+   716→    Args:
+   717→        direction: Transition direction (e.g., "forward", "back")
+   718→        next_scene: Target scene identifier
+   719→        progress: Progress value (0.0 - 1.0)
+   720→        from_question_id: Question we're transitioning from
+   721→        bridge_path: Optional custom bridge directory
+   722→
+   723→    Returns:
+   724→        True if successful, False otherwise
+   725→    """
+   726→    file_path = get_bridge_file_path(bridge_path)
+   727→
+   728→    if not file_path.exists():
+   729→        return False
+   730→
+   731→    if HAS_PXR:
+   732→        return _write_transition_pxr(file_path, direction, next_scene, progress, from_question_id)
+   733→    else:
+   734→        return _write_transition_text(file_path, direction, next_scene, progress, from_question_id)
+   735→
+   736→
+   737→def _write_transition_pxr(
+   738→    file_path: Path,
+   739→    direction: str,
+   740→    next_scene: str,
+   741→    progress: float,
+   742→    from_question_id: str
+   743→) -> bool:
+   744→    """Write transition using pxr USD library."""
+   745→    try:
+   746→        stage = Usd.Stage.Open(str(file_path))
+   747→        root = stage.GetPrimAtPath("/BridgeState")
+   748→
+   749→        # Set variants
+   750→        vsets = root.GetVariantSets()
+   751→        if vsets.HasVariantSet("sync_status"):
+   752→            vsets.GetVariantSet("sync_status").SetVariantSelection("transition")
+   753→        if vsets.HasVariantSet("message_type"):
+   754→            vsets.GetVariantSet("message_type").SetVariantSelection("transition")
+   755→
+   756→        # Write transition data
+   757→        trans_prim = stage.GetPrimAtPath("/BridgeState/Transition")
+   758→        if trans_prim:
+   759→            trans_prim.GetAttribute("direction").Set(direction)
+   760→            trans_prim.GetAttribute("next_scene").Set(next_scene)
+   761→            trans_prim.GetAttribute("progress").Set(progress)
+   762→            trans_prim.GetAttribute("from_question_id").Set(from_question_id)
+   763→
+   764→        stage.Save()
+   765→        return True
+   766→
+   767→    except Exception as e:
+   768→        print(f"[USD Bridge] Error writing transition: {e}")
+   769→        return False
+   770→
+   771→
+   772→def _write_transition_text(
+   773→    file_path: Path,
+   774→    direction: str,
+   775→    next_scene: str,
+   776→    progress: float,
+   777→    from_question_id: str
+   778→) -> bool:
+   779→    """Write transition using text replacement (fallback)."""
+   780→    try:
+   781→        content = _safe_read(file_path)
+   782→        if content is None:
+   783→            return False
+   784→
+   785→        # Update variants
+   786→        content = re.sub(
+   787→            r'(string sync_status = ")[^"]*(")',
+   788→            r'\g<1>transition\g<2>',
+   789→            content
+   790→        )
+   791→        content = re.sub(
+   792→            r'(string message_type = ")[^"]*(")',
+   793→            r'\g<1>transition\g<2>',
+   794→            content
+   795→        )
+   796→
+   797→        # Update transition prim
+   798→        def escape(s: str) -> str:
+   799→            return s.replace('\\', '\\\\').replace('"', '\\"')
+   800→
+   801→        trans_section = f'''def Xform "Transition" {{
+   802→        string direction = "{escape(direction)}"
+   803→        string next_scene = "{escape(next_scene)}"
+   804→        float progress = {progress}
+   805→        string from_question_id = "{escape(from_question_id)}"
+   806→    }}'''
+   807→
+   808→        content = re.sub(
+   809→            r'def Xform "Transition"[^}]*\}',
+   810→            trans_section,
+   811→            content,
+   812→            flags=re.DOTALL
+   813→        )
+   814→
+   815→        _atomic_write(file_path, content)
+   816→        return True
+   817→
+   818→    except Exception as e:
+   819→        print(f"[USD Bridge] Error writing transition (text): {e}")
+   820→        return False
+   821→
+   822→
+   823→# ═══════════════════════════════════════════════════════════════════════════════
+   824→# FINALE WRITING
+   825→# ═══════════════════════════════════════════════════════════════════════════════
+   826→
+   827→def write_finale_usda(
+   828→    usd_path: str,
+   829→    checksum: str,
+   830→    message: str = "Cognitive profile complete!",
+   831→    total_questions: int = 8,
+   832→    questions_answered: int = 8,
+   833→    bridge_path: Optional[Path] = None,
+   834→    expert: str = "Direct",
+   835→    paradigm: str = "Cortex",
+   836→    altitude: str = "Ground"
+   837→) -> bool:
+   838→    """
+   839→    Write finale state to bridge_state.usda.
+   840→
+   841→    ThinkingMachines [He2025] compliant: Includes [EXEC:...] anchor with routing params.
+   842→
+   843→    Args:
+   844→        usd_path: Path to the generated cognitive profile USD
+   845→        checksum: Profile checksum for verification
+   846→        message: Completion message
+   847→        total_questions: Total number of questions
+   848→        questions_answered: Number of questions actually answered
+   849→        bridge_path: Optional custom bridge directory
+   850→        expert: Final routed expert (for EXEC anchor)
+   851→        paradigm: Final paradigm (for EXEC anchor)
+   852→        altitude: Final altitude (for EXEC anchor)
+   853→
+   854→    Returns:
+   855→        True if successful, False otherwise
+   856→    """
+   857→    # Generate ThinkingMachines-compliant EXEC anchor
+   858→    exec_anchor = generate_exec_anchor(
+   859→        checksum=checksum,
+   860→        expert=expert,
+   861→        paradigm=paradigm,
+   862→        altitude=altitude,
+   863→        verbosity="standard",
+   864→        think_depth="standard"
+   865→    )
+   866→    # Append anchor to message for traceability
+   867→    message_with_anchor = f"{message} {exec_anchor}"
+   868→    file_path = get_bridge_file_path(bridge_path)
+   869→
+   870→    if not file_path.exists():
+   871→        return False
+   872→
+   873→    if HAS_PXR:
+   874→        return _write_finale_pxr(
+   875→            file_path, usd_path, checksum, message_with_anchor, total_questions, questions_answered
+   876→        )
+   877→    else:
+   878→        return _write_finale_text(
+   879→            file_path, usd_path, checksum, message_with_anchor, total_questions, questions_answered
+   880→        )
+   881→
+   882→
+   883→def _write_finale_pxr(
+   884→    file_path: Path,
+   885→    usd_path: str,
+   886→    checksum: str,
+   887→    message: str,
+   888→    total_questions: int,
+   889→    questions_answered: int
+   890→) -> bool:
+   891→    """Write finale using pxr USD library."""
+   892→    try:
+   893→        stage = Usd.Stage.Open(str(file_path))
+   894→        root = stage.GetPrimAtPath("/BridgeState")
+   895→
+   896→        # Set variants
+   897→        vsets = root.GetVariantSets()
+   898→        if vsets.HasVariantSet("sync_status"):
+   899→            vsets.GetVariantSet("sync_status").SetVariantSelection("complete")
+   900→        if vsets.HasVariantSet("message_type"):
+   901→            vsets.GetVariantSet("message_type").SetVariantSelection("finale")
+   902→
+   903→        # Write finale data
+   904→        finale_prim = stage.GetPrimAtPath("/BridgeState/Finale")
+   905→        if finale_prim:
+   906→            finale_prim.GetAttribute("message").Set(message)
+   907→            finale_prim.GetAttribute("usd_path").Set(usd_path)
+   908→            finale_prim.GetAttribute("checksum").Set(checksum)
+   909→            finale_prim.GetAttribute("total_questions").Set(total_questions)
+   910→            finale_prim.GetAttribute("questions_answered").Set(questions_answered)
+   911→
+   912→        stage.Save()
+   913→        return True
+   914→
+   915→    except Exception as e:
+   916→        print(f"[USD Bridge] Error writing finale: {e}")
+   917→        return False
+   918→
+   919→
+   920→def _write_finale_text(
+   921→    file_path: Path,
+   922→    usd_path: str,
+   923→    checksum: str,
+   924→    message: str,
+   925→    total_questions: int,
+   926→    questions_answered: int
+   927→) -> bool:
+   928→    """Write finale using text replacement (fallback)."""
+   929→    try:
+   930→        content = _safe_read(file_path)
+   931→        if content is None:
+   932→            return False
+   933→
+   934→        # Update variants
+   935→        content = re.sub(
+   936→            r'(string sync_status = ")[^"]*(")',
+   937→            r'\g<1>complete\g<2>',
+   938→            content
+   939→        )
+   940→        content = re.sub(
+   941→            r'(string message_type = ")[^"]*(")',
+   942→            r'\g<1>finale\g<2>',
+   943→            content
+   944→        )
+   945→
+   946→        # Update finale prim
+   947→        def escape(s: str) -> str:
+   948→            return s.replace('\\', '\\\\').replace('"', '\\"')
+   949→
+   950→        finale_section = f'''def Xform "Finale" {{
+   951→        string message = "{escape(message)}"
+   952→        string usd_path = "{escape(usd_path)}"
+   953→        string checksum = "{escape(checksum)}"
+   954→        int total_questions = {total_questions}
+   955→        int questions_answered = {questions_answered}
+   956→    }}'''
+   957→
+   958→        content = re.sub(
+   959→            r'def Xform "Finale"[^}]*\}',
+   960→            finale_section,
+   961→            content,
+   962→            flags=re.DOTALL
+   963→        )
+   964→
+   965→        _atomic_write(file_path, content)
+   966→        return True
+   967→
+   968→    except Exception as e:
+   969→        print(f"[USD Bridge] Error writing finale (text): {e}")
+   970→        return False
+   971→
+   972→
+   973→# ═══════════════════════════════════════════════════════════════════════════════
+   974→# READY/ACK HANDLING
+   975→# ═══════════════════════════════════════════════════════════════════════════════
+   976→
+   977→def write_ready_usda(
+   978→    total_questions: int = 8,
+   979→    first_scene: str = "",
+   980→    bridge_path: Optional[Path] = None
+   981→) -> Path:
+   982→    """
+   983→    Write ready state to initialize bridge communication.
+   984→
+   985→    Args:
+   986→        total_questions: Number of questions in questionnaire
+   987→        first_scene: First scene identifier
+   988→        bridge_path: Optional custom bridge directory
+   989→
+   990→    Returns:
+   991→        Path to the written USDA file
+   992→    """
+   993→    ensure_bridge_directory(bridge_path)
+   994→    file_path = get_bridge_file_path(bridge_path)
+   995→    timestamp = get_timestamp()
+   996→
+   997→    # Write minimal ready state
+   998→    usda_content = f'''#usda 1.0
+   999→(
+  1000→    defaultPrim = "BridgeState"
+  1001→    doc = "CC↔UE5 Bridge Communication - Ready State"
+  1002→)
+  1003→
+  1004→def Xform "BridgeState" (
+  1005→    kind = "assembly"
+  1006→    variants = {{
+  1007→        string sync_status = "idle"
+  1008→        string message_type = "ready"
+  1009→    }}
+  1010→    prepend variantSets = ["sync_status", "message_type"]
+  1011→    customData = {{
+  1012→        string bridge_version = "{BRIDGE_VERSION}"
+  1013→        string protocol = "USD-native"
+  1014→        string generator = "UEBridge"
+  1015→    }}
+  1016→)
+  1017→{{
+  1018→    variantSet "sync_status" = {{
+  1019→        "idle" {{ }}
+  1020→        "question_pending" {{ double timeout_seconds = 300.0; string pending_since = "" }}
+  1021→        "answer_received" {{ string received_at = "" }}
+  1022→        "transition" {{ string transition_direction = "" }}
+  1023→        "complete" {{ string completion_time = "" }}
+  1024→        "error" {{ string error_message = ""; string error_code = "" }}
+  1025→    }}
+  1026→
+  1027→    variantSet "message_type" = {{
+  1028→        "none" {{ }}
+  1029→        "question" {{ }}
+  1030→        "answer" {{ }}
+  1031→        "transition" {{ }}
+  1032→        "finale" {{ }}
+  1033→        "ack" {{ }}
+  1034→        "ready" {{ }}
+  1035→    }}
+  1036→
+  1037→    def Xform "Message" {{
+  1038→        string type = ""
+  1039→        int index = 0
+  1040→        int total = {total_questions}
+  1041→        string timestamp = ""
+  1042→        string question_id = ""
+  1043→        string text = ""
+  1044→        string scene = ""
+  1045→        string progress_display = "0/{total_questions}"
+  1046→    }}
+  1047→
+  1048→    def Xform "Options" {{
+  1049→        def Xform "Option_0" {{ int index = 0; string label = ""; string direction = ""; string semantic_tag = "" }}
+  1050→        def Xform "Option_1" {{ int index = 1; string label = ""; string direction = ""; string semantic_tag = "" }}
+  1051→        def Xform "Option_2" {{ int index = 2; string label = ""; string direction = ""; string semantic_tag = "" }}
+  1052→    }}
+  1053→
+  1054→    def Xform "Answer" {{
+  1055→        string question_id = ""
+  1056→        int option_index = -1
+  1057→        double response_time_ms = 0.0
+  1058→        string selected_label = ""
+  1059→        string selected_direction = ""
+  1060→        string timestamp = ""
+  1061→    }}
+  1062→
+  1063→    def Xform "Transition" {{ string direction = ""; string next_scene = ""; float progress = 0.0; string from_question_id = "" }}
+  1064→    def Xform "Finale" {{ string message = ""; string usd_path = ""; string checksum = ""; int total_questions = {total_questions}; int questions_answered = 0 }}
+  1065→
+  1066→    def Xform "Ready" {{
+  1067→        int total_questions = {total_questions}
+  1068→        string first_scene = "{first_scene}"
+  1069→        string bridge_version = "{BRIDGE_VERSION}"
+  1070→        string protocol = "USD-native"
+  1071→        string timestamp = "{timestamp}"
+  1072→    }}
+  1073→
+  1074→    def Xform "Ack" {{ bool ready = false; string ue_version = ""; string project = ""; string timestamp = "" }}
+  1075→    def Xform "BehavioralSignals" {{
+  1076→        double last_response_time_ms = 0.0
+  1077→        double average_response_time_ms = 0.0
+  1078→        int hesitation_count = 0
+  1079→        bool long_hesitation_detected = false
+  1080→        int rapid_click_count = 0
+  1081→        int skip_count = 0
+  1082→        int back_navigation_count = 0
+  1083→        string detected_state = "focused"
+  1084→        string recommended_expert = "Direct"
+  1085→        string burnout_level = "GREEN"
+  1086→        string momentum_phase = "cold_start"
+  1087→    }}
+  1088→    def Xform "CognitiveState" {{ string placeholder = "Reference to cognitive_profile.usda" }}
+  1089→}}
+  1090→'''
+  1091→
+  1092→    _atomic_write(file_path, usda_content)
+  1093→    return file_path
+  1094→
+  1095→
+  1096→def read_ack_usda(bridge_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+  1097→    """
+  1098→    Read acknowledgment from bridge_state.usda.
+  1099→
+  1100→    Returns:
+  1101→        Dict with ack data or None if no ack available.
+  1102→    """
+  1103→    file_path = get_bridge_file_path(bridge_path)
+  1104→
+  1105→    if not file_path.exists():
+  1106→        return None
+  1107→
+  1108→    try:
+  1109→        content = _safe_read(file_path)
+  1110→        if content is None:
+  1111→            return None
+  1112→
+  1113→        # Check message_type variant
+  1114→        type_match = re.search(r'string message_type = "([^"]*)"', content)
+  1115→        if not type_match or type_match.group(1) != "ack":
+  1116→            return None
+  1117→
+  1118→        # Find Ack prim section
+  1119→        ack_section_match = re.search(
+  1120→            r'def Xform "Ack"[^{]*\{([^}]*)\}',
+  1121→            content,
+  1122→            re.DOTALL
+  1123→        )
+  1124→        if not ack_section_match:
+  1125→            return None
+  1126→
+  1127→        ack_section = ack_section_match.group(1)
+  1128→
+  1129→        # Parse attributes
+  1130→        ready_match = re.search(r'bool ready = (true|false)', ack_section)
+  1131→        ue_version_match = re.search(r'string ue_version = "([^"]*)"', ack_section)
+  1132→        project_match = re.search(r'string project = "([^"]*)"', ack_section)
+  1133→
+  1134→        ready = ready_match.group(1) == "true" if ready_match else False
+  1135→
+  1136→        if not ready:
+  1137→            return None
+  1138→
+  1139→        return {
+  1140→            "ready": ready,
+  1141→            "ue_version": ue_version_match.group(1) if ue_version_match else "",
+  1142→            "project": project_match.group(1) if project_match else "",
+  1143→        }
+  1144→
+  1145→    except Exception as e:
+  1146→        print(f"[USD Bridge] Error reading ack: {e}")
+  1147→        return None
+  1148→
+  1149→
+  1150→# ═══════════════════════════════════════════════════════════════════════════════
+  1151→# BEHAVIORAL SIGNALS
+  1152→# ═══════════════════════════════════════════════════════════════════════════════
+  1153→
+  1154→def read_behavioral_signals(bridge_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+  1155→    """
+  1156→    Read behavioral signals from bridge_state.usda.
+  1157→
+  1158→    Used for ADHD_MoE expert routing based on detected user behavior.
+  1159→
+  1160→    Returns:
+  1161→        Dict with behavioral signal data.
+  1162→    """
+  1163→    file_path = get_bridge_file_path(bridge_path)
+  1164→
+  1165→    if not file_path.exists():
+  1166→        return None
+  1167→
+  1168→    try:
+  1169→        content = _safe_read(file_path)
+  1170→        if content is None:
+  1171→            return None
+  1172→
+  1173→        # Find BehavioralSignals prim section
+  1174→        signals_match = re.search(
+  1175→            r'def Xform "BehavioralSignals"[^{]*\{([^}]*)\}',
+  1176→            content,
+  1177→            re.DOTALL
+  1178→        )
+  1179→        if not signals_match:
+  1180→            return None
+  1181→
+  1182→        signals_section = signals_match.group(1)
+  1183→
+  1184→        # Parse attributes
+  1185→        def get_attr(pattern: str, default: Any = "") -> Any:
+  1186→            match = re.search(pattern, signals_section)
+  1187→            return match.group(1) if match else default
+  1188→
+  1189→        return {
+  1190→            "last_response_time_ms": float(get_attr(r'double last_response_time_ms = ([\d.]+)', "0.0")),
+  1191→            "average_response_time_ms": float(get_attr(r'double average_response_time_ms = ([\d.]+)', "0.0")),
+  1192→            "hesitation_count": int(get_attr(r'int hesitation_count = (\d+)', "0")),
+  1193→            "long_hesitation_detected": get_attr(r'bool long_hesitation_detected = (true|false)', "false") == "true",
+  1194→            "rapid_click_count": int(get_attr(r'int rapid_click_count = (\d+)', "0")),
+  1195→            "skip_count": int(get_attr(r'int skip_count = (\d+)', "0")),
+  1196→            "back_navigation_count": int(get_attr(r'int back_navigation_count = (\d+)', "0")),
+  1197→            "detected_state": get_attr(r'string detected_state = "([^"]*)"', "focused"),
+  1198→            "recommended_expert": get_attr(r'string recommended_expert = "([^"]*)"', "Direct"),
+  1199→            "burnout_level": get_attr(r'string burnout_level = "([^"]*)"', "GREEN"),
+  1200→            "momentum_phase": get_attr(r'string momentum_phase = "([^"]*)"', "cold_start"),
+  1201→        }
+  1202→
+  1203→    except Exception as e:
+  1204→        print(f"[USD Bridge] Error reading behavioral signals: {e}")
+  1205→        return None
+  1206→
+  1207→
+  1208→# ═══════════════════════════════════════════════════════════════════════════════
+  1209→# THINKINGMACHINES [He2025] BATCH-INVARIANCE COMPLIANT ANCHORS
+  1210→# Same signals → Same routing → Same behavior
+  1211→# ═══════════════════════════════════════════════════════════════════════════════
+  1212→
+  1213→def compute_checksum(dimensions: Dict[str, Any]) -> str:
+  1214→    """
+  1215→    Compute deterministic checksum for profile (ThinkingMachines [He2025] compliant).
+  1216→
+  1217→    FIXED algorithm: Sort alphabetically, serialize, DJB2 hash to 8-char hex.
+  1218→    Same inputs ALWAYS produce same output regardless of call order or batch size.
+  1219→
+  1220→    Args:
+  1221→        dimensions: Dict of profile dimensions
+  1222→
+  1223→    Returns:
+  1224→        8-character hex checksum
+  1225→    """
+  1226→    # FIXED: Sort alphabetically for determinism
+  1227→    sorted_dims = sorted(dimensions.items())
+  1228→
+  1229→    # FIXED: Serialize format TRL_v1|key:value|key:value|...
+  1230→    serialized = "TRL_v1|" + "|".join(f"{k}:{v}" for k, v in sorted_dims)
+  1231→
+  1232→    # FIXED: DJB2 hash algorithm (batch-invariant)
+  1233→    hash_val = 5381
+  1234→    for char in serialized:
+  1235→        hash_val = ((hash_val << 5) + hash_val) + ord(char)
+  1236→        hash_val &= 0xFFFFFFFF  # Keep 32-bit
+  1237→
+  1238→    return format(hash_val, '08x')
+  1239→
+  1240→
+  1241→def generate_exec_anchor(
+  1242→    checksum: str,
+  1243→    expert: str = "Direct",
+  1244→    paradigm: str = "Cortex",
+  1245→    altitude: str = "Ground",
+  1246→    verbosity: str = "standard",
+  1247→    think_depth: str = "standard"
+  1248→) -> str:
+  1249→    """
+  1250→    Generate ThinkingMachines-compliant [EXEC:...] anchor.
+  1251→
+  1252→    Format: [EXEC:{checksum}|{expert}|{paradigm}|{altitude}|{verbosity}|{think_depth}]
+  1253→
+  1254→    This anchor encodes the routing parameters used for this response,
+  1255→    enabling reproducibility verification per ThinkingMachines [He2025].
+  1256→
+  1257→    Args:
+  1258→        checksum: Profile checksum (8 hex chars)
+  1259→        expert: ADHD_MoE expert (Validator|Scaffolder|Restorer|Refocuser|Celebrator|Socratic|Direct)
+  1260→        paradigm: Cortex (hierarchical) or Mycelium (emergent)
+  1261→        altitude: 30000ft|15000ft|5000ft|Ground
+  1262→        verbosity: minimal|standard|detailed
+  1263→        think_depth: minimal|standard|deep|ultradeep
+  1264→
+  1265→    Returns:
+  1266→        Formatted [EXEC:...] anchor string
+  1267→    """
+  1268→    return f"[EXEC:{checksum}|{expert}|{paradigm}|{altitude}|{verbosity}|{think_depth}]"
+  1269→
+  1270→
+  1271→def parse_exec_anchor(anchor: str) -> Optional[Dict[str, str]]:
+  1272→    """
+  1273→    Parse [EXEC:...] anchor to extract routing parameters.
+  1274→
+  1275→    Args:
+  1276→        anchor: The [EXEC:...] anchor string
+  1277→
+  1278→    Returns:
+  1279→        Dict with checksum, expert, paradigm, altitude, verbosity, think_depth
+  1280→        or None if parsing fails
+  1281→    """
+  1282→    match = re.match(r'\[EXEC:([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^\]]+)\]', anchor)
+  1283→    if not match:
+  1284→        return None
+  1285→
+  1286→    return {
+  1287→        "checksum": match.group(1),
+  1288→        "expert": match.group(2),
+  1289→        "paradigm": match.group(3),
+  1290→        "altitude": match.group(4),
+  1291→        "verbosity": match.group(5),
+  1292→        "think_depth": match.group(6)
+  1293→    }
+  1294→
+  1295→
+  1296→def get_expert_from_signals(signals: Dict[str, Any]) -> str:
+  1297→    """
+  1298→    Route to ADHD_MoE expert based on behavioral signals.
+  1299→
+  1300→    FIXED PRIORITY (first match wins - ThinkingMachines compliant):
+  1301→    1. Validator  - frustrated, RED, caps, negative
+  1302→    2. Scaffolder - overwhelmed, stuck, too_many
+  1303→    3. Restorer   - depleted, ORANGE, post-crash
+  1304→    4. Refocuser  - distracted, tangent_over
+  1305→    5. Celebrator - task_complete, milestone
+  1306→    6. Socratic   - exploring, high_energy, what if
+  1307→    7. Direct     - focused, hyperfocused, flow (DEFAULT)
+  1308→
+  1309→    Args:
+  1310→        signals: Behavioral signals dict
+  1311→
+  1312→    Returns:
+  1313→        Expert name string
+  1314→    """
+  1315→    detected_state = signals.get("detected_state", "focused")
+  1316→    burnout_level = signals.get("burnout_level", "GREEN")
+  1317→    rapid_clicks = signals.get("rapid_click_count", 0)
+  1318→    hesitations = signals.get("hesitation_count", 0)
+  1319→
+  1320→    # FIXED priority order - NEVER reorder or skip
+  1321→
+  1322→    # Priority 1: Validator
+  1323→    if detected_state == "frustrated" or burnout_level == "RED" or rapid_clicks > 3:
+  1324→        return "Validator"
+  1325→
+  1326→    # Priority 2: Scaffolder
+  1327→    if detected_state in ("stuck", "overwhelmed") or hesitations > 2:
+  1328→        return "Scaffolder"
+  1329→
+  1330→    # Priority 3: Restorer
+  1331→    if detected_state == "depleted" or burnout_level == "ORANGE":
+  1332→        return "Restorer"
+  1333→
+  1334→    # Priority 4: Refocuser
+  1335→    if detected_state == "distracted":
+  1336→        return "Refocuser"
+  1337→
+  1338→    # Priority 5: Celebrator
+  1339→    if detected_state == "completing":
+  1340→        return "Celebrator"
+  1341→
+  1342→    # Priority 6: Socratic
+  1343→    if detected_state == "exploring":
+  1344→        return "Socratic"
+  1345→
+  1346→    # Priority 7: Direct (DEFAULT)
+  1347→    return "Direct"
+  1348→
+  1349→
+  1350→# ═══════════════════════════════════════════════════════════════════════════════
+  1351→# UTILITY / TESTING
+  1352→# ═══════════════════════════════════════════════════════════════════════════════
+  1353→
+  1354→def validate_bridge_state(bridge_path: Optional[Path] = None) -> Dict[str, Any]:
+  1355→    """
+  1356→    Validate bridge_state.usda for correctness.
+  1357→
+  1358→    Returns:
+  1359→        Dict with validation results.
+  1360→    """
+  1361→    file_path = get_bridge_file_path(bridge_path)
+  1362→    result = {
+  1363→        "valid": False,
+  1364→        "file_exists": file_path.exists(),
+  1365→        "errors": [],
+  1366→        "warnings": [],
+  1367→        "sync_status": None,
+  1368→        "message_type": None,
+  1369→    }
+  1370→
+  1371→    if not file_path.exists():
+  1372→        result["errors"].append(f"File not found: {file_path}")
+  1373→        return result
+  1374→
+  1375→    try:
+  1376→        content = _safe_read(file_path)
+  1377→        if content is None:
+  1378→            result["errors"].append("Could not read file (locked or permission denied)")
+  1379→            return result
+  1380→
+  1381→        # Check USDA header
+  1382→        if not content.startswith("#usda 1.0"):
+  1383→            result["errors"].append("Missing or invalid USDA header")
+  1384→
+  1385→        # Check default prim
+  1386→        if 'defaultPrim = "BridgeState"' not in content:
+  1387→            result["errors"].append("Missing defaultPrim = 'BridgeState'")
+  1388→
+  1389→        # Check required prims
+  1390→        required_prims = ["Message", "Options", "Answer", "Transition", "Finale", "Ready", "Ack"]
+  1391→        for prim in required_prims:
+  1392→            if f'def Xform "{prim}"' not in content:
+  1393→                result["errors"].append(f"Missing required prim: {prim}")
+  1394→
+  1395→        # Parse variant selections
+  1396→        sync_match = re.search(r'string sync_status = "([^"]*)"', content)
+  1397→        type_match = re.search(r'string message_type = "([^"]*)"', content)
+  1398→
+  1399→        result["sync_status"] = sync_match.group(1) if sync_match else None
+  1400→        result["message_type"] = type_match.group(1) if type_match else None
+  1401→
+  1402→        if not result["sync_status"]:
+  1403→            result["errors"].append("Could not parse sync_status variant")
+  1404→        if not result["message_type"]:
+  1405→            result["errors"].append("Could not parse message_type variant")
+  1406→
+  1407→        # Validation result
+  1408→        result["valid"] = len(result["errors"]) == 0
+  1409→
+  1410→        if HAS_PXR:
+  1411→            # Additional validation with pxr
+  1412→            try:
+  1413→                stage = Usd.Stage.Open(str(file_path))
+  1414→                root = stage.GetPrimAtPath("/BridgeState")
+  1415→                if not root:
+  1416→                    result["errors"].append("Could not open /BridgeState prim with pxr")
+  1417→                    result["valid"] = False
+  1418→            except Exception as e:
+  1419→                result["warnings"].append(f"pxr validation warning: {e}")
+  1420→
+  1421→    except Exception as e:
+  1422→        result["errors"].append(f"Error reading file: {e}")
+  1423→
+  1424→    return result
+  1425→
+  1426→
+  1427→if __name__ == "__main__":
+  1428→    # Test the bridge module
+  1429→    print("USD Bridge Module Test")
+  1430→    print("=" * 50)
+  1431→    print(f"pxr available: {HAS_PXR}")
+  1432→    print(f"Bridge path: {DEFAULT_BRIDGE_PATH}")
+  1433→    print(f"Bridge file: {get_bridge_file_path()}")
+  1434→    print()
+  1435→
+  1436→    # Write a test question
+  1437→    print("Writing test question...")
+  1438→    write_question_usda(
+  1439→        question_id="test_q1",
+  1440→        text="When working on a complex problem, do you prefer to...",
+  1441→        options=[
+  1442→            {"label": "Break it into small pieces", "direction": "low"},
+  1443→            {"label": "See the full picture first", "direction": "high"},
+  1444→            {"label": "Jump between both", "direction": "mid"}
+  1445→        ],
+  1446→        index=0,
+  1447→        total=8,
+  1448→        scene="test_scene"
+  1449→    )
+  1450→
+  1451→    # Validate
+  1452→    print("\nValidating bridge state...")
+  1453→    validation = validate_bridge_state()
+  1454→    print(f"Valid: {validation['valid']}")
+  1455→    print(f"Sync status: {validation['sync_status']}")
+  1456→    print(f"Message type: {validation['message_type']}")
+  1457→    if validation["errors"]:
+  1458→        print(f"Errors: {validation['errors']}")
+  1459→    if validation["warnings"]:
+  1460→        print(f"Warnings: {validation['warnings']}")
+  1461→
+  1462→    print("\nDone!")
+  1463→

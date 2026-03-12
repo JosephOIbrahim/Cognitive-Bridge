@@ -1,0 +1,1365 @@
+     1→"""
+     2→Synapse Command Handlers
+     3→
+     4→Registry-based command handler system for the Synapse WebSocket server.
+     5→Routes incoming commands to appropriate handler functions.
+     6→"""
+     7→
+     8→import math
+     9→import os
+    10→import time
+    11→from concurrent.futures import ThreadPoolExecutor
+    12→from typing import Dict, Any, Callable, Optional
+    13→
+    14→try:
+    15→    import hou
+    16→    HOU_AVAILABLE = True
+    17→except ImportError:
+    18→    HOU_AVAILABLE = False
+    19→
+    20→from ..core.protocol import (
+    21→    COMMAND_ALIASES,
+    22→    CommandType,
+    23→    SynapseCommand,
+    24→    SynapseResponse,
+    25→    PROTOCOL_VERSION,
+    26→    normalize_command_type,
+    27→)
+    28→from ..core.aliases import resolve_param, resolve_param_with_default, USD_PARM_ALIASES
+    29→from ..core.audit import audit_log, AuditLevel, AuditCategory
+    30→from ..core.errors import (
+    31→    SynapseUserError,
+    32→    SynapseServiceError,
+    33→    NodeNotFoundError,
+    34→    ParameterError,
+    35→    HoudiniUnavailableError,
+    36→)
+    37→from .handlers_node import NodeHandlerMixin
+    38→from .handlers_usd import UsdHandlerMixin
+    39→from .handlers_render import RenderHandlerMixin
+    40→from .handlers_tops import TopsHandlerMixin
+    41→from .handlers_material import MaterialHandlerMixin
+    42→from .handlers_memory import MemoryHandlerMixin
+    43→from .handlers_hda import HdaHandlerMixin
+    44→from .handlers_cops import CopsHandlerMixin
+    45→
+    46→
+    47→
+    48→# ---------------------------------------------------------------------------
+    49→# Coaching-tone message helpers
+    50→# ---------------------------------------------------------------------------
+    51→
+    52→from .handler_helpers import _suggest_parms, _HOUDINI_UNAVAILABLE  # noqa: F401
+    53→# Reuse 2 threads for fire-and-forget memory logging (avoids Thread() per command)
+    54→_log_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="synapse-log")
+    55→
+    56→# Idempotent guard functions — injected into execute_python namespace
+    57→try:
+    58→    from .guards import GUARD_FUNCTIONS as _GUARD_FUNCTIONS
+    59→except ImportError:
+    60→    _GUARD_FUNCTIONS = {}  # Graceful fallback if guards not available
+    61→
+    62→# Coding-bug errors that trigger auto-rollback in execute_python.
+    63→# These indicate the script itself is broken — partial mutations are unwanted.
+    64→# Operational errors (RuntimeError, hou.OperationFailed, IOError, etc.) do NOT
+    65→# trigger rollback because earlier mutations (node creation, wiring) may be valid.
+    66→_ROLLBACK_ERRORS = (NameError, SyntaxError, TypeError, AttributeError, IndexError,
+    67→                    KeyError, ValueError, UnboundLocalError)
+    68→
+    69→# Map command types to audit categories for structured logging
+    70→_CMD_CATEGORY: Dict[str, AuditCategory] = {
+    71→    "create_node": AuditCategory.PIPELINE,
+    72→    "delete_node": AuditCategory.PIPELINE,
+    73→    "connect_nodes": AuditCategory.PIPELINE,
+    74→    "set_parm": AuditCategory.PIPELINE,
+    75→    "set_keyframe": AuditCategory.PIPELINE,
+    76→    "execute_python": AuditCategory.PIPELINE,
+    77→    "execute_vex": AuditCategory.PIPELINE,
+    78→    "render": AuditCategory.RENDER,
+    79→    "render_settings": AuditCategory.RENDER,
+    80→    "wedge": AuditCategory.RENDER,
+    81→    "capture_viewport": AuditCategory.RENDER,
+    82→    "configure_render_passes": AuditCategory.RENDER,
+    83→    "validate_frame": AuditCategory.RENDER,
+    84→    "create_usd_prim": AuditCategory.PIPELINE,
+    85→    "modify_usd_prim": AuditCategory.PIPELINE,
+    86→    "set_usd_attribute": AuditCategory.PIPELINE,
+    87→    "reference_usd": AuditCategory.PIPELINE,
+    88→    "query_prims": AuditCategory.PIPELINE,
+    89→    "manage_variant_set": AuditCategory.PIPELINE,
+    90→    "manage_collection": AuditCategory.PIPELINE,
+    91→    "configure_light_linking": AuditCategory.PIPELINE,
+    92→    "solaris_validate_ordering": AuditCategory.PIPELINE,
+    93→    "create_material": AuditCategory.MATERIAL,
+    94→    "create_textured_material": AuditCategory.MATERIAL,
+    95→    "assign_material": AuditCategory.MATERIAL,
+    96→    "add_memory": AuditCategory.ENGRAM,
+    97→    "decide": AuditCategory.ENGRAM,
+    98→    "batch_commands": AuditCategory.SYNAPSE,
+    99→    # TOPS / PDG
+   100→    "tops_get_work_items": AuditCategory.PIPELINE,
+   101→    "tops_get_dependency_graph": AuditCategory.PIPELINE,
+   102→    "tops_get_cook_stats": AuditCategory.PIPELINE,
+   103→    "tops_cook_node": AuditCategory.PIPELINE,
+   104→    "tops_generate_items": AuditCategory.PIPELINE,
+   105→    "tops_configure_scheduler": AuditCategory.PIPELINE,
+   106→    "tops_cancel_cook": AuditCategory.PIPELINE,
+   107→    "tops_pause_cook": AuditCategory.PIPELINE,
+   108→    "tops_resume_cook": AuditCategory.PIPELINE,
+   109→    "tops_dirty_node": AuditCategory.PIPELINE,
+   110→    "tops_setup_wedge": AuditCategory.PIPELINE,
+   111→    "tops_batch_cook": AuditCategory.PIPELINE,
+   112→    "tops_query_items": AuditCategory.PIPELINE,
+   113→    "tops_cook_and_validate": AuditCategory.PIPELINE,
+   114→    "tops_diagnose": AuditCategory.PIPELINE,
+   115→    "tops_pipeline_status": AuditCategory.PIPELINE,
+   116→    "tops_multi_shot": AuditCategory.PIPELINE,
+   117→    # Autonomous render
+   118→    "autonomous_render": AuditCategory.RENDER,
+   119→    # Safe / progressive render
+   120→    "safe_render": AuditCategory.RENDER,
+   121→    "render_progressively": AuditCategory.RENDER,
+   122→    # Chat routing
+   123→    "route_chat": AuditCategory.SYNAPSE,
+   124→    # Undo / Redo
+   125→    "undo": AuditCategory.PIPELINE,
+   126→    "redo": AuditCategory.PIPELINE,
+   127→    # HDA operations
+   128→    "hda_create": AuditCategory.PIPELINE,
+   129→    "hda_promote_parm": AuditCategory.PIPELINE,
+   130→    "hda_set_help": AuditCategory.PIPELINE,
+   131→    "hda_package": AuditCategory.PIPELINE,
+   132→    "hda_list": AuditCategory.PIPELINE,
+   133→    # Copernicus (COPs) — Foundation
+   134→    "cops_create_network": AuditCategory.PIPELINE,
+   135→    "cops_create_node": AuditCategory.PIPELINE,
+   136→    "cops_connect": AuditCategory.PIPELINE,
+   137→    "cops_set_opencl": AuditCategory.PIPELINE,
+   138→    # cops_read_layer_info is read-only, no category needed
+   139→    # Copernicus (COPs) — Pipeline
+   140→    "cops_to_materialx": AuditCategory.PIPELINE,
+   141→    "cops_composite_aovs": AuditCategory.RENDER,
+   142→    "cops_analyze_render": AuditCategory.RENDER,
+   143→    "cops_slap_comp": AuditCategory.PIPELINE,
+   144→    # Copernicus (COPs) — Procedural
+   145→    "cops_create_solver": AuditCategory.PIPELINE,
+   146→    "cops_procedural_texture": AuditCategory.PIPELINE,
+   147→    "cops_growth_propagation": AuditCategory.PIPELINE,
+   148→    "cops_reaction_diffusion": AuditCategory.PIPELINE,
+   149→    "cops_pixel_sort": AuditCategory.PIPELINE,
+   150→    "cops_stylize": AuditCategory.PIPELINE,
+   151→    # Copernicus (COPs) — Advanced
+   152→    "cops_wetmap": AuditCategory.PIPELINE,
+   153→    "cops_bake_textures": AuditCategory.PIPELINE,
+   154→    "cops_stamp_scatter": AuditCategory.PIPELINE,
+   155→    "cops_batch_cook": AuditCategory.PIPELINE,
+   156→}
+   157→
+   158→# Commands that don't modify state — skip memory logging for these
+   159→_READ_ONLY_COMMANDS = frozenset({
+   160→    "ping", "get_health", "get_help", "heartbeat",
+   161→    "get_parm", "get_scene_info", "get_selection",
+   162→    "get_stage_info", "get_usd_attribute",
+   163→    "context", "search", "recall",
+   164→    "capture_viewport",
+   165→    "knowledge_lookup",
+   166→    "inspect_selection", "inspect_scene", "inspect_node",
+   167→    "network_explain",
+   168→    "read_material",
+   169→    "validate_frame",
+   170→    "solaris_validate_ordering",
+   171→    "get_metrics", "router_stats", "list_recipes", "get_live_metrics",
+   172→    "tops_get_work_items", "tops_get_dependency_graph", "tops_get_cook_stats",
+   173→    "tops_query_items",
+   174→    "tops_diagnose", "tops_pipeline_status",
+   175→    "route_chat",
+   176→    "cops_read_layer_info",
+   177→    "cops_analyze_render",
+   178→    "cops_temporal_analysis",
+   179→})
+   180→
+   181→
+   182→# =============================================================================
+   183→# COMMAND HANDLER REGISTRY
+   184→# =============================================================================
+   185→
+   186→class CommandHandlerRegistry:
+   187→    """
+   188→    Registry for command handlers.
+   189→
+   190→    Allows registering handler functions for specific command types.
+   191→    Supports both built-in and custom handlers.
+   192→    """
+   193→
+   194→    def __init__(self):
+   195→        self._handlers: Dict[str, Callable] = {}
+   196→
+   197→    def register(self, command_type: str, handler: Callable):
+   198→        """Register a handler for a command type."""
+   199→        self._handlers[command_type] = handler
+   200→
+   201→    def get(self, command_type: str) -> Optional[Callable]:
+   202→        """Get handler for a command type (expects pre-normalized type)."""
+   203→        return self._handlers.get(command_type)
+   204→
+   205→    def has(self, command_type: str) -> bool:
+   206→        """Check if a handler exists for a command type."""
+   207→        return self.get(command_type) is not None
+   208→
+   209→    @property
+   210→    def registered_types(self):
+   211→        """Get list of registered command types."""
+   212→        return list(self._handlers.keys())
+   213→
+   214→# =============================================================================
+   215→# SYNAPSE HANDLER
+   216→# =============================================================================
+   217→
+   218→class SynapseHandler(NodeHandlerMixin, UsdHandlerMixin, RenderHandlerMixin, TopsHandlerMixin, MaterialHandlerMixin, MemoryHandlerMixin, HdaHandlerMixin, CopsHandlerMixin):
+   219→    """
+   220→    Main command handler for the Synapse server.
+   221→
+   222→    Routes commands to appropriate handler functions and manages
+   223→    integration with the session tracker / memory bridge.
+   224→    """
+   225→
+   226→    def __init__(self):
+   227→        self._registry = CommandHandlerRegistry()
+   228→        self._session_id: Optional[str] = None
+   229→        self._user_id: str = ""
+   230→        self._bridge = None
+   231→        self._register_handlers()
+   232→
+   233→    def set_session_id(self, session_id: str):
+   234→        """Set the current session ID for action logging."""
+   235→        self._session_id = session_id
+   236→
+   237→    def set_user_id(self, user_id: str):
+   238→        """Set the current user ID for per-user audit trails."""
+   239→        self._user_id = user_id
+   240→
+   241→    def _get_bridge(self):
+   242→        """Lazy-load the bridge to avoid circular imports."""
+   243→        if self._bridge is None:
+   244→            from ..session.tracker import get_bridge
+   245→            self._bridge = get_bridge()
+   246→        return self._bridge
+   247→
+   248→    def handle(self, command: SynapseCommand) -> SynapseResponse:
+   249→        """
+   250→        Handle an incoming command.
+   251→
+   252→        Args:
+   253→            command: The command to handle
+   254→
+   255→        Returns:
+   256→            SynapseResponse with the result
+   257→        """
+   258→        try:
+   259→            # Fast path: try raw type first (aliases are pre-populated in registry)
+   260→            cmd_type = command.type
+   261→            handler = self._registry.get(cmd_type)
+   262→            if handler is None:
+   263→                # Fallback: normalize for any aliases not in registry
+   264→                cmd_type = normalize_command_type(command.type)
+   265→                handler = self._registry.get(cmd_type)
+   266→
+   267→            if handler is None:
+   268→                return SynapseResponse(
+   269→                    id=command.id,
+   270→                    success=False,
+   271→                    error=f"I don't recognize the command '{command.type}' \u2014 try get_help to see what's available",
+   272→                    sequence=command.sequence,
+   273→                )
+   274→
+   275→            result = handler(command.payload)
+   276→
+   277→            # Log action asynchronously — don't block the response path
+   278→            if cmd_type not in _READ_ONLY_COMMANDS:
+   279→                self._submit_logs(cmd_type, command.payload, result)
+   280→
+   281→            return SynapseResponse(
+   282→                id=command.id,
+   283→                success=True,
+   284→                data=result,
+   285→                sequence=command.sequence,
+   286→            )
+   287→
+   288→        except SynapseUserError as e:
+   289→            # User errors: bad input, missing node, bad parm. Don't trip CB.
+   290→            return SynapseResponse(
+   291→                id=command.id,
+   292→                success=False,
+   293→                error=str(e),
+   294→                sequence=command.sequence,
+   295→            )
+   296→        except ValueError as e:
+   297→            # Legacy ValueError path -- still user error, don't trip CB.
+   298→            return SynapseResponse(
+   299→                id=command.id,
+   300→                success=False,
+   301→                error=str(e),
+   302→                sequence=command.sequence,
+   303→            )
+   304→        except SynapseServiceError as e:
+   305→            # Service errors: Houdini down, execution crash. DO trip CB.
+   306→            return SynapseResponse(
+   307→                id=command.id,
+   308→                success=False,
+   309→                error=str(e),
+   310→                sequence=command.sequence,
+   311→            )
+   312→        except Exception as e:
+   313→            return SynapseResponse(
+   314→                id=command.id,
+   315→                success=False,
+   316→                error=f"Hit a snag processing that request: {e}",
+   317→                sequence=command.sequence,
+   318→            )
+   319→
+   320→    def _submit_logs(self, cmd_type: str, payload: Dict, result: Any):
+   321→        """Submit bridge + audit log in a single executor call."""
+   322→        bridge = self._get_bridge()
+   323→        sid = self._session_id
+   324→        uid = self._user_id
+   325→        category = _CMD_CATEGORY.get(cmd_type, AuditCategory.SYNAPSE)
+   326→        output = result if isinstance(result, dict) else {}
+   327→
+   328→        def _do_log():
+   329→            if bridge and sid:
+   330→                bridge.log_action(f"Executed: {cmd_type}", session_id=sid)
+   331→            audit_log().log(
+   332→                operation=cmd_type,
+   333→                message=f"Executed {cmd_type}",
+   334→                level=AuditLevel.AGENT_ACTION,
+   335→                category=category,
+   336→                user_id=uid,
+   337→                input_data=payload,
+   338→                output_data=output,
+   339→            )
+   340→
+   341→        _log_executor.submit(_do_log)
+   342→
+   343→    def _register_handlers(self):
+   344→        """Register all built-in command handlers."""
+   345→        reg = self._registry
+   346→
+   347→        # Utility
+   348→        reg.register("ping", self._handle_ping)
+   349→        reg.register("get_health", self._handle_get_health)
+   350→        reg.register("get_help", self._handle_get_help)
+   351→
+   352→        # Node operations
+   353→        reg.register("create_node", self._handle_create_node)
+   354→        reg.register("delete_node", self._handle_delete_node)
+   355→        reg.register("connect_nodes", self._handle_connect_nodes)
+   356→        reg.register("network_explain", self._handle_network_explain)
+   357→
+   358→        # Parameters
+   359→        reg.register("get_parm", self._handle_get_parm)
+   360→        reg.register("set_parm", self._handle_set_parm)
+   361→
+   362→        # Scene
+   363→        reg.register("get_scene_info", self._handle_get_scene_info)
+   364→        reg.register("get_selection", self._handle_get_selection)
+   365→
+   366→        # Execution
+   367→        reg.register("execute_python", self._handle_execute_python)
+   368→        reg.register("execute_vex", self._handle_execute_vex)
+   369→
+   370→        # USD/Solaris
+   371→        reg.register("get_stage_info", self._handle_get_stage_info)
+   372→        reg.register("get_usd_attribute", self._handle_get_usd_attribute)
+   373→        reg.register("set_usd_attribute", self._handle_set_usd_attribute)
+   374→        reg.register("create_usd_prim", self._handle_create_usd_prim)
+   375→        reg.register("modify_usd_prim", self._handle_modify_usd_prim)
+   376→
+   377→        # Viewport / Render
+   378→        reg.register("capture_viewport", self._handle_capture_viewport)
+   379→        reg.register("render", self._handle_render)
+   380→
+   381→        # TOPs / PDG wedging
+   382→        reg.register("wedge", self._handle_wedge)
+   383→
+   384→        # TOPS / PDG (Phase 1)
+   385→        reg.register("tops_get_work_items", self._handle_tops_get_work_items)
+   386→        reg.register("tops_get_dependency_graph", self._handle_tops_get_dependency_graph)
+   387→        reg.register("tops_get_cook_stats", self._handle_tops_get_cook_stats)
+   388→        reg.register("tops_cook_node", self._handle_tops_cook_node)
+   389→        reg.register("tops_generate_items", self._handle_tops_generate_items)
+   390→
+   391→        # TOPS / PDG (Phase 2)
+   392→        reg.register("tops_configure_scheduler", self._handle_tops_configure_scheduler)
+   393→        reg.register("tops_cancel_cook", self._handle_tops_cancel_cook)
+   394→        reg.register("tops_pause_cook", self._handle_tops_pause_cook)
+   395→        reg.register("tops_resume_cook", self._handle_tops_resume_cook)
+   396→        reg.register("tops_dirty_node", self._handle_tops_dirty_node)
+   397→
+   398→        # TOPS / PDG (Phase 3)
+   399→        reg.register("tops_setup_wedge", self._handle_tops_setup_wedge)
+   400→        reg.register("tops_batch_cook", self._handle_tops_batch_cook)
+   401→        reg.register("tops_query_items", self._handle_tops_query_items)
+   402→
+   403→        # TOPS / PDG (Phase 4: Autonomous Operations)
+   404→        reg.register("tops_cook_and_validate", self._handle_tops_cook_and_validate)
+   405→        reg.register("tops_diagnose", self._handle_tops_diagnose)
+   406→        reg.register("tops_pipeline_status", self._handle_tops_pipeline_status)
+   407→
+   408→        # TOPS / PDG (Phase 5: Streaming & Render Integration)
+   409→        reg.register("tops_monitor_stream", self._handle_tops_monitor_stream)
+   410→        reg.register("tops_render_sequence", self._handle_tops_render_sequence)
+   411→        reg.register("tops_multi_shot", self._handle_tops_multi_shot)
+   412→
+   413→        # USD scene assembly (reference / sublayer / payload) + prim queries
+   414→        reg.register("reference_usd", self._handle_reference_usd)
+   415→        reg.register("query_prims", self._handle_query_prims)
+   416→        reg.register("manage_variant_set", self._handle_manage_variant_set)
+   417→        reg.register("manage_collection", self._handle_manage_collection)
+   418→        reg.register("configure_light_linking", self._handle_configure_light_linking)
+   419→
+   420→        # Solaris ordering validation
+   421→        reg.register("solaris_validate_ordering", self._handle_solaris_validate_ordering)
+   422→
+   423→        # Keyframe / Render Settings
+   424→        reg.register("set_keyframe", self._handle_set_keyframe)
+   425→        reg.register("render_settings", self._handle_render_settings)
+   426→
+   427→        # Materials
+   428→        reg.register("create_material", self._handle_create_material)
+   429→        reg.register("create_textured_material", self._handle_create_textured_material)
+   430→        reg.register("assign_material", self._handle_assign_material)
+   431→        reg.register("read_material", self._handle_read_material)
+   432→
+   433→        # Render passes / AOVs
+   434→        reg.register("configure_render_passes", self._handle_configure_render_passes)
+   435→
+   436→        # Quality validation
+   437→        reg.register("validate_frame", self._handle_validate_frame)
+   438→
+   439→        # Render farm
+   440→        reg.register("render_sequence", self._handle_render_sequence)
+   441→        reg.register("render_farm_status", self._handle_render_farm_status)
+   442→
+   443→        # Safe / progressive render
+   444→        reg.register("safe_render", self._handle_safe_render)
+   445→        reg.register("render_progressively", self._handle_render_progressively)
+   446→
+   447→        # Knowledge lookup (RAG)
+   448→        reg.register("knowledge_lookup", self._handle_knowledge_lookup)
+   449→
+   450→        # Introspection (Phase 1)
+   451→        reg.register("inspect_selection", self._handle_inspect_selection)
+   452→        reg.register("inspect_scene", self._handle_inspect_scene)
+   453→        reg.register("inspect_node", self._handle_inspect_node)
+   454→
+   455→        # Batch
+   456→        reg.register("batch_commands", self._handle_batch_commands)
+   457→
+   458→        # Chat routing
+   459→        reg.register("route_chat", self._handle_route_chat)
+   460→
+   461→        # Metrics / Router stats / Recipes
+   462→        reg.register("get_metrics", self._handle_get_metrics)
+   463→        reg.register("router_stats", self._handle_router_stats)
+   464→        reg.register("list_recipes", self._handle_list_recipes)
+   465→        reg.register("get_live_metrics", self._handle_get_live_metrics)
+   466→
+   467→        # Memory operations (new names)
+   468→        reg.register("context", self._handle_memory_context)
+   469→        reg.register("search", self._handle_memory_search)
+   470→        reg.register("add_memory", self._handle_memory_add)
+   471→        reg.register("decide", self._handle_memory_decide)
+   472→        reg.register("recall", self._handle_memory_recall)
+   473→
+   474→        # Scene memory operations (Living Memory)
+   475→        reg.register("project_setup", self._handle_project_setup)
+   476→        reg.register("memory_write", self._handle_memory_write)
+   477→        reg.register("memory_query", self._handle_memory_query)
+   478→        reg.register("memory_status", self._handle_memory_status)
+   479→        reg.register("evolve_memory", self._handle_evolve_memory)
+   480→
+   481→        # Autonomous render pipeline
+   482→        reg.register("autonomous_render", self._handle_autonomous_render)
+   483→
+   484→        # HDA operations
+   485→        reg.register("hda_create", self._handle_hda_create)
+   486→        reg.register("hda_promote_parm", self._handle_hda_promote_parm)
+   487→        reg.register("hda_set_help", self._handle_hda_set_help)
+   488→        reg.register("hda_package", self._handle_hda_package)
+   489→        reg.register("hda_list", self._handle_hda_list)
+   490→
+   491→        # Copernicus (COPs) — Foundation
+   492→        reg.register("cops_create_network", self._handle_cops_create_network)
+   493→        reg.register("cops_create_node", self._handle_cops_create_node)
+   494→        reg.register("cops_connect", self._handle_cops_connect)
+   495→        reg.register("cops_set_opencl", self._handle_cops_set_opencl)
+   496→        reg.register("cops_read_layer_info", self._handle_cops_read_layer_info)
+   497→
+   498→        # Copernicus (COPs) — Pipeline Integration
+   499→        reg.register("cops_to_materialx", self._handle_cops_to_materialx)
+   500→        reg.register("cops_composite_aovs", self._handle_cops_composite_aovs)
+   501→        reg.register("cops_analyze_render", self._handle_cops_analyze_render)
+   502→        reg.register("cops_slap_comp", self._handle_cops_slap_comp)
+   503→
+   504→        # Copernicus (COPs) — Procedural & Motion Design
+   505→        reg.register("cops_create_solver", self._handle_cops_create_solver)
+   506→        reg.register("cops_procedural_texture", self._handle_cops_procedural_texture)
+   507→        reg.register("cops_growth_propagation", self._handle_cops_growth_propagation)
+   508→        reg.register("cops_reaction_diffusion", self._handle_cops_reaction_diffusion)
+   509→        reg.register("cops_pixel_sort", self._handle_cops_pixel_sort)
+   510→        reg.register("cops_stylize", self._handle_cops_stylize)
+   511→
+   512→        # Copernicus (COPs) — Advanced
+   513→        reg.register("cops_wetmap", self._handle_cops_wetmap)
+   514→        reg.register("cops_bake_textures", self._handle_cops_bake_textures)
+   515→        reg.register("cops_temporal_analysis", self._handle_cops_temporal_analysis)
+   516→        reg.register("cops_stamp_scatter", self._handle_cops_stamp_scatter)
+   517→        reg.register("cops_batch_cook", self._handle_cops_batch_cook)
+   518→
+   519→        # Undo / Redo
+   520→        reg.register("undo", self._handle_undo)
+   521→        reg.register("redo", self._handle_redo)
+   522→
+   523→        # Pre-populate alias names so dispatch never needs normalization.
+   524→        # Build reverse map: canonical_name -> [alias1, alias2, ...]
+   525→        _canonical_to_aliases: Dict[str, list] = {}
+   526→        for alias, canonical in COMMAND_ALIASES.items():
+   527→            _canonical_to_aliases.setdefault(canonical, []).append(alias)
+   528→        for canonical, aliases in _canonical_to_aliases.items():
+   529→            handler = reg.get(canonical)
+   530→            if handler is not None:
+   531→                for alias in aliases:
+   532→                    if not reg.has(alias):
+   533→                        reg.register(alias, handler)
+   534→
+   535→    # =========================================================================
+   536→    # UTILITY HANDLERS
+   537→    # =========================================================================
+   538→
+   539→    def _handle_ping(self, payload: Dict) -> Dict:
+   540→        """Handle ping command."""
+   541→        return {
+   542→            "pong": True,
+   543→            "timestamp": time.time(),
+   544→            "protocol_version": PROTOCOL_VERSION,
+   545→        }
+   546→
+   547→    def _handle_get_health(self, payload: Dict) -> Dict:
+   548→        """Handle health check command."""
+   549→        return {
+   550→            "healthy": True,
+   551→            "houdini_available": HOU_AVAILABLE,
+   552→            "protocol_version": PROTOCOL_VERSION,
+   553→        }
+   554→
+   555→    def _handle_get_help(self, payload: Dict) -> Dict:
+   556→        """Handle help command."""
+   557→        return {
+   558→            "protocol_version": PROTOCOL_VERSION,
+   559→            "commands": self._registry.registered_types,
+   560→            "description": "Synapse AI-Houdini Bridge v" + PROTOCOL_VERSION,
+   561→        }
+   562→
+   563→    # =========================================================================
+   564→    # UNDO / REDO HANDLERS
+   565→    # =========================================================================
+   566→
+   567→    def _handle_undo(self, payload: Dict) -> Dict:
+   568→        """Undo the last operation in Houdini.
+   569→
+   570→        Uses hou.undos.performUndo() to step back one undo level.
+   571→        No parameters required.
+   572→        """
+   573→        if not HOU_AVAILABLE:
+   574→            raise HoudiniUnavailableError(_HOUDINI_UNAVAILABLE)
+   575→        hou.undos.performUndo()
+   576→        return {"status": "ok", "message": "Undid last operation"}
+   577→
+   578→    def _handle_redo(self, payload: Dict) -> Dict:
+   579→        """Redo the last undone operation in Houdini.
+   580→
+   581→        Uses hou.undos.performRedo() to step forward one undo level.
+   582→        No parameters required.
+   583→        """
+   584→        if not HOU_AVAILABLE:
+   585→            raise HoudiniUnavailableError(_HOUDINI_UNAVAILABLE)
+   586→        hou.undos.performRedo()
+   587→        return {"status": "ok", "message": "Redid last undone operation"}
+   588→
+   589→    # =========================================================================
+   590→    # BATCH HANDLER
+   591→    # =========================================================================
+   592→
+   593→    def _handle_batch_commands(self, payload: Dict) -> Dict:
+   594→        """Execute a batch of commands in declared order.
+   595→
+   596→        Payload:
+   597→            commands: list of {type: str, payload: dict}
+   598→            atomic: bool (default True) -- wrap in single undo group
+   599→            stop_on_error: bool (default False) -- halt on first error
+   600→        """
+   601→        commands = payload.get("commands")
+   602→        if not commands or not isinstance(commands, list):
+   603→            raise ValueError("'commands' must be a non-empty list")
+   604→
+   605→        atomic = payload.get("atomic", True)
+   606→        stop_on_error = payload.get("stop_on_error", False)
+   607→
+   608→        from .main_thread import run_on_main, _SLOW_TIMEOUT
+   609→
+   610→        def _on_main():
+   611→            results: list = []
+   612→            statuses: list = []
+   613→            errors: list = []
+   614→
+   615→            def _run_batch():
+   616→                for i, cmd_spec in enumerate(commands):
+   617→                    cmd_type = cmd_spec.get("type", "")
+   618→                    cmd_payload = cmd_spec.get("payload", {})
+   619→                    handler = self._registry.get(cmd_type)
+   620→
+   621→                    if handler is None:
+   622→                        err = f"Step {i}: unknown command '{cmd_type}'"
+   623→                        errors.append(err)
+   624→                        statuses.append("error")
+   625→                        results.append(None)
+   626→                        if stop_on_error:
+   627→                            break
+   628→                        continue
+   629→
+   630→                    try:
+   631→                        result = handler(cmd_payload)
+   632→                        results.append(result)
+   633→                        statuses.append("ok")
+   634→                        errors.append(None)
+   635→                    except Exception as e:
+   636→                        results.append(None)
+   637→                        statuses.append("error")
+   638→                        errors.append(f"Step {i}: {e}")
+   639→                        if stop_on_error:
+   640→                            break
+   641→
+   642→            if atomic and HOU_AVAILABLE:
+   643→                with hou.undos.group("synapse_batch"):
+   644→                    _run_batch()
+   645→            else:
+   646→                _run_batch()
+   647→
+   648→            return {
+   649→                "results": results,
+   650→                "statuses": statuses,
+   651→                "errors": errors,
+   652→            }
+   653→
+   654→        return run_on_main(_on_main, timeout=_SLOW_TIMEOUT)
+   655→
+   656→    # =========================================================================
+   657→    # PARAMETER HANDLERS
+   658→    # =========================================================================
+   659→
+   660→    def _handle_get_parm(self, payload: Dict) -> Dict:
+   661→        """Handle get_parm command."""
+   662→        if not HOU_AVAILABLE:
+   663→            raise HoudiniUnavailableError()
+   664→
+   665→        node_path = resolve_param(payload, "node")
+   666→        parm_name = resolve_param(payload, "parm")
+   667→
+   668→        from .main_thread import run_on_main
+   669→
+   670→        def _on_main():
+   671→            nonlocal parm_name
+   672→            node = hou.node(node_path)
+   673→            if node is None:
+   674→                raise NodeNotFoundError(node_path)
+   675→
+   676→            parm = node.parm(parm_name)
+   677→            # USD alias fallback -- resolve human-readable name to encoded parm
+   678→            if parm is None:
+   679→                usd_encoded = USD_PARM_ALIASES.get(parm_name.lower())
+   680→                if usd_encoded:
+   681→                    parm = node.parm(usd_encoded)
+   682→                    if parm is not None:
+   683→                        parm_name = usd_encoded  # use resolved name in response
+   684→            if parm is None:
+   685→                # Try as parm tuple
+   686→                parm_tuple = node.parmTuple(parm_name)
+   687→                if parm_tuple is not None:
+   688→                    return {
+   689→                        "node": node_path,
+   690→                        "parm": parm_name,
+   691→                        # hou.Parm.eval() reads parameter value -- not Python eval()
+   692→                        "value": [p.eval() for p in parm_tuple],  # noqa: S307
+   693→                        "is_tuple": True,
+   694→                    }
+   695→                hint = _suggest_parms(node, parm_name)
+   696→                raise ParameterError(node_path, parm_name, suggestion=hint.strip() if hint else "")
+   697→
+   698→            return {
+   699→                "node": node_path,
+   700→                "parm": parm_name,
+   701→                "value": parm.eval(),
+   702→                "is_tuple": False,
+   703→            }
+   704→
+   705→        return run_on_main(_on_main)
+   706→
+   707→    def _handle_set_parm(self, payload: Dict) -> Dict:
+   708→        """Handle set_parm command."""
+   709→        if not HOU_AVAILABLE:
+   710→            raise HoudiniUnavailableError()
+   711→
+   712→        node_path = resolve_param(payload, "node")
+   713→        parm_name = resolve_param(payload, "parm")
+   714→        value = resolve_param(payload, "value")
+   715→
+   716→        # Guard: reject NaN/Inf before they reach Houdini (they persist and corrupt)
+   717→        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+   718→            bad = "NaN" if math.isnan(value) else "Infinity"
+   719→            raise ValueError(
+   720→                f"Can't set {parm_name} to {bad} — that would corrupt the "
+   721→                "parameter. Use a finite number instead."
+   722→            )
+   723→        if isinstance(value, (list, tuple)):
+   724→            for i, v in enumerate(value):
+   725→                if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+   726→                    bad = "NaN" if math.isnan(v) else "Infinity"
+   727→                    raise ValueError(
+   728→                        f"Can't set {parm_name} — element {i} is {bad}, which "
+   729→                        "would corrupt the parameter. Use finite numbers instead."
+   730→                    )
+   731→
+   732→        from .main_thread import run_on_main
+   733→
+   734→        def _on_main():
+   735→            nonlocal parm_name
+   736→            node = hou.node(node_path)
+   737→            if node is None:
+   738→                raise NodeNotFoundError(node_path)
+   739→
+   740→            parm = node.parm(parm_name)
+   741→            # USD alias fallback -- resolve human-readable name to encoded parm
+   742→            if parm is None:
+   743→                usd_encoded = USD_PARM_ALIASES.get(parm_name.lower())
+   744→                if usd_encoded:
+   745→                    parm = node.parm(usd_encoded)
+   746→                    if parm is not None:
+   747→                        parm_name = usd_encoded
+   748→            if parm is not None:
+   749→                # If value is a list/tuple but we found a scalar parm, try the
+   750→                # tuple parm instead — this lets callers set color (R,G,B) in one
+   751→                # call using the base name (e.g., "base_color" with [1,0,0]).
+   752→                if isinstance(value, (list, tuple)):
+   753→                    parm_tuple = node.parmTuple(parm_name)
+   754→                    if parm_tuple is not None and len(parm_tuple) > 1:
+   755→                        parm_tuple.set(value)
+   756→                        return {"node": node_path, "parm": parm_name, "value": value}
+   757→                parm.set(value)
+   758→                result = {"node": node_path, "parm": parm_name, "value": value}
+   759→                # Lighting Law: soft warning when intensity > 1.0 on light nodes
+   760→                if ("intensity" in parm_name.lower()
+   761→                        and isinstance(value, (int, float)) and value > 1.0):
+   762→                    try:
+   763→                        if "light" in node.type().name().lower():
+   764→                            result["warning"] = (
+   765→                                "Intensity is usually 1.0 — consider using "
+   766→                                "exposure for brightness control (Lighting Law)"
+   767→                            )
+   768→                    except Exception:
+   769→                        pass  # Node type check is best-effort
+   770→                return result
+   771→
+   772→            # Try as parm tuple
+   773→            parm_tuple = node.parmTuple(parm_name)
+   774→            if parm_tuple is not None:
+   775→                if isinstance(value, (list, tuple)):
+   776→                    parm_tuple.set(value)
+   777→                else:
+   778→                    parm_tuple.set([value] * len(parm_tuple))
+   779→                result = {"node": node_path, "parm": parm_name, "value": value}
+   780→                # Lighting Law: soft warning when intensity > 1.0 on light nodes
+   781→                if ("intensity" in parm_name.lower()
+   782→                        and isinstance(value, (int, float)) and value > 1.0):
+   783→                    try:
+   784→                        if "light" in node.type().name().lower():
+   785→                            result["warning"] = (
+   786→                                "Intensity is usually 1.0 — consider using "
+   787→                                "exposure for brightness control (Lighting Law)"
+   788→                            )
+   789→                    except Exception:
+   790→                        pass
+   791→                return result
+   792→
+   793→            hint = _suggest_parms(node, parm_name)
+   794→            raise ParameterError(node_path, parm_name, suggestion=hint.strip() if hint else "")
+   795→
+   796→        return run_on_main(_on_main)
+   797→
+   798→    # =========================================================================
+   799→    # SCENE HANDLERS
+   800→    # =========================================================================
+   801→
+   802→    def _handle_get_scene_info(self, payload: Dict) -> Dict:
+   803→        """Handle get_scene_info command."""
+   804→        if not HOU_AVAILABLE:
+   805→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   806→
+   807→        from .main_thread import run_on_main
+   808→
+   809→        def _on_main():
+   810→            return {
+   811→                "hip_file": hou.hipFile.name(),
+   812→                "frame": int(hou.frame()),
+   813→                "fps": hou.fps(),
+   814→                "frame_range": [int(hou.playbar.frameRange()[0]), int(hou.playbar.frameRange()[1])],
+   815→            }
+   816→
+   817→        return run_on_main(_on_main)
+   818→
+   819→    def _handle_get_selection(self, payload: Dict) -> Dict:
+   820→        """Handle get_selection command."""
+   821→        if not HOU_AVAILABLE:
+   822→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   823→
+   824→        from .main_thread import run_on_main
+   825→
+   826→        def _on_main():
+   827→            selected = hou.selectedNodes()
+   828→            return {
+   829→                "count": len(selected),
+   830→                "nodes": [
+   831→                    {"path": n.path(), "type": n.type().name(), "name": n.name()}
+   832→                    for n in selected[:50]
+   833→                ],
+   834→            }
+   835→
+   836→        return run_on_main(_on_main)
+   837→
+   838→    # =========================================================================
+   839→    # EXECUTION HANDLERS
+   840→    # =========================================================================
+   841→
+   842→    def _handle_execute_python(self, payload: Dict) -> Dict:
+   843→        """
+   844→        Handle execute_python command.
+   845→
+   846→        Executes Python code in Houdini's runtime environment.
+   847→        This is a standard DCC scripting pattern for automation.
+   848→
+   849→        Options:
+   850→            dry_run (bool): Compile-only syntax check -- no execution.
+   851→            atomic (bool): Wrap in undo group with rollback (default True).
+   852→        """
+   853→        if not HOU_AVAILABLE:
+   854→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   855→
+   856→        code = resolve_param(payload, "content")
+   857→        dry_run = resolve_param_with_default(payload, "dry_run", False)
+   858→        atomic = resolve_param_with_default(payload, "atomic", True)
+   859→
+   860→        # Compile first -- catches SyntaxError for both dry_run and real runs
+   861→        try:
+   862→            compiled = compile(code, "<synapse_exec>", "exec")
+   863→        except SyntaxError as e:
+   864→            if dry_run:
+   865→                return {"valid": False, "error": str(e), "dry_run": True}
+   866→            raise
+   867→
+   868→        if dry_run:
+   869→            return {"valid": True, "dry_run": True}
+   870→
+   871→        # Build execution namespace with Houdini access + idempotent guards
+   872→        exec_globals = {"hou": hou, "__builtins__": __builtins__}
+   873→        try:
+   874→            from .guards import GUARD_FUNCTIONS
+   875→            exec_globals.update(GUARD_FUNCTIONS)
+   876→        except ImportError:
+   877→            pass
+   878→        exec_locals: dict = {}
+   879→
+   880→        from .main_thread import run_on_main, _SLOW_TIMEOUT
+   881→
+   882→        def _on_main():
+   883→            # Execute inside undo group with smart rollback:
+   884→            # - Coding bugs (NameError, SyntaxError, TypeError, AttributeError)
+   885→            #   -> auto-rollback, since the script is broken and partial state is bad
+   886→            # - Operational errors (render timeout, file not found, hou.OperationFailed)
+   887→            #   -> keep mutations, since node creation/wiring may have succeeded
+   888→            if atomic:
+   889→                _needs_rollback = False
+   890→                _rollback_exc = None
+   891→                with hou.undos.group("synapse_execute"):
+   892→                    try:
+   893→                        _run_compiled(compiled, exec_globals, exec_locals)
+   894→                    except _ROLLBACK_ERRORS as e:
+   895→                        # Don't call performUndo() inside the undo group —
+   896→                        # that raises "Cannot undo within an undo group".
+   897→                        # Instead, flag for rollback after the group closes.
+   898→                        _needs_rollback = True
+   899→                        _rollback_exc = e
+   900→                # Undo group is now closed — safe to roll back
+   901→                if _needs_rollback:
+   902→                    try:
+   903→                        hou.undos.performUndo()
+   904→                    except Exception:
+   905→                        pass  # Best effort — group may already be empty
+   906→                    raise _rollback_exc
+   907→            else:
+   908→                _run_compiled(compiled, exec_globals, exec_locals)
+   909→
+   910→            # Try to extract a result variable
+   911→            result = exec_locals.get("result", "executed")
+   912→
+   913→            return {
+   914→                "executed": True,
+   915→                "result": str(result) if result else "executed",
+   916→            }
+   917→
+   918→        return run_on_main(_on_main, timeout=_SLOW_TIMEOUT)
+   919→
+   920→    def _handle_execute_vex(self, payload: Dict) -> Dict:
+   921→        """
+   922→        Handle execute_vex command.
+   923→
+   924→        Creates a temporary attribwrangle node, sets the VEX snippet,
+   925→        optionally wires an input geometry, and returns the node path.
+   926→        Includes VEX error diagnosis when compilation or cooking fails.
+   927→        """
+   928→        if not HOU_AVAILABLE:
+   929→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+   930→
+   931→        snippet = resolve_param(payload, "snippet")
+   932→        run_over = resolve_param_with_default(payload, "run_over", "Points")
+   933→        input_node = resolve_param_with_default(payload, "input_node", None)
+   934→
+   935→        # Pre-execution lint check (no hou.* needed)
+   936→        from ..routing.vex_diagnostics import (
+   937→            lint_vex_snippet, diagnose_vex_error, format_diagnosis,
+   938→        )
+   939→        lint_issues = lint_vex_snippet(snippet)
+   940→        warnings = []
+   941→        if lint_issues:
+   942→            warnings = [
+   943→                {"line": d.line_number, "message": d.symptom, "fix": d.fix}
+   944→                for d in lint_issues
+   945→            ]
+   946→
+   947→        from .main_thread import run_on_main, _SLOW_TIMEOUT
+   948→
+   949→        def _on_main():
+   950→            # Find or create a working SOP context
+   951→            parent = None
+   952→            if input_node:
+   953→                src = hou.node(input_node)
+   954→                if src is not None:
+   955→                    parent = src.parent()
+   956→
+   957→            if parent is None:
+   958→                # Default to /obj -- create a temp geo container
+   959→                obj = hou.node("/obj")
+   960→                parent = obj.createNode("geo", "synapse_vex_temp")
+   961→
+   962→            wrangle = parent.createNode("attribwrangle", "synapse_vex")
+   963→            wrangle.parm("snippet").set(snippet)
+   964→
+   965→            # Map run_over string to class menu value
+   966→            run_over_map = {
+   967→                "detail": 0, "points": 1, "vertices": 2, "primitives": 3,
+   968→            }
+   969→            class_val = run_over_map.get(run_over.lower(), 1)
+   970→            wrangle.parm("class").set(class_val)
+   971→
+   972→            # Wire input if provided
+   973→            if input_node:
+   974→                src = hou.node(input_node)
+   975→                if src is not None:
+   976→                    wrangle.setInput(0, src)
+   977→
+   978→            wrangle.setDisplayFlag(True)
+   979→            wrangle.setRenderFlag(True)
+   980→
+   981→            # Try to cook and capture any VEX errors
+   982→            cook_errors = []
+   983→            diagnosis_text = ""
+   984→            try:
+   985→                wrangle.cook(force=True)
+   986→            except Exception as cook_exc:
+   987→                error_msg = str(cook_exc)
+   988→                cook_errors.append(error_msg)
+   989→                # Run pattern-based diagnosis
+   990→                diagnoses = diagnose_vex_error(error_msg, snippet, wrangle.path())
+   991→                if diagnoses:
+   992→                    diagnosis_text = format_diagnosis(diagnoses, snippet)
+   993→
+   994→            # Also check node error state (Houdini may set errors without raising)
+   995→            node_errors = []
+   996→            try:
+   997→                if wrangle.errors():
+   998→                    node_errors = list(wrangle.errors())
+   999→                    if not diagnosis_text and node_errors:
+  1000→                        all_errors = " | ".join(node_errors)
+  1001→                        diagnoses = diagnose_vex_error(all_errors, snippet, wrangle.path())
+  1002→                        if diagnoses:
+  1003→                            diagnosis_text = format_diagnosis(diagnoses, snippet)
+  1004→            except Exception:
+  1005→                pass
+  1006→
+  1007→            # Clean up temp nodes on failure when no input was provided
+  1008→            if (cook_errors or node_errors) and not input_node:
+  1009→                try:
+  1010→                    temp_parent = wrangle.parent()
+  1011→                    if temp_parent and temp_parent.name().startswith("synapse_vex_temp"):
+  1012→                        temp_parent.destroy()
+  1013→                        wrangle = None  # Node no longer exists
+  1014→                except Exception:
+  1015→                    pass  # Best-effort cleanup
+  1016→
+  1017→            result = {
+  1018→                "node": wrangle.path() if wrangle else "(cleaned up)",
+  1019→                "snippet": snippet,
+  1020→                "run_over": run_over,
+  1021→                "class": class_val,
+  1022→            }
+  1023→
+  1024→            if warnings:
+  1025→                result["warnings"] = warnings
+  1026→            if cook_errors or node_errors:
+  1027→                result["errors"] = cook_errors + node_errors
+  1028→            if diagnosis_text:
+  1029→                result["diagnosis"] = diagnosis_text
+  1030→
+  1031→            return result
+  1032→
+  1033→        return run_on_main(_on_main, timeout=_SLOW_TIMEOUT)
+  1034→    # =========================================================================
+  1035→    # INTROSPECTION HANDLERS (Phase 1)
+  1036→    # =========================================================================
+  1037→
+  1038→    def _handle_inspect_selection(self, payload: Dict) -> Dict:
+  1039→        """Inspect currently selected nodes -- connections, parms, geometry, input graph."""
+  1040→        if not HOU_AVAILABLE:
+  1041→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+  1042→        from .introspection import inspect_selection
+  1043→        from .main_thread import run_on_main
+  1044→        depth = resolve_param_with_default(payload, "depth", 1)
+  1045→        return run_on_main(lambda: inspect_selection(depth=int(depth)))
+  1046→
+  1047→    def _handle_inspect_scene(self, payload: Dict) -> Dict:
+  1048→        """Hierarchical scene overview with issues and artist notes."""
+  1049→        if not HOU_AVAILABLE:
+  1050→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+  1051→        from .introspection import inspect_scene
+  1052→        from .main_thread import run_on_main
+  1053→        root = resolve_param_with_default(payload, "root", "/")
+  1054→        max_depth = resolve_param_with_default(payload, "max_depth", 3)
+  1055→        context_filter = resolve_param_with_default(payload, "context_filter", None)
+  1056→        return run_on_main(lambda: inspect_scene(
+  1057→            root=root,
+  1058→            max_depth=int(max_depth),
+  1059→            context_filter=context_filter,
+  1060→        ))
+  1061→
+  1062→    def _handle_inspect_node(self, payload: Dict) -> Dict:
+  1063→        """Deep single-node dump: all parms, expressions, code, geometry, HDA info."""
+  1064→        if not HOU_AVAILABLE:
+  1065→            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+  1066→        from .introspection import inspect_node_detail
+  1067→        from .main_thread import run_on_main
+  1068→        node_path = resolve_param(payload, "node")
+  1069→        include_code = resolve_param_with_default(payload, "include_code", True)
+  1070→        include_geometry = resolve_param_with_default(payload, "include_geometry", True)
+  1071→        include_expressions = resolve_param_with_default(payload, "include_expressions", True)
+  1072→        return run_on_main(lambda: inspect_node_detail(
+  1073→            node_path=node_path,
+  1074→            include_code=bool(include_code),
+  1075→            include_geometry=bool(include_geometry),
+  1076→            include_expressions=bool(include_expressions),
+  1077→        ))
+  1078→
+  1079→    def _handle_get_metrics(self, payload: Dict) -> Dict:
+  1080→        """Return Prometheus-format metrics text."""
+  1081→        from .metrics import render_prometheus
+  1082→
+  1083→        router_stats = None
+  1084→        if hasattr(self, "_router"):
+  1085→            router_stats = self._router.stats()
+  1086→
+  1087→        cb_state = "closed"
+  1088→        memory_count = 0
+  1089→        try:
+  1090→            bridge = self._get_bridge()
+  1091→            if hasattr(bridge, "_memory") and bridge._memory:
+  1092→                memory_count = len(bridge._memory.get_all())
+  1093→        except Exception:
+  1094→            pass
+  1095→
+  1096→        live_snapshot = None
+  1097→        agg = getattr(self, "_metrics_aggregator", None)
+  1098→        if agg:
+  1099→            snap = agg.latest()
+  1100→            if snap:
+  1101→                from .live_metrics import snapshot_to_dict
+  1102→                live_snapshot = snapshot_to_dict(snap)
+  1103→
+  1104→        text = render_prometheus(
+  1105→            router_stats=router_stats,
+  1106→            circuit_breaker_state=cb_state,
+  1107→            memory_entry_count=memory_count,
+  1108→            live_snapshot=live_snapshot,
+  1109→        )
+  1110→        return {"format": "prometheus", "text": text}
+  1111→
+  1112→    def _handle_router_stats(self, payload: Dict) -> Dict:
+  1113→        """Return tier cascade statistics for LLM self-reflection."""
+  1114→        if not hasattr(self, "_router"):
+  1115→            return {"error": "Router not initialized"}
+  1116→        return self._router.stats()
+  1117→
+  1118→    def _handle_list_recipes(self, payload: Dict) -> Dict:
+  1119→        """List all available recipes for artist discovery."""
+  1120→        from ..routing.recipes import RecipeRegistry
+  1121→        registry = RecipeRegistry()
+  1122→        recipes = []
+  1123→        for recipe in registry.recipes:
+  1124→            recipes.append({
+  1125→                "name": recipe.name,
+  1126→                "description": recipe.description,
+  1127→                "category": recipe.category,
+  1128→                "triggers": recipe.triggers,
+  1129→                "parameters": recipe.parameters,
+  1130→                "step_count": len(recipe.steps),
+  1131→            })
+  1132→        return {
+  1133→            "count": len(recipes),
+  1134→            "recipes": sorted(recipes, key=lambda r: r["name"]),
+  1135→        }
+  1136→
+  1137→    def _handle_route_chat(self, payload: Dict) -> Dict:
+  1138→        """Route a natural language message through the tiered routing cascade.
+  1139→
+  1140→        This is the PRIMARY entry point for the chat panel. Messages go through:
+  1141→        Cache -> Recipe -> Planner -> Regex -> Knowledge -> LLM -> Agent
+  1142→
+  1143→        NOT execute_python. Never execute_python for chat.
+  1144→        """
+  1145→        import os
+  1146→        from ..routing.router import TieredRouter, RoutingConfig
+  1147→
+  1148→        message = resolve_param(payload, "content")
+  1149→        context = payload.get("context", {})
+  1150→
+  1151→        if not hasattr(self, "_router"):
+  1152→            api_key = os.environ.get("ANTHROPIC_API_KEY")
+  1153→            config = RoutingConfig(llm_api_key=api_key) if api_key else None
+  1154→            self._router = TieredRouter(config=config)
+  1155→        result = self._router.route(message, context=context)
+  1156→
+  1157→        return {
+  1158→            "response": result.answer,
+  1159→            "tier": result.tier.value,
+  1160→            "commands": [
+  1161→                {"type": cmd.type, "id": cmd.id, "payload": cmd.payload}
+  1162→                for cmd in result.commands
+  1163→            ] if result.commands else [],
+  1164→            "confidence": result.confidence,
+  1165→            "cached": result.cached,
+  1166→            "latency_ms": result.latency_ms,
+  1167→        }
+  1168→
+  1169→    # ------------------------------------------------------------------
+  1170→    # Live Metrics (Sprint E)
+  1171→    # ------------------------------------------------------------------
+  1172→
+  1173→    def set_metrics_aggregator(self, aggregator) -> None:
+  1174→        """Inject the MetricsAggregator instance (called by SynapseServer)."""
+  1175→        self._metrics_aggregator = aggregator
+  1176→
+  1177→    def _handle_get_live_metrics(self, payload: Dict) -> Dict:
+  1178→        """Return live metrics snapshot or historical snapshots."""
+  1179→        if not getattr(self, "_metrics_aggregator", None):
+  1180→            return {"error": "Metrics aggregator not running"}
+  1181→
+  1182→        count = payload.get("history_count", 0)
+  1183→        if count > 0:
+  1184→            return {"snapshots": self._metrics_aggregator.history(count)}
+  1185→
+  1186→        snapshot = self._metrics_aggregator.latest()
+  1187→        if not snapshot:
+  1188→            return {"error": "No metrics collected yet"}
+  1189→
+  1190→        from .live_metrics import snapshot_to_dict
+  1191→        return snapshot_to_dict(snapshot)
+  1192→
+  1193→    def _handle_knowledge_lookup(self, payload: Dict) -> Dict:
+  1194→        """Look up Houdini knowledge from the RAG index.
+  1195→
+  1196→        Queries the Tier 1 knowledge index for parameter names,
+  1197→        node types, workflow guides, and FX setup instructions.
+  1198→        """
+  1199→        query = resolve_param(payload, "query")
+  1200→
+  1201→        # Lazy-init the knowledge index
+  1202→        if not hasattr(self, "_knowledge"):
+  1203→            from pathlib import Path as _Path
+  1204→            from ..routing.knowledge import KnowledgeIndex
+  1205→            import os
+  1206→            rag_root = os.environ.get(
+  1207→                "SYNAPSE_RAG_ROOT",
+  1208→                str(_Path(__file__).resolve().parent.parent.parent.parent / "rag"),
+  1209→            )
+  1210→            memory = None
+  1211→            try:
+  1212→                from ..memory.store import get_synapse_memory
+  1213→                memory = get_synapse_memory()
+  1214→            except Exception:
+  1215→                pass
+  1216→            self._knowledge = KnowledgeIndex(
+  1217→                rag_root=rag_root if _Path(rag_root).exists() else None,
+  1218→                memory=memory,
+  1219→            )
+  1220→
+  1221→        result = self._knowledge.lookup(query)
+  1222→        return {
+  1223→            "found": result.found,
+  1224→            "answer": result.answer,
+  1225→            "confidence": result.confidence,
+  1226→            "topic": result.topic,
+  1227→            "sources": result.sources,
+  1228→            "agent_hint": result.agent_hint,
+  1229→            "summary": result.summary,
+  1230→            "reference_file": result.reference_file,
+  1231→        }
+  1232→
+  1233→    # =========================================================================
+  1234→    # AUTONOMOUS RENDER
+  1235→    # =========================================================================
+  1236→
+  1237→    def _handle_autonomous_render(self, payload: Dict) -> Dict:
+  1238→        """Run the autonomous render pipeline: Plan -> Validate -> Execute -> Evaluate -> Report.
+  1239→
+  1240→        Payload:
+  1241→            intent (str, required): Natural-language render intent (e.g. 'render frames 1-48').
+  1242→            max_iterations (int, optional): Max re-render attempts (default: 3).
+  1243→            quality_threshold (float, optional): Minimum quality score 0.0-1.0 (default: 0.85).
+  1244→
+  1245→        Returns:
+  1246→            Serialized RenderReport with plan, evaluation, decisions, and success flag.
+  1247→        """
+  1248→        import asyncio
+  1249→        from dataclasses import asdict
+  1250→
+  1251→        intent = payload.get("intent")
+  1252→        if not intent:
+  1253→            raise ValueError(
+  1254→                "We need an intent to plan the render \u2014 "
+  1255→                "e.g. 'render frames 1-48' or 'render turntable at 50mm'"
+  1256→            )
+  1257→
+  1258→        max_iterations = int(payload.get("max_iterations", 3))
+  1259→        quality_threshold = float(payload.get("quality_threshold", 0.85))
+  1260→
+  1261→        # Late import to keep autonomy optional (no import at module level)
+  1262→        from ..autonomy import (
+  1263→            AutonomousDriver,
+  1264→            RenderPlanner,
+  1265→            PreFlightValidator,
+  1266→            RenderEvaluator,
+  1267→        )
+  1268→
+  1269→        # Adapter: bridge the sync handler registry to the async interface
+  1270→        # expected by the autonomy modules.
+  1271→        class _HandlerAdapter:
+  1272→            """Adapts the sync handler registry to the async interface expected by autonomy modules."""
+  1273→
+  1274→            def __init__(self, registry):
+  1275→                self._registry = registry
+  1276→
+  1277→            async def call(self, tool_name, params):
+  1278→                handler = self._registry.get(tool_name)
+  1279→                if handler is None:
+  1280→                    raise ValueError(f"Couldn't find handler: {tool_name}")
+  1281→                result = handler(params)
+  1282→                if asyncio.iscoroutine(result):
+  1283→                    return await result
+  1284→                return result
+  1285→
+  1286→        adapter = _HandlerAdapter(self._registry)
+  1287→
+  1288→        # Optionally wire up memory for decision persistence
+  1289→        memory = None
+  1290→        try:
+  1291→            from ..memory.store import get_synapse_memory
+  1292→            memory = get_synapse_memory()
+  1293→        except Exception:
+  1294→            pass
+  1295→
+  1296→        planner = RenderPlanner()
+  1297→        validator = PreFlightValidator(adapter)
+  1298→        evaluator = RenderEvaluator()
+  1299→
+  1300→        driver = AutonomousDriver(
+  1301→            planner=planner,
+  1302→            validator=validator,
+  1303→            evaluator=evaluator,
+  1304→            handler_interface=adapter,
+  1305→            memory_system=memory,
+  1306→            max_iterations=max_iterations,
+  1307→        )
+  1308→
+  1309→        # The autonomy pipeline is async; run it from this sync handler context.
+  1310→        try:
+  1311→            loop = asyncio.get_running_loop()
+  1312→        except RuntimeError:
+  1313→            loop = None
+  1314→
+  1315→        if loop and loop.is_running():
+  1316→            # Already inside an event loop (e.g. hwebserver) — schedule as a task.
+  1317→            import concurrent.futures
+  1318→            future: concurrent.futures.Future = concurrent.futures.Future()
+  1319→
+  1320→            async def _run():
+  1321→                try:
+  1322→                    result = await driver.execute(intent)
+  1323→                    future.set_result(result)
+  1324→                except Exception as exc:
+  1325→                    future.set_exception(exc)
+  1326→
+  1327→            loop.create_task(_run())
+  1328→            report = future.result(timeout=600)
+  1329→        else:
+  1330→            report = asyncio.run(driver.execute(intent))
+  1331→
+  1332→        # Serialize the dataclass report to a plain dict
+  1333→        def _serialize(obj):
+  1334→            """Convert dataclass / enum / datetime to JSON-safe dict."""
+  1335→            if hasattr(obj, "__dataclass_fields__"):
+  1336→                return {k: _serialize(v) for k, v in asdict(obj).items()}
+  1337→            if isinstance(obj, dict):
+  1338→                return {k: _serialize(v) for k, v in obj.items()}
+  1339→            if isinstance(obj, list):
+  1340→                return [_serialize(v) for v in obj]
+  1341→            if hasattr(obj, "value"):  # Enum
+  1342→                return obj.value
+  1343→            return obj
+  1344→
+  1345→        return _serialize(report)
+  1346→
+  1347→def _run_compiled(compiled_code, globals_dict, locals_dict):
+  1348→    """
+  1349→    Run compiled Python code. Separated for DCC scripting pattern.
+  1350→
+  1351→    This uses Python's exec() builtin intentionally for Houdini automation -
+  1352→    it is NOT shell command execution.
+  1353→    """
+  1354→    exec(compiled_code, globals_dict, locals_dict)  # noqa: S102
+  1355→
+  1356→
+  1357→# Backwards compatibility
+  1358→NexusHandler = SynapseHandler
+  1359→
+  1360→# Re-export module-level helpers that moved to mixin modules
+  1361→# (tests and external code may reference them via handlers_mod)
+  1362→from .handlers_render import _find_render_rop, _detect_karma_engine  # noqa: E402,F401
+  1363→from .handlers_usd import _usd_to_json  # noqa: E402,F401
+  1364→from .handlers_node import _suggest_children  # noqa: E402,F401
+  1365→

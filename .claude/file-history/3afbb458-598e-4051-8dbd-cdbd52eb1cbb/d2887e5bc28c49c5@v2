@@ -1,0 +1,54 @@
+"""Check what USD prims the cinema rig creates and what cameras exist."""
+import asyncio, sys, os
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+CODE = r'''
+import hou
+
+rs = hou.node("/stage/karma_settings")
+rs.cook(force=True)
+stage = rs.stage()
+
+# List all prims
+all_prims = []
+for prim in stage.Traverse():
+    all_prims.append((str(prim.GetPath()), prim.GetTypeName()))
+
+# Find cameras specifically
+cameras = [(p, t) for p, t in all_prims if "Camera" in t or "camera" in p.lower()]
+
+# Find render settings
+render_prims = [(p, t) for p, t in all_prims if "Render" in p or "render" in t.lower()]
+
+# Check karma_settings camera parm
+cam_parm_val = rs.parm("camera").eval() if rs.parm("camera") else "NO PARM"
+
+result = {
+    "total_prims": len(all_prims),
+    "cameras": cameras,
+    "render_prims": render_prims,
+    "camera_parm": cam_parm_val,
+    "first_20": all_prims[:20]
+}
+'''
+
+async def main():
+    async with SynapseClient() as client:
+        r = await client.execute_python(CODE, timeout=15.0)
+        import ast
+        if isinstance(r, str):
+            r = ast.literal_eval(r)
+        print(f"Total prims: {r['total_prims']}")
+        print(f"\nCamera parm: {r['camera_parm']}")
+        print(f"\nCameras:")
+        for p, t in r['cameras']:
+            print(f"  {p} ({t})")
+        print(f"\nRender prims:")
+        for p, t in r['render_prims']:
+            print(f"  {p} ({t})")
+        print(f"\nFirst 20 prims:")
+        for p, t in r['first_20']:
+            print(f"  {p} ({t})")
+
+asyncio.run(main())

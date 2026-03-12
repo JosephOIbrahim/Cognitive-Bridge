@@ -1,0 +1,37 @@
+"""
+SYNAPSE Connect -- One-Click Shot Login
+
+Shelf tool that initializes the Living Memory system for the current scene.
+Delegates to synapse_shelf.project_setup() which handles directory creation,
+memory loading, and clipboard handshake.
+
+Always safe to click -- idempotent. Never overwrites existing files.
+"""
+
+import hou
+
+
+def synapse_connect():
+    """One-click SYNAPSE shot login.
+
+    Delegates to the shared project_setup() in synapse_shelf, which uses
+    the installed synapse package rather than reimplementing locally.
+    """
+    try:
+        import synapse_shelf
+        synapse_shelf.project_setup()
+    except ImportError:
+        hou.ui.displayMessage(
+            "Couldn't find synapse_shelf module.\n\n"
+            "Run the Synapse installer to set it up:\n"
+            "  python install.py",
+            title="SYNAPSE Connect",
+            severity=hou.severityType.Error,
+        )
+    except Exception as e:
+        hou.ui.displayMessage(
+            "SYNAPSE Connect hit a snag: {}\n\n"
+            "Check the Synapse server is running.".format(e),
+            title="SYNAPSE Connect",
+            severity=hou.severityType.Error,
+        )

@@ -1,0 +1,142 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synapse-houdini"
+version = "5.7.0"
+description = "AI-Houdini Bridge - WebSocket communication, persistent project memory, and foundation utilities (determinism, audit, gates)"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Joe Ibrahim", email = "joe@example.com"}
+]
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+keywords = ["houdini", "vfx", "ai", "websocket", "memory", "automation", "synapse"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+websocket = [
+    "websockets>=11.0",
+]
+encryption = [
+    "cryptography>=41.0.0",
+]
+mcp = [
+    "mcp>=1.0.0",
+    "websockets>=11.0",
+]
+routing = [
+    "anthropic>=0.40.0",
+]
+fast-hash = [
+    "xxhash>=3.0.0",
+]
+memory = [
+    "filelock>=3.12",
+]
+build = [
+    "cython>=3.0",
+    "setuptools>=61.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/JosephOIbrahim/Synapse"
+Repository = "https://github.com/JosephOIbrahim/Synapse"
+Issues = "https://github.com/JosephOIbrahim/Synapse/issues"
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[tool.setuptools.package-dir]
+"" = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = false
+exclude = [
+    "tests/",
+    "build/",
+]
+mypy_path = "python"
+
+[[tool.mypy.overrides]]
+module = "synapse.routing.router"
+disable_error_code = ["assignment"]
+
+[[tool.mypy.overrides]]
+module = "synapse.ui.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "synapse.server.websocket"
+disable_error_code = ["assignment"]
+
+[[tool.mypy.overrides]]
+module = "synapse.server.hwebserver_adapter"
+disable_error_code = ["assignment"]
+
+[[tool.mypy.overrides]]
+module = "synapse.server.api_adapter"
+disable_error_code = ["assignment", "var-annotated"]
+
+[[tool.mypy.overrides]]
+module = "hou"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "hou.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mcp.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "anthropic.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "websockets.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "cryptography.*"
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["python/synapse"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

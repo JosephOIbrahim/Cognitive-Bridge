@@ -1,0 +1,716 @@
+C:\Users\User\SYNAPSE\CLAUDE.md-167-Cache(O(1)) -> Recipe(O(1)) -> Planner(O(1)) -> Tier0/regex(O(n)) -> Tier1/RAG(O(log n)) -> Tier2/Haiku(~5s) -> Tier3/Agent(~15s)
+C:\Users\User\SYNAPSE\CLAUDE.md-168-```
+C:\Users\User\SYNAPSE\CLAUDE.md-169-
+C:\Users\User\SYNAPSE\CLAUDE.md:170:- **Tier pinning** (He2025 consistency): Same input+context maps to same tier on subsequent calls. LRU cache, max 1,000 pins, stale pins fall through.
+C:\Users\User\SYNAPSE\CLAUDE.md-171-- **Speculative T0+T1 parallelism**: Module-level `ThreadPoolExecutor(max_workers=2)` runs Tier 0 regex and Tier 1 knowledge lookup concurrently.
+C:\Users\User\SYNAPSE\CLAUDE.md-172-- **Tier 1 result threading**: `route()` runs `knowledge.lookup()` once, threads the result to all higher tiers to avoid redundant lookups.
+C:\Users\User\SYNAPSE\CLAUDE.md-173-
+--
+C:\Users\User\SYNAPSE\CLAUDE.md-445-
+C:\Users\User\SYNAPSE\CLAUDE.md-446-**Coaching tone**: Error messages say "Couldn't find node" not "Node not found". Always offer next step. `_suggest_parms(node, name)` provides substring-matched alternatives. See `TONE.md` for the full voice guide.
+C:\Users\User\SYNAPSE\CLAUDE.md-447-
+C:\Users\User\SYNAPSE\CLAUDE.md:448:**He2025 determinism**: `round_float()` for OUTPUT only — never internal timing. `sort_keys=True` in all JSON serialization (both stdlib `json.dumps` and `orjson.OPT_SORT_KEYS`). `@deterministic` decorator auto-rounds float args. `kahan_sum()` for stable aggregation. Content-based UUIDs via `deterministic_uuid()`. Epoch-based adaptation uses fixed epoch SIZE (not time-based) per He2025.
+C:\Users\User\SYNAPSE\CLAUDE.md-449-
+C:\Users\User\SYNAPSE\CLAUDE.md-450-**Lazy loading**: `__init__.py` uses `__getattr__` to defer routing/server/UI imports. Optional deps use try/except with `*_AVAILABLE` flags. Keeps Houdini startup fast.
+C:\Users\User\SYNAPSE\CLAUDE.md-451-
+--
+C:\Users\User\SYNAPSE\INVENTORY.md-58-| `audit.py` | 404 | Hash-chain append-only audit log, tamper detection |
+C:\Users\User\SYNAPSE\INVENTORY.md-59-| `determinism.py` | 367 | round_float, deterministic_uuid, kahan_sum, @deterministic |
+C:\Users\User\SYNAPSE\INVENTORY.md-60-| `gates.py` | 578 | Human-in-the-loop (INFORM/REVIEW/APPROVE/CRITICAL) |
+C:\Users\User\SYNAPSE\INVENTORY.md:61:| `queue.py` | 93 | DeterministicCommandQueue (He2025 batch invariance) |
+C:\Users\User\SYNAPSE\INVENTORY.md-62-| `crypto.py` | 142 | Fernet encryption (AES-128-CBC + HMAC-SHA256) |
+C:\Users\User\SYNAPSE\INVENTORY.md-63-| `errors.py` | 91 | Exception hierarchy |
+C:\Users\User\SYNAPSE\INVENTORY.md-64-
+--
+C:\Users\User\SYNAPSE\INVENTORY.md-98-| `vex_diagnostics.py` | 593 | VEX error analysis and suggestions |
+C:\Users\User\SYNAPSE\INVENTORY.md-99-| `parser.py` | 345 | CommandParser (regex, Tier 0) |
+C:\Users\User\SYNAPSE\INVENTORY.md-100-| `cache.py` | 185 | ResponseCache (deterministic LRU, per-tier TTL) |
+C:\Users\User\SYNAPSE\INVENTORY.md:101:| `adaptation.py` | 183 | Epoch-based tier adaptation (He2025) |
+C:\Users\User\SYNAPSE\INVENTORY.md-102-
+C:\Users\User\SYNAPSE\INVENTORY.md-103-### Memory (10 files, ~4,250 lines)
+C:\Users\User\SYNAPSE\INVENTORY.md-104-| File | Lines | Role |
+--
+C:\Users\User\SYNAPSE\INVENTORY.md-212-
+C:\Users\User\SYNAPSE\INVENTORY.md-213-## Key Design Principles
+C:\Users\User\SYNAPSE\INVENTORY.md-214-
+C:\Users\User\SYNAPSE\INVENTORY.md:215:### Determinism (He2025-inspired)
+C:\Users\User\SYNAPSE\INVENTORY.md-216-- `sort_keys=True` in ALL JSON serialization (orjson + stdlib)
+C:\Users\User\SYNAPSE\INVENTORY.md-217-- Content-based UUIDs via deterministic_uuid() (SHA-256)
+C:\Users\User\SYNAPSE\INVENTORY.md-218-- round_float() for OUTPUT only (Decimal, ROUND_HALF_UP)
+--
+C:\Users\User\SYNAPSE\DEMO_SCRIPT.md-151-- **~5s** Karma XPU render (simple scene, 960x540)
+C:\Users\User\SYNAPSE\DEMO_SCRIPT.md-152-- **61 memories** stored in current project
+C:\Users\User\SYNAPSE\DEMO_SCRIPT.md-153-- **5 critical hardening fixes** shipped today (injection prevention, race conditions, resource leaks, latency tracking)
+C:\Users\User\SYNAPSE\DEMO_SCRIPT.md:154:- **He2025 consistency score: 93/100** (application-layer determinism)
+C:\Users\User\SYNAPSE\DEMO_SCRIPT.md-155-
+C:\Users\User\SYNAPSE\DEMO_SCRIPT.md-156----
+C:\Users\User\SYNAPSE\DEMO_SCRIPT.md-157-
+--
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-5-## Critical Rules
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-6-
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-7-1. **NEVER** edit files under `~/.synapse/houdini/` (deployed copies) — ALL edits must go to the repo source at `SYNAPSE/houdini/`.
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md:8:2. After every file edit, verify: the edited file is in the correct repo directory, all imports resolve, and the change is consistent with He2025 conventions.
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-9-3. Before marking complete, run a final validation that greps for any accidental edits to deployed paths.
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-10-
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-11-## Workflow
+--
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-14-2. Propose a file-by-file implementation plan — do NOT begin editing until the user approves the plan
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-15-3. Implement each file change, validating after each edit
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-16-4. Run tests: `python -m pytest tests/ -v`
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md:17:5. Final validation: confirm no deployed-path edits, all imports resolve, He2025 compliance (sort_keys=True on all json.dumps)
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-18-6. Report what changed and remind user to redeploy if Houdini integration files were modified
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-19-
+C:\Users\User\SYNAPSE\.claude\skills\synapse-feature\SKILL.md-20-## Arguments
+--
+C:\Users\User\SYNAPSE\agent\synapse_ws.py-19-
+C:\Users\User\SYNAPSE\agent\synapse_ws.py-20-logger = logging.getLogger("synapse.ws")
+C:\Users\User\SYNAPSE\agent\synapse_ws.py-21-
+C:\Users\User\SYNAPSE\agent\synapse_ws.py:22:# --- Deterministic command IDs (He2025) ---
+C:\Users\User\SYNAPSE\agent\synapse_ws.py-23-_cmd_seq = 0
+C:\Users\User\SYNAPSE\agent\synapse_ws.py-24-
+C:\Users\User\SYNAPSE\agent\synapse_ws.py-25-def _cmd_id(cmd_type: str, payload: dict | None) -> str:
+--
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-182-- Planner is a single LLM call, not a separate agent loop
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-183-- Sub-goals are plain text descriptions, not code
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-184-- Dependencies form a DAG -- validate no cycles
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md:185:- Plan is deterministic for the same goal + scene context (He2025)
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-186-
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-187-### Phase 3 Rules
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-188-- Checkpoints are append-only JSONL
+--
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-219-
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-220----
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-221-
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md:222:## 6. He2025 COMPLIANCE
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-223-
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-224-| Pattern | Applied In |
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-225-|---------|-----------|
+--
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-231-
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-232----
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md-233-
+C:\Users\User\SYNAPSE\docs\agent\AGENT_V2_SPRINT.md:234:*Cross-reference: TOPS_SPRINT.md for TOPS tool definitions, CLAUDE.md for He2025 patterns.*
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:1:# He2025 Consistency Audit — Synapse vs ThinkingMachines Paper
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-2-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-3-**Date:** 2026-02-07
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-4-**Auditor:** Ralph Loop (Iteration 2)
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-14-The paper addresses **GPU kernel-level** nondeterminism: RMSNorm tile boundaries, matmul split-K strategies, and FlashAttention split sizes change reduction order based on batch size. Their fix is **batch-invariant kernels** where "the reduction order for each element must be fixed regardless of batch-size."
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-15-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-16-### Synapse applies:
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:17:Synapse applies He2025 principles at the **application layer** — not GPU kernels. This is a conscious design choice documented in `resilience.py:23-26`:
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-18-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:19:> "He2025 determinism applies to user-facing outputs, not internal timing."
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-20-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-21-**Verdict: CONSISTENT.** Synapse correctly adapts the principle (same input → same output) without claiming to solve the exact GPU kernel problem. The paper's principles generalize: canonicalization, fixed ordering, and content-based addressing are valid at any layer.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-22-
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-30-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-31-**Synapse (`queue.py:84-86`):**
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-32-```python
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:33:# He2025 batch invariance: deliver in sequence order regardless
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-34-# of enqueue arrival order from concurrent threads
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-35-return sorted(responses, key=lambda r: (r.sequence, r.id))
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-36-```
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-43-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-44-**Synapse (`protocol.py:127-130, 165-167`):**
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-45-```python
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:46:# He2025: preserve wire timestamp; 0.0 sentinel = "not provided"
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-47-# (avoids injecting nondeterministic time.time() on deserialization)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-48-timestamp=parsed.get("timestamp", 0.0),
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-49-```
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-56-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-57-**Synapse (`cache.py:154-164`):**
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-58-```python
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:59:# Canonicalization (He2025-inspired):
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-60-# 1. Strip whitespace, lowercase
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-61-# 2. Hash: SHA-256(tier + ":" + canonical_text + ":" + context_hash)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-62-canonical = input_text.strip().lower()
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-100-    return round_float(total)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-101-```
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-102-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:103:**Verdict: CORRECT but UNRELATED to He2025.** Kahan summation is a valid determinism technique for CPU-side float aggregation. It's not from the paper — it's a general numerical computing technique (Kahan, 1965). The implementation is correct (compensated summation reduces O(n) error to O(1)). Not referenced as He2025 in the code, so no false attribution.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-104-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-105-### 2.6 Decimal-Based Rounding
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-106-
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-108-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-109-**Synapse (`determinism.py:70-94`):** Uses `Decimal(str(value)).quantize(precision, ROUND_HALF_UP)` in strict mode.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-110-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:111:**Verdict: CORRECT but UNRELATED to He2025.** This is standard numerical determinism practice. Not attributed to He2025.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-112-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-113-### 2.7 Content-Based UUIDs
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-114-
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-116-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-117-**Synapse (`determinism.py:143-159`):** SHA-256 of `{namespace}:{version}:{content}` → 16-char hex.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-118-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:119:**Verdict: CORRECT.** Content-addressable IDs ensure same content → same ID. No He2025 attribution in code.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-120-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-121-### 2.8 Resilience Layer Exclusion
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-122-
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-125-**Synapse (`resilience.py:23-26`):**
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-126-```python
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-127-# NOTE: round_float (Decimal-based) is intentionally NOT used here.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:128:# He2025 determinism applies to user-facing outputs, not internal timing.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-129-# Using Decimal for token-bucket math added ~2x overhead per command
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-130-# with zero determinism benefit. Plain round() is sufficient.
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-131-```
+--
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-202-**All issues resolved:**
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-203-- `deterministic_uuid()` with `time.time()` in `router.py` — replaced with monotonic counters (v5.1)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-204-- `deterministic_uuid()` with `time.time()` in `audit.py:183` — replaced with process-stable ID (v5.2)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:205:- `docs/architecture/overview.md` — now distinguishes He2025-inspired vs general determinism techniques (v5.2)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:206:- `README.md` — no longer groups Kahan summation under He2025 (v5.2)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-207-- Redundant double-sort in `audit.py:109` — simplified to `json.dumps(content, sort_keys=True)` (v5.2)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:208:- `adaptation.py:26` — removed false He2025 attribution from epoch size comment (v5.2)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-209-
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-210-**Strengths:**
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md:211:- Correct adaptation of He2025 principles to application layer
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-212-- Explicit scoping documentation (resilience.py comment)
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-213-- All serialization paths use `sort_keys=True`
+C:\Users\User\SYNAPSE\docs\He2025_CONSISTENCY_AUDIT.md-214-- Timestamp preservation with 0.0 sentinel is well-reasoned
+--
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-34-Cache(O(1)) -> Recipe(O(1)) -> Planner(O(1)) -> Tier0/regex(O(n)) -> Tier1/RAG(O(log n)) -> Tier2/Haiku(~5s) -> Tier3/Agent(~15s)
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-35-```
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-36-
+C:\Users\User\SYNAPSE\docs\architecture\overview.md:37:- **Tier pinning**: Same input + context maps to same tier (He2025 consistency)
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-38-- **Epoch adaptation**: Fixed-size epochs (100 commands), Kahan-summed success rates adjust thresholds
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-39-- **Speculative parallelism**: Tier 0 regex and Tier 1 RAG run concurrently
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-40-
+--
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-49-
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-50-## Determinism
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-51-
+C:\Users\User\SYNAPSE\docs\architecture\overview.md:52:Synapse adapts the core principle from [He2025] "Defeating Nondeterminism in LLM Inference" — same input must produce same output — at the **application layer** (not GPU kernels):
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-53-
+C:\Users\User\SYNAPSE\docs\architecture\overview.md:54:**Inspired by He2025:**
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-55-- `sort_keys=True` in all JSON serialization (canonical byte representation)
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-56-- Sorted iterations before aggregation (fixed reduction order)
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-57-- Fixed-size epochs, not time-based (batch-invariant adaptation)
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-58-- Tier pinning: same input + context maps to same routing tier
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-59-
+C:\Users\User\SYNAPSE\docs\architecture\overview.md:60:**General determinism (not from He2025):**
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-61-- `round_float()` for output precision (Decimal ROUND_HALF_UP)
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-62-- `kahan_sum()` for stable float aggregation (Kahan, 1965)
+C:\Users\User\SYNAPSE\docs\architecture\overview.md-63-- `deterministic_uuid()` for content-based IDs (SHA-256)
+--
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-244-
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-245----
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-246-
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md:247:## 6. He2025 COMPLIANCE
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-248-
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-249-| Pattern | Applied In |
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-250-|---------|-----------|
+--
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-257-
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-258----
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md-259-
+C:\Users\User\SYNAPSE\docs\monitoring\MONITORING_SPRINT.md:260:*Cross-reference: metrics.py for existing Prometheus format, resilience.py for circuit breaker metrics, CLAUDE.md for He2025 patterns.*
+--
+C:\Users\User\SYNAPSE\docs\index.md-7-- **37 MCP tools** for real-time Houdini scene manipulation
+C:\Users\User\SYNAPSE\docs\index.md-8-- **6-tier routing cascade** (cheapest-first: Cache -> Recipe -> Regex -> RAG -> Haiku -> Agent)
+C:\Users\User\SYNAPSE\docs\index.md-9-- **Persistent project memory** with JSONL or SQLite backends
+C:\Users\User\SYNAPSE\docs\index.md:10:- **He2025 determinism** -- same inputs produce same routing decisions
+C:\Users\User\SYNAPSE\docs\index.md-11-- **Adaptive tier routing** -- learns from outcomes while preserving consistency
+C:\Users\User\SYNAPSE\docs\index.md-12-- **Production resilience** -- rate limiting, circuit breaker, backpressure, graceful shutdown
+C:\Users\User\SYNAPSE\docs\index.md-13-
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-30-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-31-### What earns points
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-32-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md:33:**The architecture is genuinely novel and sophisticated.** There is no other open-source tool that bridges Claude to Houdini via a 6-tier routing cascade with He2025 determinism compliance. This is original research-grade work, not a wrapper.
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-34-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-35-Evidence:
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-36-- **6-tier routing cascade** (`routing/router.py`, 833 lines): Cache(O(1)) -> Recipe(O(1)) -> Tier0/regex -> Tier1/RAG -> Tier2/Haiku -> Tier3/Agent. Each tier is cheapest-first with speculative T0+T1 parallelism via ThreadPoolExecutor(2).
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md:37:- **Tier pinning** with He2025 batch invariance: Same input + context maps to same tier. LRU cache (1,000 pins), stale pin eviction by epoch ID (monotonic int, not wall-clock).
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-38-- **Epoch-based adaptive routing** (`routing/adaptation.py`, 183 lines): Fixed-size epochs (100 commands), Kahan-summed success rates, sorted aggregation. The adaptation learns from outcomes without violating determinism. This is a genuine contribution.
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-39-- **37 MCP tools** with concurrent dispatch (`mcp_server.py`, 1,313 lines): `_pending` dict + `_recv_loop` coroutine -- true parallel tool calls, no blocking lock. This is how you'd design it at scale.
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-40-- **Determinism primitives** (`core/determinism.py`, 367 lines): `round_float()`, `kahan_sum()`, `deterministic_uuid()`, `@deterministic` decorator. Content-based IDs, not random UUIDs.
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-43-**What's genuinely frontier:**
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-44-- The idea that an AI assistant should have a *routing cascade* that selects the cheapest-sufficient computation path is ahead of how most AI tools work today
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-45-- Tier pinning + epoch adaptation is a novel approach to the "consistency vs. learning" tension in LLM tool systems
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md:46:- The He2025 determinism compliance (verified 9/9) means reproducible behavior -- rare in AI tooling
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-47-- Project memory with semantic search means the AI accumulates context across sessions -- no other Houdini tool does this
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-48-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-professional-audit.md-49-### What costs points
+--
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-25-
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-26-
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-27-# =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py:28:# Dispatch ID counter (He2025: sequential, not uuid4)
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-29-# =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-30-
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-31-_call_counter = 0
+--
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-662-def get_tools() -> list[dict]:
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-663-    """Return all MCP tool definitions for tools/list response.
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-664-
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py:665:    Returns a list sorted by name (He2025 determinism).
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-666-    """
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-667-    return sorted(_TOOL_JSON.values(), key=lambda t: t["name"])
+C:\Users\User\SYNAPSE\python\synapse\mcp\tools.py-668-
+--
+C:\Users\User\SYNAPSE\mcp_server.py-125-
+C:\Users\User\SYNAPSE\mcp_server.py-126-
+C:\Users\User\SYNAPSE\mcp_server.py-127-# ---------------------------------------------------------------------------
+C:\Users\User\SYNAPSE\mcp_server.py:128:# Deterministic command IDs (He2025: same input → same ID within a session)
+C:\Users\User\SYNAPSE\mcp_server.py-129-# ---------------------------------------------------------------------------
+C:\Users\User\SYNAPSE\mcp_server.py-130-_cmd_seq = 0
+C:\Users\User\SYNAPSE\mcp_server.py-131-
+--
+C:\Users\User\SYNAPSE\python\synapse\mcp\session.py-10-from typing import Dict, Optional
+C:\Users\User\SYNAPSE\python\synapse\mcp\session.py-11-
+C:\Users\User\SYNAPSE\python\synapse\mcp\session.py-12-
+C:\Users\User\SYNAPSE\python\synapse\mcp\session.py:13:# He2025: deterministic session IDs (sequential counter, not uuid4)
+C:\Users\User\SYNAPSE\python\synapse\mcp\session.py-14-_session_counter = 0
+C:\Users\User\SYNAPSE\python\synapse\mcp\session.py-15-_counter_lock = threading.Lock()
+C:\Users\User\SYNAPSE\python\synapse\mcp\session.py-16-
+--
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-5-and resources/read. Resources provide read-only browseable data
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-6-about the Houdini scene, USD stage, and TOPS networks.
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-7-
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py:8:He2025: get_resources() returns resources sorted by URI.
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-9-"""
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-10-
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-11-import re
+--
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-128-def get_resources() -> list[dict]:
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-129-    """Return all static MCP resource definitions for resources/list.
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-130-
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py:131:    He2025: sorted by URI for deterministic output.
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-132-    """
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-133-    resources = []
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-134-    for r in _STATIC_RESOURCES:
+--
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-144-def get_resource_templates() -> list[dict]:
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-145-    """Return all resource templates for resources/templates/list.
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-146-
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py:147:    He2025: sorted by uriTemplate for deterministic output.
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-148-    """
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-149-    templates = []
+C:\Users\User\SYNAPSE\python\synapse\mcp\resources.py-150-    for t in _RESOURCE_TEMPLATES:
+--
+C:\Users\User\SYNAPSE\python\synapse\mcp\protocol.py-10-import json
+C:\Users\User\SYNAPSE\python\synapse\mcp\protocol.py-11-from typing import Any, Optional
+C:\Users\User\SYNAPSE\python\synapse\mcp\protocol.py-12-
+C:\Users\User\SYNAPSE\python\synapse\mcp\protocol.py:13:# He2025: sort_keys in all JSON serialization
+C:\Users\User\SYNAPSE\python\synapse\mcp\protocol.py-14-try:
+C:\Users\User\SYNAPSE\python\synapse\mcp\protocol.py-15-    import orjson
+C:\Users\User\SYNAPSE\python\synapse\mcp\protocol.py-16-
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-16-| `print()` calls | **0** (all structured logging) |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-17-| `logger.*` calls | 79 |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-18-| mypy | 0 errors on 49 files |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md:19:| He2025 | 9/9 |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-20-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-21----
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-22-
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-84-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-85-- **Epoch-based adaptive routing.** Fixed-size epochs (100 queries), Kahan-summed success rates per tier, threshold adjustment at boundaries. Stale pins evict after 2 epochs.
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-86-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md:87:- **He2025 determinism: 9/9.** Zero unsorted `.items()`, all JSON `sort_keys=True`, Kahan summation, content-based UUIDs, `round_float()` on outputs, `@deterministic` decorator.
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-88-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-89-- **Speculative T0+T1 parallelism.** `ThreadPoolExecutor(max_workers=2)` runs Tier 0 regex and Tier 1 knowledge concurrently. Result threading shares knowledge across higher tiers.
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-90-
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-114-|------|-------|-----------|
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-115-| **Production Readiness** | **8/10** | Resilience stack, auth, structured logging, dual storage. Missing TLS and CI badge. |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-116-| **VFX / Artist Readiness** | **7.5/10** | 37 tools, coaching tone, USD translation, 21 recipes. Missing SOP tools and semantic RAG. |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md:117:| **AI Frontier** | **8.5/10** | 6-tier adaptive cascade, He2025 9/9, speculative parallelism, epoch learning. Missing vector RAG. |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-118-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md:119:**Weighted overall: 8/10.** Significantly ahead of any open-source MCP-to-DCC bridge. The He2025 determinism alone puts it in a different category. The main gap is knowledge retrieval -- upgrading from keyword to vector search would unlock the last mile for both artist UX and AI frontier.
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-120-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-121----
+C:\Users\User\SYNAPSE\docs\plans\2026-02-10-synapse-v5-review.md-122-
+--
+C:\Users\User\SYNAPSE\docs\studio\STUDIO_SPRINT.md-247-
+C:\Users\User\SYNAPSE\docs\studio\STUDIO_SPRINT.md-248----
+C:\Users\User\SYNAPSE\docs\studio\STUDIO_SPRINT.md-249-
+C:\Users\User\SYNAPSE\docs\studio\STUDIO_SPRINT.md:250:## 6. He2025 COMPLIANCE
+C:\Users\User\SYNAPSE\docs\studio\STUDIO_SPRINT.md-251-
+C:\Users\User\SYNAPSE\docs\studio\STUDIO_SPRINT.md-252-| Pattern | Applied In |
+C:\Users\User\SYNAPSE\docs\studio\STUDIO_SPRINT.md-253-|---------|-----------|
+--
+C:\Users\User\SYNAPSE\python\synapse\mcp\server.py-41-from .resources import get_resources, get_resource_templates, resolve_resource
+C:\Users\User\SYNAPSE\python\synapse\mcp\server.py-42-from .tools import dispatch_tool, get_tools
+C:\Users\User\SYNAPSE\python\synapse\mcp\server.py-43-
+C:\Users\User\SYNAPSE\python\synapse\mcp\server.py:44:# Fast JSON (He2025: sort_keys)
+C:\Users\User\SYNAPSE\python\synapse\mcp\server.py-45-try:
+C:\Users\User\SYNAPSE\python\synapse\mcp\server.py-46-    import orjson
+C:\Users\User\SYNAPSE\python\synapse\mcp\server.py-47-    def _dumps(obj) -> bytes:
+--
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-162-            id=parsed.get("id", ""),
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-163-            payload=parsed.get("payload", {}),
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-164-            sequence=parsed.get("sequence", 0),
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py:165:            # He2025: preserve wire timestamp; 0.0 sentinel = "not provided"
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-166-            # (avoids injecting nondeterministic time.time() on deserialization)
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-167-            timestamp=parsed.get("timestamp", 0.0),
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-168-            protocol_version=parsed.get("protocol_version", "1.0.0")
+--
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-208-            data=parsed.get("data"),
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-209-            error=parsed.get("error"),
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-210-            sequence=parsed.get("sequence", 0),
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py:211:            # He2025: preserve wire timestamp; 0.0 sentinel = "not provided"
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-212-            timestamp=parsed.get("timestamp", 0.0),
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-213-            protocol_version=parsed.get("protocol_version", "1.0.0")
+C:\Users\User\SYNAPSE\python\synapse\core\protocol.py-214-        )
+--
+C:\Users\User\SYNAPSE\python\synapse\core\queue.py-84-    def get_responses(self, client: Any) -> List[SynapseResponse]:
+C:\Users\User\SYNAPSE\python\synapse\core\queue.py-85-        with self._lock:
+C:\Users\User\SYNAPSE\python\synapse\core\queue.py-86-            responses = self._responses.pop(client, [])
+C:\Users\User\SYNAPSE\python\synapse\core\queue.py:87:            # He2025 batch invariance: deliver in sequence order regardless
+C:\Users\User\SYNAPSE\python\synapse\core\queue.py-88-            # of enqueue arrival order from concurrent threads
+C:\Users\User\SYNAPSE\python\synapse\core\queue.py-89-            return sorted(responses, key=lambda r: (r.sequence, r.id))
+C:\Users\User\SYNAPSE\python\synapse\core\queue.py-90-
+--
+C:\Users\User\SYNAPSE\docs\api\routing\adaptation.md-1-# synapse.routing.adaptation
+C:\Users\User\SYNAPSE\docs\api\routing\adaptation.md-2-
+C:\Users\User\SYNAPSE\docs\api\routing\adaptation.md:3:Epoch-based tier adaptation with He2025 compliance.
+C:\Users\User\SYNAPSE\docs\api\routing\adaptation.md-4-
+C:\Users\User\SYNAPSE\docs\api\routing\adaptation.md-5-::: synapse.routing.adaptation
+--
+C:\Users\User\SYNAPSE\docs\api\core\determinism.md-1-# synapse.core.determinism
+C:\Users\User\SYNAPSE\docs\api\core\determinism.md-2-
+C:\Users\User\SYNAPSE\docs\api\core\determinism.md:3:He2025 determinism primitives: `round_float`, `kahan_sum`, `deterministic_uuid`, `@deterministic` decorator.
+C:\Users\User\SYNAPSE\docs\api\core\determinism.md-4-
+C:\Users\User\SYNAPSE\docs\api\core\determinism.md-5-::: synapse.core.determinism
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-152-# ==========================================================================
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-153-
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-154-class TestEpochAdaptation:
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:155:    """Test epoch-based tier adaptation (He2025 compliant)."""
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-156-
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-157-    def setup_method(self):
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-158-        from synapse.routing.adaptation import EpochAdapter, TierEpoch, TierThresholds
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-171-        assert epoch.is_complete
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-172-
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-173-    def test_epoch_aggregate_kahan(self):
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:174:        """Aggregate uses kahan_sum for He2025 compliance."""
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-175-        epoch = self.TierEpoch(epoch_id=0, epoch_size=4)
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-176-        epoch.record("instant", True, 1.0)
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-177-        epoch.record("instant", True, 1.0)
+--
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-184-        assert abs(rates["fast"] - 1.0) < 0.001
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-185-
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-186-    def test_epoch_aggregate_sorted(self):
+C:\Users\User\SYNAPSE\tests\test_v5_features.py:187:        """Aggregate results are sorted by tier name (He2025)."""
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-188-        epoch = self.TierEpoch(epoch_id=0, epoch_size=3)
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-189-        epoch.record("fast", True, 5.0)
+C:\Users\User\SYNAPSE\tests\test_v5_features.py-190-        epoch.record("cache", True, 0.1)
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-5-epoch boundaries, and adjusts confidence thresholds for new (unpinned)
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-6-inputs.
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-7-
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py:8:He2025 compliance:
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-9-- Fixed epoch SIZE (not time-based) — same as paper's fixed split-size
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-10-- sorted() before aggregation — order-independent
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-11-- kahan_sum() for float aggregation — stable across batch sizes
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-56-        return len(self.outcomes) >= self.epoch_size
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-57-
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-58-    def aggregate(self) -> Dict[str, float]:
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py:59:        """Kahan-summed success rates per tier. He2025 compliant.
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-60-
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-61-        Returns dict mapping tier name to success rate [0.0, 1.0].
+C:\Users\User\SYNAPSE\python\synapse\routing\adaptation.py-62-        """
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-1-"""
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py:2:Synapse Response Cache (He2025)
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-3-
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-4-Deterministic response caching via SHA-256 canonicalization.
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-5-Same canonical input → same cached output → O(1) retrieval.
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-6-
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py:7:Inspired by [He2025]: batch-invariant kernels + temperature 0 = identical
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-8-output for identical input. Canonicalization enables cross-session caching.
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-9-
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-10-TTL strategy per tier:
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-155-        """
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-156-        Produce canonical cache key via SHA-256.
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-157-
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py:158:        Canonicalization (He2025-inspired):
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-159-        1. Strip whitespace, lowercase
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-160-        2. Hash: SHA-256(tier + ":" + canonical_text + ":" + context_hash)
+C:\Users\User\SYNAPSE\python\synapse\routing\cache.py-161-        """
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\recipes.py-135-            resp = command_fn(cmd)
+C:\Users\User\SYNAPSE\python\synapse\routing\recipes.py-136-            results.append((cmd, resp))
+C:\Users\User\SYNAPSE\python\synapse\routing\recipes.py-137-            if step.output_var and hasattr(resp, "data") and isinstance(resp.data, dict):
+C:\Users\User\SYNAPSE\python\synapse\routing\recipes.py:138:                for k, v in sorted(resp.data.items()):  # sorted: He2025
+C:\Users\User\SYNAPSE\python\synapse\routing\recipes.py-139-                    variables[f"${step.output_var}.{k}"] = str(v)
+C:\Users\User\SYNAPSE\python\synapse\routing\recipes.py-140-        return results
+C:\Users\User\SYNAPSE\python\synapse\routing\recipes.py-141-
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-149-            ttl_seconds=self._config.cache_ttl,
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-150-        )
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-151-
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py:152:        # Tier-pinning cache: canonical_key → tier value (He2025 consistency)
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-153-        self._tier_pins: Dict[str, str] = {}
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-154-        self._tier_pins_lock = threading.Lock()
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-155-
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-188-        context_hash = self._hash_context(context)
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-189-
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-190-        # ---------------------------------------------------------------
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py:191:        # -1. Tier-pin check (He2025 consistency)
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-192-        # ---------------------------------------------------------------
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-193-        pin_key = f"{input_text}|{context_hash}"
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-194-        with self._tier_pins_lock:
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-195-            pinned_tier = self._tier_pins.get(pin_key)
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-196-
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-197-        # ---------------------------------------------------------------
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py:198:        # 0. Cache check (He2025)
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-199-        # ---------------------------------------------------------------
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-200-        if self._config.enable_cache:
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-201-            for tier_name in ("recipe", "instant", "fast", "standard", "deep"):
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-216-                    return result
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-217-
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-218-        # ---------------------------------------------------------------
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py:219:        # 0.5. Pinned-tier fast path (He2025: same input → same tier)
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-220-        # ---------------------------------------------------------------
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-221-        if pinned_tier:
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-222-            result = self._try_pinned_tier(
+--
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-812-    def stats(self) -> Dict[str, Any]:
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-813-        """Return routing statistics."""
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-814-        tier_stats = {}
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py:815:        for tier_name in sorted(self._tier_counts):  # sorted: He2025
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-816-            count = self._tier_counts[tier_name]
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-817-            latencies = self._tier_latencies.get(tier_name, [])
+C:\Users\User\SYNAPSE\python\synapse\routing\router.py-818-            tier_stats[tier_name] = {
+--
+C:\Users\User\SYNAPSE\README.md-32-- **Production Resilience** -- Rate limiter, circuit breaker, port failover, watchdog, backpressure
+C:\Users\User\SYNAPSE\README.md-33-- **Viewport + Render Capture** -- AI can see what you see via flipbook and Karma renders
+C:\Users\User\SYNAPSE\README.md-34-- **RAG-Powered Routing** -- Knowledge lookup from Houdini documentation (21 built-in workflow recipes) plus 2,079 labeled VEX examples from [vex-corpus](https://github.com/JosephOIbrahim/vex-corpus)
+C:\Users\User\SYNAPSE\README.md:35:- **Determinism** -- Canonical ordering and tier pinning ([He2025] inspired), plus fixed-precision rounding, content-based IDs, and Kahan summation
+C:\Users\User\SYNAPSE\README.md-36-- **Houdini Optional** -- All 1,427 tests run without Houdini; core library has zero required dependencies
+C:\Users\User\SYNAPSE\README.md-37-
+C:\Users\User\SYNAPSE\README.md-38----
+--
+C:\Users\User\SYNAPSE\README.md-686-
+C:\Users\User\SYNAPSE\README.md-687-## Determinism Reference
+C:\Users\User\SYNAPSE\README.md-688-
+C:\Users\User\SYNAPSE\README.md:689:[Omitted long matching line]
+C:\Users\User\SYNAPSE\README.md-690-
+C:\Users\User\SYNAPSE\README.md-691-## Related Projects
+C:\Users\User\SYNAPSE\README.md-692-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-765-            })
+C:\Users\User\SYNAPSE\tests\test_tops.py-766-
+C:\Users\User\SYNAPSE\tests\test_tops.py-767-        assert result["total_variations"] == 12  # 3 * 4
+C:\Users\User\SYNAPSE\tests\test_tops.py:768:        # He2025: attributes sorted by name
+C:\Users\User\SYNAPSE\tests\test_tops.py-769-        assert result["attributes"][0]["name"] == "metalness"
+C:\Users\User\SYNAPSE\tests\test_tops.py-770-        assert result["attributes"][1]["name"] == "roughness"
+C:\Users\User\SYNAPSE\tests\test_tops.py-771-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1259-        assert result["total_cook_time"] >= 0
+C:\Users\User\SYNAPSE\tests\test_tops.py-1260-
+C:\Users\User\SYNAPSE\tests\test_tops.py-1261-    def test_by_state_sorted(self, handler):
+C:\Users\User\SYNAPSE\tests\test_tops.py:1262:        """by_state dict keys should be sorted (He2025)."""
+C:\Users\User\SYNAPSE\tests\test_tops.py-1263-        items = [
+C:\Users\User\SYNAPSE\tests\test_tops.py-1264-            _make_work_item(id=0, state="CookedSuccess"),
+C:\Users\User\SYNAPSE\tests\test_tops.py-1265-            _make_work_item(id=1, state="CookedFail"),
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1306-        assert result["by_state"]["CookedSuccess"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1307-        assert result["by_state"]["CookedFail"] == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1308-        assert len(result["failed_details"]) == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py:1309:        # He2025: failed_details sorted by id
+C:\Users\User\SYNAPSE\tests\test_tops.py-1310-        assert result["failed_details"][0]["id"] == 1
+C:\Users\User\SYNAPSE\tests\test_tops.py-1311-        assert result["failed_details"][1]["id"] == 3
+C:\Users\User\SYNAPSE\tests\test_tops.py-1312-
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1385-        assert result["scheduler"]["max_procs"] == 4
+C:\Users\User\SYNAPSE\tests\test_tops.py-1386-
+C:\Users\User\SYNAPSE\tests\test_tops.py-1387-    def test_suggestions_sorted(self, handler):
+C:\Users\User\SYNAPSE\tests\test_tops.py:1388:        """Suggestions should be sorted (He2025)."""
+C:\Users\User\SYNAPSE\tests\test_tops.py-1389-        items = [_make_work_item(id=0, state="CookedFail")]
+C:\Users\User\SYNAPSE\tests\test_tops.py-1390-        pdg_node = _make_pdg_node(items)
+C:\Users\User\SYNAPSE\tests\test_tops.py-1391-        node = _make_top_node("/obj/topnet1/gen2", pdg_node=pdg_node)
+--
+C:\Users\User\SYNAPSE\tests\test_tops.py-1492-        assert len(result["nodes"][0]["items"]) == 2
+C:\Users\User\SYNAPSE\tests\test_tops.py-1493-
+C:\Users\User\SYNAPSE\tests\test_tops.py-1494-    def test_nodes_sorted_by_path(self, handler):
+C:\Users\User\SYNAPSE\tests\test_tops.py:1495:        """He2025: nodes list should be sorted by path."""
+C:\Users\User\SYNAPSE\tests\test_tops.py-1496-        child_b = _make_top_node("/obj/topnet1/z_last", _make_pdg_node([]),
+C:\Users\User\SYNAPSE\tests\test_tops.py-1497-                                 type_name="null")
+C:\Users\User\SYNAPSE\tests\test_tops.py-1498-        child_a = _make_top_node("/obj/topnet1/a_first", _make_pdg_node([]),
+--
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-457-        assert set(result.keys()) == expected_keys
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-458-
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-459-    def test_sorted_check_keys_he2025(self, handler, valid_image):
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py:460:        """Checks dict keys must be sorted (He2025 determinism)."""
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-461-        import numpy as np
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-462-        pixels = np.full((100, 100, 3), 0.3, dtype=np.float32)
+C:\Users\User\SYNAPSE\tests\test_frame_validator.py-463-        oiio_mock = _make_oiio_mock(
+--
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-402-        assert parsed.sequence == 3
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-403-
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-404-    def test_sort_keys_in_serialization(self):
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py:405:        """JSON serialization uses sort_keys (He2025 compliance)."""
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-406-        cmd = SynapseCommand(
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-407-            type="test",
+C:\Users\User\SYNAPSE\tests\test_integration_pipeline.py-408-            id="001",
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-1-"""Tests for the MCP protocol layer (Phase 1 MVP).
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-2-
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-3-Tests: JSON-RPC parsing, session management, tool dispatch,
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:4:error handling, He2025 determinism.
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-5-
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-6-No Houdini required — MCPServer is tested with a mocked handler.
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-7-"""
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-227-        assert mgr.destroy_session("nope") is False
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-228-
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-229-    def test_sequential_ids(self):
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:230:        """He2025: IDs must be sequential, not random."""
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-231-        mgr = session_mod.MCPSessionManager()
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-232-        id1 = mgr.create_session()
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-233-        id2 = mgr.create_session()
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-257-        assert len(tools) >= 40  # 44 tools registered
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-258-
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-259-    def test_tools_sorted_by_name(self):
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:260:        """He2025: tool list must be sorted."""
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-261-        tools = tools_mod.get_tools()
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-262-        names = [t["name"] for t in tools]
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-263-        assert names == sorted(names)
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-491-        assert "error" in resp
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-492-
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-493-
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:494:class TestHe2025Determinism:
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-495-    def test_response_keys_sorted(self, server):
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:496:        """He2025: all JSON responses must have sorted keys."""
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-497-        body = _jsonrpc("initialize", {}, msg_id=1)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-498-        resp_body, _ = server.handle_request(body)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-499-        # Parse as raw string and verify key order
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-504-        assert keys == sorted(keys)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-505-
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-506-    def test_tools_list_sorted(self, server):
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:507:        """He2025: tool list must be sorted by name."""
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-508-        init_body = _jsonrpc("initialize", {}, msg_id=1)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-509-        _, headers = server.handle_request(init_body)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-510-        sid = headers["Mcp-Session-Id"]
+--
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-536-        assert len(resources) >= 3  # at least 3 static resources
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-537-
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-538-    def test_resources_sorted_by_uri(self, server):
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py:539:        """He2025: resources must be sorted by URI."""
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-540-        init_body = _jsonrpc("initialize", {}, msg_id=1)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-541-        _, headers = server.handle_request(init_body)
+C:\Users\User\SYNAPSE\tests\test_mcp_protocol.py-542-        sid = headers["Mcp-Session-Id"]
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-2-Synapse Tiered Routing Tests
+C:\Users\User\SYNAPSE\tests\test_routing.py-3-
+C:\Users\User\SYNAPSE\tests\test_routing.py-4-Tests for the routing cascade: parser (Tier 0), knowledge (Tier 1),
+C:\Users\User\SYNAPSE\tests\test_routing.py:5:recipes, response cache (He2025), and the TieredRouter orchestrator.
+C:\Users\User\SYNAPSE\tests\test_routing.py-6-
+C:\Users\User\SYNAPSE\tests\test_routing.py-7-Run without Houdini or API key:
+C:\Users\User\SYNAPSE\tests\test_routing.py-8-    python -m pytest tests/test_routing.py -v
+--
+C:\Users\User\SYNAPSE\tests\test_routing.py-585-
+C:\Users\User\SYNAPSE\tests\test_routing.py-586-
+C:\Users\User\SYNAPSE\tests\test_routing.py-587-# =============================================================================
+C:\Users\User\SYNAPSE\tests\test_routing.py:588:# TEST: ResponseCache (He2025)
+C:\Users\User\SYNAPSE\tests\test_routing.py-589-# =============================================================================
+C:\Users\User\SYNAPSE\tests\test_routing.py-590-
+C:\Users\User\SYNAPSE\tests\test_routing.py-591-class TestResponseCache:
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-3-
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-4-Tests that SQLiteMemoryStore is a drop-in replacement for MemoryStore.
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-5-Covers: CRUD, search (text + tag + keyword + type), links, FTS5,
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:6:concurrent access, factory selection, He2025 ordering.
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-7-"""
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-8-
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-9-import json
+--
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-406-# =============================================================================
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-407-
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-408-class TestSQLiteDeterminism:
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py:409:    """He2025 compliance: deterministic ordering, sort_keys in JSON."""
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-410-
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-411-    def test_search_order_deterministic(self, tmp_path):
+C:\Users\User\SYNAPSE\tests\test_sqlite_store.py-412-        """Same query always returns same order."""
+--
+C:\Users\User\SYNAPSE\python\synapse\memory\sqlite_store.py-635-                    )
+C:\Users\User\SYNAPSE\python\synapse\memory\sqlite_store.py-636-                )
+C:\Users\User\SYNAPSE\python\synapse\memory\sqlite_store.py-637-
+C:\Users\User\SYNAPSE\python\synapse\memory\sqlite_store.py:638:        # He2025: stable sort with ID tiebreaker for deterministic ordering
+C:\Users\User\SYNAPSE\python\synapse\memory\sqlite_store.py-639-        results.sort(key=lambda r: (-r.score, r.memory.id))
+C:\Users\User\SYNAPSE\python\synapse\memory\sqlite_store.py-640-
+C:\Users\User\SYNAPSE\python\synapse\memory\sqlite_store.py-641-        if query.limit > 0:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1079-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1080-        Cooks each node in order and collects per-node results including
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1081-        status, work item counts, and cook times. Uses kahan_sum for
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:1082:        stable total cook time aggregation (He2025).
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1083-        """
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1084-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1085-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1257-                except (TypeError, ValueError):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1258-                    continue
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1259-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:1260:                # Round float values in output (He2025)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1261-                display_val = round_float(attr_val) if isinstance(attr_val, float) else attr_val
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1262-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-1263-                matched.append({
+--
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-161-        assert "outdoor" in tags
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-162-
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-163-    def test_tags_sorted(self):
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py:164:        """He2025: output is deterministic and sorted."""
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-165-        prims = [
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-166-            {"path": "/interior/room", "type": "Mesh"},
+C:\Users\User\SYNAPSE\tests\test_render_diagnostics.py-167-            {"path": "/lights/dome_light", "type": "DomeLight"},
+--
+C:\Users\User\SYNAPSE\python\synapse\memory\store.py-518-                        match_reasons=match_reasons
+C:\Users\User\SYNAPSE\python\synapse\memory\store.py-519-                    ))
+C:\Users\User\SYNAPSE\python\synapse\memory\store.py-520-
+C:\Users\User\SYNAPSE\python\synapse\memory\store.py:521:            # He2025: stable sort with ID tiebreaker for deterministic ordering
+C:\Users\User\SYNAPSE\python\synapse\memory\store.py-522-            results.sort(key=lambda r: (-r.score, r.memory.id))
+C:\Users\User\SYNAPSE\python\synapse\memory\store.py-523-
+C:\Users\User\SYNAPSE\python\synapse\memory\store.py-524-            if query.limit > 0:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-4-Collects scene, routing, resilience, and session metrics on a daemon thread.
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-5-Stores snapshots in a bounded circular buffer for historical queries.
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-6-
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py:7:He2025 compliance:
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-8-- time.monotonic() for timestamps
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-9-- frozen dataclasses (thread-safe by construction)
+C:\Users\User\SYNAPSE\python\synapse\server\live_metrics.py-10-- sorted() on all dict iterations
+--
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py-5-Exposes per-tier request counts, latencies, command counts,
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py-6-circuit breaker state, and memory store size.
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py-7-
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py:8:He2025 compliance:
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py-9-- kahan_sum() for latency averages — stable across batch sizes
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py-10-- round_float() on output — deterministic precision
+C:\Users\User\SYNAPSE\python\synapse\server\metrics.py-11-- sorted() iteration on all dicts — order-independent
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-347-        issue_type,
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-348-        *scene_tags[:5],
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-349-    ]
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py:350:    # Sort tags for He2025 determinism
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-351-    tags = sorted(dict.fromkeys(tags))
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-352-
+C:\Users\User\SYNAPSE\python\synapse\server\render_diagnostics.py-353-    keywords = [
+--
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-22-from collections import deque
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-23-
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-24-# NOTE: round_float (Decimal-based) is intentionally NOT used here.
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py:25:# He2025 determinism applies to user-facing outputs, not internal timing.
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-26-# Using Decimal for token-bucket math added ~2x overhead per command
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-27-# with zero determinism benefit. Plain round() is sufficient.
+C:\Users\User\SYNAPSE\python\synapse\server\resilience.py-28-

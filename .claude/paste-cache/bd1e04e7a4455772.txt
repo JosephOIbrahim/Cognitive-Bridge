@@ -1,0 +1,19 @@
+Read CLAUDE.md for full project context. Then execute this sequence:
+
+0. Check if C:\Users\User\Documents\houdini21.0 and C:\Users\User\OneDrive\Documents\houdini21.0 point to the same files. If they're different, use whichever actually contains the cinema_camera project files. Update ONEDRIVE_DOCS in CLAUDE.md to the correct path. Also update any references in synapse_runner.py and run_wolfram_check.py.
+
+1. Delete C:\Users\User\houdini21.0\scripts\python\nest_asyncio.py and any nest_asyncio .pyc files in __pycache__ directories
+
+2. Verify C:\Users\User\houdini21.0\scripts\python\cinema_camera\wolfram_oracle.py has the ThreadPoolExecutor + asyncio.new_event_loop() patch (NOT nest_asyncio). If it still references nest_asyncio, fix it.
+
+3. Sync: ensure the houdini21.0 copy matches the OneDrive copy for all cinema_camera/ files
+
+4. I will restart Houdini and start Synapse on port 9999 manually. Wait for me to confirm.
+
+5. Once I confirm, run: python synapse_runner.py --check
+
+6. Then run: python synapse_runner.py --all-phases --timeout 60
+
+7. Fix any failures autonomously — use the error routing table in CLAUDE.md
+
+8. Once all W phases pass, proceed to HDA build phase via Synapse.

@@ -1,0 +1,98 @@
+"""Expert selection from routing decisions.
+
+Selects the best expert based on routing cascade scores,
+using fixed priority order as tiebreaker.
+"""
+
+import hashlib
+
+from src.lossless.constants import EXPERTS, HASH_ALGORITHM
+from src.lossless.experts.registry import Expert, get_expert_registry
+from src.lossless.routing.cascade import CascadeResult
+
+
+def select_expert(
+    cascade_result: CascadeResult,
+    expert_weights: dict = None,
+) -> Expert:
+    """Select the best expert based on routing scores.
+
+    Uses hash-based deterministic scoring with fixed priority tiebreaking.
+
+    Args:
+        cascade_result: Result from cascade evaluation.
+        expert_weights: Optional per-expert weight adjustments.
+
+    Returns:
+        Selected Expert.
+    """
+    registry = get_expert_registry()
+
+    if expert_weights is None:
+        expert_weights = {}
+
+    # Score each expert deterministically
+    scored = []
+    signal_hash = cascade_result.signal_hash
+
+    for i, name in enumerate(EXPERTS):
+        # Hash-based score: deterministic from signal + expert name
+        h = hashlib.new(HASH_ALGORITHM)
+        h.update(signal_hash.encode('utf-8'))
+        h.update(name.encode('utf-8'))
+        digest = h.hexdigest()
+        base_score = int(digest[:8], 16) / (16**8)
+
+        # Apply phase relevance from cascade
+        phase_boost = _phase_relevance_for_expert(
+            name, cascade_result.get_scores_dict()
+        )
+
+        # Apply external weight if provided
+        weight = expert_weights.get(name, 1.0)
+
+        total_score = (base_score * 0.3 + phase_boost * 0.7) * weight
+
+        # Priority as tiebreaker (lower priority index = better)
+        scored.append((total_score, i, name))
+
+    # Sort: descending score, ascending priority index
+    scored.sort(key=lambda x: (-x[0], x[1]))
+
+    selected_name = scored[0][2]
+    return registry[selected_name]
+
+
+def _phase_relevance_for_expert(
+    expert_name: str, phase_scores: dict
+) -> float:
+    """Compute how relevant the phase scores are to an expert.
+
+    Deterministic mapping from expert to phase affinities.
+    """
+    # Expert-phase affinity matrix (deterministic)
+    affinities = {
+        "Validator": {"SAFETY": 0.4, "CONSTITUTIONAL": 0.3, "SIGNAL": 0.3},
+        "Scaffolder": {"KNOWLEDGE": 0.4, "EXPERT": 0.3, "PROJECT": 0.3},
+        "Restorer": {"SAFETY": 0.3, "SIGNAL": 0.4, "CONSENT": 0.3},
+        "Refocuser": {"SIGNAL": 0.4, "PROJECT": 0.3, "DOMAIN": 0.3},
+        "Celebrator": {"SIGNAL": 0.3, "EXPERT": 0.4, "DOMAIN": 0.3},
+        "Socratic": {"KNOWLEDGE": 0.5, "DOMAIN": 0.3, "EXPERT": 0.2},
+        "Direct": {"EXPERT": 0.4, "DOMAIN": 0.3, "KNOWLEDGE": 0.3},
+    }
+
+    if expert_name not in affinities:
+        return 0.5
+
+    expert_affinities = affinities[expert_name]
+    # Kahan summation for numerical stability
+    total = 0.0
+    comp = 0.0
+    for phase, weight in sorted(expert_affinities.items()):
+        score = phase_scores.get(phase, 0.0)
+        y = score * weight - comp
+        t = total + y
+        comp = (t - total) - y
+        total = t
+
+    return total

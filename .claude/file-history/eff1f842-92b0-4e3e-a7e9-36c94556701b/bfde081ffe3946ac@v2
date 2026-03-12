@@ -1,0 +1,198 @@
+"""Lightweight MoE coordinator.
+
+Takes TelemetryProvider + experts + action dispatch.
+Runs: snapshot -> dispatch to experts -> aggregate -> apply top N -> log.
+No genetic tuner, no LLM client, no MCP client.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from .actions.base import ActionHandler
+from .actions.env_var import EnvVarHandler
+from .actions.ini_file import IniFileHandler
+from .actions.process import ProcessHandler
+from .actions.registry import RegistryHandler
+from .models import (
+    CycleReport,
+    OptimizationAction,
+    OptimizationResult,
+    Recommendation,
+    SystemContext,
+)
+from .experts.base import Expert
+from .experts.gpu_specialist import GPUSpecialist
+from .experts.houdini_engineer import HoudiniEngineer
+from .experts.system_integrator import SystemIntegrator
+from .experts.ue5_engineer import UE5Engineer
+from .telemetry import TelemetryProvider
+
+logger = logging.getLogger(__name__)
+
+
+def _default_experts() -> list[Expert]:
+    return [GPUSpecialist(), HoudiniEngineer(), UE5Engineer(), SystemIntegrator()]
+
+
+def _default_handlers() -> dict[OptimizationAction, ActionHandler]:
+    return {
+        OptimizationAction.ENV_VAR: EnvVarHandler(),
+        OptimizationAction.REGISTRY: RegistryHandler(),
+        OptimizationAction.PROCESS_PRIORITY: ProcessHandler(),
+        OptimizationAction.INI_FILE: IniFileHandler(),
+    }
+
+
+class Orchestrator:
+    """Coordinates experts and action handlers for optimization cycles."""
+
+    def __init__(
+        self,
+        telemetry: TelemetryProvider,
+        experts: list[Expert] | None = None,
+        handlers: dict[OptimizationAction, ActionHandler] | None = None,
+        max_recommendations: int = 10,
+        min_confidence: float = 0.6,
+    ):
+        self.telemetry = telemetry
+        self.experts = experts or _default_experts()
+        self.handlers = handlers or _default_handlers()
+        self.max_recommendations = max_recommendations
+        self.min_confidence = min_confidence
+
+    def run_cycle(self, dry_run: bool = False) -> CycleReport:
+        """Run a single optimization cycle."""
+        # 1. Snapshot
+        ctx = self.telemetry.snapshot()
+        logger.info(
+            "Snapshot: GPU=%s, VRAM=%.0f/%.0fMB, temp=%.0fC, mode=%s",
+            ctx.gpu_name, ctx.vram_used_mb, ctx.vram_total_mb,
+            ctx.gpu_temp_c, ctx.workflow_mode.value,
+        )
+
+        # 1b. Load cached benchmark data (if available)
+        self._load_benchmark_data(ctx)
+
+        # 2. Dispatch to experts
+        all_recs: list[Recommendation] = []
+        for expert in self.experts:
+            try:
+                recs = expert.analyze(ctx)
+                all_recs.extend(recs)
+            except Exception as e:
+                logger.error("Expert %s failed: %s", expert.__class__.__name__, e)
+
+        # 3. Filter + sort by score (impact * confidence)
+        filtered = [r for r in all_recs if r.confidence >= self.min_confidence]
+        filtered.sort(key=lambda r: r.score, reverse=True)
+
+        # 4. Conflict resolution: deduplicate by (action, key params)
+        seen: set[str] = set()
+        deduped: list[Recommendation] = []
+        for rec in filtered:
+            key = self._dedup_key(rec)
+            if key not in seen:
+                seen.add(key)
+                deduped.append(rec)
+
+        # 5. Apply top N
+        to_apply = deduped[:self.max_recommendations]
+        skipped = deduped[self.max_recommendations:]
+        applied: list[OptimizationResult] = []
+        errors: list[str] = []
+
+        for rec in to_apply:
+            if rec.action == OptimizationAction.INFO:
+                # Info-only: log but don't apply
+                logger.info("[INFO] %s", rec.description)
+                applied.append(OptimizationResult(
+                    recommendation=rec, success=True, message=rec.description,
+                ))
+                continue
+
+            handler = self.handlers.get(rec.action)
+            if handler is None:
+                msg = f"No handler for action {rec.action.value}"
+                logger.warning(msg)
+                errors.append(msg)
+                continue
+
+            try:
+                success, msg, rollback = handler.apply(rec, dry_run=dry_run)
+                applied.append(OptimizationResult(
+                    recommendation=rec, success=success, message=msg,
+                    rollback_info=rollback,
+                ))
+                if success:
+                    logger.info("[%s] %s", "DRY" if dry_run else "APPLIED", msg)
+                else:
+                    logger.warning("[FAILED] %s: %s", rec.description, msg)
+            except Exception as e:
+                msg = f"Handler error for {rec.description}: {e}"
+                logger.error(msg)
+                errors.append(msg)
+
+        return CycleReport(
+            context=ctx,
+            recommendations=all_recs,
+            applied=applied,
+            skipped=skipped,
+            errors=errors,
+        )
+
+    def detect(self) -> SystemContext:
+        """Snapshot only — no optimization, just show current state."""
+        return self.telemetry.snapshot()
+
+    def _load_benchmark_data(self, ctx: SystemContext) -> None:
+        """Load cached CUTLASS benchmark data into context."""
+        try:
+            from acceleration.cutlass_integration import load_cached_benchmarks
+        except ImportError:
+            return
+
+        cache = load_cached_benchmarks()
+        if cache is None:
+            return
+
+        if not cache.is_valid(ctx.gpu_name, ctx.driver_version):
+            logger.info("Benchmark cache stale (hardware/driver changed or expired)")
+            return
+
+        # Compute summary metrics: peak efficiency per precision
+        peak_efficiency: dict[str, float] = {}
+        mem_bw = 0.0
+        for r in cache.results:
+            if r.precision == "memory_bandwidth":
+                mem_bw = r.efficiency_pct * 1008.0 / 100  # convert back to GB/s
+                continue
+            if r.precision not in peak_efficiency or r.efficiency_pct > peak_efficiency[r.precision]:
+                peak_efficiency[r.precision] = r.efficiency_pct
+
+        ctx.benchmark_data = {
+            "peak_efficiency": peak_efficiency,
+            "memory_bandwidth_gbs": mem_bw,
+            "result_count": len(cache.results),
+            "cache_gpu": cache.gpu_name,
+        }
+        logger.info(
+            "Loaded benchmark data: %d results, peak efficiencies: %s",
+            len(cache.results),
+            {k: f"{v:.0f}%" for k, v in sorted(peak_efficiency.items())},
+        )
+
+    @staticmethod
+    def _dedup_key(rec: Recommendation) -> str:
+        """Generate a deduplication key for a recommendation."""
+        p = rec.parameters
+        if rec.action == OptimizationAction.ENV_VAR:
+            return f"env:{p.get('name', '')}"
+        if rec.action == OptimizationAction.REGISTRY:
+            return f"reg:{p.get('key_path', '')}\\{p.get('value_name', '')}"
+        if rec.action == OptimizationAction.PROCESS_PRIORITY:
+            return f"proc:{p.get('pid', '')}"
+        if rec.action == OptimizationAction.INI_FILE:
+            return f"ini:{p.get('section', '')}:{p.get('key', '')}"
+        return f"{rec.action.value}:{rec.description[:50]}"

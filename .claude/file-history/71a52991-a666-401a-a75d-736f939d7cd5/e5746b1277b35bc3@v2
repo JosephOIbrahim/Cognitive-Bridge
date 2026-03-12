@@ -1,0 +1,65 @@
+#!/bin/bash
+# MPM H21 Masterclass - Youtube2Webpage batch conversion
+# 18 videos from https://www.sidefx.com/tutorials/mpm-h21-masterclass/
+
+export PATH="C:/Users/User/AppData/Roaming/Python/Python314/Scripts:C:/Users/User/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.0.1-full_build/bin:$PATH"
+
+SCRIPT="C:/Users/User/Youtube2Webpage/yt-to-webpage.pl"
+DIR="C:/Users/User/mpm-h21-masterclass"
+cd "$DIR"
+
+declare -A videos
+videos=(
+  ["00-overview"]="https://www.youtube.com/watch?v=nD183jP3H4Y"
+  ["01-surface-tension"]="https://www.youtube.com/watch?v=HAv1t7q7VRk"
+  ["02-auto-sleep"]="https://www.youtube.com/watch?v=MwSsXRof_7Y"
+  ["03-continuous-emission"]="https://www.youtube.com/watch?v=AGjuRlj5sm4"
+  ["04-friction-stickiness"]="https://www.youtube.com/watch?v=UYj3sUThg-0"
+  ["05-deforming-colliders"]="https://www.youtube.com/watch?v=RylqkW5ePww"
+  ["06-mpmsurface"]="https://www.youtube.com/watch?v=ZNImPE9WbkI"
+  ["07-mpmdebrissource"]="https://www.youtube.com/watch?v=83EffKFYeCU"
+  ["08-mpmpostfracture"]="https://www.youtube.com/watch?v=XAQgQi3wkNU"
+  ["09-mpmdeformpieces"]="https://www.youtube.com/watch?v=iasTN8SZC4A"
+  ["10-destruction-workflow"]="https://www.youtube.com/watch?v=mQuOe296oeg"
+  ["11-paintball-impact"]="https://www.youtube.com/watch?v=zj5ANrtD-X8"
+  ["12-pumpkin-smash"]="https://www.youtube.com/watch?v=OVQAAlh-3s8"
+  ["13-car-rain"]="https://www.youtube.com/watch?v=mKg7OWiBQE4"
+  ["14-wolf-snow"]="https://www.youtube.com/watch?v=JUcON39F7zE"
+  ["15-creature-breach"]="https://www.youtube.com/watch?v=Y16j3XTaX-Q"
+  ["16-train-wreck"]="https://www.youtube.com/watch?v=fwAuygMxk2w"
+  ["17-building-attack"]="https://www.youtube.com/watch?v=beyRxMYzwsk"
+)
+
+# Sort keys for deterministic order
+total=${#videos[@]}
+count=0
+
+for key in $(echo "${!videos[@]}" | tr ' ' '\n' | sort); do
+  count=$((count + 1))
+  url="${videos[$key]}"
+  echo ""
+  echo "=========================================="
+  echo "[$count/$total] Converting: $key"
+  echo "URL: $url"
+  echo "=========================================="
+
+  if [ -d "$DIR/$key" ] && [ -f "$DIR/$key/index.html" ]; then
+    echo "SKIP: Already converted"
+    continue
+  fi
+
+  cd "$DIR"
+  perl "$SCRIPT" "$key" "$url" 2>&1
+
+  if [ $? -eq 0 ] && [ -f "$DIR/$key/index.html" ]; then
+    echo "SUCCESS: $key converted"
+  else
+    echo "FAILED: $key"
+  fi
+done
+
+echo ""
+echo "=========================================="
+echo "DONE - All $total videos processed"
+echo "Output: $DIR"
+echo "=========================================="

@@ -1,0 +1,167 @@
+"""
+Build Solaris LOP network in /stage via Synapse WebSocket.
+"""
+
+import asyncio
+import sys
+import os
+
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+
+HOUDINI_CODE = r'''
+import hou
+
+stage = hou.node("/stage")
+if stage is None:
+    raise RuntimeError("/stage not found")
+
+# ── Step 1: Clean up ────────────────────────────────────────────────
+removed = []
+cleanup_prefixes = [
+    "__cinema_rig_lop_builder", "cinema_camera_rig", "dome_light",
+    "key_light", "arealight", "camera_lights_merge", "karma_settings",
+    "karmarendersettings", "usdrender_rop"
+]
+for child in list(stage.children()):
+    cname = child.name()
+    should_remove = False
+    for pfx in cleanup_prefixes:
+        if cname.startswith(pfx):
+            should_remove = True
+            break
+    if should_remove:
+        removed.append(cname)
+        child.destroy()
+
+# ── Step 2: Camera rig ──────────────────────────────────────────────
+cam_rig = stage.createNode("cinema::camera_rig_lop", "cinema_camera_rig")
+
+# ── Step 3: Dome Light ──────────────────────────────────────────────
+dome = stage.createNode("domelight::3.0", "dome_light")
+dome.parm("xn__inputsintensity_i0a").set(1.0)
+dome.parm("xn__inputsexposure_vya").set(0.0)
+
+# ── Step 4: Key Light (Rectangle) ──────────────────────────────────
+key = stage.createNode("light::2.0", "key_light")
+key.parm("lighttype").set("UsdLuxRectLight")
+key.parm("xn__inputsintensity_i0a").set(1.0)
+key.parm("xn__inputsexposure_vya").set(4.0)
+
+# Check which translate parms exist
+t_parms = [p.name() for p in key.parms() if p.name().startswith("t") and len(p.name()) <= 3]
+r_parms = [p.name() for p in key.parms() if p.name().startswith("r") and len(p.name()) <= 3]
+
+# Set transform via xform parms
+if key.parm("tx"):
+    key.parm("tx").set(3.0)
+    key.parm("ty").set(2.0)
+    key.parm("tz").set(2.0)
+    key.parm("rx").set(-30.0)
+    key.parm("ry").set(45.0)
+elif key.parm("t1"):
+    key.parm("t0").set(3.0)
+    key.parm("t1").set(2.0)
+    key.parm("t2").set(2.0)
+    key.parm("r0").set(-30.0)
+    key.parm("r1").set(45.0)
+
+# Set size if parms exist
+w_parm = key.parm("xn__inputswidth_zta")
+if w_parm:
+    w_parm.set(2.0)
+h_parm = key.parm("xn__inputsheight_mva")
+if h_parm:
+    h_parm.set(2.0)
+
+# ── Step 5: Merge ───────────────────────────────────────────────────
+merge = stage.createNode("merge", "camera_lights_merge")
+merge.setNextInput(cam_rig)
+merge.setNextInput(dome)
+merge.setNextInput(key)
+
+# ── Step 6: Karma Render Settings ───────────────────────────────────
+rs = stage.createNode("karmarendersettings", "karma_settings")
+rs.setNextInput(merge)
+
+# Find camera parm
+cam_parm = rs.parm("camera")
+if cam_parm is None:
+    # Try alternate names
+    all_parm_names = [p.name() for p in rs.parms()]
+    cam_candidates = [n for n in all_parm_names if "cam" in n.lower()]
+    if cam_candidates:
+        cam_parm = rs.parm(cam_candidates[0])
+
+if cam_parm:
+    cam_parm.set("/CinemaRig/FluidHead/Body/Sensor")
+    cam_set = True
+else:
+    cam_set = False
+
+rs.setDisplayFlag(True)
+
+# ── Step 7: Karma ROP ──────────────────────────────────────────────
+out_node = hou.node("/out")
+rop_path = "(skipped)"
+if out_node is not None:
+    for child in list(out_node.children()):
+        if child.name().startswith("cinema_karma"):
+            child.destroy()
+    karma_rop = out_node.createNode("karma", "cinema_karma")
+    # Find the LOP path parm
+    lop_parm = karma_rop.parm("lop")
+    if lop_parm is None:
+        lop_parm = karma_rop.parm("loppath")
+    if lop_parm:
+        lop_parm.set("/stage/karma_settings")
+    karma_rop.moveToGoodPosition()
+    rop_path = karma_rop.path()
+
+# Layout
+stage.layoutChildren()
+
+result = {
+    "removed": removed,
+    "camera_rig": cam_rig.path(),
+    "dome_light": dome.path(),
+    "key_light": key.path(),
+    "merge": merge.path(),
+    "render_settings": rs.path(),
+    "karma_rop": rop_path,
+    "camera_set": cam_set,
+    "t_parms": t_parms,
+    "r_parms": r_parms,
+    "status": "SUCCESS"
+}
+'''
+
+
+async def main():
+    print("Connecting to Synapse at ws://localhost:9999/synapse ...")
+    async with SynapseClient() as client:
+        print("Connected. Building Solaris LOP network...")
+        result = await client.execute_python(HOUDINI_CODE, timeout=30.0)
+
+        if isinstance(result, dict) and result.get("status") == "SUCCESS":
+            print("\n=== Solaris LOP Network Built ===")
+            if result.get("removed"):
+                print(f"  Cleaned up: {result['removed']}")
+            print(f"  Camera Rig:      {result['camera_rig']}")
+            print(f"  Dome Light:      {result['dome_light']}")
+            print(f"  Key Light:       {result['key_light']}")
+            print(f"  Merge:           {result['merge']}")
+            print(f"  Render Settings: {result['render_settings']}")
+            print(f"  Karma ROP:       {result['karma_rop']}")
+            print(f"  Camera set:      {result['camera_set']}")
+            print(f"  T parms:         {result['t_parms']}")
+            print(f"  R parms:         {result['r_parms']}")
+            print("\nCamera: /CinemaRig/FluidHead/Body/Sensor")
+            print("Lighting: intensity=1.0, key exposure=4.0 stops")
+        else:
+            print(f"\nResult: {result}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

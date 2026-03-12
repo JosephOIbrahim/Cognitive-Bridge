@@ -1,0 +1,46 @@
+"""Debug: list all COP types and find which ones work in copnet."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        # List ALL cop types
+        code = r"""
+import hou
+cop_cat = hou.cop2NodeTypeCategory()
+all_types = sorted(cop_cat.nodeTypes().keys())
+result = all_types
+"""
+        r = await client.execute_python(code)
+        print("All COP types:")
+        for t in r:
+            print(f"  {t}")
+
+        # Try cop2net
+        code2 = r"""
+import hou
+obj = hou.node("/obj")
+# cop2net
+works = {}
+try:
+    cn = obj.createNode("cop2net", "__test_cop2")
+    for ntype in ['noise', 'convolve', 'composite', 'streak', 'multiply', 'color',
+                  'vopcop2gen', 'vopcop2filter', 'vexfilter', 'vexgenerate', 'null',
+                  'switch', 'file']:
+        try:
+            n = cn.createNode(ntype, f"t_{ntype}")
+            works[ntype] = [p.name() for p in n.parms()][:15]
+            n.destroy()
+        except:
+            works[ntype] = False
+    cn.destroy()
+    result = {"container": "cop2net", "nodes": works}
+except:
+    result = {"container": "cop2net", "error": "cannot create cop2net"}
+"""
+        r2 = await client.execute_python(code2)
+        print("\ncop2net results:", r2)
+
+asyncio.run(main())

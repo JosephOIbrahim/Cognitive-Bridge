@@ -1,0 +1,240 @@
+'use client';
+
+// Auto-deploy test: GitHub → Vercel connected ✓
+
+import { useState, useEffect, useMemo } from 'react';
+import { HeroReel } from '@/components/HeroReel';
+import { LadderGrid } from '@/components/LadderGrid';
+import { usePerception } from '@/lib/perception/context';
+import { projects } from '@/lib/projects';
+import { ProjectAdapter } from '@/lib/perception/adapter';
+import { VisitorArchetype } from '@/lib/perception/types';
+
+export default function HomePage() {
+  // Get perception state from context (sensor runs in PerceptionLayer)
+  const { archetype, confidence } = usePerception();
+
+  const [scrollIndicatorOpacity, setScrollIndicatorOpacity] = useState(1);
+  const [introTextOpacity, setIntroTextOpacity] = useState(1);
+  const [mainContentTopOpacity, setMainContentTopOpacity] = useState(1);
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
+  const [introVisible, setIntroVisible] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  // Detect mobile (touch device OR narrow viewport) and reduced motion preference
+  useEffect(() => {
+    const checkMobile = () => {
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isNarrowViewport = window.innerWidth < 768;
+      setIsMobile(isTouchDevice || isNarrowViewport);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(motionQuery.matches);
+    const handleMotionChange = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    motionQuery.addEventListener('change', handleMotionChange);
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      motionQuery.removeEventListener('change', handleMotionChange);
+    };
+  }, []);
+
+  // Hero height based on device - matches HeroReel component
+  const heroHeight = isMobile ? '50vh' : '70vh';
+  const heroHeightMultiplier = isMobile ? 0.5 : 0.7;
+
+  // Trigger intro animation on mount
+  useEffect(() => {
+    const timer = setTimeout(() => setIntroVisible(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Listen for chatbot open/close to hide scroll indicator
+  useEffect(() => {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'data-chatbot-open') {
+          const isOpen = document.body.hasAttribute('data-chatbot-open');
+          setIsChatbotOpen(isOpen);
+        }
+      });
+    });
+
+    observer.observe(document.body, { attributes: true });
+    return () => observer.disconnect();
+  }, []);
+
+  // Fade out scroll indicator and intro text on scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+
+      // Fade out scroll indicator between 0-300px scroll
+      const scrollIndicatorOp = Math.max(0, 1 - (scrollY / 300));
+      setScrollIndicatorOpacity(scrollIndicatorOp);
+
+      // Fade out intro text ONLY right before it overlaps navigation
+      const fadeStart = 600;
+      const fadeEnd = 800;
+      const fadeRange = fadeEnd - fadeStart;
+
+      let introOp = 1;
+      if (scrollY > fadeStart) {
+        introOp = Math.max(0, 1 - ((scrollY - fadeStart) / fadeRange));
+      }
+      setIntroTextOpacity(introOp);
+
+      // Fade ALL content scrolling under navigation
+      const currentHeroHeight = window.innerHeight * heroHeightMultiplier;
+      const contentTopPosition = currentHeroHeight - scrollY;
+      const navHeight = 200;
+
+      let mainTopOp = 1;
+      if (contentTopPosition < navHeight) {
+        const fadeDistance = 150;
+        const distanceIntoNav = navHeight - contentTopPosition;
+        mainTopOp = Math.max(0, 1 - (distanceIntoNav / fadeDistance));
+      }
+      setMainContentTopOpacity(mainTopOp);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [heroHeightMultiplier]);
+
+  // Find General Reel for hero
+  const heroProject = projects.find(p => p.slug === 'general-reel');
+
+  // Hero statement - authentic, consistent regardless of mode
+  const heroStatement = "Sixteen years. Feature films, commercials, real-time engines—each frame a problem of light solved in pixels. This is the work.";
+
+  // Adapt project order based on visitor archetype
+  // Only adapts when confidence > 0.5 to avoid premature/unstable reordering
+  const adaptedProjects = useMemo(() => {
+    const gridProjects = projects.filter(p => p.slug !== 'general-reel');
+
+    // Confidence threshold: don't adapt on weak signal
+    if (confidence < 0.5 || !archetype) {
+      return gridProjects;
+    }
+
+    return ProjectAdapter.adaptProjectOrder(gridProjects, archetype);
+  }, [archetype, confidence]);
+
+  return (
+    <>
+      {/* Hero Reel - Fixed position, crossfades on scroll, below navigation */}
+      {heroProject && (
+        <HeroReel
+          videoId={heroProject.videoId}
+          videoHash={heroProject.videoHash}
+          startTime={heroProject.startTime}
+          thumbnail={heroProject.thumbnail}
+        />
+      )}
+
+      {/* Scroll indicator - positioned right below hero reel, hidden when chatbot is open */}
+      <div
+        className="fixed left-0 right-0 flex flex-col items-center"
+        style={{
+          top: `calc(${heroHeight} - 60px)`,
+          zIndex: 90,
+          opacity: isChatbotOpen ? 0 : scrollIndicatorOpacity,
+          pointerEvents: (isChatbotOpen || scrollIndicatorOpacity === 0) ? 'none' : 'auto',
+          transition: 'opacity 0.3s ease-out'
+        }}
+      >
+        <svg
+          className="scroll-chevron"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#8a8a8a"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+        <p
+          style={{
+            color: '#8a8a8a',
+            fontFamily: 'var(--font-display)',
+            fontSize: '11px',
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            marginTop: '8px'
+          }}
+        >
+          Scroll
+        </p>
+      </div>
+
+      {/* Gradient fade overlay for content scrolling under navigation */}
+      <div
+        className="fixed top-0 left-0 right-0 pointer-events-none transition-opacity duration-400 ease-out"
+        style={{
+          height: '250px',
+          background: 'linear-gradient(to bottom, #141414 0%, transparent 100%)',
+          zIndex: 95,
+          opacity: mainContentTopOpacity < 1 ? (1 - mainContentTopOpacity) * 0.95 : 0
+        }}
+      />
+
+      {/* Main content - starts below viewport, scrolls up */}
+      <main className="min-h-screen relative" style={{ marginTop: heroHeight, zIndex: 50, backgroundColor: '#141414' }}>
+        {/* Hero Statement - Isolated quote with generous whitespace (Pentagram style) */}
+        <section
+          className="mx-auto"
+          style={{
+            maxWidth: 'var(--max-content-width)',
+            paddingLeft: 'var(--side-padding)',
+            paddingRight: 'var(--side-padding)',
+            paddingTop: 'clamp(102px, 10.2vw + 34px, 170px)',
+            paddingBottom: 'clamp(102px, 10.2vw + 34px, 170px)',
+            opacity: introTextOpacity
+          }}
+        >
+          <div style={{ maxWidth: '900px' }}>
+            {/* Hero Statement - Editorial serif quote style, Pentagram-tight heading */}
+            <h1
+              style={{
+                color: '#a0a0a0',
+                fontFamily: 'var(--font-lora)',
+                fontWeight: 400,
+                fontStyle: 'italic',
+                fontSize: 'clamp(22px, 3.5vw, 38px)',
+                lineHeight: 1.2,
+                letterSpacing: '0.005em',
+                opacity: introVisible ? 1 : 0,
+                transform: introVisible ? 'translateY(0)' : `translateY(${isMobile ? 20 : 30}px)`,
+                transition: prefersReducedMotion ? 'none' : 'opacity 550ms cubic-bezier(0.25, 0.1, 0.25, 1), transform 550ms cubic-bezier(0.25, 0.1, 0.25, 1)'
+              }}
+            >
+              {heroStatement}
+            </h1>
+          </div>
+        </section>
+
+        {/* Ladder Grid - Golden ratio spacing (excludes hero reel to avoid duplication) */}
+        <section
+          className="mx-auto"
+          style={{
+            maxWidth: 'var(--max-content-width)',
+            paddingLeft: 'var(--side-padding)',
+            paddingRight: 'var(--side-padding)',
+            paddingBottom: 'var(--space-lg)'    /* 89px - Fibonacci */
+          }}
+        >
+          <LadderGrid projects={adaptedProjects} />
+        </section>
+      </main>
+    </>
+  );
+}

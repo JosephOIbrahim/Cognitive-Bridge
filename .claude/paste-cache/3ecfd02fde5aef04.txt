@@ -1,0 +1,100 @@
+# Claude Code Investigation: Patent 3 — Digital Injection Framework
+
+## Context
+I'm preparing a provisional patent application for a "Lossless Cognitive Processing Modulation System Using Residual Gain Architecture." I need you to extract EXACT technical details from my injection repo so the patent document contains zero fabricated content. A prior session produced fabricated pipeline names — that cannot happen again. Only report what you find in source code.
+
+## Repo Location
+Clone if needed: `https://github.com/JosephOIbrahim/usd-cognitive-substrate`
+The injection-specific code is in the injection process repo (v7.1.0). Check for a separate injection repo or a subdirectory — the main repo README should reference it.
+
+## Investigation Tasks (Answer Each Separately)
+
+### 1. GAIN EQUATION & RESIDUAL FORMULA
+- Find the exact gain equation implementation. Expected: `g = 1 + s_NM * d`
+- Find the residual combination formula. Expected: `output = clean + alpha * delta`
+- Report the EXACT file path, function name, and line numbers where these appear
+- If the formulas differ from expected, report what actually exists
+
+### 2. RECEPTOR DENSITY MAP
+- Find the receptor density values (`d_n`) for all phases
+- Expected 10 phases: KNOWLEDGE, CONSTITUTIONAL, SAFETY, CONSENT, COST, SIGNAL, PROJECT, EXPERT, DOMAIN, DEFAULT
+- Report the exact variable/constant names and their values
+- Which phases are classified as "anchor" vs "modulated"?
+- What mechanism enforces anchor immunity? (Is it a conditional check, a separate code path, structural exclusion?)
+
+### 3. PROFILE DEFINITIONS
+- Find all injection profile definitions
+- Expected: none, microdose, perceptual, classical, mdma
+- For each profile, extract: s_NM value, routing mode, any other parameters
+- Report exact file path and data structure
+
+### 4. PHARMACOKINETIC CURVES
+- Find onset/offset curve implementations
+- Expected: exponential curves `alpha = 1 - e^(-3t/onset)` and `alpha = e^(-3t/offset)`
+- Report exact formulas as implemented
+- Find onset/offset durations per profile (expected in "exchanges" unit)
+
+### 5. PIPELINE PHASES (CRITICAL — DO NOT GUESS)
+- Find the NEXUS pipeline phase names IN SOURCE CODE
+- Expected from Orchestra: DETECT → CASCADE → LOCK → EXECUTE → UPDATE
+- The injection spec may extend this to 8 phases — find the exact names
+- Report the exact enum/constant/array where phases are defined
+- Report file path and line numbers
+
+### 6. MIXING MATRIX
+- Find the cross-expert bleeding / mixing matrix implementation
+- What are the health invariants checked? (determinant != 0, condition number < 10?)
+- Is there an invertibility guarantee? How is it enforced?
+- Report exact file path and function names
+
+### 7. ANCHOR STRUCTURAL IMMUNITY
+- How exactly are anchor phases excluded from the injection pathway?
+- Is it: (a) a conditional `if anchor: return 1.0` before gain calc, (b) anchor phases not in the gain map at all, (c) some other mechanism?
+- Find the exact code path that enforces this
+- Report file path and line numbers
+
+### 8. INTEGRITY VERIFICATION
+- Find any SHA256 hashing, fidelity checks, or integrity verification code
+- Expected: clean_hash, anchor_hash, fidelity score, mixing_det, mixing_cond
+- If these don't exist in code, say so clearly — I need to know what's implemented vs. specified-but-not-implemented
+
+### 9. EXPERT SYSTEM
+- Confirm the exact expert names in source code
+- Expected: Validator, Scaffolder, Restorer, Refocuser, Celebrator, Socratic, Direct
+- Find safety floor values. Expected: 0.10, 0.05, 0.05
+- Which experts map to which safety floors?
+- Report file path
+
+### 10. TEST SUITE
+- Run the test suite: report exact count of passing/failing tests
+- Expected: 1,047+ tests in injection repo
+- List the test file names and what categories they cover
+- Any tests specifically for: gain equation, anchor immunity, lossless reconstruction, mixing matrix invertibility?
+
+### 11. USD INTEGRATION
+- Are there any .usda files in the injection repo?
+- Any USD-specific imports or Pixar pxr API usage?
+- How does the injection framework connect to the USD cognitive substrate? (imports, references, shared data structures?)
+
+### 12. DETERMINISM
+- Find DETERMINISM.md or any determinism-related documentation
+- Any batch-invariance testing or deterministic aggregation code?
+- Report exact file paths
+
+## Output Format
+
+For EACH task above, report:
+```
+### Task N: [NAME]
+**Status:** FOUND / NOT FOUND / PARTIALLY FOUND
+**File(s):** [exact paths]
+**Line(s):** [exact line numbers]
+**Actual content:** [paste the relevant code/values]
+**Differs from expected:** YES/NO — [explain if yes]
+```
+
+## CRITICAL RULES
+- If something is NOT in the source code, say "NOT FOUND" — do not infer or fabricate
+- If something exists only in documentation (README, .md files) but not in executable code, note that distinction
+- If the repo structure differs from what I described, describe what you actually find before proceeding
+- Paste actual code snippets, not paraphrases

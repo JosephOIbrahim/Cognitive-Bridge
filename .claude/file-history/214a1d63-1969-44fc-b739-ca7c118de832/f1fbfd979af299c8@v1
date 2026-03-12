@@ -1,0 +1,157 @@
+"""Injection profile definitions with validation.
+
+Provides the InjectionProfile dataclass and the gain() function.
+gain(phase, profile) is the core equation: g = 1 + s * d
+"""
+
+import math
+from dataclasses import dataclass
+
+from src.lossless.constants import (
+    ANCHOR_PHASES,
+    D_MAP,
+    FLOAT_TOLERANCE,
+    OFFSET_EXCHANGES,
+    ONSET_EXCHANGES,
+    PROFILES,
+)
+
+
+@dataclass(frozen=True)
+class InjectionProfile:
+    """A validated injection profile.
+
+    Attributes:
+        name: Profile name (must be a key in PROFILES).
+        s_NM: Neuromodulatory signal strength.
+        routing: Routing mode (standard/dissolved/integrative).
+        cross_expert: Cross-expert bleeding coefficient.
+        tangent_mult: Tangent budget multiplier.
+    """
+
+    name: str
+    s_NM: float
+    routing: str
+    cross_expert: float
+    tangent_mult: float
+
+    def __post_init__(self):
+        if self.s_NM < 0.0:
+            raise ValueError(f"s_NM must be >= 0.0, got {self.s_NM}")
+        if self.s_NM > 1.0:
+            raise ValueError(f"s_NM must be <= 1.0, got {self.s_NM}")
+        if self.routing not in ("standard", "dissolved", "integrative"):
+            raise ValueError(f"Invalid routing mode: {self.routing}")
+        if self.cross_expert < 0.0 or self.cross_expert > 1.0:
+            raise ValueError(
+                f"cross_expert must be in [0, 1], got {self.cross_expert}"
+            )
+        if self.tangent_mult < 0.0:
+            raise ValueError(
+                f"tangent_mult must be >= 0, got {self.tangent_mult}"
+            )
+
+
+def load_profile(name: str) -> InjectionProfile:
+    """Load a named profile from constants.
+
+    Args:
+        name: Profile name (key in PROFILES dict).
+
+    Returns:
+        Validated InjectionProfile.
+
+    Raises:
+        ValueError: If profile name is unknown.
+    """
+    if name not in PROFILES:
+        valid = sorted(PROFILES.keys())
+        raise ValueError(
+            f"Unknown profile '{name}'. Valid: {valid}"
+        )
+    cfg = PROFILES[name]
+    return InjectionProfile(
+        name=name,
+        s_NM=cfg["s_NM"],
+        routing=cfg["routing"],
+        cross_expert=cfg["cross_expert"],
+        tangent_mult=cfg["tangent_mult"],
+    )
+
+
+def gain(phase: str, s_NM: float) -> float:
+    """Calculate gain for a phase at a given signal strength.
+
+    g = 1 + s * d
+
+    For anchor phases, ALWAYS returns 1.0 regardless of s_NM.
+    For modulated phases, returns 1.0 + s_NM * D_MAP[phase].
+
+    Properties:
+        - gain(phase, 0.0) == 1.0 for ALL phases (identity)
+        - gain(anchor_phase, any_s) == 1.0 (anchor invariance)
+        - gain is continuous in s_NM (no discontinuities)
+        - gain >= 1.0 always
+    """
+    if phase in ANCHOR_PHASES:
+        return 1.0
+
+    if phase not in D_MAP:
+        raise ValueError(f"Unknown phase: {phase}")
+
+    d = D_MAP[phase]
+    return 1.0 + s_NM * d
+
+
+def gain_with_alpha(phase: str, s_NM: float, alpha: float) -> float:
+    """Calculate alpha-weighted gain.
+
+    Returns 1.0 + alpha * (gain(phase, s_NM) - 1.0)
+
+    When alpha=0.0, returns 1.0 (no injection).
+    When alpha=1.0, returns gain(phase, s_NM) (full injection).
+    Continuous in both s_NM and alpha.
+    """
+    base_gain = gain(phase, s_NM)
+    return 1.0 + alpha * (base_gain - 1.0)
+
+
+def pharmacokinetic_alpha(
+    profile_name: str,
+    exchanges_since_inject: int,
+    exchanges_since_off: int,
+    is_active: bool,
+) -> float:
+    """Calculate pharmacokinetic alpha (injection strength).
+
+    Uses exponential curves for onset and offset.
+
+    Args:
+        profile_name: Profile name.
+        exchanges_since_inject: Exchanges since injection activated.
+        exchanges_since_off: Exchanges since injection deactivated.
+        is_active: Whether injection is currently active.
+
+    Returns:
+        Alpha in [0.0, 1.0].
+    """
+    if profile_name == "none":
+        return 0.0
+
+    onset = ONSET_EXCHANGES.get(profile_name, 1)
+    offset = OFFSET_EXCHANGES.get(profile_name, 2)
+
+    if is_active:
+        if onset <= 0:
+            return 1.0
+        # Exponential onset: 1 - e^(-3 * t / onset)
+        # At t=onset, alpha ~= 0.95
+        t = max(0, exchanges_since_inject)
+        return 1.0 - math.exp(-3.0 * t / onset)
+    else:
+        if offset <= 0:
+            return 0.0
+        # Exponential offset: e^(-3 * t / offset)
+        # At t=offset, alpha ~= 0.05
+        t = max(0, exchanges_since_off)
+        return math.exp(-3.0 * t / offset)

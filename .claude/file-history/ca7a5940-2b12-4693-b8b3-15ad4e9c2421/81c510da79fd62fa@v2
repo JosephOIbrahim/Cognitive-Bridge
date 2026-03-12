@@ -1,0 +1,126 @@
+"""Synapse Hooks Bridge — Claude Code <-> Houdini event relay.
+
+Reads Houdini events from a JSONL file and surfaces them as context
+to Claude Code via hook stdout. No WebSocket commands yet — this is
+the minimal stub that proves the hook pipeline works.
+
+Hook events that call this script:
+  - SessionStart: prints welcome + any queued Houdini events
+  - UserPromptSubmit: prints recent Houdini events as context
+"""
+
+import json
+import os
+import sys
+import time
+
+# Event file written by the Houdini-side bridge (synapse/hooks/)
+EVENTS_DIR = os.path.join(os.environ.get("TEMP", "/tmp"), "synapse_hooks")
+EVENTS_FILE = os.path.join(EVENTS_DIR, "houdini_events.jsonl")
+LAST_READ_FILE = os.path.join(EVENTS_DIR, ".last_read_ts")
+
+# How old an event can be before we ignore it (seconds)
+MAX_EVENT_AGE = 300  # 5 minutes
+
+
+def read_last_timestamp():
+    """Read the timestamp of the last event we processed."""
+    try:
+        with open(LAST_READ_FILE, "r", encoding="utf-8") as f:
+            return float(f.read().strip())
+    except (FileNotFoundError, ValueError):
+        return 0.0
+
+
+def write_last_timestamp(ts):
+    """Persist the timestamp so we don't re-read old events."""
+    os.makedirs(EVENTS_DIR, exist_ok=True)
+    with open(LAST_READ_FILE, "w", encoding="utf-8") as f:
+        f.write(str(ts))
+
+
+def read_new_events():
+    """Read events from the JSONL file that are newer than our last read."""
+    if not os.path.exists(EVENTS_FILE):
+        return []
+
+    last_ts = read_last_timestamp()
+    now = time.time()
+    new_events = []
+
+    try:
+        with open(EVENTS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                event_ts = event.get("timestamp", 0)
+                # Skip events we've already seen or that are too old
+                if event_ts <= last_ts:
+                    continue
+                if (now - event_ts) > MAX_EVENT_AGE:
+                    continue
+                new_events.append(event)
+    except (OSError, IOError):
+        return []
+
+    # Update the watermark to the newest event we read
+    if new_events:
+        max_ts = max(e.get("timestamp", 0) for e in new_events)
+        write_last_timestamp(max_ts)
+
+    return new_events
+
+
+def format_events(events):
+    """Format events into a readable context block for Claude."""
+    if not events:
+        return ""
+
+    lines = ["[Houdini Events]"]
+    for event in events:
+        event_type = event.get("type", "unknown")
+        detail = event.get("detail", "")
+        age = time.time() - event.get("timestamp", time.time())
+        age_str = f"{int(age)}s ago" if age < 60 else f"{int(age / 60)}m ago"
+
+        if detail:
+            lines.append(f"  - {event_type}: {detail} ({age_str})")
+        else:
+            lines.append(f"  - {event_type} ({age_str})")
+
+    return "\n".join(lines)
+
+
+def get_hook_event():
+    """Determine which hook event triggered us from env vars."""
+    # Claude Code sets CLAUDE_HOOK_EVENT for hook scripts
+    return os.environ.get("CLAUDE_HOOK_EVENT", "unknown")
+
+
+def main():
+    hook_event = get_hook_event()
+    events = read_new_events()
+    events_block = format_events(events)
+
+    if hook_event in ("SessionStart", "startup", "resume"):
+        # SessionStart: welcome message + any queued events
+        print("Synapse bridge connected.")
+        if events_block:
+            print(events_block)
+        else:
+            print("No pending Houdini events.")
+    else:
+        # UserPromptSubmit or other: just surface events if any
+        if events_block:
+            print(events_block)
+        # If no events, print nothing — don't clutter the prompt
+
+
+if __name__ == "__main__":
+    main()

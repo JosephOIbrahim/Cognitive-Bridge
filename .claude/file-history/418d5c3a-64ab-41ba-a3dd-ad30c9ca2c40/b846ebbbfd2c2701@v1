@@ -1,0 +1,145 @@
+# Render Farm Handler Integration
+
+## Context
+
+The render farm orchestrator (`render_farm.py`), diagnostics (`render_diagnostics.py`), notifications (`render_notify.py`), tests, recipes, and MCP tool definitions are all implemented. But the MCP tools (`synapse_render_sequence`, `synapse_render_farm_status`) fail at dispatch time because the backend handlers don't exist yet.
+
+**What's proven working (live-tested this session):**
+- Single-frame Karma CPU render at 320x240 in 3.1s
+- OIIO frame validation — all 6 checks pass
+- Python orchestrator loop — 3 frames in 9.9s, all valid
+- TOPS/PDG per-frame cook — 3 work items, all CookedSuccess
+
+**What's missing:** Two handler methods + their registration. This is the final wiring to make the entire render farm accessible via MCP.
+
+---
+
+## Files to Modify (3 files)
+
+### 1. `python/synapse/server/handlers_render.py` — Add 2 handler methods
+
+**`_handle_render_sequence(self, payload)`** (after `_handle_validate_frame`, ~line 1963)
+
+- Extract params: `start_frame` (required), `end_frame` (required), `rop` (optional), `step` (default 1), `auto_fix` (default True), `max_retries` (default 3)
+- Create `RenderCallbacks` wiring:
+  - `render_frame` -> `self._handle_render`
+  - `validate_frame` -> `self._handle_validate_frame`
+  - `get_render_settings` -> `self._handle_render_settings`
+  - `set_render_settings` -> `self._handle_render_settings` (same handler, reads vs writes based on `settings` key in payload)
+  - `get_stage_info` -> `self._handle_get_stage_info` (from parent `SynapseHandler`)
+  - `broadcast` -> `self._broadcast` if available (WebSocket push)
+- Create `RenderFarmOrchestrator` instance (or reuse singleton stored on `self`)
+- Pass memory from `self._memory` if available
+- Set `report_dir` to `$HIP/.synapse/render_reports/` (resolve via `hou.text.expandString("$HIP")` if available, else `~/.synapse/render_reports/`)
+- Call `orchestrator.render_sequence(rop, (start_frame, end_frame), step=step)`
+- Return `report.to_dict()` (the BatchReport serialization)
+- **Threading**: The handler runs on the WebSocket handler thread. `render_frame_validated` internally calls `_handle_render` which uses `hdefereval.executeInMainThreadWithResult()`. This blocks the handler thread (correct behavior — render sequence is synchronous from the client's perspective). The MCP stdio bridge has a 600s timeout for this command.
+- **Singleton orchestrator**: Store as `self._render_farm` on the handler instance. `render_farm_status` queries it.
+
+**`_handle_render_farm_status(self, payload)`**
+
+- If `self._render_farm` exists, return `self._render_farm.get_status()`
+- Else return `{"running": False, "cancelled": False, "scene_tags": []}`
+
+**Key pattern to follow** (from `_handle_render` at line 183):
+```python
+def _handle_render_sequence(self, payload: Dict) -> Dict:
+    """Render a frame sequence with per-frame validation and auto-fix."""
+    from .render_farm import RenderFarmOrchestrator, RenderCallbacks
+    # ... extract params, build callbacks, call orchestrator
+```
+
+Lazy import of `render_farm` module (matches existing pattern where handlers import heavy modules inline).
+
+### 2. `python/synapse/server/handlers.py` — Register 2 handlers (~line 380)
+
+Add after `reg.register("validate_frame", self._handle_validate_frame)`:
+
+```python
+# Render farm
+reg.register("render_sequence", self._handle_render_sequence)
+reg.register("render_farm_status", self._handle_render_farm_status)
+```
+
+### 3. `python/synapse/core/protocol.py` — NOT needed
+
+The `CommandType` enum exists but handlers register with plain strings, not enum values. The enum is not enforced in dispatch. No change needed here. Handler count assertion in tests uses `>= 37` (not exact), so adding 2 handlers won't break it.
+
+---
+
+## Implementation Details
+
+### RenderCallbacks Wiring
+
+The orchestrator's `RenderCallbacks` expects functions `(Dict) -> Dict`. Our handlers already have this exact signature. The wiring is:
+
+```python
+callbacks = RenderCallbacks(
+    render_frame=self._handle_render,
+    validate_frame=self._handle_validate_frame,
+    get_render_settings=self._handle_render_settings,
+    set_render_settings=self._handle_render_settings,
+    get_stage_info=getattr(self, '_handle_get_stage_info', None),
+    broadcast=getattr(self, '_broadcast', None),
+)
+```
+
+Note: `_handle_get_stage_info` is on the parent `SynapseHandler` in `handlers.py`. The render handlers are mixed in via `RenderHandlersMixin`. Need to verify the handler can access `_handle_get_stage_info` from `self`.
+
+### Report Directory Resolution
+
+```python
+report_dir = None
+if HOU_AVAILABLE:
+    try:
+        hip = hou.text.expandString("$HIP")
+        if hip and hip != "$HIP":
+            report_dir = os.path.join(hip, ".synapse", "render_reports")
+    except Exception:
+        pass
+if not report_dir:
+    report_dir = os.path.join(os.path.expanduser("~"), ".synapse", "render_reports")
+```
+
+### Memory Passthrough
+
+Memory is accessed via lazy import: `from ..memory.store import get_synapse_memory; memory = get_synapse_memory()`. This follows the pattern in `_handle_knowledge_lookup` (line 920-923 of handlers.py). Cache on `self._render_farm_memory` to avoid repeated imports.
+
+### Gotchas from Live Testing
+
+These are already handled by the existing `_handle_render`:
+- `loppath` auto-discovery (line 217-228 in handlers_render.py)
+- Resolution override via `override_res` string menu + `res_user1`/`res_user2` (line 238-249)
+- Output path on `outputimage` or `picture` parm (line 253-257)
+- `hdefereval.executeInMainThreadWithResult` for main-thread execution (line 276-278)
+- Karma XPU file flush polling (line 265-273)
+
+No new Houdini API surface needed — the render farm handler is pure orchestration over existing handlers.
+
+---
+
+## Test Updates
+
+### New test: `tests/test_render_farm_handler.py`
+
+Test the handler integration layer (not the orchestrator itself — that's already tested in `test_render_farm.py`):
+
+1. `test_handle_render_sequence_basic` — mock orchestrator, verify it receives correct params
+2. `test_handle_render_sequence_defaults` — verify default step/auto_fix/max_retries
+3. `test_handle_render_farm_status_idle` — no running job returns idle status
+4. `test_handle_render_farm_status_running` — mock running job returns status
+5. `test_handler_registration` — verify both commands are registered in the handler registry
+
+### Existing test count check
+
+Current: 1,409 tests. After adding ~5 handler integration tests: ~1,414. Update any hardcoded count assertions if they exist.
+
+---
+
+## Verification
+
+1. `python -m pytest tests/test_render_farm.py tests/test_render_diagnostics.py tests/test_render_notify.py -v` — existing orchestrator tests still pass
+2. `python -m pytest tests/test_render_farm_handler.py -v` — new handler tests pass
+3. `python -m pytest tests/ -v` — full suite passes (check for count assertion updates)
+4. **Live test**: With Houdini + Synapse running, call `synapse_render_sequence` via MCP with `start_frame=1, end_frame=3` — should render 3 frames, validate each, return BatchReport dict
+5. **Status test**: Call `synapse_render_farm_status` — should return `{"running": false, ...}`

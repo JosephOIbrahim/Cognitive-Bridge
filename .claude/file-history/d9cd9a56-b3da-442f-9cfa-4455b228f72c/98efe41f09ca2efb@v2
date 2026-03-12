@@ -1,0 +1,26 @@
+# Project Memory — TranslatorsGame
+
+## Cross-Repo Edit Rule (CRITICAL)
+
+When working in TranslatorsGame (or any project), **never edit files in other repos** (Orchestra, Synapse, OTTO, comfyui-agent, etc.) even if the user says "fix all of them." Those are independent git repos with their own commit histories. Edits to `~/CLAUDE.md` (global config) and `~/.claude/` (global tooling) are fine — they're not repo-scoped.
+
+**What happened:** Insights report flagged He2025 attribution inconsistency across all projects. User said "fix it across all of them." I edited CLAUDE.md in Orchestra, Synapse, and comfyui-agent from a TranslatorsGame session. User caught it — those edits create orphaned uncommitted changes in unrelated repos with no commit context. Had to `git checkout --` all three.
+
+**Rule:** Only edit `~/CLAUDE.md` and `~/.claude/*` for cross-project changes. For repo-scoped CLAUDE.md files, flag them as TODO for when the user is working in that project.
+
+## Insights Session (2026-02-14)
+
+Three improvements implemented from /insights report:
+1. **Bug Fix Protocol** added to `~/.claude/CLAUDE.md` — enumerate all cases before fixing, fix all in one pass
+2. **`/deploy` skill** created at `~/.claude/skills/deploy/SKILL.md` — test → commit → push → deploy pipeline with pre-flight checks
+3. **Zombie process cleanup** added to `~/.claude/hooks/session-start-check.py` — auto-kills stale `synapse_bridge` and `mcp_bridge` processes at session start
+
+## He2025 Attribution Fix (pending per-project)
+
+`~/CLAUDE.md` was fixed: renamed "He2025 Determinism" → "Determinism Requirements", application-level patterns no longer attributed to the paper, kernel-level patterns (Orchestra) correctly credited as inspired by it.
+
+Still need fixing when working in each project:
+- [ ] `Orchestra/CLAUDE.md` — "ThinkingMachines Compliance" section over-attributes
+- [ ] `SYNAPSE/CLAUDE.md` — "He2025 determinism" line and tier pinning reference
+- [ ] `comfyui-agent/CLAUDE.md` — "He2025 pattern" and "He2025 determinism audit" labels
+- [x] `OTTO_OS/CLAUDE.md` — already honest, no changes needed

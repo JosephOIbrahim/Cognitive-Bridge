@@ -1,0 +1,227 @@
+---
+title: VEX Attribute Access Patterns
+category: vex_reference
+subcategory: attributes
+keywords: [vex, attribute, point, primitive, vertex, detail, @, prefix, type, read, write, create, group]
+agent_relevance:
+  VexAuditor: 0.95
+  GraphTracer: 0.9
+  Librarian: 0.7
+related_documents:
+  - path: vex_reference/fundamentals.md
+    reason: "Type prefixes and @-binding basics"
+  - path: geometry_reference/point_attributes.md
+    reason: "Point attribute reference"
+  - path: vex_reference/functions.md
+    reason: "Attribute read/write functions"
+common_queries:
+  - "How do I read attributes in VEX?"
+  - "What is @P?"
+  - "How do I create a custom attribute?"
+  - "Point vs primitive attributes"
+  - "How do I access attributes from another input?"
+---
+
+# VEX Attribute Access Patterns
+
+## Built-in Attributes
+
+### Point Attributes (most common)
+| Attribute | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `@P` | vector | Position | {0,0,0} |
+| `@N` | vector | Normal | {0,0,0} |
+| `@Cd` | vector | Color (RGB 0-1) | {1,1,1} |
+| `@Alpha` | float | Opacity | 1.0 |
+| `@v` | vector | Velocity | {0,0,0} |
+| `@pscale` | float | Point scale | 1.0 |
+| `@orient` | vector4 | Orientation quaternion | {0,0,0,1} |
+| `@up` | vector | Up vector (with @N for frame) | {0,1,0} |
+| `@id` | int | Persistent ID (survives topology changes) | -1 |
+| `@age` | float | Particle age (seconds) | 0.0 |
+| `@life` | float | Particle lifespan (seconds) | -1 |
+| `@rest` | vector | Rest position (for noise stability) | @P at creation |
+| `@width` | float | Curve/line width | 0.0 |
+| `@uv` | vector | UV coordinates | {0,0,0} |
+
+### Point Context Variables
+| Variable | Type | Description |
+|----------|------|-------------|
+| `@ptnum` | int | Current point index (0-based) |
+| `@numpt` | int | Total number of points |
+| `@primnum` | int | Current primitive index (prim/vtx run-over) |
+| `@numprim` | int | Total number of primitives |
+| `@vtxnum` | int | Current linear vertex index |
+| `@numvtx` | int | Total number of vertices |
+| `@elemnum` | int | Current element (generic, any run-over) |
+| `@numelem` | int | Total elements (generic) |
+
+### Global Variables
+| Variable | Type | Description |
+|----------|------|-------------|
+| `@Time` | float | Current time in seconds |
+| `@Frame` | float | Current frame number |
+| `@TimeInc` | float | Time step between frames |
+| `@OpInput1` | string | Path to first input node |
+| `@OpInput2` | string | Path to second input node |
+
+## Reading Attributes
+
+### @-Shorthand (current element)
+```vex
+// Read from current point (fastest)
+vector pos = @P;
+float scale = @pscale;
+int myint = i@myattr;
+string name = s@name;
+```
+
+### Function Syntax (any element, any input)
+```vex
+// Read point attribute from input 0, point 5
+vector pos = point(0, "P", 5);
+float val = point(0, "density", @ptnum);
+
+// Read from input 1
+vector target = point(1, "P", @ptnum);
+
+// Read primitive attribute
+string name = prim(0, "name", @primnum);
+float area = prim(0, "measuredarea", 0);
+
+// Read vertex attribute
+vector uv = vertex(0, "uv", @vtxnum);
+
+// Read detail (global) attribute
+int count = detail(0, "numitems");
+string path = detail(1, "filepath");
+```
+
+### Array Attributes
+```vex
+// Read array attribute
+int ids[] = point(0, "connected_ids", @ptnum);
+float weights[] = point(0, "captureweights", @ptnum);
+
+// Using @-shorthand for arrays
+int myarr[] = i[]@myarray;
+```
+
+## Writing Attributes
+
+### @-Shorthand (creates if doesn't exist)
+```vex
+// Write to current point
+@P = {0, 1, 0};                    // Set position
+@Cd = {1, 0, 0};                   // Set color to red
+f@density = 1.5;                   // Create/set float
+v@myvel = set(1, 0, 0);           // Create/set vector
+i@class = floor(rand(@ptnum) * 5); // Create/set int
+s@name = sprintf("pt_%d", @ptnum); // Create/set string
+```
+
+### Function Syntax (any element)
+```vex
+// Set attribute on specific point
+setpointattrib(0, "Cd", ptnum, {1,0,0}, "set");
+setpointattrib(0, "density", ptnum, 1.5, "set");
+
+// Set primitive attribute
+setprimattrib(0, "name", primnum, "group_a", "set");
+
+// Set detail attribute (global)
+setdetailattrib(0, "total_area", area, "set");
+
+// Mode argument: "set", "add", "min", "max", "mult"
+setpointattrib(0, "density", pt, 0.1, "add");  // Accumulate
+```
+
+## Groups
+
+```vex
+// Add current point to group
+i@group_selected = 1;
+
+// Remove from group
+i@group_selected = 0;
+
+// Check group membership
+if (inpointgroup(0, "mygroup", @ptnum)) {
+    // Point is in group
+}
+
+// Check prim group
+if (inprimgroup(0, "walls", @primnum)) {
+    // Prim is in group
+}
+
+// Set group from condition
+i@group_large = (@pscale > 0.5) ? 1 : 0;
+```
+
+## Intrinsic Attributes
+
+Intrinsic attributes are computed on-the-fly and not stored as regular attributes.
+
+```vex
+// Read intrinsic (use primintrinsic / pointintrinsic)
+float area = primintrinsic(0, "measuredarea", @primnum);
+vector bounds = primintrinsic(0, "bounds", @primnum);
+string type = primintrinsic(0, "typename", @primnum);
+int closed = primintrinsic(0, "closed", @primnum);
+
+// Useful intrinsics
+// Prim: measuredarea, measuredperimeter, bounds, typename, closed
+// Detail: bounds, pointcount, primitivecount
+```
+
+## Attribute Promotion Patterns
+
+```vex
+// Point to detail (sum all point values) -- run over Detail
+float total = 0;
+for (int i = 0; i < npoints(0); i++) {
+    total += point(0, "area", i);
+}
+f@total_area = total;
+
+// Detail to point (broadcast) -- run over Points
+f@threshold = detail(0, "threshold");
+
+// Prim to point (average over connected prims) -- run over Points
+int prims[] = pointprims(0, @ptnum);
+vector avg_cd = {0,0,0};
+foreach (int pr; prims) {
+    avg_cd += prim(0, "Cd", pr);
+}
+@Cd = avg_cd / max(len(prims), 1);
+```
+
+## Common Patterns
+
+### Nearest-Point Transfer
+```vex
+// Transfer attribute from input 1's nearest point
+int near = nearpoint(1, @P);
+if (near >= 0) {
+    @Cd = point(1, "Cd", near);
+}
+```
+
+### Distance-Weighted Blend
+```vex
+// Blend attribute from multiple nearby points on input 1
+int pts[] = pcfind(1, "P", @P, chf("radius"), chi("maxpts"));
+vector total_cd = {0,0,0};
+float total_w = 0;
+foreach (int pt; pts) {
+    float d = distance(@P, point(1, "P", pt));
+    float w = 1.0 / max(d, 0.001);
+    total_cd += point(1, "Cd", pt) * w;
+    total_w += w;
+}
+if (total_w > 0) @Cd = total_cd / total_w;
+```
+
+---
+*Houdini 21 VEX Reference -- Attributes*

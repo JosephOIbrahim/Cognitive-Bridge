@@ -1,0 +1,48 @@
+"""Debug: check COP node types and parms in Houdini 21 Copernicus."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        # Check what node types exist in copnet
+        code = r"""
+import hou
+obj = hou.node("/obj")
+cn = obj.createNode("copnet", "__debug_cop")
+
+# List all cop node types
+cop_cat = hou.cop2NodeTypeCategory()
+all_types = sorted(cop_cat.nodeTypes().keys())
+
+# Look for relevant nodes: vopcop, vex, inline, threshold, composite, etc
+relevant = [t for t in all_types if any(k in t.lower() for k in
+    ['vex', 'vop', 'inline', 'threshold', 'composite', 'merge', 'blur',
+     'convolve', 'fft', 'switch', 'null', 'constant', 'color', 'noise',
+     'file', 'fetch', 'multiply', 'math', 'add', 'over', 'screen',
+     'generator', 'kernel', 'streak'])]
+
+# Try creating a vopcop2gen
+try:
+    v = cn.createNode("vopcop2gen", "test_vop")
+    vop_ok = True
+    v.destroy()
+except:
+    vop_ok = False
+
+# Try copernicus nodes (cop:: prefix)
+cop_types_new = [t for t in all_types if t.startswith("cop::")]
+
+cn.destroy()
+result = {
+    "total_cop_types": len(all_types),
+    "relevant_types": relevant[:30],
+    "copernicus_types": cop_types_new[:30],
+    "vopcop2gen_works": vop_ok,
+}
+"""
+        r = await client.execute_python(code)
+        print(r)
+
+asyncio.run(main())

@@ -1,0 +1,608 @@
+# SYNAPSE — Solaris & TOPS High-Impact Fix Sprint
+# Sprint: SOLARIS-TOPS-FIXES
+# Date: 2026-02-23
+# Status: READY TO EXECUTE
+
+---
+
+## PRE-FLIGHT: Read Before Anything
+
+Before ANY implementation, read these files and internalize their conventions:
+
+```bash
+cat C:/Users/User/SYNAPSE/CLAUDE.md
+cat C:/Users/User/SYNAPSE/python/synapse/server/handlers_usd.py
+cat C:/Users/User/SYNAPSE/python/synapse/server/handlers_tops.py
+cat C:/Users/User/SYNAPSE/python/synapse/server/render_farm.py
+cat C:/Users/User/SYNAPSE/python/synapse/server/handlers_material.py
+cat C:/Users/User/SYNAPSE/tests/test_tops.py
+cat C:/Users/User/SYNAPSE/tests/test_render.py
+```
+
+Report what you find. Do NOT proceed until you understand:
+- The `run_on_main` / `_run_in_main_thread_pdg` execution patterns
+- How `hou` stubs work in tests (inline `sys.modules["hou"]`, NOT shared conftest)
+- The coaching tone convention ("Couldn't find" not "not found", always suggest next step)
+- How `handlers_material.py` uses `matlib.cook(force=True)` as the cook-and-verify pattern
+- The `hou.undos.group()` pattern used in `handlers_tops.py` line 1695 and `handlers_hda.py`
+- The `deterministic_uuid()` function from `synapse.core.determinism`
+- How `RenderFarmOrchestrator` delegates all Houdini calls through `RenderCallbacks`
+
+---
+
+## STATUS REPORTING PROTOCOL
+
+**MANDATORY:** After completing each task, print the status bar in this EXACT format.
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SYNAPSE — SOLARIS-TOPS-FIXES STATUS                        ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: CRITICAL FIXES       [░░░░░░░░░░]   0%            ║
+║    TOPS   ◆ T1 ○                                             ║
+║    STAGE  ⟡ S1 ○                                             ║
+║                                                              ║
+║  Phase 2: SAFETY & VERIFY      [░░░░░░░░░░]   0%            ║
+║    USD    ◈ U1 ○  U2 ○                                       ║
+║    FARM   ◇ F1 ○                                             ║
+║                                                              ║
+║  Phase 3: TESTS                [░░░░░░░░░░]   0%            ║
+║    QATOPS △ Q1 ○                                             ║
+║    QAUSD  ☆ Q2 ○                                             ║
+║    QAFARM ◉ Q3 ○                                             ║
+║                                                              ║
+║  Overall: [░░░░░░░░░░░░░░░░░░░░]   0%  (0/7 tasks)         ║
+║  Legend: ✓ done  ▶ active  ○ pending  ✗ failed              ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+**Rules:**
+- Print after EVERY completed task (not just phases)
+- Update symbols: ○ → ▶ (when starting) → ✓ (when done) or ✗ (on failure)
+- If a task FAILS (✗), report the error message before the status bar
+
+---
+
+## ARCHITECTURE DECISIONS (NON-NEGOTIABLE)
+
+### 1. All mutations go through existing handler safety middleware
+Never call `hou.*` directly from new code. Always use `run_on_main` for USD handlers and `_run_in_main_thread_pdg` for TOPS handlers.
+
+### 2. Coaching tone on all error messages
+Pattern: `"Couldn't {action} — {helpful suggestion}"`. Never bare error codes. Always suggest a next step.
+
+### 3. Determinism compliance
+`sort_keys=True` on all JSON. `deterministic_uuid()` instead of `uuid.uuid4()`. No `time.time()` in seeds.
+
+### 4. Test pattern: inline hou stubs
+Each test file creates its own mock `hou` via `sys.modules`. Patch `handlers_mod.hou` (the module-level reference), NOT `sys.modules["hou"]`.
+
+---
+
+## FILE OWNERSHIP TABLE
+
+**Every file has exactly ONE owner. Violation = merge conflicts = sprint failure.**
+
+| Agent | Role (MOE) | Exclusive Write | Read Only |
+|-------|------------|-----------------|-----------|
+| TOPS | PDG Pipeline Expert | `python/synapse/server/handlers_tops.py` | handlers_usd.py, render_farm.py |
+| STAGE | USD Stage Introspection Expert | `python/synapse/server/handlers_usd.py` (lines 80-128 only: `_handle_get_stage_info`) | handlers_render.py, autonomy/validator.py |
+| USD | Solaris Safety Expert | `python/synapse/server/handlers_usd.py` (lines 176+ only: all mutation handlers) | handlers_material.py (read pattern), handlers_tops.py (undo pattern) |
+| FARM | Render Pipeline Expert | `python/synapse/server/render_farm.py` | handlers_render.py, render_diagnostics.py |
+| QATOPS | TOPS Test Expert | `tests/test_tops.py` (new test additions only) | handlers_tops.py |
+| QAUSD | USD Test Expert | `tests/test_usd_handlers.py` (new file) | handlers_usd.py |
+| QAFARM | Farm Test Expert | `tests/test_render_farm.py` (new file OR append to existing) | render_farm.py |
+
+**Patch protocol:** If Agent A needs a change in Agent B's file:
+1. Agent A writes the change to a `.patch` description in their task output
+2. Orchestrator applies the patch after Agent B's current task completes
+3. Agent B's next task incorporates the change
+
+---
+
+## PHASE 1: CRITICAL FIXES
+
+These are bugs. They produce wrong behavior. Fix first.
+
+Run these agents **in parallel** via Task tool.
+
+### ═══ Agent TOPS — PDG Pipeline Expert ═══
+
+**MOE Expertise:** Deep knowledge of PDG work item generation, TOP node parameter conventions, and the `genericgenerator` node's Python scripting interface.
+**You OWN:** `python/synapse/server/handlers_tops.py`
+**DO NOT TOUCH:** `handlers_usd.py`, `render_farm.py`, `tests/`
+
+**Task T1: Fix `tops_multi_shot` generation script not being applied**
+
+The `_handle_tops_multi_shot` handler (around line 1892) builds a `gen_script` string containing per-shot work item attribute assignment code, but NEVER sets it on the `genericgenerator` node. The node currently only gets `itemcount` set.
+
+**Implementation:**
+
+1. Read `handlers_tops.py` lines 1880-1960 to understand current code
+2. After line 1929 (where `script_parm.set(len(shots))` happens), add the generation script assignment:
+   ```python
+   # Set the generation script so work items get shot-specific attributes
+   gen_parm = gen_node.parm("pythonscript")
+   if gen_parm:
+       gen_parm.set(gen_script)
+   ```
+3. The `genericgenerator` node uses `pythonscript` parm for its generation callback. Verify this parm name is correct by checking Houdini docs — if the actual parm name is different (e.g., `script`, `generatescript`), use the correct one. The safest approach: try `pythonscript` first, fall back to checking what parms exist.
+4. Also fix the 3 determinism violations in this file:
+   - Line ~1496: `mid = f"monitor-{uuid.uuid4().hex[:8]}"` → use `deterministic_uuid()`
+   - Line ~1790: similar `uuid.uuid4()` in `tops_render_sequence` → use `deterministic_uuid()`
+   - Line ~1978: similar `uuid.uuid4()` in `tops_multi_shot` → use `deterministic_uuid()`
+   - Import: add `from ..core.determinism import deterministic_uuid` at the top of the file (near existing imports)
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent STAGE — USD Stage Introspection Expert ═══
+
+**MOE Expertise:** USD stage traversal, prim type classification (UsdGeom.Camera, UsdLux, UsdGeom.Mesh, UsdShade.Material), composition arc inspection.
+**You OWN:** `python/synapse/server/handlers_usd.py` lines 80-128 (`_handle_get_stage_info` only)
+**DO NOT TOUCH:** Any other handler in the file, `handlers_tops.py`, `render_farm.py`, `tests/`
+
+**Task S1: Enrich `get_stage_info` with fields downstream consumers need**
+
+The current `_handle_get_stage_info` returns only `prim_count` and a truncated `prims` list. Four downstream consumers reference fields that are never populated:
+- `handlers_render.py` ~line 1016: `stage_info.get("cameras", [])`
+- `handlers_render.py` ~line 1044: `stage_info.get("unassigned_material_prims", [])`
+- `autonomy/validator.py` ~line 114: `result.get("renderable_prims", prim_count)`
+- `autonomy/validator.py` ~line 334: `result.get("unresolved_references", [])`
+
+**Implementation:**
+
+1. Read the current `_on_main()` function (lines 88-126)
+2. Replace the simple prim iteration with a stage walk that classifies prims. Add a `limit` parameter (default 500, from payload):
+   ```python
+   limit = int(resolve_param_with_default(payload, "limit", 500))
+   ```
+3. Inside `_on_main()`, after getting the stage, walk ALL prims (up to limit) and classify:
+   ```python
+   from pxr import UsdGeom, UsdLux, UsdShade, Usd
+
+   cameras = []
+   lights = []
+   renderable_prims = 0
+   unassigned_material_prims = []
+   unresolved_references = []
+   prims = []
+
+   for prim in stage.Traverse():
+       if len(prims) >= limit:
+           break
+       path = str(prim.GetPath())
+       type_name = str(prim.GetTypeName())
+       prims.append({"path": path, "type": type_name})
+
+       # Classify
+       if prim.IsA(UsdGeom.Camera):
+           cameras.append(path)
+       if prim.IsA(UsdLux.LightAPI) or "Light" in type_name:
+           lights.append(path)
+       if prim.IsA(UsdGeom.Gprim):
+           renderable_prims += 1
+           # Check material binding
+           binding_api = UsdShade.MaterialBindingAPI(prim)
+           mat, _ = binding_api.ComputeBoundMaterial()
+           if not mat:
+               unassigned_material_prims.append(path)
+       # Check references
+       if prim.HasAuthoredReferences():
+           refs = prim.GetMetadata("references")
+           if refs:
+               for ref_list in [refs.prependedItems, refs.appendedItems]:
+                   for ref in ref_list:
+                       if ref.assetPath and not stage.ResolveIdentifierToEditTarget(ref.assetPath):
+                           unresolved_references.append({
+                               "prim": path,
+                               "asset": str(ref.assetPath),
+                           })
+   ```
+4. Return the enriched dict:
+   ```python
+   return {
+       "node": node.path(),
+       "prim_count": len(prims),
+       "prims": prims,
+       "cameras": sorted(cameras),
+       "lights": sorted(lights),
+       "renderable_prims": renderable_prims,
+       "unassigned_material_prims": sorted(unassigned_material_prims)[:50],
+       "unresolved_references": unresolved_references[:20],
+       "truncated": len(prims) >= limit,
+   }
+   ```
+5. **CRITICAL:** The `pxr` imports (`UsdGeom`, `UsdLux`, `UsdShade`) MUST be inside `_on_main()`, not at module level. Houdini's Python provides these — they may not be available outside the main thread context.
+6. Handle the case where `pxr` modules fail to import gracefully — fall back to the current simple behavior with a coaching-tone warning.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 1 GATE ═══
+
+**Run BEFORE starting Phase 2. Gate is HARD — no skip.**
+
+```bash
+# 1. handlers_tops.py has gen_script assignment
+grep -c "gen_parm\|pythonscript\|generatescript" python/synapse/server/handlers_tops.py | grep -v "^0$"
+
+# 2. No uuid.uuid4() left in handlers_tops.py (should be deterministic_uuid)
+python -c "
+import re
+with open('python/synapse/server/handlers_tops.py', encoding='utf-8') as f:
+    content = f.read()
+matches = re.findall(r'uuid\.uuid4\(\)', content)
+assert len(matches) == 0, f'Found {len(matches)} uuid.uuid4() calls — should be deterministic_uuid()'
+print('TOPS determinism: OK')
+"
+
+# 3. get_stage_info returns cameras field
+grep -c '"cameras"' python/synapse/server/handlers_usd.py | grep -v "^0$"
+
+# 4. Existing tests still pass
+python -m pytest tests/ -q --tb=short -x
+```
+
+**ALL checks must pass. If ANY fail, fix before proceeding.**
+
+Print status bar after gate check.
+
+---
+
+## PHASE 2: SAFETY & VERIFY
+
+These are correctness and safety improvements. Depend on Phase 1 being clean.
+
+Run these agents **in parallel** via Task tool.
+
+### ═══ Agent USD — Solaris Safety Expert ═══
+
+**MOE Expertise:** Houdini undo system, pythonscript node cooking, error handling in LOP networks, Solaris best practices.
+**You OWN:** `python/synapse/server/handlers_usd.py` (lines 176+ — all mutation handlers)
+**DO NOT TOUCH:** `_handle_get_stage_info` (Agent STAGE owns that), `handlers_tops.py`, `render_farm.py`, `tests/`
+
+**Task U1: Add `hou.undos.group()` wrapping to all 7 USD mutation handlers**
+
+The following handlers create nodes but don't wrap in undo groups, unlike `handlers_tops.py` and `handlers_hda.py`:
+
+1. `_handle_set_usd_attribute` (line 176)
+2. `_handle_create_usd_prim` (line 214)
+3. `_handle_modify_usd_prim` (line 245)
+4. `_handle_reference_usd` (line 304)
+5. `_handle_manage_variant_set` (line 501) — only the `create` action
+6. `_handle_manage_collection` (line 630) — `create`, `add`, `remove` actions
+7. `_handle_configure_light_linking` (line 782)
+
+**Implementation:**
+
+For each handler, wrap the node-creating portion of `_on_main()` in an undo group. Follow the existing pattern from `handlers_tops.py` line 1695:
+
+```python
+def _on_main():
+    node = self._resolve_lop_node(node_path_arg)
+    with hou.undos.group("SYNAPSE: set_usd_attribute"):
+        parent = node.parent()
+        # ... rest of existing code ...
+```
+
+The `with hou.undos.group(label):` context manager is the preferred pattern. Use descriptive labels: `"SYNAPSE: set_usd_attribute"`, `"SYNAPSE: create_usd_prim"`, etc.
+
+For `_handle_reference_usd`, the undo group goes inside `_on_main()` wrapping the `parent_node.createNode(...)` and parm-setting code.
+
+For `_handle_manage_variant_set`, only wrap the `create` action (not `list` or `select` — reads don't need undo).
+
+For `_handle_manage_collection`, wrap `create`, `add`, and `remove` actions.
+
+**Task U2: Add cook-and-verify to pythonscript-creating handlers**
+
+After creating a pythonscript node and setting its code, cook it and check for errors. This gives immediate feedback instead of silent cook-time failures.
+
+**Implementation:**
+
+Apply to these 4 handlers that create pythonscript nodes:
+- `_handle_set_usd_attribute`
+- `_handle_create_usd_prim`
+- `_handle_modify_usd_prim`
+- `_handle_manage_variant_set` (create action)
+
+After `py_lop.parm("python").set(code)`, add:
+
+```python
+# Cook and verify — catch errors now instead of silent cook-time failure
+try:
+    py_lop.cook(force=True)
+except hou.OperationFailed as e:
+    error_msg = str(e)
+    # Node was created but code has an issue — keep it for debugging
+    return {
+        "created_node": py_lop.path(),
+        "prim_path": prim_path,
+        "cook_error": (
+            f"The node was created but hit a snag when cooking — {error_msg}. "
+            "The pythonscript node is still in the network so you can inspect it. "
+            "Check that the prim path exists and the attribute types match."
+        ),
+    }
+```
+
+Follow the coaching tone: "hit a snag", offer next step, don't say "failed" or "error" as a bare status.
+
+For `_handle_manage_variant_set` and collection handlers that generate pythonscript, apply the same pattern but tailor the suggestion message to the specific operation.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent FARM — Render Pipeline Expert ═══
+
+**MOE Expertise:** Concurrent GPU/CPU pipelines, ThreadPoolExecutor patterns, render validation, Karma XPU resource management.
+**You OWN:** `python/synapse/server/render_farm.py`
+**DO NOT TOUCH:** `handlers_usd.py`, `handlers_tops.py`, `tests/`
+
+**Task F1: Implement GPU/CPU render overlap in `render_sequence`**
+
+The docstring (lines 14-18) describes concurrent validation, but the implementation is sequential. The `_cpu_pool` is created but never used. `pending_validation` is declared but never assigned.
+
+**Implementation:**
+
+1. Read the current `render_sequence` method (lines 370-460) and `render_frame_validated` method (lines 180-300)
+2. Split `render_frame_validated` into two separate operations:
+   - `_render_frame(rop, frame, settings)` — just the render, returns render result
+   - `_validate_frame(image_path)` — just the validation, returns validation result
+3. In `render_sequence`, implement the overlap:
+
+```python
+for idx, frame in enumerate(frames):
+    if self._cancelled:
+        break
+
+    # Wait for previous validation to complete (if any)
+    if pending_validation is not None:
+        prev_result = pending_validation.result()
+        self._process_validation_result(prev_result, report)
+
+    # Render current frame (blocks — GPU exclusive)
+    render_result = self._render_frame(
+        rop=rop, frame=frame, current_settings=initial_settings
+    )
+
+    if render_result.image_path:
+        # Submit validation to CPU pool (non-blocking)
+        pending_validation = self._cpu_pool.submit(
+            self._validate_and_package,
+            frame=frame,
+            render_result=render_result,
+            settings=initial_settings,
+        )
+    else:
+        # No image — record failure directly
+        pending_validation = None
+        report.frame_results.append(render_result)
+        report.failed_frames += 1
+
+    # ... milestone/progress reporting ...
+
+# Drain last pending validation
+if pending_validation is not None:
+    prev_result = pending_validation.result()
+    self._process_validation_result(prev_result, report)
+```
+
+4. The key insight: `_render_frame` runs on the main thread (GPU-bound). `_validate_and_package` runs on the CPU pool. The next frame's render starts while the previous frame's validation runs on CPU. This is safe because:
+   - Karma XPU uses the GPU exclusively during render
+   - Validation (`validate_frame`) reads the output image file — CPU-only, no GPU
+   - The orchestrator already delegates through `RenderCallbacks` — no direct `hou` calls
+
+5. **Keep the existing retry/diagnose/fix loop** inside `render_frame_validated` as a fallback. The new overlap pattern is the happy path. When validation fails and auto-fix triggers re-render, that frame goes through the sequential path.
+
+6. Add proper cleanup in `cancel()`:
+   ```python
+   def cancel(self):
+       self._cancelled = True
+       self._cpu_pool.shutdown(wait=False, cancel_futures=True)
+   ```
+
+7. **Do NOT break the existing `render_frame_validated` public API** — other code may call it directly. Instead, add the new split methods as private helpers and refactor `render_sequence` to use them.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 2 GATE ═══
+
+**Run BEFORE starting Phase 3. Gate is HARD — no skip.**
+
+```bash
+# 1. All 7 USD handlers have undo groups
+python -c "
+with open('python/synapse/server/handlers_usd.py', encoding='utf-8') as f:
+    content = f.read()
+count = content.count('hou.undos.group')
+assert count >= 7, f'Expected >= 7 undo groups, found {count}'
+print(f'Undo groups: {count} (OK)')
+"
+
+# 2. Cook-and-verify present in pythonscript handlers
+python -c "
+with open('python/synapse/server/handlers_usd.py', encoding='utf-8') as f:
+    content = f.read()
+assert 'cook(force=True)' in content, 'No cook-and-verify found'
+assert 'cook_error' in content, 'No cook_error response found'
+print('Cook-and-verify: OK')
+"
+
+# 3. render_farm uses _cpu_pool.submit
+grep -c "_cpu_pool.submit" python/synapse/server/render_farm.py | grep -v "^0$"
+
+# 4. Existing tests still pass
+python -m pytest tests/ -q --tb=short -x
+```
+
+**ALL checks must pass. If ANY fail, fix before proceeding.**
+
+Print status bar after gate check.
+
+---
+
+## PHASE 3: TESTS
+
+Write tests for everything changed in Phases 1 and 2. No new code — only test files.
+
+Run these agents **in parallel** via Task tool.
+
+### ═══ Agent QATOPS — TOPS Test Expert ═══
+
+**MOE Expertise:** PDG testing patterns, `genericgenerator` node mocking, work item attribute assertions.
+**You OWN:** `tests/test_tops.py` (append new tests only — do NOT modify existing tests)
+**DO NOT TOUCH:** Any source file in `python/`
+
+**Task Q1: Test `tops_multi_shot` gen_script fix + determinism**
+
+Add tests to `tests/test_tops.py`:
+
+1. **`test_multi_shot_sets_generation_script`** — Verify that after calling `_handle_tops_multi_shot` with a list of shots, the `genericgenerator` node's generation script parm is set (not just `itemcount`). Mock `hou.node`, `createNode`, `parm`, and assert `parm("pythonscript").set()` was called with a string containing `shot_name`, `frame_start`, `frame_end`, `camera`.
+
+2. **`test_multi_shot_uses_deterministic_uuid`** — Verify the handler does NOT call `uuid.uuid4()`. Import the handler module and check that `deterministic_uuid` is used. Or: mock `deterministic_uuid` and verify it's called.
+
+3. **`test_multi_shot_gen_script_contains_shot_data`** — Verify the gen_script content includes the shot-specific JSON data. Capture the string passed to `parm.set()` and assert it contains the shot names from the input.
+
+Follow the existing test pattern in `test_tops.py`:
+- Inline `hou` stub via `sys.modules`
+- Import handlers via `importlib.util.spec_from_file_location`
+- Patch `handlers_mod.hou` not `sys.modules["hou"]`
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent QAUSD — USD Test Expert ═══
+
+**MOE Expertise:** USD handler testing, pythonscript cook simulation, undo group verification.
+**You OWN:** New tests appended to the appropriate existing test file (check if `tests/test_usd.py` or similar exists; if not, add to the file that currently tests USD handlers)
+**DO NOT TOUCH:** Any source file in `python/`
+
+**Task Q2: Test enriched `get_stage_info` + undo groups + cook-and-verify**
+
+Add tests:
+
+1. **`test_get_stage_info_returns_cameras`** — Mock a stage with camera prims. Assert the response includes `"cameras"` with the correct paths.
+
+2. **`test_get_stage_info_returns_lights`** — Same for lights.
+
+3. **`test_get_stage_info_returns_renderable_prims`** — Mock Gprim-type prims. Assert `renderable_prims` count is correct.
+
+4. **`test_get_stage_info_returns_unassigned_material_prims`** — Mock geometry prims without material bindings. Assert they appear in `unassigned_material_prims`.
+
+5. **`test_set_usd_attribute_uses_undo_group`** — Call `_handle_set_usd_attribute` and verify `hou.undos.group` was entered. Mock `hou.undos.group` as a context manager and assert it was called with a label starting with `"SYNAPSE:"`.
+
+6. **`test_create_usd_prim_cook_and_verify_success`** — Mock a successful cook. Assert no `cook_error` in response.
+
+7. **`test_create_usd_prim_cook_and_verify_failure`** — Mock `py_lop.cook(force=True)` raising `hou.OperationFailed`. Assert response includes `cook_error` with coaching-tone message (contains "snag" or similar, NOT bare "failed").
+
+Follow existing USD test patterns in the codebase.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent QAFARM — Farm Test Expert ═══
+
+**MOE Expertise:** ThreadPoolExecutor testing, Future mocking, concurrent pipeline verification.
+**You OWN:** Tests for render_farm (append to existing or create new)
+**DO NOT TOUCH:** Any source file in `python/`
+
+**Task Q3: Test GPU/CPU overlap in `render_sequence`**
+
+Add tests:
+
+1. **`test_render_sequence_uses_cpu_pool`** — Verify `_cpu_pool.submit` is called during `render_sequence`. Mock the callbacks and assert that validation is submitted to the pool rather than called inline.
+
+2. **`test_render_sequence_overlaps_render_and_validate`** — Track call ordering. Assert that for a 3-frame sequence, frame N+1's render starts before frame N's validation completes. Use `threading.Event` or call-order tracking.
+
+3. **`test_render_sequence_drains_pending_validation`** — Verify that after the last frame renders, the pending validation future is `.result()`-ed before the method returns. No dangling futures.
+
+4. **`test_cancel_shuts_down_pool`** — Call `cancel()` and verify the CPU pool shutdown is called.
+
+Follow existing render_farm test patterns.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 3 GATE (FINAL) ═══
+
+**Run BEFORE declaring sprint complete. Gate is HARD — no skip.**
+
+```bash
+# 1. Full test suite passes (includes all new tests)
+python -m pytest tests/ -v --tb=short
+
+# 2. Verify test count increased
+python -c "
+import subprocess, re
+result = subprocess.run(['python', '-m', 'pytest', 'tests/', '--co', '-q'], capture_output=True, text=True, cwd='C:/Users/User/SYNAPSE')
+lines = result.stdout.strip().split('\n')
+count_line = [l for l in lines if 'test' in l.lower() and 'selected' in l.lower()]
+print(f'Tests collected: {lines[-1] if lines else \"unknown\"}')
+"
+
+# 3. No uuid.uuid4() in handlers_tops.py
+grep -c "uuid.uuid4" python/synapse/server/handlers_tops.py && echo "FAIL: uuid.uuid4 still present" || echo "uuid4 clean: OK"
+
+# 4. Type check (if mypy available)
+python -m mypy python/synapse/server/handlers_usd.py python/synapse/server/handlers_tops.py python/synapse/server/render_farm.py --config-file pyproject.toml --ignore-missing-imports 2>/dev/null || echo "mypy: skipped (not critical)"
+```
+
+**ALL checks must pass. If ANY fail, fix before proceeding.**
+
+Print final status bar.
+
+---
+
+## FINAL STATUS BAR
+
+Print after the last phase gate passes:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SYNAPSE — SOLARIS-TOPS-FIXES — COMPLETE                    ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: CRITICAL FIXES       [██████████] 100% ✓          ║
+║    TOPS   ◆ T1 ✓                                             ║
+║    STAGE  ⟡ S1 ✓                                             ║
+║                                                              ║
+║  Phase 2: SAFETY & VERIFY      [██████████] 100% ✓          ║
+║    USD    ◈ U1 ✓  U2 ✓                                       ║
+║    FARM   ◇ F1 ✓                                             ║
+║                                                              ║
+║  Phase 3: TESTS                [██████████] 100% ✓          ║
+║    QATOPS △ Q1 ✓                                             ║
+║    QAUSD  ☆ Q2 ✓                                             ║
+║    QAFARM ◉ Q3 ✓                                             ║
+║                                                              ║
+║  Overall: [████████████████████] 100%  (7/7 tasks)           ║
+║                                                              ║
+║  Modified:     3 source files                                ║
+║  Tests added:  ~14 new tests across 3 files                 ║
+║  Regressions:  0                                             ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## SAFETY RULES (ALL AGENTS — NON-NEGOTIABLE)
+
+1. **Read before write:** Always read existing code and match conventions
+2. **File ownership:** NEVER write to another agent's files
+3. **Regression zero:** Existing tests must keep passing — run `python -m pytest tests/ -q --tb=short -x` frequently
+4. **Status reporting:** Print status bar after EVERY task completion
+5. **Coaching tone:** All error messages use "Couldn't find" not "not found", "hit a snag" not "failed", always suggest next step
+6. **Determinism:** `sort_keys=True` on all JSON, `deterministic_uuid()` not `uuid.uuid4()`, no `time.time()` in seeds
+7. **Main thread safety:** All `hou.*` calls go through `run_on_main` or `_run_in_main_thread_pdg`
+8. **Encoding:** All `open()` calls use `encoding="utf-8"` (Windows cp1252 default breaks em-dashes)
+9. **No scope creep:** Fix exactly what's described. Don't refactor surrounding code, add docstrings to unchanged functions, or "improve" things that aren't broken

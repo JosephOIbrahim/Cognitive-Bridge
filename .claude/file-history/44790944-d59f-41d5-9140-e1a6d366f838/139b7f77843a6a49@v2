@@ -1,0 +1,273 @@
+---
+title: VEX Built-in Functions Reference
+category: vex_reference
+subcategory: functions
+keywords: [vex, function, signature, geometry, math, noise, string, channel, matrix, array, utility]
+agent_relevance:
+  VexAuditor: 0.95
+  Librarian: 0.8
+  GraphTracer: 0.4
+related_documents:
+  - path: vex_reference/fundamentals.md
+    reason: "VEX language basics"
+  - path: vex_reference/attributes.md
+    reason: "Attribute read/write functions"
+common_queries:
+  - "VEX function list"
+  - "What VEX function does X?"
+  - "VEX function signature for X"
+  - "pcfind parameters"
+  - "How to use chramp in VEX"
+---
+
+# VEX Built-in Functions Reference
+
+## Geometry Read Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `point` | `<type> point(int geo, string attr, int ptnum)` | Read point attribute |
+| `prim` | `<type> prim(int geo, string attr, int primnum)` | Read prim attribute |
+| `vertex` | `<type> vertex(int geo, string attr, int vtxnum)` | Read vertex attribute (linear) |
+| `detail` | `<type> detail(int geo, string attr)` | Read detail attribute |
+| `primintrinsic` | `<type> primintrinsic(int geo, string attr, int primnum)` | Read prim intrinsic |
+| `pointintrinsic` | `<type> pointintrinsic(int geo, string attr, int ptnum)` | Read point intrinsic |
+| `attribsize` | `int attribsize(int geo, string class, string attr)` | Attribute tuple size |
+| `attribtype` | `int attribtype(int geo, string class, string attr)` | Attribute storage type |
+| `hasattrib` | `int hasattrib(int geo, string class, string attr)` | Check if attribute exists |
+
+## Geometry Write Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `setpointattrib` | `int setpointattrib(int geo, string name, int ptnum, <type> val, string mode)` | Write point attribute |
+| `setprimattrib` | `int setprimattrib(int geo, string name, int primnum, <type> val, string mode)` | Write prim attribute |
+| `setvertexattrib` | `int setvertexattrib(int geo, string name, int primnum, int vtxnum, <type> val, string mode)` | Write vertex attribute |
+| `setdetailattrib` | `int setdetailattrib(int geo, string name, <type> val, string mode)` | Write detail attribute |
+| `addattrib` | `int addattrib(int geo, string class, string name, <type> defval)` | Create attribute with default |
+| `addpointattrib` | `int addpointattrib(int geo, string name, <type> defval)` | Create point attribute |
+
+**Mode argument**: `"set"`, `"add"`, `"min"`, `"max"`, `"mult"`, `"toggle"`, `"append"`
+
+## Geometry Creation/Deletion
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `addpoint` | `int addpoint(int geo, vector pos)` | Create point at position, returns ptnum |
+| `addpoint` | `int addpoint(int geo, int srcpt)` | Clone point from source |
+| `addprim` | `int addprim(int geo, string type)` | Create empty prim ("poly", "polyline", "tet") |
+| `addprim` | `int addprim(int geo, string type, int pt0, int pt1, ...)` | Create prim with points |
+| `addvertex` | `int addvertex(int geo, int primnum, int ptnum)` | Add vertex to prim |
+| `removepoint` | `void removepoint(int geo, int ptnum)` | Delete point |
+| `removepoint` | `void removepoint(int geo, int ptnum, int andprims)` | Delete point + connected prims |
+| `removeprim` | `void removeprim(int geo, int primnum, int andpoints)` | Delete prim (optionally its points) |
+
+## Spatial Queries
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `nearpoint` | `int nearpoint(int geo, vector pos)` | Closest point to position |
+| `nearpoints` | `int[] nearpoints(int geo, vector pos, float maxdist)` | Points within radius |
+| `nearpoints` | `int[] nearpoints(int geo, vector pos, float maxdist, int maxpts)` | Points within radius, limited count |
+| `pcfind` | `int[] pcfind(int geo, string Pchannel, vector pos, float radius, int maxpts)` | Point cloud search (KD-tree) |
+| `pcfind_radius` | `int[] pcfind_radius(int geo, string Pchannel, string Rchannel, float radscale, vector pos, float radius, int maxpts)` | Variable-radius point cloud search |
+| `pcopen` | `int pcopen(int geo, string Pchannel, vector pos, float radius, int maxpts)` | Open point cloud handle |
+| `pcfilter` | `float pcfilter(int handle, string channel)` | Filter attribute over found points |
+| `pcclose` | `void pcclose(int handle)` | Close point cloud handle |
+| `intersect` | `int intersect(int geo, vector orig, vector dir, vector &pos, float &u, float &v)` | Ray-geometry intersection |
+| `xyzdist` | `float xyzdist(int geo, vector pos)` | Minimum distance to geometry surface |
+| `xyzdist` | `float xyzdist(int geo, vector pos, int &primnum, vector &primuv)` | Min distance with prim info |
+
+## Connectivity
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `neighbours` | `int[] neighbours(int geo, int ptnum)` | Edge-connected points |
+| `neighbourcount` | `int neighbourcount(int geo, int ptnum)` | Number of neighbors |
+| `pointprims` | `int[] pointprims(int geo, int ptnum)` | Prims sharing this point |
+| `primpoints` | `int[] primpoints(int geo, int primnum)` | Points in this prim |
+| `primvertices` | `int[] primvertices(int geo, int primnum)` | Vertices in this prim |
+| `primvertexcount` | `int primvertexcount(int geo, int primnum)` | Number of vertices in prim |
+| `vertexpoint` | `int vertexpoint(int geo, int vtxnum)` | Point from linear vertex |
+| `vertexprim` | `int vertexprim(int geo, int vtxnum)` | Prim from linear vertex |
+
+## Counting
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `npoints` | `int npoints(int geo)` | Total points |
+| `nprimitives` | `int nprimitives(int geo)` | Total primitives |
+| `nvertices` | `int nvertices(int geo)` | Total vertices |
+
+## Math Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `sin/cos/tan` | `float sin(float radians)` | Trigonometric |
+| `asin/acos/atan` | `float asin(float val)` | Inverse trigonometric |
+| `atan2` | `float atan2(float y, float x)` | Two-argument arctangent |
+| `radians` | `float radians(float degrees)` | Degrees to radians |
+| `degrees` | `float degrees(float radians)` | Radians to degrees |
+| `pow` | `float pow(float base, float exp)` | Power |
+| `sqrt` | `float sqrt(float val)` | Square root |
+| `abs` | `float abs(float val)` | Absolute value |
+| `sign` | `float sign(float val)` | Sign (-1, 0, 1) |
+| `floor` | `float floor(float val)` | Round down |
+| `ceil` | `float ceil(float val)` | Round up |
+| `round` | `float round(float val)` | Round to nearest |
+| `frac` | `float frac(float val)` | Fractional part |
+| `clamp` | `float clamp(float val, float min, float max)` | Constrain to range |
+| `min` | `float min(float a, float b)` | Minimum |
+| `max` | `float max(float a, float b)` | Maximum |
+| `fit` | `float fit(float val, float omin, float omax, float nmin, float nmax)` | Remap range (clamped) |
+| `fit01` | `float fit01(float val, float nmin, float nmax)` | Remap from [0,1] |
+| `fit10` | `float fit10(float val, float nmin, float nmax)` | Remap from [1,0] (inverted) |
+| `fit11` | `float fit11(float val, float nmin, float nmax)` | Remap from [-1,1] |
+| `efit` | `float efit(float val, float omin, float omax, float nmin, float nmax)` | Remap range (unclamped) |
+| `lerp` | `float lerp(float a, float b, float t)` | Linear interpolate |
+| `slerp` | `vector4 slerp(vector4 a, vector4 b, float t)` | Spherical interpolate (quaternions) |
+| `smooth` | `float smooth(float min, float max, float val)` | Hermite smooth step |
+| `chramp` | `float chramp(string name, float pos)` | Evaluate ramp parameter |
+
+## Noise Functions
+
+| Function | Signature | Output Range | Notes |
+|----------|-----------|-------------|-------|
+| `noise` | `float noise(vector pos)` | [0, 1] | Perlin noise |
+| `noise` | `vector noise(vector pos)` | [0, 1] per component | Vector Perlin |
+| `snoise` | `float snoise(vector pos)` | [-1, 1] | Signed Perlin (simplex) |
+| `xnoise` | `float xnoise(vector pos)` | [0, 1] | Simplex (fewer artifacts) |
+| `onoise` | `float onoise(vector pos)` | [-1, 1] | Original Houdini noise |
+| `anoise` | `float anoise(vector pos)` | [0, 1] | Alligator/cellular sharp |
+| `curlnoise` | `vector curlnoise(vector pos)` | varies | Divergence-free (mass-conserving) |
+| `curlnoise2d` | `vector curlnoise2d(vector pos)` | varies | 2D curl noise |
+| `flownoise` | `float flownoise(vector pos, float flow)` | [0, 1] | Time-animated without sliding |
+| `vnoise` | `void vnoise(vector pos, float jitter, int &seed, float &dist1, float &dist2)` | varies | Voronoi cellular |
+| `random` | `float random(int seed)` | [0, 1] | Deterministic from integer |
+| `rand` | `float rand(float seed)` | [0, 1] | Fast pseudorandom |
+
+### Noise Tips
+```vex
+// Animate: add time to position
+float n = noise(@P + @Time * chf("speed"));
+
+// Change frequency: multiply position
+float n = noise(@P * chf("freq"));
+
+// Layer octaves (fBm pattern)
+float n = 0;
+float amp = 1.0;
+float freq = 1.0;
+for (int i = 0; i < chi("octaves"); i++) {
+    n += snoise(@P * freq) * amp;
+    freq *= 2.0;
+    amp *= 0.5;
+}
+
+// Curl noise for smoke/fluid velocity fields
+v@vel = curlnoise(@P * chf("freq") + @Time * chf("flow_speed"));
+// curlnoise is divergence-free: mass-conserving, no sinks/sources
+```
+
+## Vector/Matrix Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `length` | `float length(vector v)` | Vector magnitude |
+| `length2` | `float length2(vector v)` | Squared magnitude (faster) |
+| `normalize` | `vector normalize(vector v)` | Unit vector |
+| `dot` | `float dot(vector a, vector b)` | Dot product |
+| `cross` | `vector cross(vector a, vector b)` | Cross product |
+| `distance` | `float distance(vector a, vector b)` | Distance between |
+| `distance2` | `float distance2(vector a, vector b)` | Squared distance (faster) |
+| `reflect` | `vector reflect(vector v, vector n)` | Reflection |
+| `refract` | `vector refract(vector v, vector n, float ior)` | Refraction |
+| `set` | `vector set(float x, float y, float z)` | Construct vector |
+| `getcomp` | `float getcomp(vector v, int idx)` | Get component by index |
+| `setcomp` | `void setcomp(vector &v, float val, int idx)` | Set component by index |
+| `maketransform` | `matrix maketransform(vector zaxis, vector yaxis, vector translate)` | Build transform |
+| `cracktransform` | `vector cracktransform(int trs, int xyz, vector pivot, matrix m)` | Extract translate/rotate/scale |
+| `lookat` | `matrix3 lookat(vector from, vector to)` | Look-at rotation |
+| `dihedral` | `matrix3 dihedral(vector a, vector b)` | Rotation from a to b |
+| `quaternion` | `vector4 quaternion(matrix3 m)` | Matrix to quaternion |
+| `qrotate` | `vector qrotate(vector4 q, vector v)` | Rotate vector by quaternion |
+| `qinvert` | `vector4 qinvert(vector4 q)` | Invert quaternion |
+| `eulertoquaternion` | `vector4 eulertoquaternion(vector rot, int order)` | Euler to quaternion |
+| `invert` | `matrix invert(matrix m)` | Invert matrix |
+| `transpose` | `matrix3 transpose(matrix3 m)` | Transpose matrix |
+| `determinant` | `float determinant(matrix m)` | Matrix determinant |
+| `ident` | `matrix ident()` | Identity matrix |
+
+## String Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `sprintf` | `string sprintf(string format, ...)` | Format string (`%d`, `%f`, `%s`, `%g`) |
+| `printf` | `void printf(string format, ...)` | Print to console |
+| `concat` | `string concat(string a, string b)` | Concatenate |
+| `len` | `int len(string s)` | String length |
+| `split` | `string[] split(string s, string sep)` | Split by separator |
+| `join` | `string join(string sep, string[] arr)` | Join array to string |
+| `match` | `int match(string pattern, string s)` | Glob pattern match |
+| `re_match` | `int re_match(string regex, string s)` | Regex match |
+| `re_find` | `int[] re_find(string regex, string s)` | Regex find positions |
+| `strip` | `string strip(string s)` | Trim whitespace |
+| `lstrip/rstrip` | `string lstrip(string s)` | Trim left/right |
+| `replace` | `string replace(string s, string old, string new)` | Replace substring |
+| `startswith` | `int startswith(string s, string prefix)` | Prefix check |
+| `endswith` | `int endswith(string s, string suffix)` | Suffix check |
+| `itoa` | `string itoa(int val)` | Int to string |
+| `atoi` | `int atoi(string s)` | String to int |
+| `atof` | `float atof(string s)` | String to float |
+
+## Channel References
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ch` | `float ch(string parm)` | Read float parameter |
+| `chf` | `float chf(string parm)` | Read float parameter (explicit) |
+| `chi` | `int chi(string parm)` | Read integer parameter |
+| `chs` | `string chs(string parm)` | Read string parameter |
+| `chv` | `vector chv(string parm)` | Read vector parameter |
+| `ch4` | `vector4 ch4(string parm)` | Read vector4 parameter |
+| `chramp` | `float chramp(string name, float pos)` | Evaluate ramp at position |
+| `chrampp` | `vector chrampf(string name, float pos)` | Evaluate color ramp |
+| `chinput` | `float chinput(int input, string parm)` | Read parm from input node |
+
+**Note**: `ch()` and `chf()` are equivalent. `ch()` is the older form. Use `chf()` for clarity.
+
+## Array Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `len` | `int len(<type>[] arr)` | Array length |
+| `append` | `void append(<type>[] arr, <type> val)` | Add element |
+| `insert` | `void insert(<type>[] arr, int idx, <type> val)` | Insert at index |
+| `removeindex` | `<type> removeindex(<type>[] arr, int idx)` | Remove by index |
+| `removevalue` | `int removevalue(<type>[] arr, <type> val)` | Remove first matching value |
+| `pop` | `<type> pop(<type>[] arr)` | Remove and return last |
+| `find` | `int find(<type>[] arr, <type> val)` | Find index of value (-1 if missing) |
+| `sort` | `int[] sort(int[] arr)` | Sort ascending |
+| `reverse` | `<type>[] reverse(<type>[] arr)` | Reverse order |
+| `resize` | `void resize(<type>[] arr, int size)` | Resize array |
+| `array` | `<type>[] array(<type> v1, <type> v2, ...)` | Create array from values |
+| `serialize` | `float[] serialize(vector[] arr)` | Flatten vector array to floats |
+| `unserialize` | `vector[] unserialize(float[] arr)` | Unflatten floats to vectors |
+| `sum` | `float sum(float[] arr)` | Sum all elements |
+| `avg` | `float avg(float[] arr)` | Average of elements |
+| `min` | `float min(float[] arr)` | Minimum element |
+| `max` | `float max(float[] arr)` | Maximum element |
+
+## Utility Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `warning` | `void warning(string msg)` | Generate wrangle warning |
+| `error` | `void error(string msg)` | Generate wrangle error |
+| `assert` | `void assert(int cond, string msg)` | Debug assertion |
+| `opdigits` | `int opdigits(string path)` | Extract trailing digits from node name |
+| `opinput` | `string opinput(string path, int idx)` | Get input node path |
+| `opfullpath` | `string opfullpath(string relpath)` | Resolve to full path |
+
+---
+*Houdini 21 VEX Reference -- Functions*

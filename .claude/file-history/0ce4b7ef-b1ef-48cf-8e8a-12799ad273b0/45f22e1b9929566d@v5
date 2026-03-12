@@ -1,0 +1,392 @@
+// TranslatorsHUD.cpp
+// Implementation of main game HUD
+// Programmatic UI - no Blueprint required
+
+#include "TranslatorsHUD.h"
+#include "W_QuestionDisplay.h"
+#include "W_ProgressIndicator.h"
+#include "W_ConnectingScreen.h"
+#include "W_FinaleScreen.h"
+#include "../BridgeComponent.h"
+#include "Blueprint/UserWidget.h"
+#include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+
+
+ATranslatorsHUD::ATranslatorsHUD()
+{
+    // Default configuration
+    bIsBridgeConnected = false;
+    bIsComplete = false;
+    TotalQuestions = 8;
+}
+
+
+void ATranslatorsHUD::BeginPlay()
+{
+    Super::BeginPlay();
+
+    UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] BeginPlay - Initializing..."));
+
+    // Find BridgeComponent
+    BridgeComponent = FindBridgeComponent();
+
+    if (BridgeComponent)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Found BridgeComponent - binding events"));
+
+        // Bind to bridge events (FIXED order - ThinkingMachines compliant)
+        BridgeComponent->OnBridgeReady.AddDynamic(this, &ATranslatorsHUD::OnBridgeReady);
+        BridgeComponent->OnQuestionReceived.AddDynamic(this, &ATranslatorsHUD::OnQuestionReceived);
+        BridgeComponent->OnTransitionReceived.AddDynamic(this, &ATranslatorsHUD::OnTransitionReceived);
+        BridgeComponent->OnFinaleReceived.AddDynamic(this, &ATranslatorsHUD::OnFinaleReceived);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[TranslatorsHUD] BridgeComponent not found in level!"));
+    }
+
+    // Create UI widgets
+    CreateWidgets();
+
+    // Show connecting screen initially
+    ShowConnectingScreen();
+
+    // Check if bridge already processed state before we subscribed
+    if (BridgeComponent)
+    {
+        if (BridgeComponent->IsBridgeConnected())
+        {
+            // Bridge already got "ready" - catch up
+            OnBridgeReady(TotalQuestions);
+        }
+
+        FTranslatorsQuestion Q = BridgeComponent->GetCurrentQuestion();
+        if (!Q.QuestionId.IsEmpty())
+        {
+            // Bridge already has a question loaded - display it
+            UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Catching up - bridge already has question: %s"), *Q.QuestionId);
+            CurrentQuestion = Q;
+            QuestionStartTime = GetWorld()->GetTimeSeconds();
+            if (QuestionWidget)
+            {
+                QuestionWidget->ShowQuestion(CurrentQuestion);
+            }
+            ShowQuestionScreen();
+        }
+    }
+}
+
+
+void ATranslatorsHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    // Unbind events
+    if (BridgeComponent)
+    {
+        BridgeComponent->OnBridgeReady.RemoveAll(this);
+        BridgeComponent->OnQuestionReceived.RemoveAll(this);
+        BridgeComponent->OnTransitionReceived.RemoveAll(this);
+        BridgeComponent->OnFinaleReceived.RemoveAll(this);
+    }
+
+    // Clean up widgets
+    if (QuestionWidget)
+    {
+        QuestionWidget->OnAnswerSelected.RemoveAll(this);
+        QuestionWidget->RemoveFromParent();
+    }
+    if (ConnectingWidget)
+    {
+        ConnectingWidget->RemoveFromParent();
+    }
+    if (FinaleWidget)
+    {
+        FinaleWidget->RemoveFromParent();
+    }
+
+    Super::EndPlay(EndPlayReason);
+}
+
+
+UBridgeComponent* ATranslatorsHUD::FindBridgeComponent()
+{
+    // Search all actors for one with BridgeComponent
+    TArray<AActor*> AllActors;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), AllActors);
+
+    for (AActor* Actor : AllActors)
+    {
+        UBridgeComponent* Bridge = Actor->FindComponentByClass<UBridgeComponent>();
+        if (Bridge)
+        {
+            return Bridge;
+        }
+    }
+
+    // Fallback: spawn a dedicated actor with BridgeComponent
+    UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] No BridgeComponent found - spawning BridgeActor"));
+    UWorld* World = GetWorld();
+    if (World)
+    {
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        AActor* BridgeActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+        if (BridgeActor)
+        {
+            UBridgeComponent* Bridge = NewObject<UBridgeComponent>(BridgeActor, TEXT("BridgeComponent"));
+            Bridge->bVerboseLogging = true;
+            BridgeActor->AddInstanceComponent(Bridge);
+            Bridge->RegisterComponent();
+            return Bridge;
+        }
+    }
+
+    return nullptr;
+}
+
+
+void ATranslatorsHUD::CreateWidgets()
+{
+    APlayerController* PC = GetOwningPlayerController();
+    if (!PC)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[TranslatorsHUD] No PlayerController - cannot create widgets"));
+        return;
+    }
+
+    // Create question display widget
+    if (QuestionDisplayClass)
+    {
+        QuestionWidget = CreateWidget<UW_QuestionDisplay>(PC, QuestionDisplayClass);
+        if (QuestionWidget)
+        {
+            QuestionWidget->AddToViewport(10);
+            QuestionWidget->SetVisibility(ESlateVisibility::Hidden);
+
+            // Bind answer selection event
+            QuestionWidget->OnAnswerSelected.AddDynamic(this, &ATranslatorsHUD::OnAnswerSelected);
+
+            UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Created QuestionWidget"));
+        }
+    }
+    else
+    {
+        // Create default widget if no class specified
+        QuestionWidget = CreateWidget<UW_QuestionDisplay>(PC, UW_QuestionDisplay::StaticClass());
+        if (QuestionWidget)
+        {
+            QuestionWidget->AddToViewport(10);
+            QuestionWidget->SetVisibility(ESlateVisibility::Hidden);
+            QuestionWidget->OnAnswerSelected.AddDynamic(this, &ATranslatorsHUD::OnAnswerSelected);
+        }
+    }
+
+    // Create connecting widget
+    if (ConnectingWidgetClass)
+    {
+        ConnectingWidget = CreateWidget<UUserWidget>(PC, ConnectingWidgetClass);
+    }
+    else
+    {
+        // Create default programmatic widget
+        ConnectingWidget = CreateWidget<UW_ConnectingScreen>(PC, UW_ConnectingScreen::StaticClass());
+    }
+    if (ConnectingWidget)
+    {
+        ConnectingWidget->AddToViewport(20);
+        UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Created ConnectingWidget"));
+    }
+
+    // Create finale widget
+    if (FinaleWidgetClass)
+    {
+        FinaleWidget = CreateWidget<UUserWidget>(PC, FinaleWidgetClass);
+    }
+    else
+    {
+        // Create default programmatic widget
+        FinaleWidget = CreateWidget<UW_FinaleScreen>(PC, UW_FinaleScreen::StaticClass());
+    }
+    if (FinaleWidget)
+    {
+        FinaleWidget->AddToViewport(30);
+        FinaleWidget->SetVisibility(ESlateVisibility::Hidden);
+        UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Created FinaleWidget"));
+    }
+}
+
+
+void ATranslatorsHUD::ShowConnectingScreen()
+{
+    if (ConnectingWidget)
+    {
+        ConnectingWidget->SetVisibility(ESlateVisibility::Visible);
+    }
+    if (QuestionWidget)
+    {
+        QuestionWidget->SetVisibility(ESlateVisibility::Hidden);
+    }
+    if (FinaleWidget)
+    {
+        FinaleWidget->SetVisibility(ESlateVisibility::Hidden);
+    }
+}
+
+
+void ATranslatorsHUD::ShowQuestionScreen()
+{
+    if (ConnectingWidget)
+    {
+        ConnectingWidget->SetVisibility(ESlateVisibility::Hidden);
+    }
+    if (QuestionWidget)
+    {
+        QuestionWidget->SetVisibility(ESlateVisibility::Visible);
+    }
+    if (FinaleWidget)
+    {
+        FinaleWidget->SetVisibility(ESlateVisibility::Hidden);
+    }
+}
+
+
+void ATranslatorsHUD::ShowFinaleScreen(const FString& Message)
+{
+    if (ConnectingWidget)
+    {
+        ConnectingWidget->SetVisibility(ESlateVisibility::Hidden);
+    }
+    if (QuestionWidget)
+    {
+        QuestionWidget->SetVisibility(ESlateVisibility::Hidden);
+    }
+    if (FinaleWidget)
+    {
+        FinaleWidget->SetVisibility(ESlateVisibility::Visible);
+    }
+}
+
+
+void ATranslatorsHUD::SendAcknowledgment()
+{
+    if (BridgeComponent)
+    {
+        BridgeComponent->SendAcknowledge();
+        UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Sent acknowledgment"));
+    }
+}
+
+
+// === EVENT HANDLERS ===
+
+void ATranslatorsHUD::OnBridgeReady(int32 InTotalQuestions)
+{
+    UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Bridge ready! Total questions: %d"), InTotalQuestions);
+
+    bIsBridgeConnected = true;
+    TotalQuestions = InTotalQuestions;
+
+    // Send acknowledgment to start receiving questions
+    SendAcknowledgment();
+}
+
+
+void ATranslatorsHUD::OnQuestionReceived(const FString& QuestionJson)
+{
+    UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Question received"));
+
+    // Get structured question data from bridge
+    if (BridgeComponent)
+    {
+        CurrentQuestion = BridgeComponent->GetCurrentQuestion();
+
+        // Record start time for response timing
+        QuestionStartTime = GetWorld()->GetTimeSeconds();
+
+        // Update widget
+        if (QuestionWidget)
+        {
+            QuestionWidget->ShowQuestion(CurrentQuestion);
+            UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] QuestionWidget visibility: %d, IsInViewport: %d"),
+                (int32)QuestionWidget->GetVisibility(), QuestionWidget->IsInViewport());
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[TranslatorsHUD] QuestionWidget is NULL!"));
+        }
+
+        // Show question screen
+        ShowQuestionScreen();
+
+        // Debug: show question as on-screen message (bypasses UMG)
+        if (GEngine)
+        {
+            GEngine->AddOnScreenDebugMessage(1, 30.0f, FColor::Green,
+                FString::Printf(TEXT("Q%d: %s"), CurrentQuestion.Index + 1, *CurrentQuestion.Text));
+            for (int32 i = 0; i < CurrentQuestion.OptionLabels.Num(); i++)
+            {
+                GEngine->AddOnScreenDebugMessage(10 + i, 30.0f, FColor::Yellow,
+                    FString::Printf(TEXT("  [%d] %s"), i + 1, *CurrentQuestion.OptionLabels[i]));
+            }
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Displaying question %d/%d: %s"),
+            CurrentQuestion.Index + 1, CurrentQuestion.Total, *CurrentQuestion.QuestionId);
+
+        // Log visibility state after ShowQuestionScreen
+        UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] After ShowQuestionScreen - Connecting: %d, Question: %d, Finale: %d"),
+            ConnectingWidget ? (int32)ConnectingWidget->GetVisibility() : -1,
+            QuestionWidget ? (int32)QuestionWidget->GetVisibility() : -1,
+            FinaleWidget ? (int32)FinaleWidget->GetVisibility() : -1);
+    }
+}
+
+
+void ATranslatorsHUD::OnTransitionReceived(const FString& Direction, const FString& NextScene)
+{
+    UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Transition: %s -> %s"), *Direction, *NextScene);
+
+    // Could trigger transition animation here
+    // For now, just log it
+
+    // Update progress if question widget exists
+    if (QuestionWidget)
+    {
+        QuestionWidget->UpdateProgress(CurrentQuestion.Index + 2, TotalQuestions);
+    }
+}
+
+
+void ATranslatorsHUD::OnFinaleReceived(const FString& UsdPath)
+{
+    UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Finale! USD path: %s"), *UsdPath);
+
+    bIsComplete = true;
+
+    // Update finale widget with USD path if it's a UW_FinaleScreen
+    UW_FinaleScreen* FinaleScreen = Cast<UW_FinaleScreen>(FinaleWidget);
+    if (FinaleScreen)
+    {
+        FinaleScreen->SetUsdPath(UsdPath);
+    }
+
+    // Show finale screen
+    ShowFinaleScreen(TEXT("Your cognitive profile is complete."));
+}
+
+
+void ATranslatorsHUD::OnAnswerSelected(int32 OptionIndex)
+{
+    // Calculate response time
+    float ResponseTimeMs = (GetWorld()->GetTimeSeconds() - QuestionStartTime) * 1000.0f;
+
+    UE_LOG(LogTemp, Log, TEXT("[TranslatorsHUD] Answer selected: option %d (%.0fms)"),
+        OptionIndex, ResponseTimeMs);
+
+    // Send answer to bridge
+    if (BridgeComponent)
+    {
+        BridgeComponent->SendAnswer(CurrentQuestion.QuestionId, OptionIndex, ResponseTimeMs);
+    }
+}

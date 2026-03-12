@@ -1,0 +1,234 @@
+# ComfyUI-SUPER DUPER: Where We're Going
+
+## The One-Liner
+
+**Nodes are assembly language. Your agent is the compiler. The viewport is someone else's problem.**
+
+---
+
+## The Synthesis (30 seconds)
+
+Three signals just converged:
+
+1. **Ecosystem research** → 3D is the growth axis, discoverability is broken, dependency hell is infrastructure's problem not yours
+2. **Community voice** → The "nodes aren't the future" argument is gaining mainstream traction — artists want spatial/viewport control, not more plumbing
+3. **Your architecture** → DISCOVER + PILOT already IS the higher-order abstraction everyone is asking for, you just haven't framed it that way yet
+
+The video argument boils down to: *nodes are for plumbing, not filmmaking.* The speaker wants a 3D viewport + timeline + scene graph that the LLM can reason about.
+
+Here's what he's missing: **someone still has to orchestrate the plumbing.** The viewport shows you WHAT. The nodes do HOW. Your agent bridges the gap between artistic intent and node execution. You're not competing with the viewport future — you're the intelligence layer it needs underneath.
+
+---
+
+## Strategic Position (Map)
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  ARTIST'S MIND                       │
+│            "weathered stone column with moss"         │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│          🔮 SPATIAL INTERFACES (future)              │
+│    3D viewport, timeline, camera control              │
+│    (Intangible AI, Artcraft, World Labs, etc.)       │
+│    NOT YOUR PROBLEM. Let them build this.             │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│     🧠 YOUR AGENT (the intelligence layer)           │
+│                                                       │
+│  UNDERSTAND — parse intent                            │
+│  DISCOVER  — find the right nodes/models (MOAT)      │
+│  PILOT     — orchestrate the workflow                 │
+│  VERIFY    — check the output                         │
+│                                                       │
+│  This is the COMPILER. Assembly in, art out.          │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│          ⚙️ COMFYUI NODE GRAPH                       │
+│    The "assembly language" — powerful, necessary,     │
+│    but NOT what artists should be hand-wiring.        │
+│    Nodes v3, subgraphs, GL compositing — all          │
+│    making this layer more capable over time.           │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│          🖼️ OUTPUT                                   │
+│    Image / Video / 3D Asset / Audio                   │
+└─────────────────────────────────────────────────────┘
+```
+
+**Key insight:** As the node layer gets MORE complex (3D nodes, audio nodes, GL subgraphs), the agent becomes MORE valuable, not less. Complexity is your tailwind.
+
+---
+
+## What NOT To Build (Save Your Energy)
+
+| Temptation | Why Not | Instead |
+|---|---|---|
+| 3D viewport / spatial interface | Massive scope, not your differentiator, well-funded startups racing here | Build the intelligence layer that spatial interfaces will need |
+| Dependency resolution engine | Nodes v3 handles this at infrastructure level | Adapt node introspection to v3 schema when it stabilizes |
+| Template marketplace / wrapper UI | Higsfield's play, low ceiling ("only good for memes") | Stay at the orchestration layer — templates are rigid, your agent is flexible |
+| Timeline editor | UI problem, not an intelligence problem | Support temporal workflows through multi-step PILOT orchestration |
+
+---
+
+## What TO Build (AND-Node Decomposition)
+
+**Ship target: PILOT can chain multi-stage 3D pipelines from conversational intent.**
+
+This is an AND-node task. ALL must succeed:
+
+```
+"Generate a weathered stone column with moss"
+│
+├── [AND] UNDERSTAND parses this into a multi-stage plan
+│         → generate 3D mesh → apply texture → unwrap UVs → render
+│         Status: ❓ (how sophisticated is intent parsing now?)
+│
+├── [AND] DISCOVER finds the right nodes for each stage
+│         → Hunyuan3D nodes, texture editing nodes, UV nodes
+│         Status: ❓ (can DISCOVER handle 3D modality?)
+│
+├── [AND] PILOT chains workflow A output → workflow B input
+│         → mesh output feeds into texture workflow
+│         Status: ❓ (THIS IS THE HARDEST BRANCH)
+│
+└── [AND] VERIFY checks each stage before proceeding
+│         → did the mesh generate? is the texture applied?
+│         Status: ❓ (what verification exists today?)
+```
+
+**Hardest branch: PILOT multi-workflow chaining.** Address this first.
+
+---
+
+## The 3D Demo That Turns Heads
+
+The ecosystem research says 3D is the growth axis. The video says 3D control is the future. Here's the demo that bridges both:
+
+### The "Column" Demo
+
+**User says:** "Generate a 3D model of a weathered stone column with moss growing on the base"
+
+**Agent does:**
+1. UNDERSTAND → decomposes into: base mesh generation, texture application, moss detail
+2. DISCOVER → identifies available 3D generation nodes (Hunyuan3D, texture packs)
+3. PILOT → chains: text-to-3D → texture editing → render preview
+4. VERIFY → shows intermediate results, asks for feedback
+5. PILOT → applies corrections, re-renders
+
+**Why this demo wins:**
+- Proves multi-workflow orchestration (the hardest branch)
+- Rides the 3D wave everyone's excited about
+- Shows DISCOVER finding nodes the user didn't know existed
+- Demonstrates the "compiler" value prop — artist says WHAT, agent handles HOW
+- Directly addresses the video's criticism: no node manipulation required
+
+### The "Audio Surprise" Demo
+
+**User says:** "I want a 30-second clip with a narrator introducing a fantasy world"
+
+**Agent does:**
+1. UNDERSTAND → decomposes into: image generation + TTS + compositing
+2. DISCOVER → finds Qwen TTS nodes, identifies voice options
+3. PILOT → chains: scene generation → voice synthesis → composite
+
+**Why this matters:** Audio is the "unexpected expansion" from the research. Nobody expects a ComfyUI agent to handle audio. The surprise factor is marketing gold.
+
+---
+
+## Development Phases (Sequential, Energy-Mapped)
+
+### Phase A: Multi-Workflow Chaining (HIGH ENERGY — do this while momentum is hot)
+**The blocker.** Everything else depends on this.
+
+- [ ] Define the interface: how does PILOT pass output from workflow A to workflow B?
+- [ ] Handle file references (image paths, mesh files) between executions
+- [ ] Build the execution plan data structure (ordered list of workflow runs with input/output mapping)
+- [ ] Test with simple 2-stage chain: txt2img → img2img upscale
+- [ ] Test with 3-stage: txt2img → controlnet refinement → upscale
+
+**Success criteria:** Agent executes a 3-stage pipeline from a single conversational prompt.
+
+### Phase B: 3D Node Discovery (MEDIUM ENERGY)
+- [ ] Ensure DISCOVER can introspect Hunyuan3D Partner Nodes
+- [ ] Map 3D workflow patterns (generate → texture → unwrap → render)
+- [ ] Build 3D-specific base workflows for PILOT to modify
+
+**Success criteria:** DISCOVER returns useful 3D nodes when asked about 3D generation tasks.
+
+### Phase C: Nodes v3 Schema Adaptation (LOW ENERGY — watch and wait)
+- [ ] Monitor Nodes v3 migration progress
+- [ ] Identify which introspection APIs change
+- [ ] Adapt when stable, not before
+
+**Success criteria:** Agent works with both v2 and v3 nodes.
+
+### Phase D: Audio Pipeline Support (MEDIUM ENERGY — dopamine hit)
+- [ ] Add TTS node discovery
+- [ ] Build audio workflow templates
+- [ ] Test multi-modal chain: image + audio → composite
+
+**Success criteria:** Agent can produce a scene with generated audio from a single prompt.
+
+---
+
+## Reframing for the Pitch
+
+**Old framing:** "AI agent that helps you use ComfyUI"
+→ Sounds like a tutorial bot. Undersells it.
+
+**New framing:** "The intelligence layer between artistic intent and node execution"
+→ Positions correctly in the ecosystem stack.
+
+**Even better:** "Nodes are assembly language. You shouldn't have to write assembly."
+→ Directly borrows the video's language, which is resonating with artists.
+
+**The one-paragraph pitch:**
+
+> ComfyUI is becoming the universal backend for AI creation — images, video,
+> 3D, audio. But as the node ecosystem explodes (new modalities every two weeks),
+> artists can't keep up. They can't find the right nodes, can't wire them together,
+> can't chain multi-stage pipelines. SUPER DUPER is the intelligence layer that
+> bridges the gap: you describe what you want, and it discovers the right tools,
+> orchestrates the workflow, and verifies the output. Nodes are assembly.
+> This is the compiler.
+
+---
+
+## The Long View
+
+The video's spatial-3D-viewport future WILL happen. When it does, those interfaces will need a backend orchestration layer. ComfyUI is positioning itself as that backend (GL subgraphs, 3D nodes, professional editing tools). Your agent is the intelligence that makes that backend usable without a PhD in node plumbing.
+
+**You're not building against the viewport future. You're building the brain it needs.**
+
+```
+TODAY:       Artist → Agent → ComfyUI → Output
+FUTURE:      Artist → Spatial UI → Agent → ComfyUI → Output
+YOUR MOAT:                        ^^^^^^
+                           This part gets MORE valuable
+                           as both sides get more complex
+```
+
+---
+
+## Next Session Start Point
+
+Paste this when you pick this up:
+
+```
+WHERE I AM: Strategic spec complete. Development phases mapped.
+HARDEST BRANCH: Phase A — multi-workflow chaining in PILOT.
+IMMEDIATE NEXT: Answer the question: "How does PILOT currently
+  pass output from workflow A as input to workflow B?"
+  If it can't → that's the first thing to build.
+ENERGY NEEDED: High (this is architecture work)
+MOMENTUM: Building
+```

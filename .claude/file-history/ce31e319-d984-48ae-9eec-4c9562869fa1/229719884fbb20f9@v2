@@ -1,0 +1,343 @@
+/**
+ * ComfyUI 3D Viewport Bridge — Sidebar Panel Extension
+ *
+ * Connects to the viewport's WebSocket server (ws://127.0.0.1:8766)
+ * and displays real-time camera readout, AOV thumbnails, connection
+ * status, and camera preset buttons.
+ */
+
+import { app } from "../../scripts/app.js";
+
+const WS_URL = "ws://127.0.0.1:8766";
+const RECONNECT_INTERVAL_MS = 3000;
+
+class ViewportBridgePanel {
+    constructor() {
+        this.ws = null;
+        this.reconnectTimer = null;
+        this.connected = false;
+        this.cameraState = null;
+        this.aovPaths = {};
+        this.element = null;
+    }
+
+    // ------------------------------------------------------------------
+    // Lifecycle
+    // ------------------------------------------------------------------
+
+    init() {
+        this.element = this._buildUI();
+        this._connect();
+        return this.element;
+    }
+
+    destroy() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // WebSocket
+    // ------------------------------------------------------------------
+
+    _connect() {
+        if (this.ws && this.ws.readyState <= WebSocket.OPEN) return;
+
+        try {
+            this.ws = new WebSocket(WS_URL);
+        } catch {
+            this._scheduleReconnect();
+            return;
+        }
+
+        this.ws.onopen = () => {
+            this.connected = true;
+            this._updateStatus("connected");
+            // Request full state on connect
+            this.ws.send(JSON.stringify({ type: "get_state" }));
+        };
+
+        this.ws.onclose = () => {
+            this.connected = false;
+            this._updateStatus("disconnected");
+            this._scheduleReconnect();
+        };
+
+        this.ws.onerror = () => {
+            this.connected = false;
+            this._updateStatus("error");
+        };
+
+        this.ws.onmessage = (evt) => {
+            try {
+                const data = JSON.parse(evt.data);
+                this._handleMessage(data);
+            } catch {
+                // Ignore malformed messages
+            }
+        };
+    }
+
+    _scheduleReconnect() {
+        if (this.reconnectTimer) return;
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this._connect();
+        }, RECONNECT_INTERVAL_MS);
+    }
+
+    _handleMessage(data) {
+        switch (data.type) {
+            case "camera_update":
+                this.cameraState = data.camera;
+                this._updateCameraDisplay();
+                break;
+            case "aov_update":
+                this.aovPaths = data.aovs || {};
+                this._updateAovDisplay(data.resolution);
+                break;
+            case "full_state":
+                this.cameraState = data.camera;
+                this.aovPaths = data.aovs || {};
+                this._updateCameraDisplay();
+                this._updateAovDisplay();
+                break;
+            case "status":
+                this._updateVersionInfo(data);
+                break;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // UI Construction
+    // ------------------------------------------------------------------
+
+    _buildUI() {
+        const container = document.createElement("div");
+        container.className = "viewport-bridge-panel";
+        container.innerHTML = `
+            <div class="vb-header">
+                <span class="vb-title">3D Viewport</span>
+                <span class="vb-status" id="vb-status">Disconnected</span>
+            </div>
+
+            <div class="vb-section">
+                <div class="vb-section-title">Camera</div>
+                <div class="vb-camera-info" id="vb-camera-info">
+                    <div class="vb-row"><span>Position</span><span id="vb-pos">--</span></div>
+                    <div class="vb-row"><span>Target</span><span id="vb-tgt">--</span></div>
+                    <div class="vb-row"><span>FOV</span><span id="vb-fov">--</span></div>
+                    <div class="vb-row"><span>Focal</span><span id="vb-focal">--</span></div>
+                    <div class="vb-row vb-camera-model" id="vb-model-row" style="display:none">
+                        <span>Camera</span><span id="vb-model">--</span>
+                    </div>
+                    <div class="vb-row vb-lens-row" id="vb-lens-row" style="display:none">
+                        <span>Lens</span><span id="vb-lens">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vb-section">
+                <div class="vb-section-title">Presets</div>
+                <div class="vb-presets" id="vb-presets">
+                    <button class="vb-preset-btn" data-preset="0" title="Simple FOV">Default</button>
+                    <button class="vb-preset-btn" data-preset="1" title="ARRI ALEXA 35 + Cooke Ana 40mm">ARRI Ana</button>
+                    <button class="vb-preset-btn" data-preset="2" title="RED V-RAPTOR + Atlas 65mm">RED Atlas</button>
+                    <button class="vb-preset-btn" data-preset="3" title="Sony VENICE 2 + Cooke S7/i 50mm">VENICE S7</button>
+                </div>
+            </div>
+
+            <div class="vb-section">
+                <div class="vb-section-title">AOV Passes</div>
+                <div class="vb-aov-grid" id="vb-aov-grid">
+                    <div class="vb-aov-empty">No AOV data. Press P in viewport.</div>
+                </div>
+                <button class="vb-aov-btn" id="vb-aov-render" title="Request AOV render from viewport">
+                    Render AOVs
+                </button>
+            </div>
+        `;
+
+        // Bind preset buttons
+        container.querySelectorAll(".vb-preset-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const presetId = parseInt(btn.dataset.preset, 10);
+                this._requestPreset(presetId);
+            });
+        });
+
+        // Bind AOV render button
+        container.querySelector("#vb-aov-render").addEventListener("click", () => {
+            this._requestAov();
+        });
+
+        return container;
+    }
+
+    // ------------------------------------------------------------------
+    // UI Updates
+    // ------------------------------------------------------------------
+
+    _updateStatus(status) {
+        const el = this.element?.querySelector("#vb-status");
+        if (!el) return;
+
+        el.textContent = status === "connected" ? "Connected" : "Disconnected";
+        el.className = `vb-status vb-status-${status}`;
+    }
+
+    _updateVersionInfo(data) {
+        // Could display viewport version, capabilities, etc.
+    }
+
+    _updateCameraDisplay() {
+        if (!this.cameraState || !this.element) return;
+        const cam = this.cameraState;
+
+        const fmt = (arr) =>
+            arr ? arr.map((v) => v.toFixed(2)).join(", ") : "--";
+
+        this._setText("#vb-pos", fmt(cam.position));
+        this._setText("#vb-tgt", fmt(cam.target));
+        this._setText("#vb-fov", cam.fov ? `${cam.fov.toFixed(1)}\u00B0` : "--");
+        this._setText(
+            "#vb-focal",
+            cam.focal_length ? `${cam.focal_length.toFixed(1)}mm` : "--"
+        );
+
+        // Cinematographic extensions
+        const modelRow = this.element.querySelector("#vb-model-row");
+        const lensRow = this.element.querySelector("#vb-lens-row");
+
+        if (cam.carwash_camera_model) {
+            this._setText("#vb-model", cam.carwash_camera_model);
+            modelRow.style.display = "";
+        } else {
+            modelRow.style.display = "none";
+        }
+
+        if (cam.carwash_lens_model) {
+            this._setText("#vb-lens", cam.carwash_lens_model);
+            lensRow.style.display = "";
+        } else {
+            lensRow.style.display = "none";
+        }
+    }
+
+    _updateAovDisplay(resolution) {
+        const grid = this.element?.querySelector("#vb-aov-grid");
+        if (!grid) return;
+
+        const names = Object.keys(this.aovPaths);
+        if (names.length === 0) {
+            grid.innerHTML =
+                '<div class="vb-aov-empty">No AOV data. Press P in viewport.</div>';
+            return;
+        }
+
+        // Show AOV names with status indicators
+        grid.innerHTML = names
+            .map(
+                (name) =>
+                    `<div class="vb-aov-card">
+                        <span class="vb-aov-indicator"></span>
+                        <span class="vb-aov-name">${name}</span>
+                    </div>`
+            )
+            .join("");
+    }
+
+    _setText(selector, text) {
+        const el = this.element?.querySelector(selector);
+        if (el) el.textContent = text;
+    }
+
+    // ------------------------------------------------------------------
+    // Commands to viewport
+    // ------------------------------------------------------------------
+
+    _requestPreset(presetId) {
+        if (!this.connected || !this.ws) return;
+        this.ws.send(
+            JSON.stringify({ type: "request_preset", preset_id: presetId })
+        );
+    }
+
+    _requestAov() {
+        if (!this.connected || !this.ws) return;
+        this.ws.send(JSON.stringify({ type: "request_aov" }));
+    }
+}
+
+// ------------------------------------------------------------------
+// ComfyUI Extension Registration
+// ------------------------------------------------------------------
+
+let panelInstance = null;
+
+app.registerExtension({
+    name: "Viewport3DBridge",
+    async setup() {
+        // Add sidebar button
+        const sidebarBtn = document.createElement("button");
+        sidebarBtn.className = "comfyui-sidebar-tab";
+        sidebarBtn.title = "3D Viewport";
+        sidebarBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+        </svg>`;
+
+        // Create sidebar panel content
+        panelInstance = new ViewportBridgePanel();
+        const panelEl = panelInstance.init();
+
+        // Load CSS
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = new URL(
+            "../css/bridge_panel.css",
+            import.meta.url
+        ).href;
+        document.head.appendChild(link);
+
+        // Register with ComfyUI sidebar if available
+        if (app.extensionManager && app.extensionManager.registerSidebarTab) {
+            app.extensionManager.registerSidebarTab({
+                id: "viewport-3d-bridge",
+                icon: "pi pi-box",
+                title: "3D Viewport",
+                tooltip: "3D Viewport Bridge",
+                type: "custom",
+                render: (container) => {
+                    container.appendChild(panelEl);
+                },
+            });
+        } else {
+            // Fallback: append to sidebar directly
+            const sidebar = document.querySelector(".comfyui-sidebar");
+            if (sidebar) {
+                sidebar.appendChild(sidebarBtn);
+
+                let panelVisible = false;
+                const panelWrapper = document.createElement("div");
+                panelWrapper.className = "vb-panel-wrapper";
+                panelWrapper.style.display = "none";
+                panelWrapper.appendChild(panelEl);
+                document.body.appendChild(panelWrapper);
+
+                sidebarBtn.addEventListener("click", () => {
+                    panelVisible = !panelVisible;
+                    panelWrapper.style.display = panelVisible ? "block" : "none";
+                    sidebarBtn.classList.toggle("active", panelVisible);
+                });
+            }
+        }
+    },
+});

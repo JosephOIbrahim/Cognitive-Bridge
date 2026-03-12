@@ -1,0 +1,52 @@
+"""Debug: find VEX-capable COP nodes and check parms."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        code = r"""
+import hou
+cop_cat = hou.cop2NodeTypeCategory()
+all_types = sorted(cop_cat.nodeTypes().keys())
+
+# Find VEX/wrangle/snippet type nodes
+vex_types = [t for t in all_types if any(k in t.lower() for k in
+    ['vex', 'wrangle', 'snippet', 'inline', 'code', 'script', 'attrib'])]
+
+# Also check for generator types
+gen_types = [t for t in all_types if any(k in t.lower() for k in
+    ['generate', 'generator', 'ramp', 'constant', 'grid'])]
+
+# Check parms on key nodes we need
+obj = hou.node("/obj")
+cn = obj.createNode("copnet", "__debug")
+
+node_parms = {}
+for ntype in ['noise', 'convolve', 'composite', 'streak', 'multiply', 'color', 'null', 'switch', 'file']:
+    try:
+        n = cn.createNode(ntype, f"test_{ntype}")
+        node_parms[ntype] = [p.name() for p in n.parms()][:25]
+        n.destroy()
+    except Exception as e:
+        node_parms[ntype] = f"FAIL: {e}"
+
+cn.destroy()
+
+result = {
+    "vex_types": vex_types,
+    "gen_types": gen_types,
+    "node_parms": node_parms,
+    "all_count": len(all_types),
+}
+"""
+        r = await client.execute_python(code)
+        print("VEX-capable types:", r.get("vex_types") if isinstance(r, dict) else r)
+        if isinstance(r, dict):
+            print("Generator types:", r.get("gen_types"))
+            print("\nNode parms:")
+            for k, v in r.get("node_parms", {}).items():
+                print(f"  {k}: {v}")
+
+asyncio.run(main())

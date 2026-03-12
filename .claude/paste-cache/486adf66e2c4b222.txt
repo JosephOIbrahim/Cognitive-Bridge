@@ -1,0 +1,18 @@
+Review the current state of SYNAPSE and answer these questions:
+
+1. **HDA/Panel Sprint Status:** Check for the existence and completeness of:
+   - `synapse/panel/` (chat panel with WebSocket bridge, formatter, context bar, quick actions)
+   - HDA-from-prompt tools (`hda_create`, `hda_promote_parm`, `hda_set_help`, `hda_package`)
+   - Network explainer tool (`network_explain`)
+   - Associated tests for all of the above
+   Report what shipped, what's partial, and what's missing.
+
+2. **Test Health:** Run the full test suite (`pytest tests/ -q`) and report pass/fail/skip counts. Flag any failures.
+
+3. **Tool Inventory:** Count all registered MCP tools by prefix (houdini_, synapse_, tops_, hda_, etc.) and list any added since the FORGE sprint that aren't in the project insights doc.
+
+4. **Autonomy Readiness:** Check `synapse/autonomy/` and `~/.synapse/agent-sdk/` — what's the current state of the Plan→Validate→Execute→Evaluate→Report loop? Is it wired to real TOPS execution or still scaffolded?
+
+5. **Open Gaps:** Search for TODO, FIXME, HACK, and STUB across the codebase. Group by module and flag anything blocking production use.
+
+Report as a structured status table I can use for sprint planning. Don't fix anything — just observe and report.

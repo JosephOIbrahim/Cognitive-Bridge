@@ -1,0 +1,56 @@
+# Session Handover
+**Date:** 2026-02-27 16:45
+**Project:** Cinema Camera Rig v4.0 (Houdini 21)
+**Working directory:** C:\Users\User\OneDrive\Documents\houdini21.0
+
+## IMMEDIATE BLOCKER: Synapse not listening on port 9999
+Houdini PID 58416 is running but Synapse WebSocket server is NOT active.
+Houdini's actual listening ports: 48626, 14725, 8912.
+User needs to start the Synapse server inside Houdini (shelf tool or Python panel).
+
+### To check if Synapse comes up:
+```bash
+python -c "import asyncio,sys; sys.path.insert(0,r'C:\Users\User\.synapse\agent'); from synapse_ws import SynapseClient; asyncio.run((lambda: SynapseClient().__aenter__())())"
+```
+Or just: `powershell -Command "Test-NetConnection localhost -Port 9999"`
+
+## User's Task (INCOMPLETE)
+1. **DONE** - Set WOLFRAM_APP_ID to LKY2AG-QX3G7VW7YR in packages/cinema_camera_rig.json
+2. **BLOCKED** - W1-W6 Wolfram phases (Synapse not connected)
+3. **NOT STARTED** - Rebuild 4 HDAs with Wolfram-calibrated values
+4. **NOT STARTED** - Integration tests through Synapse
+5. **NOT STARTED** - Build cinema::camera_rig::2.0 orchestrator HDA
+6. **NOT STARTED** - Step 11 integration testing
+
+## Once Synapse is on port 9999, run:
+```bash
+cd /c/Users/User/OneDrive/Documents/houdini21.0
+python run_wolfram_check.py   # W1-W6
+python run_steps_8_10.py      # Rebuild 4 HDAs
+```
+Both scripts set env vars (WOLFRAM_APP_ID, CINEMA_CAMERA_PATH) in Houdini session.
+
+## wolframalpha package
+User confirmed installed in Houdini's Python 3.11. Not yet verified via Synapse.
+
+## Git State
+- Latest: f00edb4 — pushed to GitHub main
+- Unstaged: packages/cinema_camera_rig.json has real API key (LKY2AG-QX3G7VW7YR)
+- SECURITY: Replace key with placeholder before committing this file
+
+## Key Scripts Ready
+- `run_wolfram_check.py` — Runs W1-W6 via Synapse (validate optics, fit squeeze, fit pupil shift, calibrate biomechanics, generate VEX header)
+- `run_steps_8_10.py` — Rebuilds all 4 HDAs via Synapse with importlib.reload + hou.hda.installFile
+- `cleanup_houdini.py` — Removes orphaned build nodes
+
+## Builder Fixes (committed f00edb4)
+- Subnet pattern for createDigitalAsset (chopnet/cop2net can't convert directly)
+- CHOP parms: dampingk, lag1, period, function; ignore_external_references=True
+- COP: cop2net at /obj, vopcop2filter/vopcop2gen + snippet VOP, ch("../../param")
+- 4 HDAs already in otls/ from previous session
+
+## Synapse Protocol (when working)
+- Endpoint: ws://localhost:9999/synapse
+- Client: ~/.synapse/agent/synapse_ws.py (SynapseClient)
+- execute_python: set `result` variable, returned in response
+- Must set CINEMA_CAMERA_PATH + WOLFRAM_APP_ID in Houdini env before running

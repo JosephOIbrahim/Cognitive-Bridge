@@ -1,0 +1,57 @@
+# Cognitive Substrate Vault
+
+## What This Is
+Obsidian viewer layer for the cognitive substrate knowledge graph.
+Source of truth remains at C:\Users\User\.claude\cognitive_substrate\.
+This vault is a NAVIGATION AND CAPTURE tool, not a workspace.
+
+## Meta-Principle
+Every tool either serves work or competes with it for attention.
+This vault is configured for ~20 minutes/week of interaction.
+If usage exceeds this, the tool is winning. See [[usage-protocol]].
+
+## Structure
+- `_substrate/` -- JUNCTION: Cognitive substrate USDA files (READ ONLY)
+- `_projects/` -- JUNCTION: Project capsules and index
+- `_frameworks/` -- JUNCTION: Framework archive (Google Docs shortcuts)
+- `_research/` -- Research notes, papers, concept stubs
+- `_tangents/` -- Parked tangent files (captured during sessions)
+- `_sessions/` -- Session capture blocks (one per session)
+- `_templates/` -- Templates for QuickAdd capture
+- `MOC-*.md` -- Maps of Content (navigation, auto-updated via Dataview)
+- `cockpit.md` -- Landing page (default on open)
+
+## Conventions
+- All files get YAML frontmatter: type, created, tags, status
+- Wiki-links: [[concept-name]] for cross-references
+- File naming: YYYY-MM-DD-descriptive-slug.md for dated content
+- MOC naming: MOC-{Domain}.md
+- Tags: kebab-case (sparse-routing, cognitive-substrate)
+- Maximum 5 wiki-links per note
+- Templates have <=10 frontmatter fields
+
+## Agent Team
+- Architect: structure and filesystem only
+- Librarian: content, metadata, templates only
+- Linker: wiki-links and connections only
+- Timekeeper: usage limits and friction design only
+- Locksmith: plugin management and restrictions only
+- Dopamine Guardian: reviews all output, veto power
+
+## Usage Protocol
+See [[usage-protocol]]. Key rules:
+- During work: capture only (Ctrl+Alt+T tangent, Ctrl+Alt+S session)
+- Weekly review: 15 min, Sundays, with timer
+- Monthly maintenance: 30 min, Claude Code does the work
+- Microdose sessions: capture only, no graph, 20-second target
+- If open >10 min outside review: close it
+
+## Plugin Whitelist
+Templater, Dataview, QuickAdd. No others. No exceptions.
+Plugin browser should not be opened. If a specific unmet need arises,
+document the need in _sessions/ and revisit during monthly review.
+
+## Substrate Integration
+- Source of truth: C:\Users\User\.claude\cognitive_substrate\
+- Project index: C:\Users\User\.claude\projects\_index.md
+- Edits to substrate files: make at source, not through junction

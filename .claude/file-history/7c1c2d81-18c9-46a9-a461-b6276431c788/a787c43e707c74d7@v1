@@ -1,0 +1,29 @@
+"""Evaluation order invariance verification."""
+
+from src.lossless.constants import PHASES
+from src.lossless.experts.registry import get_expert_names
+from src.lossless.routing.cascade import SignalFingerprint, evaluate_cascade
+
+
+def check_phase_evaluation_order() -> bool:
+    """Phase evaluation order identical across 100 signals."""
+    signals = [
+        SignalFingerprint(emotional_valence=ev, domain_signal=ds)
+        for ev in ["calm", "frustrated", "energized"]
+        for ds in ["general", "vfx", "web"]
+    ]
+    for signal in signals:
+        result = evaluate_cascade(signal)
+        order = [ps.phase for ps in result.phase_scores]
+        if order != list(PHASES):
+            return False
+    return True
+
+
+def check_expert_order_invariance() -> bool:
+    """Expert priority order identical across all profiles."""
+    baseline = get_expert_names()
+    for _ in range(100):
+        if get_expert_names() != baseline:
+            return False
+    return True

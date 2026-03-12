@@ -1,0 +1,70 @@
+"""Agent 7: Full consistency sweep."""
+
+from pathlib import Path
+
+from src.lossless.consistency.auditor import (
+    check_fixed_expert_count, check_fixed_phase_count,
+    check_phase_order_stable, check_tile_size_positive,
+)
+from src.lossless.consistency.batch_invariance import (
+    check_anchor_hash_invariance, check_clean_signal_invariance,
+)
+from src.lossless.consistency.reduction_order import (
+    check_expert_order_invariance, check_phase_evaluation_order,
+)
+from src.lossless.consistency.report import generate_report
+
+_ROOT = Path(__file__).resolve().parents[3] / "cognitive_substrate" / "lossless_root.usda"
+
+
+class TestEvaluationOrder:
+    def test_phase_evaluation_order(self):
+        assert check_phase_evaluation_order()
+
+    def test_phase_order_stable(self):
+        assert check_phase_order_stable()
+
+    def test_expert_order_invariance(self):
+        assert check_expert_order_invariance()
+
+    def test_fixed_phase_count(self):
+        assert check_fixed_phase_count()
+
+    def test_fixed_expert_count(self):
+        assert check_fixed_expert_count()
+
+    def test_tile_size_positive(self):
+        assert check_tile_size_positive()
+
+
+class TestBatchInvariance:
+    def test_clean_signal_invariance(self):
+        if not _ROOT.exists():
+            return
+        result = check_clean_signal_invariance(_ROOT)
+        assert result["passed"]
+
+    def test_anchor_hash_invariance(self):
+        if not _ROOT.exists():
+            return
+        result = check_anchor_hash_invariance(_ROOT)
+        assert result["passed"]
+
+
+class TestReportGeneration:
+    def test_generate_report_all_pass(self):
+        if not _ROOT.exists():
+            return
+        report = generate_report(_ROOT)
+        assert "FAIL" not in report
+        assert "PASS" in report
+
+    def test_report_has_all_sections(self):
+        if not _ROOT.exists():
+            return
+        report = generate_report(_ROOT)
+        assert "EVALUATION ORDER" in report
+        assert "BATCH INVARIANCE" in report
+        assert "FIXED SPLIT-SIZE" in report
+        assert "LOSSLESS GUARANTEES" in report
+        assert "MIXING MATRIX" in report

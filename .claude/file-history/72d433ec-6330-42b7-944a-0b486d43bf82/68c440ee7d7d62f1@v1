@@ -1,0 +1,90 @@
+"use client";
+
+import { useMemo } from "react";
+import { GridCard } from "./GridCard";
+import { PROJECTS } from "@/lib/projects";
+import type { GridRow, GridRowType } from "@/lib/types";
+import styles from "./EditorialGrid.module.css";
+
+const PROJECT_MAP = new Map(PROJECTS.map((p) => [p.slug, p]));
+
+function colsFor(type: GridRowType): string {
+  switch (type) {
+    case "wide-narrow":
+      return "2fr 1fr";
+    case "narrow-wide":
+      return "1fr 2fr";
+    case "triple":
+      return "1fr 1fr 1fr";
+    default:
+      return "1fr";
+  }
+}
+
+function responsiveClass(type: GridRowType): string {
+  if (type === "triple") return "grid-triple";
+  if (type === "wide-narrow" || type === "narrow-wide") return "grid-pair";
+  return "";
+}
+
+interface EditorialGridProps {
+  rows: GridRow[];
+  filterCategory?: string;
+}
+
+export function EditorialGrid({ rows, filterCategory = "All" }: EditorialGridProps) {
+  const filteredRows = useMemo(() => {
+    if (filterCategory === "All") return rows;
+    return rows
+      .map((row) => {
+        const filtered = row.slugs
+          .map((slug, i) => {
+            const p = PROJECT_MAP.get(slug);
+            return p && p.category === filterCategory ? i : -1;
+          })
+          .filter((i) => i !== -1);
+
+        if (filtered.length === 0) return null;
+
+        return {
+          ...row,
+          type:
+            filtered.length === 1
+              ? ("hero" as GridRowType)
+              : filtered.length === 2 && row.type === "triple"
+                ? ("wide-narrow" as GridRowType)
+                : row.type,
+          slugs: filtered.map((i) => row.slugs[i]),
+          text: filtered.map((i) => row.text[i]),
+          heights: filtered.map((i) => row.heights[i]),
+        };
+      })
+      .filter((row): row is GridRow => row !== null);
+  }, [rows, filterCategory]);
+
+  return (
+    <div className={styles.container}>
+      {filteredRows.map((row, ri) => (
+        <div
+          key={ri}
+          className={`${styles.row} ${responsiveClass(row.type)}`}
+          style={{ gridTemplateColumns: colsFor(row.type) }}
+        >
+          {row.slugs.map((slug, si) => {
+            const project = PROJECT_MAP.get(slug);
+            if (!project) return null;
+            return (
+              <GridCard
+                key={slug}
+                project={project}
+                showText={row.text[si]}
+                height={row.heights[si]}
+                columnIndex={si}
+              />
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}

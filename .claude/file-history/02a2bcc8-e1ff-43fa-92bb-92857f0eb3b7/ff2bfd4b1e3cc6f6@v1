@@ -1,0 +1,197 @@
+# Plan: UE5 Editor Access — Python Scripting + Remote Control + MCP Server
+
+## Context
+
+The TranslatorsCard bridge is working end-to-end (8-question cognitive profiling, USDA export). But Claude Code can only write C++ and compile — it can't interact with the running editor (place actors, create materials, build environments, trigger motion graphics). The user wants to unlock three layers of editor access, plus motion graphics tooling.
+
+## What We're Building
+
+Three layers that stack on each other:
+
+```
+Layer 3: MCP Server (Claude Code native tool access)
+   ↓ calls
+Layer 2: Remote Control API (HTTP/WebSocket to running editor)
+   ↓ routes to
+Layer 1: Python Editor Scripting (unreal module executes commands)
+   +
+Motion Graphics: Avalanche + ClonerEffector + Niagara + PCG plugins
+```
+
+---
+
+## Phase 1: Enable Plugins & Python Scripting Foundation
+
+**Goal:** Enable all required plugins and verify Python scripting works.
+
+### 1a. Update TranslatorsCard.uproject — add plugins
+
+Add to the `Plugins` array in `ue-bridge/TranslatorsCard.uproject`:
+
+```json
+{"Name": "RemoteControl", "Enabled": true},
+{"Name": "WebSocketNetworking", "Enabled": true},
+{"Name": "EditorScriptingUtilities", "Enabled": true},
+{"Name": "Avalanche", "Enabled": true},
+{"Name": "ClonerEffector", "Enabled": true},
+{"Name": "Niagara", "Enabled": true},
+{"Name": "PCG", "Enabled": true},
+{"Name": "SequencerAnimTools", "Enabled": true}
+```
+
+PythonScriptPlugin is already enabled.
+
+### 1b. Add module dependencies to Build.cs
+
+Add to `TranslatorsCard.Build.cs` private dependencies (editor-only block):
+- `RemoteControl`
+
+### 1c. Write a test Python script
+
+Create `ue-bridge/Content/Python/test_claude_access.py`:
+- Spawn a cube actor at origin
+- Set a material
+- Print confirmation to Output Log
+
+**Verify:** Open editor → Python console → `py test_claude_access.py` → cube appears.
+
+### 1d. Rebuild
+
+Kill editor, run Build.bat, relaunch, verify all plugins load.
+
+---
+
+## Phase 2: Remote Control API Bridge
+
+**Goal:** Claude Code can send HTTP requests to the running editor.
+
+### 2a. Enable Remote Control Web Server
+
+The RemoteControl plugin includes `WebRemoteControl` module which exposes a REST API on `http://localhost:30010` by default. Enabling the plugin activates it.
+
+Verify with: `curl http://localhost:30010/remote/info`
+
+### 2b. Write a Python bridge script
+
+Create `ue-bridge/remote_control_bridge.py`:
+- Wraps UE5 Remote Control REST API
+- Functions for:
+  - `spawn_actor(class_name, location, rotation)` — POST to `/remote/object/call`
+  - `set_property(object_path, property_name, value)` — PUT to `/remote/object/property`
+  - `call_function(object_path, function_name, params)` — POST to `/remote/object/call`
+  - `execute_python(code)` — POST to execute Python in editor context
+  - `list_actors()` — GET actors in current level
+  - `get_property(object_path, property_name)` — GET property value
+
+### 2c. Test round-trip
+
+Run from Claude Code bash:
+```python
+python remote_control_bridge.py --test
+```
+Should spawn an actor, read its transform back, delete it.
+
+---
+
+## Phase 3: MCP Server
+
+**Goal:** Claude Code gets native tool access to the UE5 editor via MCP tools.
+
+### 3a. Create MCP server structure
+
+```
+ue-bridge/mcp/
+├── __init__.py
+├── mcp_server.py          # Entry point (stdio transport)
+├── tools/
+│   ├── __init__.py        # Tool registry + dispatch
+│   ├── actors.py          # spawn, delete, list, transform actors
+│   ├── properties.py      # get/set any UObject property
+│   ├── python_exec.py     # execute arbitrary Python in editor
+│   ├── assets.py          # find, load, create assets
+│   ├── level.py           # level management, save, load
+│   └── mograph.py         # Avalanche/Cloner/Niagara convenience tools
+└── requirements.txt       # mcp>=1.0.0, httpx
+```
+
+### 3b. Implement core tools (~15 tools)
+
+**Actor tools:**
+- `ue_spawn_actor` — Spawn actor by class at location
+- `ue_delete_actor` — Delete actor by path
+- `ue_list_actors` — List all actors (with optional class filter)
+- `ue_set_transform` — Set actor location/rotation/scale
+
+**Property tools:**
+- `ue_get_property` — Read any UObject property
+- `ue_set_property` — Set any UObject property
+
+**Python execution:**
+- `ue_execute_python` — Run arbitrary Python in editor (most powerful tool)
+
+**Asset tools:**
+- `ue_find_assets` — Search Content Browser by name/type
+- `ue_create_material` — Create a basic material with parameters
+
+**Level tools:**
+- `ue_save_level` — Save current level
+- `ue_get_level_info` — Get current level name, actor count
+
+**Motion Graphics tools:**
+- `ue_create_cloner` — Create ClonerEffector with layout + mesh
+- `ue_create_niagara_system` — Spawn Niagara particle system
+- `ue_create_pcg_graph` — Create PCG volume for procedural content
+
+**All tools** route through `remote_control_bridge.py` (Phase 2) — no direct engine dependency in the MCP server.
+
+### 3c. Add MCP annotations (Synapse pattern)
+
+Each tool gets safety hints:
+- `readOnlyHint: true` for list/get operations
+- `destructiveHint: true` for delete operations
+- `idempotentHint: true` for set operations
+
+### 3d. Register in Claude Code settings
+
+Add to `~/.claude/settings.local.json` under `mcpServers`:
+```json
+"unreal": {
+  "command": "python",
+  "args": ["C:/Users/User/Translators-Game/TranslatorsGame/ue-bridge/mcp/mcp_server.py"]
+}
+```
+
+### 3e. Test end-to-end
+
+With editor running:
+1. Claude Code should see `ue_*` tools in tool list
+2. Test: `ue_list_actors` returns current level actors
+3. Test: `ue_spawn_actor` places a StaticMeshActor
+4. Test: `ue_execute_python` runs arbitrary code in editor
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `ue-bridge/TranslatorsCard.uproject` | Plugin declarations |
+| `ue-bridge/Source/TranslatorsCard/TranslatorsCard.Build.cs` | Module dependencies |
+| `ue-bridge/Content/Python/test_claude_access.py` | Python scripting test |
+| `ue-bridge/remote_control_bridge.py` | REST API wrapper |
+| `ue-bridge/mcp/mcp_server.py` | MCP server entry point |
+| `ue-bridge/mcp/tools/*.py` | Tool implementations |
+| `~/.claude/settings.local.json` | MCP server registration |
+
+## Dependencies
+
+- `mcp` Python package (for MCP server)
+- `httpx` Python package (for async HTTP to Remote Control API)
+- UE5 editor must be running for Phases 2-3 to work
+
+## Verification
+
+1. **Phase 1:** Editor launches with all plugins, Python console executes test script
+2. **Phase 2:** `curl localhost:30010/remote/info` returns JSON, bridge script spawns actor
+3. **Phase 3:** Claude Code can call `ue_list_actors` and `ue_spawn_actor` as native tools
+4. **Motion Graphics:** ClonerEffector creates instanced objects, Niagara system spawns particles

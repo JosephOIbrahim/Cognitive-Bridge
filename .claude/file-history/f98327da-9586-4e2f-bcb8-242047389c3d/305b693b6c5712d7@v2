@@ -1,0 +1,76 @@
+"""Debug: check CHOP flag methods and subnet HDA creation."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as client:
+        # Check CHOP node flag methods
+        code = r"""
+import hou
+obj = hou.node("/obj")
+net = obj.createNode("chopnet", "__test_flags")
+n = net.createNode("null", "test_null")
+
+# List all methods that contain 'flag' or 'Flag'
+flag_methods = [m for m in dir(n) if 'flag' in m.lower() or 'Flag' in m]
+
+# Also check if setDisplayFlag works
+try:
+    n.setDisplayFlag(True)
+    display_ok = True
+except:
+    display_ok = False
+
+# Check setExportFlag
+try:
+    n.setExportFlag(True)
+    export_ok = True
+except:
+    export_ok = False
+
+net.destroy()
+result = {"flag_methods": flag_methods, "display_ok": display_ok, "export_ok": export_ok}
+"""
+        r = await client.execute_python(code, timeout=10)
+        print("CHOP flag methods:", r)
+
+        # Test subnet HDA creation in cop2net
+        code2 = r"""
+import hou, os
+obj = hou.node("/obj")
+cn = obj.createNode("cop2net", "__test_hda")
+sub = cn.createNode("subnet", "test_sub")
+
+# Create a simple network inside subnet
+n1 = sub.createNode("null", "IN")
+n2 = sub.createNode("null", "OUT")
+n2.setInput(0, n1)
+
+# Try creating HDA from subnet
+hda_path = os.path.join(r"C:\Users\User\OneDrive\Documents\houdini21.0\otls", "__test_cop.hda")
+try:
+    hda = sub.createDigitalAsset(
+        name="cinema::__test_cop",
+        hda_file_name=hda_path,
+        description="Test COP HDA",
+        min_num_inputs=1,
+        max_num_inputs=1,
+        version="1.0",
+    )
+    hda_ok = True
+    hda.destroy()
+except Exception as e:
+    hda_ok = str(e)
+
+# Clean up test file
+if os.path.exists(hda_path):
+    os.remove(hda_path)
+cn.destroy()
+result = {"subnet_hda": hda_ok}
+"""
+        r2 = await client.execute_python(code2, timeout=15)
+        print("Subnet HDA creation:", r2)
+
+asyncio.run(main())

@@ -1,0 +1,63 @@
+# Session Handover
+**Date:** 2026-02-19 ~14:00
+**Project:** Synapse v5.5.0
+**Working directory:** C:\Users\User\SYNAPSE
+
+## What Was Done
+- Completed FORGE-PRODUCTION Phases 1-4 using parallel agent teams (RAG gap fill, TOPS autonomy engine, Solaris ordering validator, camera digital twins)
+- Built `synapse/autonomy/` package (6 files): planner, validator, evaluator, driver for Plan->Validate->Execute->Evaluate->Report render loop
+- Added 52 RAG reference files covering MPM solver, TOPS advanced patterns, Copernicus, temporal coherence, ACES, camera sensors
+- Added 18 production recipes (total now 39) including camera_match_real, multi_shot_render, turntable variants
+- Two "next steps" sweeps executed (16 items total, 11 completed):
+  - CLAUDE.md version bump to v5.5.0
+  - FORGE backlog: all 11 items resolved (BL-004 tuple promotion, BL-001 undo/redo)
+  - Wired autonomy to MCP as `synapse_autonomous_render` tool
+  - Multi-shot TOPS pipeline + handler + recipe
+  - Temporal evaluator with OIIO/pyexr/PIL image loading fallback
+  - PDG timeout hardening with `_run_in_main_thread_pdg()` wrapper
+  - hwebserver auto-startup confirmed already implemented
+  - Added `houdini_undo` and `houdini_redo` MCP tools (74 total tools)
+  - pyproject.toml version bump to 5.5.0
+  - Coverage report: 61% overall, 1,720 tests passing
+- 8 commits pushed to GitHub (997196a through 7a0cd75)
+
+## Decisions Made
+| Decision | Why | Alternatives Considered |
+|----------|-----|------------------------|
+| Autonomy uses async interface with `_HandlerAdapter` | Handlers are sync but autonomy pipeline is async; adapter bridges the gap | Making handlers async (too invasive), sync autonomy (limits concurrency) |
+| `_run_in_main_thread_pdg()` wrapper for all PDG calls | `getPDGGraphContext()` blocks main thread >10s causing WebSocket drops | Per-handler timeout increases (inconsistent), lower global timeout (breaks non-PDG) |
+| OIIO -> pyexr -> PIL fallback chain for frame loading | OIIO is best for EXR but not always available; graceful degradation | Require OIIO (breaks portability), numpy-only (can't read EXR) |
+| Camera sensor database in RAG not code | Sensor specs change with new models; RAG is easier to update than code | Hardcoded dict in recipes (brittle), external JSON (extra file) |
+| Items 4-5 deferred to next session | Require live Houdini connection which wasn't running | Force-launch Houdini (risky in automated session) |
+
+## Blockers / Issues
+- PDG WebSocket timeout: `getPDGGraphContext()` blocks main thread, causing drops (resolved: `_run_in_main_thread_pdg()` + 60s timeout)
+- TOPS permission allowlisting: All 14 `tops_*` tools denied at MCP permission level during live testing (open -- needs allowlisting in next live session)
+- gitignore blocks `__init__.py`: `python/synapse/autonomy/__init__.py` needed `git add -f` (resolved)
+- Recipe count assertion fragility: Every recipe addition breaks hardcoded count assertions in 2 test files (recurring pattern, manually fixed each time)
+
+## Open Threads
+- [ ] Item 4: Live autonomy test -- run `synapse_autonomous_render` against real Houdini with a simple scene
+- [ ] Item 5: TOPS permission allowlisting -- add `tops_*` tools to MCP permission allowlist for Claude Code
+- [ ] pyproject.toml version bump is edited but NOT YET COMMITTED (1 file changed)
+- [ ] MCP Streamable HTTP endpoint not auto-starting -- `start_mcp()` exists in shelf but only activates when user opens Synapse panel
+- [ ] Coverage gaps: 0% on UI code (Qt-dependent), server adapters (need live Houdini), scene_memory, agent_state
+
+## Key Files
+- `python/synapse/autonomy/` -- NEW package: models.py, planner.py, validator.py, evaluator.py, driver.py
+- `python/synapse/server/handlers_tops.py` -- `_run_in_main_thread_pdg()`, `tops_render_sequence`, `tops_multi_shot`, warm standby
+- `python/synapse/server/handlers.py` -- `autonomous_render`, `undo`/`redo` handlers, BL-004 tuple fix
+- `python/synapse/server/handlers_usd.py` -- `solaris_validate_ordering` handler
+- `python/synapse/routing/recipes.py` -- 39 recipes (18 new this session)
+- `mcp_server.py` -- 74 tools, TOPS timeout overrides, undo/redo dispatch
+- `rag/skills/houdini21-reference/` -- 52 new reference files (MPM, TOPS, cameras, temporal, ACES, Copernicus)
+- `CLAUDE.md` -- Updated to v5.5.0 with all new counts and autonomy module docs
+- `pyproject.toml` -- Version bumped to 5.5.0 (uncommitted)
+
+## Session Notes
+- Test suite: 1,720 passed, 17 skipped, 0 failures in 17s
+- Coverage: 61% overall. Strong: routing (85-98%), core (81-100%), resilience (92%), SQLite (94%). Weak: UI (0%, needs Qt), server adapters (0%, needs Houdini)
+- FORGE self-improvement loop completed 3 cycles: 18 scenarios, 100% pass, 23 corpus entries
+- All 11 FORGE backlog items now resolved
+- Agent teams pattern works well: parallel dispatch of 2-3 agents per batch, sequential batches for dependencies
+- Recipe count assertion pattern: when adding recipes, always grep for `== N` in test_routing.py and test_v5_features.py and update

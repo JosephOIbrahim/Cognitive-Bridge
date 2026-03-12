@@ -1,0 +1,121 @@
+"""
+Sync MPM Masterclass RAG to Synapse
+=====================================
+Copies workflow guides and raw transcripts into Synapse's RAG directory,
+and merges MPM topic entries into Synapse's flat-format semantic index.
+"""
+
+import json
+import re
+import shutil
+import yaml
+from pathlib import Path
+
+# Paths
+G_RAG = Path("G:/HOUDINI21_RAG_SYSTEM/documentation")
+SYNAPSE_RAG = Path("C:/Users/User/Synapse/rag")
+SYNAPSE_INDEX = SYNAPSE_RAG / "documentation" / "_metadata" / "semantic_index.json"
+
+# Source directories
+SRC_GUIDES = G_RAG / "tutorials" / "workflow_guides"
+SRC_RAW = G_RAG / "_raw_documentation" / "mpm_masterclass"
+
+# Destination directories
+DST_GUIDES = SYNAPSE_RAG / "documentation" / "tutorials" / "workflow_guides"
+DST_RAW = SYNAPSE_RAG / "documentation" / "_raw_documentation" / "mpm_masterclass"
+
+
+def parse_frontmatter(filepath):
+    """Extract YAML frontmatter from a markdown file."""
+    text = filepath.read_text(encoding="utf-8")
+    match = re.match(r"^---\n(.*?)\n---", text, re.DOTALL)
+    if not match:
+        return None
+    return yaml.safe_load(match.group(1))
+
+
+def build_flat_entry(fm, doc_path_relative):
+    """Convert doc frontmatter into Synapse flat index entry."""
+    entry = {
+        "summary": f"MPM Masterclass: {fm.get('title', 'Unknown')}",
+        "description": f"Part {fm['source']['part']}/{fm['source']['total_parts']} of the SideFX MPM H21 Masterclass by {fm['source']['presenter']}. {fm.get('title', '')}.",
+        "keywords": fm.get("keywords", []),
+        "reference_file": doc_path_relative,
+    }
+    if fm.get("common_queries"):
+        entry["common_queries"] = fm["common_queries"]
+    return entry
+
+
+def main():
+    # Create destination directories
+    DST_GUIDES.mkdir(parents=True, exist_ok=True)
+    DST_RAW.mkdir(parents=True, exist_ok=True)
+
+    # Copy workflow guides
+    guides = sorted(SRC_GUIDES.glob("mpm_*.md"))
+    print(f"Copying {len(guides)} workflow guides...")
+    for src in guides:
+        dst = DST_GUIDES / src.name
+        shutil.copy2(src, dst)
+        print(f"  {src.name}")
+
+    # Copy raw transcripts
+    raws = sorted(SRC_RAW.glob("*.md"))
+    print(f"\nCopying {len(raws)} raw transcripts...")
+    for src in raws:
+        dst = DST_RAW / src.name
+        shutil.copy2(src, dst)
+        print(f"  {src.name}")
+
+    # Load Synapse semantic index
+    with open(SYNAPSE_INDEX, "r", encoding="utf-8") as f:
+        index = json.load(f)
+    original_count = len(index)
+
+    # Build and merge MPM entries from workflow guide frontmatter
+    print(f"\nMerging MPM topics into Synapse index ({original_count} existing topics)...")
+    added = 0
+    updated = 0
+    for guide_path in guides:
+        fm = parse_frontmatter(guide_path)
+        if not fm or "source" not in fm:
+            print(f"  SKIP {guide_path.name} (no frontmatter/source)")
+            continue
+
+        topic_key = guide_path.stem  # e.g. mpm_surface_tension
+        relative_path = f"tutorials/workflow_guides/{guide_path.name}"
+        entry = build_flat_entry(fm, relative_path)
+
+        if topic_key in index:
+            # Merge: update keywords and common_queries, preserve existing fields
+            existing = index[topic_key]
+            merged_kw = list(entry["keywords"])
+            for kw in existing.get("keywords", []):
+                if kw not in merged_kw:
+                    merged_kw.append(kw)
+            existing["keywords"] = merged_kw
+            if entry.get("common_queries"):
+                existing["common_queries"] = entry["common_queries"]
+            existing["summary"] = entry["summary"]
+            existing["description"] = entry["description"]
+            existing["reference_file"] = entry["reference_file"]
+            updated += 1
+            print(f"  UPDATED {topic_key}")
+        else:
+            index[topic_key] = entry
+            added += 1
+            print(f"  ADDED   {topic_key}")
+
+    # Write updated index
+    with open(SYNAPSE_INDEX, "w", encoding="utf-8") as f:
+        json.dump(index, f, indent=2, sort_keys=False, ensure_ascii=False)
+
+    final_count = len(index)
+    print(f"\nDone! Index: {original_count} -> {final_count} topics ({added} added, {updated} updated)")
+    print(f"Guides: {DST_GUIDES}")
+    print(f"Transcripts: {DST_RAW}")
+
+
+if __name__ == "__main__":
+    main()

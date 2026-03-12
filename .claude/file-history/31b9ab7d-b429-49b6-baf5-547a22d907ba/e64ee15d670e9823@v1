@@ -1,0 +1,11 @@
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // Generate unique build ID to prevent cache staleness
+  generateBuildId: async () => {
+    // Use timestamp + git short hash for unique build identification
+    return `build-${Date.now()}`;
+  },
+};
+
+export default nextConfig;

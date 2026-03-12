@@ -1,0 +1,27 @@
+import Link from "next/link";
+
+export default function NotFound() {
+  return (
+    <div style={{
+      minHeight: "60vh",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingTop: "var(--nav-h)",
+    }}>
+      <h1 style={{ fontSize: 48, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--text)" }}>
+        404
+      </h1>
+      <p style={{ fontSize: 14, color: "var(--muted)", marginTop: 8 }}>
+        This page doesn&apos;t exist.
+      </p>
+      <Link
+        href="/work"
+        style={{ fontSize: 13, color: "var(--muted-light)", marginTop: 24, letterSpacing: "0.06em", textTransform: "uppercase" }}
+      >
+        Back to Work
+      </Link>
+    </div>
+  );
+}

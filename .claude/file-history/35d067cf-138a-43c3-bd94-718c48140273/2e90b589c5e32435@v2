@@ -1,0 +1,55 @@
+"""Gain calculator for the injection engine.
+
+Core equation: g = 1 + s * d
+
+Properties:
+    - gain(phase, 0.0) == 1.0 for ALL phases (identity)
+    - gain(anchor_phase, any_s) == 1.0 (anchor invariance)
+    - gain is continuous in s_NM (no discontinuities)
+    - gain >= 1.0 always
+"""
+
+from src.lossless.constants import (
+    ANCHOR_PHASES,
+    D_MAP,
+    PHASES,
+)
+
+
+def compute_gain(phase: str, s_NM: float) -> float:
+    """Calculate gain for a phase at a given signal strength.
+
+    Args:
+        phase: Phase name from PHASES.
+        s_NM: Neuromodulatory signal strength.
+
+    Returns:
+        Gain value >= 1.0.
+
+    Raises:
+        ValueError: If phase is unknown.
+    """
+    if phase in ANCHOR_PHASES:
+        return 1.0
+
+    if phase not in D_MAP:
+        raise ValueError(f"Unknown phase: {phase}")
+
+    d = D_MAP[phase]
+    return 1.0 + s_NM * d
+
+
+def compute_gains_for_profile(s_NM: float) -> dict:
+    """Compute gains for all phases at a given signal strength.
+
+    Args:
+        s_NM: Neuromodulatory signal strength.
+
+    Returns:
+        Dict mapping phase name to gain value.
+        Keys are in canonical PHASES order.
+    """
+    result = {}
+    for phase in PHASES:
+        result[phase] = compute_gain(phase, s_NM)
+    return result

@@ -1,0 +1,2341 @@
+     1→# USD Cognitive Substrate: A Deterministic Architecture for Adaptive AI State Management
+     2→
+     3→**Version:** 7.1.0
+     4→**Date:** 2026-01-31
+     5→**Status:** Academic Pre-Publication Draft
+     6→**Authors:** Joseph O. Ibrahim
+     7→
+     8→---
+     9→
+    10→## Abstract
+    11→
+    12→We present the USD Cognitive Substrate, a novel architecture that repurposes Universal Scene Description (USD) composition semantics—originally designed for conflict resolution in visual effects pipelines—for deterministic state management in large language model (LLM) applications. The architecture achieves a previously elusive property: **fully deterministic cognitive behavior** from signal detection through response generation, with stochasticity isolated exclusively to irreducible human input/output boundaries.
+    13→
+    14→The system comprises two orthogonal hierarchies: a USD Composition Hierarchy for state storage with LIVRPS (Local, Inherits, VariantSets, References, Payloads, Specializes) resolution, and a Runtime Service Stack for processing, routing, and adaptation. A novel "Mycelium" mechanism provides neuroplasticity within constitutional bounds, enabling the system to learn while maintaining safety guarantees.
+    15→
+    16→**Version 7.0.0 introduces three major extensions:**
+    17→1. **Grounding Layer (L7.5)** — The "ACCESS over LEARN" paradigm: route queries to deterministic oracles (physics simulators, knowledge graphs) when ground truth exists
+    18→2. **BCM Stigmergic Learning** — Bienenstock-Cooper-Munro learning with trail-based expert confidence as *metadata annotation only*, preserving ThinkingMachines batch-invariance
+    19→3. **Signal Reliability Tracking** — Fingerprint-outcome correlation for routing confidence prediction
+    20→
+    21→When integrated with batch-invariant inference engines (ThinkingMachines), the architecture guarantees: **same user input + same state → same response + same state update**. This enables reproducible sessions, behavioral unit testing, complete audit trails, and formally verifiable cognitive systems.
+    22→
+    23→**Keywords:** Universal Scene Description, cognitive architecture, deterministic AI, state management, neuroplasticity, batch invariance, LIVRPS composition, grounded world models, BCM learning
+    24→
+    25→---
+    26→
+    27→## 1. Introduction
+    28→
+    29→### 1.1 The Problem
+    30→
+    31→Modern LLM applications face a fundamental tension: users expect consistent, personalized behavior, but LLM inference is inherently stochastic. The same prompt can produce different outputs based on:
+    32→
+    33→- Batch size during inference
+    34→- Server load affecting reduction order
+    35→- Non-deterministic GPU operations
+    36→- Temperature and sampling parameters
+    37→
+    38→This non-determinism creates challenges for:
+    39→
+    40→1. **Debugging** — Cannot reproduce reported issues
+    41→2. **Testing** — Behavioral tests are flaky
+    42→3. **Auditing** — Cannot verify decision traces
+    43→4. **Personalization** — Learning is noisy
+    44→5. **Safety** — Cannot guarantee behavioral bounds
+    45→
+    46→### 1.2 The Thesis
+    47→
+    48→We propose that **USD (Universal Scene Description) composition semantics are uniquely suited for cognitive state management in LLM applications**. This is not about using USD for 3D graphics—it is about repurposing USD's conflict resolution system for AI state management.
+    49→
+    50→The parallel:
+    51→
+    52→| VFX Problem | AI Problem |
+    53→|-------------|------------|
+    54→| Multiple departments (model, rig, anim, light) disagree about scene data | Multiple state sources (profile, mood, task, safety) disagree about behavior |
+    55→| USD's LIVRPS resolves conflicts deterministically | USD's LIVRPS resolves conflicts deterministically |
+    56→
+    57→Same solution. Different domain.
+    58→
+    59→### 1.3 Contributions
+    60→
+    61→This paper makes the following contributions:
+    62→
+    63→1. **Separation of Storage and Routing** — USD provides state persistence; a separate routing engine provides adaptive behavior
+    64→
+    65→2. **The Mycelium Mechanism** — A neuroplasticity system with four rebalancing avenues (activation spreading, Hebbian learning, attractor dynamics, homeostatic regulation) operating within hard constitutional bounds
+    66→
+    67→3. **The Mycelium Arc** — A novel USD composition arc for horizontal (agent-to-agent) state flow, complementing LIVRPS's vertical composition
+    68→
+    69→4. **Determinism Analysis** — Formal identification of stochastic boundaries and requirements for full reproducibility
+    70→
+    71→5. **Integration with Batch-Invariant Inference** — When combined with ThinkingMachines kernels, the architecture achieves full determinism except for irreducible human I/O
+    72→
+    73→**v7.0.0 Additional Contributions:**
+    74→
+    75→6. **Grounding Layer (L7.5)** — The "ACCESS over LEARN" paradigm for deterministic ground truth via oracle integration (validated: 10/10 experiments, physics + constraint satisfaction)
+    76→
+    77→7. **BCM Stigmergic Learning** — Trail-based expert confidence with Bienenstock-Cooper-Munro saturation, providing learning capability while maintaining batch-invariance through queued updates
+    78→
+    79→8. **Plasticity Auto-Triggers** — Adaptive learning rate windows that open during crashes and close on convergence
+    80→
+    81→9. **Signal Reliability Tracking** — Fingerprint-outcome correlation for predictive routing confidence
+    82→
+    83→---
+    84→
+    85→## 2. Background
+    86→
+    87→### 2.1 Universal Scene Description (USD)
+    88→
+    89→USD is Pixar's open-source framework for describing, composing, and querying hierarchical scene data. Its key properties relevant to our work:
+    90→
+    91→**LIVRPS Composition Order:**
+    92→- **L**ocal — Direct opinions on a prim (highest priority)
+    93→- **I**nherits — Inherited from parent prims
+    94→- **V**ariantSets — Selected variants
+    95→- **R**eferences — External file references
+    96→- **P**ayloads — Lazy-loaded external content
+    97→- **S**pecializes — Base class inheritance (lowest priority)
+    98→
+    99→**Key Properties:**
+   100→1. **Native Composition** — Conflict resolution is built into the format
+   101→2. **Lazy Loading (Payloads)** — Content loads on demand
+   102→3. **First-Class Variants** — Mode switching is a language construct
+   103→
+   104→No other configuration format (JSON, YAML, Protobuf, GraphQL) provides all three properties.
+   105→
+   106→### 2.2 Determinism in LLM Inference
+   107→
+   108→**The Key Insight**: Individual LLM forward passes are run-to-run deterministic. The source of user-visible nondeterminism is that **batch size varies with server load**, and most kernels lack batch-invariance.
+   109→
+   110→ThinkingMachines (2025) demonstrated this empirically: **80 unique completions from 1000 identical requests** at temperature=0. The variation occurs because:
+   111→
+   112→1. **Batch-size-dependent reduction order** — The same matrix operation (`torch.mm(a[:1], b)` vs `torch.mm(a, b)[:1]`) produces different results depending on batch size, even though the mathematical operation is identical
+   113→2. **Load-dependent batching** — Server load determines batch size, introducing runtime variation
+   114→3. **Kernel optimization switches** — Some kernels change algorithms (e.g., split-K) based on batch size
+   115→
+   116→**What doesn't fully explain it** (common misconceptions):
+   117→- Floating-point non-associativity alone (individual kernels can be deterministic)
+   118→- GPU thread scheduling (can be controlled)
+   119→- Sampling randomness (can be seeded)
+   120→
+   121→ThinkingMachines batch-invariant kernels eliminate these sources at a cost of ~1.6-2.1x performance overhead (1.6x with optimized attention kernel, 2.1x unoptimized).
+   122→
+   123→### 2.3 Cognitive Architectures
+   124→
+   125→Prior cognitive architectures (ACT-R, SOAR, LIDA) provide theoretical frameworks for cognitive modeling but lack:
+   126→
+   127→1. **Deterministic guarantees** — Behavior varies across runs
+   128→2. **Persistent composition** — State management is ad-hoc
+   129→3. **Lazy expertise loading** — All knowledge must be present
+   130→4. **Constitutional bounds** — Safety constraints are not first-class
+   131→
+   132→---
+   133→
+   134→## 3. Architecture Overview
+   135→
+   136→The USD Cognitive Substrate comprises two orthogonal hierarchies:
+   137→
+   138→```
+   139→┌─────────────────────────────────────────────────────────────────────────┐
+   140→│                      RUNTIME SERVICE STACK                               │
+   141→│  (Processing, Routing, Adaptation, Dispatch)                            │
+   142→│                                                                          │
+   143→│  R1: Application Layer ─── External apps reporting signals              │
+   144→│  R2: Intervention Dispatch ─── Expert → application-specific actions    │
+   145→│  R3: Signal Aggregator ─── Multi-source signal normalization            │
+   146→│  R4: Routing Engine ─── Expert selection + neuroplasticity              │
+   147→│  R5: Temporal Orchestrator ─── Session lifecycle + pattern learning     │
+   148→│  R6: Context Restorer ─── "Where was I?" continuity                     │
+   149→│                                                                          │
+   150→└─────────────────────────────────────────────────────────────────────────┘
+   151→                               ↕ reads/writes
+   152→┌─────────────────────────────────────────────────────────────────────────┐
+   153→│                      USD COMPOSITION HIERARCHY                           │
+   154→│  (State Storage with LIVRPS Resolution)                                 │
+   155→│                                                                          │
+   156→│  L13: current.usda ─────────────────────────────────── [LOCAL]          │
+   157→│  L12: snapshots/*.usda ─────────────────────────────── [LOCAL]          │
+   158→│  L11: daily/*.usda ─────────────────────────────────── [INHERITS]       │
+   159→│  L10: weekly/*.usda ────────────────────────────────── [INHERITS]       │
+   160→│  L9:  calibration.usda ─────────────────────────────── [REFERENCES]     │
+   161→│  L8:  profile.usda ─────────────────────────────────── [SPECIALIZES]    │
+   162→│  L7:  payloads/*.usda ──────────────────────────────── [PAYLOADS]       │
+   163→│                                                                          │
+   164→└─────────────────────────────────────────────────────────────────────────┘
+   165→```
+   166→
+   167→**Critical Design Decision:** USD provides storage and composition semantics. USD does NOT provide routing logic. The routing engine is a separate layer that reads from and writes to USD.
+   168→
+   169→---
+   170→
+   171→## 4. USD Composition Hierarchy
+   172→
+   173→### 4.1 Layer Definitions
+   174→
+   175→| Layer | USD Arc | Mutability | Contents |
+   176→|-------|---------|------------|----------|
+   177→| L13: current.usda | LOCAL | Mutable | Live session state: energy, momentum, expert_weights, active task |
+   178→| L12: snapshots/*.usda | LOCAL | Immutable | Context restoration points with task, cognitive, environmental state |
+   179→| L11: daily/*.usda | INHERITS | Append-only | Aggregated daily patterns, time-of-day weights |
+   180→| L10: weekly/*.usda | INHERITS | Append-only | Day-of-week patterns, weekly rhythms |
+   181→| L9: calibration.usda | REFERENCES | Slow-update | Long-term learned weight adjustments, temporal patterns |
+   182→| L8: profile.usda | SPECIALIZES | Immutable | Base traits, safety floors, constitutional constraints |
+   183→| L7: payloads/*.usda | PAYLOADS | Immutable | Domain specializations (ADHD, Anxiety, VFX, etc.) |
+   184→
+   185→### 4.2 LIVRPS Resolution
+   186→
+   187→**Figure 2: LIVRPS Composition Resolution**
+   188→
+   189→```
+   190→                    QUERY: "What is energy?"
+   191→                              │
+   192→                              ▼
+   193→┌─────────────────────────────────────────────────────────────────────┐
+   194→│  LIVRPS RESOLUTION ORDER (Strongest → Weakest)                      │
+   195→├─────────────────────────────────────────────────────────────────────┤
+   196→│                                                                     │
+   197→│  L: LOCAL ──────────────► current.usda ──────► energy = 0.3 ✓ WINS │
+   198→│     (highest priority)                                              │
+   199→│            │                                                        │
+   200→│            ▼ if not found                                           │
+   201→│  I: INHERITS ──────────► daily/*.usda ───────► (not set)           │
+   202→│            │                                                        │
+   203→│            ▼ if not found                                           │
+   204→│  V: VARIANTSETS ────────► mode_variants ─────► (not set)           │
+   205→│            │                                                        │
+   206→│            ▼ if not found                                           │
+   207→│  R: REFERENCES ─────────► calibration.usda ──► energy = 0.7        │
+   208→│            │                                                        │
+   209→│            ▼ if not found                                           │
+   210→│  P: PAYLOADS ───────────► adhd.usda ─────────► (not set)           │
+   211→│            │                                                        │
+   212→│            ▼ if not found                                           │
+   213→│  S: SPECIALIZES ────────► profile.usda ──────► energy = 0.5        │
+   214→│     (lowest priority)        (default)                              │
+   215→│                                                                     │
+   216→└─────────────────────────────────────────────────────────────────────┘
+   217→                              │
+   218→                              ▼
+   219→                    RESULT: energy = 0.3
+   220→                    (from LOCAL: current.usda)
+   221→```
+   222→
+   223→**Resolution Rule:** First layer with a defined value wins. Higher layers shadow lower layers without modifying them.
+   224→
+   225→**Exception:** Constitutional constraints in profile.usda (SPECIALIZES) cannot be overridden by any layer—they are protected by the substrate itself.
+   226→
+   227→### 4.3 State Schema (v7.0.0 — 44 Fields)
+   228→
+   229→```usda
+   230→def "CognitiveState" {
+   231→    # ═══════════════════════════════════════════════════════════════
+   232→    # CORE STATE (preserved from v5.0)
+   233→    # ═══════════════════════════════════════════════════════════════
+   234→
+   235→    # Continuous dimensions
+   236→    float energy = 0.7
+   237→    float cognitive_load = 0.4
+   238→    float focus_coherence = 0.8
+   239→
+   240→    # Discrete states
+   241→    string momentum = "building"  # cold_start|building|rolling|peak|declining|crashed
+   242→    string attractor = "convergent"  # convergent|divergent|recovery|transfer
+   243→
+   244→    # Routing weights (the Mycelium)
+   245→    float[] expert_weights = [0.15, 0.15, 0.10, 0.10, 0.10, 0.20, 0.20]
+   246→    # [Validator, Scaffolder, Restorer, Refocuser, Celebrator, Socratic, Direct]
+   247→
+   248→    # Safety constraints
+   249→    float[] safety_floors = [0.10, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0]
+   250→
+   251→    # Learning parameters
+   252→    float learning_rate = 0.1
+   253→    float weight_decay = 0.05
+   254→
+   255→    # ═══════════════════════════════════════════════════════════════
+   256→    # GROUNDING STATE (v7.0.0)
+   257→    # ═══════════════════════════════════════════════════════════════
+   258→
+   259→    string grounding_mode = "LEARN"  # LEARN | ACCESS | HYBRID
+   260→    int oracle_cache_age = 0  # seconds since last oracle query (0-86400)
+   261→    int evidence_chain_length = 0  # number of oracle results in chain
+   262→    float hallucination_score = 0.0  # 0.0=grounded, 1.0=speculation
+   263→    int last_oracle_latency = 0  # ms (0-10000)
+   264→    int grounding_budget = 5  # depletes like tangent_budget
+   265→    string[] active_oracles = []  # list of available oracle IDs
+   266→
+   267→    # ═══════════════════════════════════════════════════════════════
+   268→    # BCM STIGMERGIC STATE (v7.0.0)
+   269→    # ═══════════════════════════════════════════════════════════════
+   270→
+   271→    int bcm_trail_version = 0  # increments on trail update
+   272→    float[] bcm_expert_confidence = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]  # per-expert confidence
+   273→    bool bcm_plasticity_active = false  # plasticity window open?
+   274→    float bcm_plasticity_sigma = 0.0  # learning rate multiplier (0.0-1.0)
+   275→    string bcm_last_update = ""  # ISO timestamp
+   276→    string bcm_plasticity_trigger = ""  # which condition opened window
+   277→    string bcm_trail_checksum = ""  # for integrity verification
+   278→
+   279→    # ═══════════════════════════════════════════════════════════════
+   280→    # SIGNAL RELIABILITY (v7.0.0)
+   281→    # ═══════════════════════════════════════════════════════════════
+   282→
+   283→    float[] signal_reliability = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # per-category
+   284→    # [emotional, grounding, mode, domain, task, energy]
+   285→    int signal_total_outcomes = 0  # total tracked outcomes
+   286→    string last_fingerprint = ""  # JSON of last signal fingerprint
+   287→}
+   288→```
+   289→
+   290→**Field Count:** 37 (v5.0) → 44 (v7.0.0) — 7 new fields for grounding, BCM, and signal reliability.
+   291→
+   292→---
+   293→
+   294→## 5. Runtime Service Stack
+   295→
+   296→### 5.1 Signal Aggregator (R3)
+   297→
+   298→Collects signals from multiple applications with priority ordering:
+   299→
+   300→```
+   301→Priority  Category    Description
+   302→────────  ──────────  ─────────────────────────────
+   303→1         SAFETY      Requires immediate protective response
+   304→2         AFFECTIVE   Emotional state signals
+   305→3         MODE        Cognitive mode transitions
+   306→4         DOMAIN      Task-domain triggers (from payloads)
+   307→5         CONTENT     Informational/task content
+   308→```
+   309→
+   310→**Aggregation Rules:**
+   311→1. Temporal weighting (recent > old)
+   312→2. Safety signals bypass queue
+   313→3. Source trust weighting
+   314→4. Consensus detection (multiple sources = higher confidence)
+   315→5. Conflict resolution (higher category wins)
+   316→
+   317→### 5.2 Routing Engine (R4) — 8-Phase NEXUS Pipeline (v7.0.0)
+   318→
+   319→Eight-phase routing with deterministic properties and grounding support:
+   320→
+   321→**Figure 1: 8-Phase NEXUS Routing Flow (v7.0.0)**
+   322→
+   323→```
+   324→                            USER INPUT
+   325→                                │
+   326→                                ▼
+   327→┌───────────────────────────────────────────────────────────────────────┐
+   328→│  PHASE 0: RETRIEVE (Fast Path)                                        │
+   329→│  Knowledge check for factual queries → O(1) retrieval                 │
+   330→│  IF confidence ≥ 0.85: Return directly (skip phases 0b-5)             │
+   331→└───────────────────────────────────────────────────────────────────────┘
+   332→                                │
+   333→                                ▼
+   334→┌───────────────────────────────────────────────────────────────────────┐
+   335→│  PHASE 0b: CLASSIFY (v7.0.0 - Grounding)                              │
+   336→│  Determine source mode: LEARN | ACCESS | HYBRID                       │
+   337→│  Grounding signals: physics, simulate, position, velocity, collision  │
+   338→└───────────────────────────────────────────────────────────────────────┘
+   339→                                │
+   340→                                ▼
+   341→┌───────────────────────────────────────────────────────────────────────┐
+   342→│  PHASE 0c: GROUND (v7.0.0 - Oracle Query)                             │
+   343→│  IF source_mode ∈ {ACCESS, HYBRID}:                                   │
+   344→│    Query oracle registry → Execute deterministic query                │
+   345→│    Cache result with provenance (confidence = 1.0)                    │
+   346→└───────────────────────────────────────────────────────────────────────┘
+   347→                                │
+   348→                                ▼
+   349→┌───────────────────────────────────────────────────────────────────────┐
+   350→│  PHASE 1: DETECT (formerly ACTIVATE)                                  │
+   351→│  ┌─────────────┐    ┌──────────────────┐    ┌──────────────────────┐ │
+   352→│  │   Signal    │───▶│  PRISM + BCM     │───▶│  Activation Vector   │ │
+   353→│  │  "stuck"    │    │  Fingerprinting  │    │  [0,0.8,0,0,0,0.2,0] │ │
+   354→│  └─────────────┘    └──────────────────┘    └──────────────────────┘ │
+   355→└───────────────────────────────────────────────────────────────────────┘
+   356→                                │
+   357→                                ▼
+   358→┌───────────────────────────────────────────────────────────────────────┐
+   359→│  PHASE 2: CASCADE (formerly WEIGHT)                                   │
+   360→│  Safety gates → ADHD_MoE → GROUNDING_MoE → BCM confidence             │
+   361→│  activation × expert_weights × bcm_trail_modifier = weighted_scores   │
+   362→└───────────────────────────────────────────────────────────────────────┘
+   363→                                │
+   364→                                ▼
+   365→┌───────────────────────────────────────────────────────────────────────┐
+   366→│  PHASE 3: LOCK (formerly BOUND)                                       │
+   367→│  ┌────────────────────┐  ┌────────────────────┐  ┌────────────────┐  │
+   368→│  │  Safety Floors     │  │  Homeostatic Norm  │  │  Parameter +   │  │
+   369→│  │  max(w, floor)     │─▶│  w / sum(w) = 1.0  │─▶│  BCM Lock      │  │
+   370→│  │  Validator ≥ 0.10  │  │                    │  │  (no variance) │  │
+   371→│  └────────────────────┘  └────────────────────┘  └────────────────┘  │
+   372→└───────────────────────────────────────────────────────────────────────┘
+   373→                                │
+   374→                                ▼
+   375→┌───────────────────────────────────────────────────────────────────────┐
+   376→│  PHASE 4: EXECUTE (formerly SELECT)                                   │
+   377→│  expert = argmax(bounded_scores)                                      │
+   378→│  Tiebreaker: lower priority index wins                                │
+   379→│  Generate with locked params + oracle results (if grounded)           │
+   380→└───────────────────────────────────────────────────────────────────────┘
+   381→                                │
+   382→                                ▼
+   383→┌───────────────────────────────────────────────────────────────────────┐
+   384→│  PHASE 5: UPDATE (Mycelium + BCM + Plasticity)                        │
+   385→│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────────┐   │
+   386→│  │  Outcome    │───▶│  Hebbian +  │───▶│  BCM Trail Update       │   │
+   387→│  │  (0.0-1.0)  │    │  BCM Queue  │    │  (QUEUED, not applied)  │   │
+   388→│  └─────────────┘    └─────────────┘    └─────────────────────────┘   │
+   389→│  Plasticity auto-trigger check: momentum=CRASHED → open window       │
+   390→└───────────────────────────────────────────────────────────────────────┘
+   391→                                │
+   392→                                ▼
+   393→┌───────────────────────────────────────────────────────────────────────┐
+   394→│  [POST] FLUSH (v7.0.0 - BCM Batch-Invariance)                         │
+   395→│  Batch apply all queued trail updates AFTER processing completes     │
+   396→│  Ensures: same inputs → same routing (trails are metadata only)       │
+   397→└───────────────────────────────────────────────────────────────────────┘
+   398→                                │
+   399→                                ▼
+   400→                          EXPERT RESPONSE
+   401→```
+   402→
+   403→**Determinism Guarantee:** Each phase is individually deterministic. Given identical input signal and state, the routing produces identical expert selection. BCM trail updates are QUEUED and applied AFTER processing, ensuring batch-invariance.
+   404→
+   405→**Phase Details (v7.0.0):**
+   406→
+   407→```
+   408→Phase 0: RETRIEVE (Fast Path)
+   409→  Factual query detection ("what is", "explain", "define")
+   410→  O(1) knowledge graph lookup (~0.001ms)
+   411→  Confidence ≥ 0.85 → Return directly (skip remaining phases)
+   412→  Deterministic (fixed triggers, fixed graph structure)
+   413→
+   414→Phase 0b: CLASSIFY (Grounding)
+   415→  Detect grounding signals (physics, simulate, position, etc.)
+   416→  Determine source mode: LEARN | ACCESS | HYBRID
+   417→  Deterministic (fixed signal patterns)
+   418→
+   419→Phase 0c: GROUND (Oracle Query)
+   420→  If ACCESS/HYBRID: Query oracle registry
+   421→  Execute deterministic oracle (e.g., Houdini RBD, Bullet physics)
+   422→  Cache result with provenance
+   423→  Deterministic (oracle is bit-identical, cache is hash-based)
+   424→
+   425→Phase 1: DETECT
+   426→  Signal → PRISM Pattern Match → Activation Vector
+   427→  BCM signal fingerprint capture (QUEUED, not used in routing)
+   428→  Deterministic given fixed pattern dictionary (L0D)
+   429→
+   430→Phase 2: CASCADE
+   431→  Safety gates → ADHD_MoE → GROUNDING_MoE (if applicable)
+   432→  weighted = activation × expert_weights
+   433→  BCM confidence is METADATA ANNOTATION only (does NOT affect selection)
+   434→  Deterministic (element-wise multiplication)
+   435→
+   436→Phase 3: LOCK
+   437→  Apply safety floors (expert_weights >= safety_floors)
+   438→  Apply homeostatic limits (normalize to sum = 1)
+   439→  Lock parameters + grounding sources BEFORE generation
+   440→  Deterministic (fixed bounds, explicit locking)
+   441→
+   442→Phase 4: EXECUTE
+   443→  expert = argmax(bounded_weighted)
+   444→  Tiebreaker: lower index wins
+   445→  Generate using locked params + oracle results
+   446→  Deterministic
+   447→
+   448→Phase 5: UPDATE
+   449→  Hebbian learning, attractor dynamics, RC^+xi convergence
+   450→  BCM trail updates QUEUED (not applied during processing)
+   451→  Plasticity window check (CRASHED → open, CONVERGED → close)
+   452→  Deterministic given outcome
+   453→
+   454→[POST] FLUSH
+   455→  Apply queued BCM trail updates
+   456→  Apply fingerprint-outcome correlations
+   457→  Happens AFTER response delivered
+   458→  Ensures batch-invariance: same inputs → same routing
+   459→```
+   460→
+   461→### 5.3 Expert Archetypes
+   462→
+   463→Domain-agnostic expert types (ADHD_MoE - first match wins):
+   464→
+   465→| Priority | Expert | Purpose | Safety Floor |
+   466→|----------|--------|---------|--------------|
+   467→| 1 | Validator | Safety-first, empathy, emotional validation | 0.10 (hard) |
+   468→| 2 | Scaffolder | Break down complexity, reduce scope | 0.05 (hard) |
+   469→| 3 | Restorer | Recovery facilitation, energy restoration | 0.05 (hard) |
+   470→| 4 | Refocuser | Attention management, tangent redirect | 0.00 |
+   471→| 5 | Celebrator | Progress recognition, milestone acknowledgment | 0.00 |
+   472→| 6 | Socratic | Discovery facilitation, guided exploration | 0.00 |
+   473→| 7 | Direct | Direct task execution, minimal intervention | 0.00 |
+   474→
+   475→**First match wins.** Safety experts are always checked first regardless of activation strength.
+   476→
+   477→### 5.4 GROUNDING_MoE (v7.0.0)
+   478→
+   479→When grounding signals are detected (Phase 0b), route to these specialists (first match wins):
+   480→
+   481→| Priority | Expert | Triggers | Response |
+   482→|----------|--------|----------|----------|
+   483→| 1 | **OracleResolver** | oracle_conflict, mismatch | Reconcile multiple oracle sources |
+   484→| 2 | **EvidenceBuilder** | cite_needed, source_request | Build evidence chain from oracle |
+   485→| 3 | **ConfidenceAdj** | hallucination_detected | Adjust confidence, flag uncertainty |
+   486→| 4 | **AccessGatekeeper** | oracle_required, fresh_need | Route query to grounding layer |
+   487→
+   488→**Source Mode Router:**
+   489→
+   490→```
+   491→Mode     When                                  Behavior
+   492→───────  ────────────────────────────────────  ────────────────────────────────
+   493→LEARN    No oracle, reasoning required         Use LLM inference (default)
+   494→ACCESS   Oracle available, ground truth exists Route to oracle, trust result
+   495→HYBRID   Oracle + interpretation needed        Query oracle, then reason about result
+   496→```
+   497→
+   498→**Grounding Signals (Auto-Detection):**
+   499→
+   500→| Signal Pattern | Detected Mode | Example |
+   501→|----------------|---------------|---------|
+   502→| "where is X at time T" | ACCESS | "Where is the ball at frame 48?" |
+   503→| "will X hit Y" | ACCESS | "Will the ball hit the ground?" |
+   504→| "how fast is X moving" | ACCESS | "What's the ball's velocity?" |
+   505→| "predict X over time" | ACCESS | "Trace the ball's trajectory" |
+   506→| "why did X happen" | HYBRID | "Why did the ball bounce higher?" |
+   507→| "what should I do about X" | LEARN | "How should I fix this physics bug?" |
+   508→
+   509→### 5.5 Intervention Dispatch (R2)
+   510→
+   511→Translates expert recommendations to application-specific interventions:
+   512→
+   513→| Strategy | Behavior | Experts |
+   514→|----------|----------|---------|
+   515→| COORDINATED | All applications respond | Validator |
+   516→| EXCLUSIVE | Foreground application only | Scaffolder, Celebrator, Socratic, Direct |
+   517→| ENVIRONMENTAL | Background applications | Restorer |
+   518→| CASCADING | Primary + environment | Refocuser |
+   519→
+   520→**Adapter Pattern:** Each application registers an adapter that composes interventions for its modality (text, environment changes, notifications).
+   521→
+   522→### 5.5 Temporal Orchestrator (R5)
+   523→
+   524→Manages session lifecycle and cross-session learning:
+   525→
+   526→**Aggregation Chain:**
+   527→```
+   528→Sessions → Daily (weighted by duration × outcome)
+   529→Daily → Weekly (day-of-week patterns)
+   530→Weekly → Calibration (long-term adjustments)
+   531→```
+   532→
+   533→**Learning Rates:**
+   534→```
+   535→Within session:  α = 0.10  (fast adaptation)
+   536→Session → Daily: α = 0.05  (moderate)
+   537→Daily → Weekly:  α = 0.02  (slow)
+   538→Weekly → Calib:  α = 0.01  (very slow)
+   539→```
+   540→
+   541→### 5.6 Context Restorer (R6)
+   542→
+   543→Enables session continuity with staleness-aware restoration:
+   544→
+   545→| Staleness | Duration | Restoration Protocol |
+   546→|-----------|----------|---------------------|
+   547→| MICRO | <15 min | Silent refocus |
+   548→| SESSION | 15min-4h | Rebuild momentum, offer environment restore |
+   549→| DAY | 4-16h | Morning restoration, validate relevance |
+   550→| WEEK | 3-10d | Require validation, describe environment |
+   551→| DEEP | >10d | May be obsolete, offer fresh start |
+   552→
+   553→**Snapshot Contents:**
+   554→- Task state (active, completed, pending, intended next)
+   555→- Cognitive state (energy, momentum, weights, attractor)
+   556→- Environmental state (files, tabs, cursor position)
+   557→- Anchors (decisions made, insights discovered, open questions)
+   558→
+   559→---
+   560→
+   561→## 6. The Mycelium Mechanism
+   562→
+   563→The Mycelium is the substrate's neuroplasticity system—how it learns and adapts while maintaining safety guarantees.
+   564→
+   565→### 6.1 Architecture
+   566→
+   567→```
+   568→┌─────────────────────────────────────────────────────────────────┐
+   569→│                     HARD BOUNDS (Immutable)                      │
+   570→│                                                                  │
+   571→│  Safety Floors: expert_weights >= safety_floors                 │
+   572→│  Homeostatic Limits: energy ∈ [0,1], sum(weights) = 1          │
+   573→│  Constitutional Constraints: Never overridden                   │
+   574→│                                                                  │
+   575→│                          ↓ constrains                            │
+   576→│                                                                  │
+   577→│  ┌───────────────────────────────────────────────────────────┐  │
+   578→│  │           DYNAMIC ADAPTATION (Within Bounds)               │  │
+   579→│  │                                                            │  │
+   580→│  │  Hebbian Learning + Attractor Dynamics + Homeostasis      │  │
+   581→│  │                                                            │  │
+   582→│  └───────────────────────────────────────────────────────────┘  │
+   583→│                          ↑ receives                              │
+   584→│                                                                  │
+   585→│  ┌───────────────────────────────────────────────────────────┐  │
+   586→│  │              ACTIVATION SPREADING (Input)                  │  │
+   587→│  └───────────────────────────────────────────────────────────┘  │
+   588→│                                                                  │
+   589→└─────────────────────────────────────────────────────────────────┘
+   590→```
+   591→
+   592→### 6.2 Rebalancing Avenues
+   593→
+   594→**Avenue 1: Activation Spreading**
+   595→
+   596→Signals spread activation across the expert network:
+   597→
+   598→```
+   599→Signal: "frustrated"
+   600→Activation: Validator=0.8, Scaffolder=0.3, Restorer=0.4, ...
+   601→```
+   602→
+   603→The spreading function is fixed; learned associations are stored in USD.
+   604→
+   605→**Avenue 2: Hebbian Learning**
+   606→
+   607→Routes that lead to positive outcomes strengthen:
+   608→
+   609→```
+   610→w_new = w_old + α(outcome - expected) × activation
+   611→```
+   612→
+   613→Where:
+   614→- α = learning rate (from calibration)
+   615→- outcome = measured result [-1, 1]
+   616→- expected = baseline expectation
+   617→- activation = how strongly this expert was used
+   618→
+   619→**Avenue 3: Attractor Dynamics**
+   620→
+   621→State vectors have gravity toward attractor basins:
+   622→
+   623→```
+   624→Basins: convergent, divergent, recovery, transfer
+   625→
+   626→State vector: [energy, momentum, load, coherence]
+   627→Distance to each basin computed
+   628→Weights drift toward nearest basin's optimal configuration
+   629→Transition thresholds prevent oscillation
+   630→```
+   631→
+   632→**Avenue 4: Homeostatic Regulation**
+   633→
+   634→System maintains equilibrium:
+   635→
+   636→```
+   637→IF energy_spent > energy_recovered for N exchanges:
+   638→   → Increase Restorer weight
+   639→
+   640→IF focus_coherence declining:
+   641→   → Increase Refocuser weight
+   642→
+   643→IF cognitive_load > threshold:
+   644→   → Increase Scaffolder weight
+   645→```
+   646→
+   647→### 6.3 Bound Enforcement
+   648→
+   649→All dynamic adaptation is constrained:
+   650→
+   651→1. Safety floors are hard minimums
+   652→2. Weights are normalized after every update
+   653→3. Constitutional constraints cannot be violated
+   654→4. Learning cannot exceed rate limits
+   655→
+   656→### 6.4 Formal Mathematical Specification
+   657→
+   658→**Definition 1 (Weight Space)**
+   659→Let W = {w ∈ ℝ^7 | w_i ≥ f_i ∀i ∈ [1,7], Σw_i = 1}
+   660→where f = [0.10, 0.05, 0.05, 0, 0, 0, 0] are safety floors.
+   661→
+   662→**Definition 2 (Activation Function)**
+   663→A: T × C → ℝ^7 where T is task space, C is context space.
+   664→A(t, c)_i = min(|{p ∈ triggers_i : p ⊆ t}| / |triggers_i|, 1.0)
+   665→
+   666→**Definition 3 (Hebbian Update)**
+   667→U: W × ℝ × ℝ^7 → W
+   668→U(w, o, a)_i = clip(w_i + α(o - e)a_i, f_i, 1.0) / Z
+   669→where Z normalizes to sum=1, α ∈ (0, 0.2], o ∈ [-1, 1], e = 0.5
+   670→
+   671→**Theorem 1 (Safety Floor Invariant)**
+   672→∀w ∈ W, ∀o, a: U(w, o, a) ∈ W
+   673→*Proof*: By construction, clip enforces w_i ≥ f_i, and Z normalizes sum to 1. ∎
+   674→
+   675→**Theorem 2 (Bounded Learning)**
+   676→|U(w, o, a)_i - w_i| ≤ α × max(|o - e|) × max(||a||_∞) ≤ 0.2 × 1 × 1 = 0.2
+   677→*Proof*: By definition of clip and bounds on α, o, a. ∎
+   678→
+   679→**Theorem 3 (Convergence)**
+   680→Under stationary outcome distribution, w converges to E[o × a] / Σ_i E[o × a_i].
+   681→*Proof sketch*: Standard Hebbian convergence with decay. Full proof in Appendix D.
+   682→
+   683→### 6.5 BCM Stigmergic Reinforcement Learning (v7.0.0)
+   684→
+   685→**Core Principle: "Trails, Not Orders"**
+   686→
+   687→BCM (Bienenstock-Cooper-Munro) learning provides metadata about expert effectiveness but NEVER changes the deterministic routing order. This maintains ThinkingMachines batch-invariance.
+   688→
+   689→**Trail-Based Expert Confidence:**
+   690→
+   691→Each expert has a Trail tracking success rates:
+   692→
+   693→```python
+   694→class OrchestraTrail:
+   695→    expert_id: str
+   696→    strength: float  # 0.01 - 100.0 (pheromone-like)
+   697→    success_rate: float  # 0.0 - 1.0
+   698→    total_outcomes: int
+   699→    successful_outcomes: int
+   700→
+   701→    @property
+   702→    def confidence(self) -> float:
+   703→        return 0.6 * self.success_rate + 0.4 * (self.strength / 100.0)
+   704→```
+   705→
+   706→**BCM Saturation (Homeostasis):**
+   707→
+   708→The sliding threshold θ_m decreases as activity increases, preventing unbounded growth:
+   709→
+   710→```
+   711→θ_m(t) = θ_m(t-1) × decay_factor + (1 - decay_factor) × recent_activity
+   712→saturation_factor = 1 / (1 + exp(-(strength - θ_m) / temperature))
+   713→update = base_update × saturation_factor
+   714→```
+   715→
+   716→**Time-Based Decay:**
+   717→
+   718→Trail strength decays exponentially with a 2-hour half-life:
+   719→
+   720→```
+   721→decay = exp(-time_elapsed / half_life)
+   722→new_strength = old_strength × decay
+   723→```
+   724→
+   725→**ThinkingMachines Compliance (CRITICAL):**
+   726→
+   727→```
+   728→✓ Trail updates QUEUED during processing (Phase 5)
+   729→✓ Queued updates applied AFTER response delivered ([POST] FLUSH)
+   730→✓ Same inputs → same routing (trails are metadata only)
+   731→✓ BCM confidence annotates decisions, does NOT affect selection order
+   732→✓ Batch-invariant: routing identical regardless of trail state
+   733→```
+   734→
+   735→### 6.6 Plasticity Auto-Triggers (v7.0.0)
+   736→
+   737→Plasticity windows open/close automatically based on cognitive state:
+   738→
+   739→| Condition | Action | Effect |
+   740→|-----------|--------|--------|
+   741→| momentum=CRASHED + burnout≥ORANGE | Open plasticity | Learning rate × 2 |
+   742→| burnout=RED | Open plasticity | Learning rate × 1.5 |
+   743→| converged + stable_exchanges ≥ 3 | Close plasticity | Normal learning |
+   744→
+   745→**Plasticity State Schema:**
+   746→
+   747→```python
+   748→sigma: float  # 0.0 - 1.0, learning rate multiplier
+   749→window_trigger: str  # Which condition opened window
+   750→window_opened_at: datetime
+   751→```
+   752→
+   753→**Applied in Phase 5 (UPDATE):**
+   754→
+   755→```
+   756→effective_learning_rate = base_rate × (1 + sigma × plasticity_multiplier)
+   757→```
+   758→
+   759→### 6.7 Signal Reliability Tracking (v7.0.0)
+   760→
+   761→**Signal Fingerprinting:**
+   762→
+   763→Compact capture of primary signal per category:
+   764→
+   765→```python
+   766→fingerprint = {
+   767→    "emotional": "frustrated",  # Primary emotional signal
+   768→    "task": "debug",           # Primary task signal
+   769→    "grounding": None          # No grounding signal
+   770→}
+   771→```
+   772→
+   773→**Reliability Score:**
+   774→
+   775→```
+   776→reliability = successful_outcomes / total_outcomes
+   777→lookback_window = 50  # Recent outcomes only
+   778→default = 1.0  # Until evidence suggests otherwise
+   779→```
+   780→
+   781→**Purpose:** Correlation between signal fingerprints and routing outcomes enables predictive confidence adjustment.
+   782→
+   783→### 6.8 Worked Example: Complete Routing Trace
+   784→
+   785→**User Input**: "I'm completely stuck on this architecture decision and feeling overwhelmed"
+   786→
+   787→**Step 1: Signal Detection**
+   788→```
+   789→Pattern matching:
+   790→- "stuck" → Scaffolder trigger ✓
+   791→- "overwhelmed" → Validator trigger ✓
+   792→
+   793→Activation vector A(task):
+   794→  Validator:    1/8 triggers = 0.125 (but "overwhelmed" strong signal)
+   795→  Scaffolder:   1/8 triggers = 0.125 (but "stuck" strong signal)
+   796→  [others]:     0/n triggers = 0.000
+   797→```
+   798→
+   799→**Step 2: Weight Calculation**
+   800→```
+   801→Current weights w: [0.15, 0.15, 0.10, 0.10, 0.10, 0.20, 0.20]
+   802→Activations a:     [0.80, 0.30, 0.00, 0.00, 0.00, 0.00, 0.00]
+   803→Weighted w×a:      [0.12, 0.05, 0.00, 0.00, 0.00, 0.00, 0.00]
+   804→```
+   805→
+   806→**Step 3: Safety Floor Enforcement (BOUND phase)**
+   807→```
+   808→Pre-floor:   [0.12, 0.05, 0.00, 0.00, 0.00, 0.00, 0.00]
+   809→Floors:      [0.10, 0.05, 0.05, 0.00, 0.00, 0.00, 0.00]
+   810→Check:       [✓,    ✓,    ✗,    ✓,    ✓,    ✓,    ✓]
+   811→Post-floor:  [0.12, 0.05, 0.05, 0.00, 0.00, 0.00, 0.00]
+   812→Normalized:  [0.55, 0.23, 0.23, 0.00, 0.00, 0.00, 0.00]
+   813→```
+   814→
+   815→**Step 4: Selection (SELECT phase)**
+   816→```
+   817→Winner: Validator (0.55)
+   818→Tiebreaker: N/A (clear winner)
+   819→```
+   820→
+   821→**Step 5: Response Generation**
+   822→```
+   823→Expert: Validator
+   824→Response: "I notice you're feeling stuck and overwhelmed. Let's pause
+   825→          the architecture decision and address how you're feeling first.
+   826→          What's the main source of the overwhelm?"
+   827→```
+   828→
+   829→**Step 6: Outcome & Learning (UPDATE phase)**
+   830→```
+   831→User feedback: +0.8 (helpful response)
+   832→Hebbian update: w_validator += 0.1 × (0.8 - 0.5) × 0.8 = +0.024
+   833→New weights: [0.174, 0.15, 0.10, ...] → normalize → [0.18, 0.15, ...]
+   834→```
+   835→
+   836→---
+   837→
+   838→## 7. Multi-Agent Composition: The Mycelium Arc
+   839→
+   840→### 7.1 The Problem
+   841→
+   842→LIVRPS provides vertical composition (layers override layers). Multi-agent systems require horizontal composition (agents share state).
+   843→
+   844→### 7.2 The Mycelium Arc
+   845→
+   846→A new composition arc with peer-to-peer semantics:
+   847→
+   848→```usda
+   849→def "AgentB" (
+   850→    mycelium = </AgentA>
+   851→) {
+   852→    # FLOWS through mycelium:
+   853→    float momentum_phase      # Inherited unless locally overridden
+   854→    float epistemic_tension   # Additive (tensions compound)
+   855→    string attractor_basin    # Inherited unless divergent
+   856→
+   857→    # SAFETY-MAX through mycelium:
+   858→    string burnout_level      # MAX(AgentA, AgentB) - conservative
+   859→
+   860→    # DOES NOT FLOW:
+   861→    string[] files_read       # Agent-specific context
+   862→    int message_count         # Agent-specific
+   863→}
+   864→```
+   865→
+   866→**Key Semantic:** Burnout takes MAX, not override. Safety is never diluted by handoff.
+   867→
+   868→### 7.3 Dynamic Resource Routing
+   869→
+   870→The Mycelium arc enables bidirectional flow based on need:
+   871→
+   872→```
+   873→Agent A (exploring, high momentum) ←→ Agent B (implementing, cold start)
+   874→        └── momentum flows TO Agent B
+   875→        └── tangent budget flows FROM Agent B (it needs focus)
+   876→```
+   877→
+   878→---
+   879→
+   880→## 8. Grounding Layer (L7.5) — v7.0.0
+   881→
+   882→The Grounding Layer implements the "ACCESS over LEARN" paradigm from the Grounded World Model research.
+   883→
+   884→### 8.1 Core Thesis
+   885→
+   886→> **LLMs don't need to LEARN [X]—they need ACCESS to [X].**
+   887→>
+   888→> This thesis generalizes beyond physics: For any domain with reliable oracles,
+   889→> accessing ground truth is superior to learning approximations.
+   890→
+   891→### 8.2 Experimental Validation
+   892→
+   893→| Experiment | Domain | Oracle | Result |
+   894→|------------|--------|--------|--------|
+   895→| RBD Verification | Physics | Houdini RBD | 710/710 determinism (100%) |
+   896→| Experiment 1 | Constraint Satisfaction | Backtracking Solver | 10/10 determinism (hash: fc23a00c926e) |
+   897→| Experiment 2 | USD Unity | LIVRPS Composition | 10/10 determinism (hash: e89e5138077c) |
+   898→
+   899→**Experiment 1 Key Finding**: Graph coloring (NP-complete) — LEARN mode produces 3 violations, ACCESS mode finds valid 3-coloring. Proves ACCESS paradigm generalizes to combinatorics.
+   900→
+   901→**Experiment 2 Key Finding**: USD composition semantics provide identical deterministic resolution for cognitive state AND physical world state. 32/32 edge cases passing, 1.85ms average latency.
+   902→
+   903→### 8.3 Architecture
+   904→
+   905→```
+   906→┌─────────────────────────────────────────────────────────────────┐
+   907→│                    GROUNDING LAYER (L7.5)                       │
+   908→├─────────────────────────────────────────────────────────────────┤
+   909→│                                                                 │
+   910→│   Query → Source Router → ACCESS?                               │
+   911→│                              ↓ Yes                              │
+   912→│                         Oracle Registry → Query Oracle          │
+   913→│                              ↓                                  │
+   914→│                         Evidence Warehouse (cache + provenance) │
+   915→│                              ↓                                  │
+   916→│                         Return deterministic result             │
+   917→│                                                                 │
+   918→│                              ↓ No (LEARN mode)                  │
+   919→│                         Continue to LLM inference               │
+   920→│                                                                 │
+   921→└─────────────────────────────────────────────────────────────────┘
+   922→```
+   923→
+   924→### 8.4 Oracle Registry
+   925→
+   926→Registered oracles provide deterministic ground truth:
+   927→
+   928→| Oracle ID | Domain | Latency | Determinism |
+   929→|-----------|--------|---------|-------------|
+   930→| `houdini_rbd` | Physics (RBD) | ~26ms | 100% |
+   931→| `bullet_physics` | Collision | ~15ms | 100% |
+   932→| `knowledge_graph` | Facts | ~0.001ms | 100% |
+   933→| `backtrack_solver` | Constraint Satisfaction | ~5ms | 100% |
+   934→
+   935→**Fallback Chain**: Oracle (ACCESS) → Cache (if fresh) → Knowledge (RETRIEVE) → LLM (LEARN)
+   936→
+   937→### 8.5 Evidence Warehouse
+   938→
+   939→When ACCESS mode returns oracle results, evidence is tracked:
+   940→
+   941→```
+   942→evidence_chain: [
+   943→  {source: "houdini_rbd", query: "position(ball, 48)", result: "Vec3(0,1,0)", timestamp: T}
+   944→]
+   945→provenance: oracle_id + query_hash + timestamp
+   946→confidence: 1.0 (oracle is authoritative)
+   947→```
+   948→
+   949→### 8.6 Determinism Guarantees
+   950→
+   951→```
+   952→Theorem: Grounded queries produce deterministic results.
+   953→
+   954→Proof:
+   955→1. Oracle is deterministic (e.g., Bullet physics with fixed seed)
+   956→2. Query translation is deterministic (fixed prompt, temperature=0)
+   957→3. Cache lookup is deterministic (hash-based)
+   958→4. Composition of deterministic functions is deterministic ∎
+   959→
+   960→Empirical validation: 710/710 queries (100%) bit-identical across sessions
+   961→```
+   962→
+   963→### 8.7 Hallucination Detection
+   964→
+   965→When NOT in ACCESS mode, monitor for hallucination signals:
+   966→
+   967→| Signal | Detection | Action |
+   968→|--------|-----------|--------|
+   969→| Physics claim without oracle | "The ball will land at X" (no query) | Flag, suggest ACCESS |
+   970→| Confidence mismatch | High confidence on ungrounded claim | Reduce confidence, caveat |
+   971→| Oracle contradiction | LLM output conflicts with cached oracle | Use oracle, note discrepancy |
+   972→
+   973→### 8.8 USD Unity (Unified State Description)
+   974→
+   975→The Grounding Layer achieves a conceptual unification:
+   976→
+   977→```
+   978→┌─────────────────────────────────────────────────────────────────┐
+   979→│                USD AS UNIVERSAL STATE DESCRIPTION               │
+   980→├─────────────────────────────────────────────────────────────────┤
+   981→│                                                                 │
+   982→│   USD (Pixar)        Cognitive Substrate    Grounded World Model│
+   983→│   ─────────────────────────────────────────────────────────────│
+   984→│   Scene Graph    →   Cognitive Architecture → World State Graph │
+   985→│   Prims          →   State Fields          → Physical Objects  │
+   986→│   Attributes     →   Parameters            → Position/Velocity │
+   987→│   Composition    →   Priority Resolution   → Oracle > Inference│
+   988→│   Layers         →   Subsystems (L0-L13)   → Evidence Layers   │
+   989→│   Payloads       →   Domain Knowledge      → Simulation Results│
+   990→│   Variants       →   Mode Switching        → LEARN/ACCESS/HYBRID│
+   991→│                                                                 │
+   992→└─────────────────────────────────────────────────────────────────┘
+   993→```
+   994→
+   995→**LIVRPS Composition Order** (Oracle overrides Cognitive):
+   996→```
+   997→LOCAL       → Oracle results (HIGHEST - wins on conflict)
+   998→INHERITS    → Grounding context
+   999→VARIANTS    → Source mode switching
+  1000→REFERENCES  → Cache state
+  1001→PAYLOADS    → Oracle registry
+  1002→SPECIALIZES → Cognitive base state (LOWEST)
+  1003→```
+  1004→
+  1005→---
+  1006→
+  1007→## 9. Determinism Analysis
+  1008→
+  1009→**Figure 3: Determinism Boundary**
+  1010→
+  1011→```
+  1012→┌─────────────────────────────────────────────────────────────────────────────┐
+  1013→│                         STOCHASTIC (Irreducible)                            │
+  1014→│                              Human Agency                                   │
+  1015→│  ┌─────────────────┐                              ┌─────────────────┐      │
+  1016→│  │   USER INPUT    │                              │  USER RESPONSE  │      │
+  1017→│  │  (what they     │                              │  (how they      │      │
+  1018→│  │   type)         │                              │   react)        │      │
+  1019→│  └────────┬────────┘                              └────────▲────────┘      │
+  1020→│           │                                                │               │
+  1021→└───────────┼────────────────────────────────────────────────┼───────────────┘
+  1022→            │                                                │
+  1023→            ▼                                                │
+  1024→┌───────────────────────────────────────────────────────────────────────────┐
+  1025→│                    DETERMINISTIC (With ThinkingMachines)                   │
+  1026→│  ┌─────────────────────────────────────────────────────────────────────┐  │
+  1027→│  │                                                                     │  │
+  1028→│  │   Signal      5-Phase       Expert        LLM         State        │  │
+  1029→│  │  Detection → Routing   →  Selection  → Generation → Update        │  │
+  1030→│  │                                                                     │  │
+  1031→│  │  ✓ Pattern    ✓ ACTIVATE   ✓ argmax     ✓ Batch-    ✓ USD         │  │
+  1032→│  │    match      ✓ WEIGHT     ✓ tiebreak     invariant   compose     │  │
+  1033→│  │  ✓ L0D dict   ✓ BOUND                     kernels                 │  │
+  1034→│  │               ✓ SELECT                                             │  │
+  1035→│  │               ✓ UPDATE                                             │  │
+  1036→│  │                                                                     │  │
+  1037→│  └─────────────────────────────────────────────────────────────────────┘  │
+  1038→│                                                                           │
+  1039→│  GUARANTEE: Same input + Same state → Same output + Same state update     │
+  1040→│                                                                           │
+  1041→└───────────────────────────────────────────────────────────────────────────┘
+  1042→```
+  1043→
+  1044→The architecture isolates all stochasticity to human agency boundaries. Everything between user input and user response is deterministic when using ThinkingMachines batch-invariant kernels.
+  1045→
+  1046→### 8.1 Stochastic Boundaries
+  1047→
+  1048→Without batch-invariant inference:
+  1049→
+  1050→| Step | Component | Deterministic? |
+  1051→|------|-----------|----------------|
+  1052→| 1 | User input | NO (human) |
+  1053→| 2 | Signal detection (pattern) | YES |
+  1054→| 2 | Signal detection (semantic) | NO (LLM variance) |
+  1055→| 3-6 | Routing core | YES |
+  1056→| 7 | LLM generation | NO (batch variance) |
+  1057→| 8 | User response | NO (human) |
+  1058→| 9 | Outcome detection | PARTIAL |
+  1059→| 10 | State update | YES |
+  1060→
+  1061→### 8.2 With ThinkingMachines
+  1062→
+  1063→ThinkingMachines provides batch-invariant kernels that guarantee identical outputs regardless of batch size:
+  1064→
+  1065→| Operation | Batch-Invariant Strategy | Performance Cost |
+  1066→|-----------|-------------------------|------------------|
+  1067→| **RMSNorm** | Data-parallel: assign each batch element to one core, maintaining identical reduction order regardless of batch size | Minimal |
+  1068→| **Matrix Multiplication** | Fixed tensor-core instructions and tile sizes across all batch sizes; avoid split-K optimization | ~20% vs cuBLAS |
+  1069→| **Attention** | Fixed split-SIZE (not split-count) for KV dimension; reduction order for a given token doesn't depend on batch | Optimized: 1.6x total |
+  1070→
+  1071→**Key Implementation Detail**: KV cache and page tables must be updated before the attention kernel to maintain consistent memory layout regardless of token processing strategy.
+  1072→
+  1073→**Result:** All LLM-dependent operations become deterministic. The same request produces identical output whether batch=1 or batch=1000.
+  1074→
+  1075→| Step | Component | Deterministic? |
+  1076→|------|-----------|----------------|
+  1077→| 1 | User input | NO (human - irreducible) |
+  1078→| 2 | Signal detection | YES (batch-invariant) |
+  1079→| 3-6 | Routing core | YES |
+  1080→| 7 | LLM generation | YES (batch-invariant) |
+  1081→| 8 | User response | NO (human - irreducible) |
+  1082→| 9 | Outcome detection | YES (batch-invariant) |
+  1083→| 10 | State update | YES |
+  1084→
+  1085→### 8.3 Reproducibility Contract
+  1086→
+  1087→```
+  1088→GIVEN:
+  1089→  1. Identical user input string
+  1090→  2. Identical USD state
+  1091→  3. Identical timestamp
+  1092→  4. Same model version
+  1093→  5. Same hardware configuration
+  1094→
+  1095→GUARANTEE:
+  1096→  ✓ Identical signal detection
+  1097→  ✓ Identical routing decision
+  1098→  ✓ Identical LLM response
+  1099→  ✓ Identical state update
+  1100→  ✓ Identical checksum
+  1101→
+  1102→STOCHASTIC (Irreducible):
+  1103→  - What the user types
+  1104→  - How the user responds
+  1105→```
+  1106→
+  1107→### 8.4 Requirements for Full Determinism
+  1108→
+  1109→| Requirement | Purpose |
+  1110→|-------------|---------|
+  1111→| L0D Specification | Fixed pattern dictionary, activation matrix, tiebreakers |
+  1112→| Canonical Prompt Templates | Same expert + context → same prompt |
+  1113→| Fixed Model Version | Model updates change behavior |
+  1114→| Fixed Hardware Config | Per ThinkingMachines limitation |
+  1115→| Canonical State Serialization | Deterministic USD → string |
+  1116→| ThinkingMachines Kernels | Batch-invariant inference (~1.6x overhead) |
+  1117→
+  1118→### 8.5 Failure Modes and Recovery
+  1119→
+  1120→The system is designed to fail gracefully:
+  1121→
+  1122→| Failure Mode | Cause | Detection | Recovery |
+  1123→|--------------|-------|-----------|----------|
+  1124→| **FM1: State Corruption** | Disk failure, concurrent write | Checksum mismatch | Load previous snapshot; reset to calibration if all corrupted |
+  1125→| **FM2: Signal Conflict** | "frustrated" + "just do it" | Multiple high activations | Priority ordering (Protector wins) |
+  1126→| **FM3: Weight Explosion** | Extreme outcomes without decay | Any w_i > 0.95 | Apply decay, re-normalize |
+  1127→| **FM4: ThinkingMachines Unavailable** | Fallback to standard inference | Batch-invariance check fails | Mark session non-reproducible, increase logging |
+  1128→| **FM5: Cold Start** | New user, no history | Uniform weights detected | Calibration wizard for initial preferences |
+  1129→
+  1130→**Recovery Hierarchy:**
+  1131→1. Attempt operation with current state
+  1132→2. Load most recent valid snapshot
+  1133→3. Reset to calibration defaults
+  1134→4. Reset to profile defaults (constitutional constraints only)
+  1135→
+  1136→**Safety Invariant:** At no point in the recovery hierarchy can safety floors be violated.
+  1137→
+  1138→---
+  1139→
+  1140→## 9. Payload Architecture
+  1141→
+  1142→### 9.1 Design Principle
+  1143→
+  1144→The core substrate is neurotype-agnostic and domain-agnostic. Specializations are loaded as payloads that adjust weights and add signals.
+  1145→
+  1146→### 9.2 Payload Structure
+  1147→
+  1148→```usda
+  1149→def "ADHDPayload" {
+  1150→    # Weight adjustments
+  1151→    float[] weight_adjustments = [0.0, +0.05, +0.05, +0.03, 0.0, 0.0, -0.03]
+  1152→    # Increase Scaffolder, Restorer, Refocuser; decrease Direct
+  1153→
+  1154→    # Floor adjustments
+  1155→    float scaffolder_floor = 0.10  # Raised from 0.05
+  1156→
+  1157→    # Added signals
+  1158→    string[] additional_signals = [
+  1159→        "time_blindness",
+  1160→        "hyperfocus_detection",
+  1161→        "working_memory_overflow"
+  1162→    ]
+  1163→
+  1164→    # Parameter adjustments
+  1165→    float tangent_budget = 3.0  # Reduced from 5.0
+  1166→}
+  1167→```
+  1168→
+  1169→### 9.3 Available Payloads
+  1170→
+  1171→| Payload | Adjustments |
+  1172→|---------|-------------|
+  1173→| ADHD | Higher Scaffolder/Restorer floors, time signals, reduced tangent budget |
+  1174→| Anxiety | Higher Validator floor, uncertainty signals, slower state transitions |
+  1175→| Autism | Higher Direct preference, routine disruption signals, explicit communication |
+  1176→| VFX Domain | Domain triggers (usd, houdini, render), specialized expertise |
+  1177→| WebDev Domain | Domain triggers (react, next, api), specialized expertise |
+  1178→
+  1179→---
+  1180→
+  1181→## 10. Implementation
+  1182→
+  1183→### 10.1 Python SDK Interface
+  1184→
+  1185→```python
+  1186→from cognitive_substrate import Substrate, Signal
+  1187→
+  1188→# Initialize
+  1189→substrate = Substrate(storage_path="~/.cognitive/state.usda")
+  1190→substrate.load_payload("adhd")
+  1191→
+  1192→# Signal reporting
+  1193→substrate.signal(Signal(
+  1194→    category="affective",
+  1195→    content="frustrated",
+  1196→    source="claude_code"
+  1197→))
+  1198→
+  1199→# Get routing
+  1200→expert = substrate.route()  # Deterministic
+  1201→
+  1202→# Report outcome
+  1203→substrate.outcome(expert=expert, result=0.7)
+  1204→
+  1205→# State persists to USD automatically
+  1206→```
+  1207→
+  1208→### 10.2 Multi-Application Integration
+  1209→
+  1210→```python
+  1211→# Multiple apps share state
+  1212→browser = Substrate(storage="~/.cognitive/state.usda", source="browser")
+  1213→editor = Substrate(storage="~/.cognitive/state.usda", source="editor")
+  1214→
+  1215→# Both report signals
+  1216→browser.signal(Signal(category="mode", content="15 tabs opened"))
+  1217→editor.signal(Signal(category="content", content="high keystroke rate"))
+  1218→
+  1219→# Aggregator combines signals
+  1220→# Routing uses combined signal vector
+  1221→```
+  1222→
+  1223→### 10.3 Storage Layout
+  1224→
+  1225→```
+  1226→~/.cognitive/
+  1227→├── current.usda              # Live session state
+  1228→├── snapshots/                # Context restoration points
+  1229→├── sessions/                 # Archived sessions
+  1230→├── daily/                    # Aggregated daily states
+  1231→├── weekly/                   # Aggregated weekly states
+  1232→├── calibration.usda          # Long-term patterns
+  1233→├── profile.usda              # Base traits
+  1234→└── payloads/                 # Specializations
+  1235→    ├── adhd.usda
+  1236→    ├── anxiety.usda
+  1237→    └── vfx_domain.usda
+  1238→```
+  1239→
+  1240→---
+  1241→
+  1242→## 11. Evaluation Criteria
+  1243→
+  1244→### 11.1 Reproducibility
+  1245→
+  1246→**Metric:** Given identical inputs and state, percentage of runs producing identical outputs.
+  1247→
+  1248→**Target:** 100% with ThinkingMachines; <100% without.
+  1249→
+  1250→**Method:** Replay recorded sessions, compare checksums.
+  1251→
+  1252→### 11.2 Adaptation Quality
+  1253→
+  1254→**Metric:** Does Hebbian learning improve routing over time?
+  1255→
+  1256→**Method:** Track outcome distributions before/after calibration updates.
+  1257→
+  1258→### 11.3 Safety Guarantee
+  1259→
+  1260→**Metric:** Do safety floors hold under all conditions?
+  1261→
+  1262→**Method:** Formal verification that update functions cannot violate floors.
+  1263→
+  1264→### 11.4 Context Restoration Accuracy
+  1265→
+  1266→**Metric:** After restoration, can users continue without re-establishing context?
+  1267→
+  1268→**Method:** User study measuring time-to-productivity after breaks.
+  1269→
+  1270→### 11.5 CogRoute-Bench Results
+  1271→
+  1272→The reference implementation was evaluated on CogRoute-Bench, a standardized benchmark with 37 routing tasks across 8 categories:
+  1273→
+  1274→**Figure 4: CogRoute-Bench Results**
+  1275→
+  1276→```
+  1277→                           CogRoute-Bench v1.0
+  1278→    ═══════════════════════════════════════════════════════════════
+  1279→
+  1280→    OVERALL METRICS
+  1281→    ────────────────────────────────────────────────────────────────
+  1282→    Accuracy        ████████████████████████████████████████░░  94.6%
+  1283→    Determinism     ████████████████████████████████████████████ 100.0%
+  1284→    Explainability  ████████████████████████████████████████░░░  95.1%
+  1285→
+  1286→    BY CATEGORY (% correct)
+  1287→    ────────────────────────────────────────────────────────────────
+  1288→    safety_critical  ████████████████████████████████████████████ 100%
+  1289→    recovery         ████████████████████████████████████████████ 100%
+  1290→    redirection      ████████████████████████████████████████████ 100%
+  1291→    acknowledgment   ████████████████████████████████████████████ 100%
+  1292→    exploration      ████████████████████████████████████████████ 100%
+  1293→    ambiguous        ████████████████████████████████████████████ 100%
+  1294→    complexity       ████████████████████████████████░░░░░░░░░░░░  80%
+  1295→    execution        ████████████████████████████████████░░░░░░░░  83%
+  1296→
+  1297→    PERFORMANCE
+  1298→    ────────────────────────────────────────────────────────────────
+  1299→    Average Latency: 0.13ms per routing decision
+  1300→    Total Tasks:     37
+  1301→    Correct:         35
+  1302→    Failures:        2 (complexity → socratic, ambiguous direct)
+  1303→
+  1304→    ═══════════════════════════════════════════════════════════════
+  1305→```
+  1306→
+  1307→**Key Result:** 100% determinism achieved—identical inputs produce identical routing decisions across all runs.
+  1308→
+  1309→---
+  1310→
+  1311→## 12. Related Work
+  1312→
+  1313→### 12.1 Cognitive Architectures
+  1314→
+  1315→- **ACT-R** (Anderson): Production system with memory modules; no determinism guarantees
+  1316→- **SOAR** (Laird): Goal-oriented with learning; no composition semantics
+  1317→- **LIDA** (Franklin): Global workspace theory; no persistent state format
+  1318→
+  1319→### 12.2 LLM State Management
+  1320→
+  1321→- **LangChain Memory**: Simple key-value; no composition or conflict resolution
+  1322→- **MemGPT**: Tiered memory with LLM-controlled paging; not deterministic
+  1323→- **Anthropic Constitution**: Safety constraints; different layer (content filtering vs. routing)
+  1324→
+  1325→### 12.3 Deterministic Inference
+  1326→
+  1327→- **ThinkingMachines**: Batch-invariant kernels; we build upon this
+  1328→- **vLLM**: Optimized serving; not deterministic
+  1329→- **TensorRT-LLM**: Compilation; determinism not guaranteed
+  1330→
+  1331→---
+  1332→
+  1333→## 13. Future Directions
+  1334→
+  1335→### 13.1 Near-Term
+  1336→
+  1337→1. **USDZ Binary Compilation** — 10x parsing performance improvement
+  1338→2. **Formal Verification** — Prove safety floor invariants
+  1339→3. **Cross-Platform SDK** — Python, TypeScript, Rust bindings
+  1340→
+  1341→### 13.2 Medium-Term
+  1342→
+  1343→1. **Federated Learning** — Aggregate patterns across users while preserving privacy
+  1344→2. **Natural Language Configuration** — "I want an expert that..." → USD payload
+  1345→3. **Real-Time Visualization** — 3D cognitive state dashboard
+  1346→
+  1347→### 13.3 Long-Term
+  1348→
+  1349→1. **OpenUSD Standardization** — Propose cognitive extensions to USD spec
+  1350→2. **Hardware Security** — TPM/HSM for PROTECTED data classification
+  1351→3. **Multi-Model Orchestration** — Route to specialized models based on state
+  1352→
+  1353→---
+  1354→
+  1355→## 13.4 Known Limitations
+  1356→
+  1357→1. **Keyword-Based Signal Detection**: Triggers rely on keyword matching. Semantic understanding requires LLM in the loop, reintroducing non-determinism. Future work: learned embeddings with quantized similarity.
+  1358→
+  1359→2. **Single-Model Assumption**: Current design assumes one LLM. Multi-model routing (e.g., different models for different experts) adds complexity not addressed in this specification.
+  1360→
+  1361→3. **Cold Start Problem**: New users have uniform weights. Initial sessions may have suboptimal routing until Hebbian learning accumulates data. Mitigation: Calibration wizard.
+  1362→
+  1363→4. **Memory vs. Compute Tradeoff**: ThinkingMachines batch-invariance has performance cost: 2.1x slowdown with unoptimized kernels, 1.6x with optimized attention. MatMul specifically costs ~20% vs cuBLAS. For latency-sensitive applications, this may require hybrid mode (deterministic for routing, probabilistic for generation).
+  1364→
+  1365→5. **USD Ecosystem Maturity**: While USD is an industry standard for VFX, its ecosystem outside VFX is nascent. Python pxr bindings are mature; other languages less so.
+  1366→
+  1367→---
+  1368→
+  1369→## 13.5 Falsifiability Criteria
+  1370→
+  1371→The USD Cognitive Substrate thesis would be **FALSIFIED** if:
+  1372→
+  1373→1. **Composition Failure**: LIVRPS resolution produces paradoxes or undefined behavior in >1% of real-world state configurations.
+  1374→
+  1375→2. **Learning Instability**: Mycelium weights oscillate indefinitely or converge to degenerate configurations (all weight on one expert) in normal usage.
+  1376→
+  1377→3. **Safety Floor Violation**: Any execution path exists that allows expert weights to fall below safety floors.
+  1378→
+  1379→4. **Determinism Failure**: With ThinkingMachines, identical inputs produce different outputs in >0.01% of cases.
+  1380→
+  1381→5. **Practical Inferiority**: A simpler system (JSON + rules) achieves equivalent routing accuracy with <50% of the specification complexity.
+  1382→
+  1383→**Claims NOT Subject to Falsification** (by design):
+  1384→- Human input stochasticity is irreducible (definitional)
+  1385→- Constitutional constraints are immutable (axiomatic)
+  1386→
+  1387→---
+  1388→
+  1389→## 14. Conclusion
+  1390→
+  1391→The USD Cognitive Substrate demonstrates that USD composition semantics—designed for visual effects pipeline conflict resolution—are equally applicable to cognitive state management in LLM applications.
+  1392→
+  1393→The key contributions:
+  1394→
+  1395→1. **Separation of storage and routing** enables clear architectural boundaries
+  1396→2. **The Mycelium mechanism** provides bounded neuroplasticity
+  1397→3. **The Mycelium Arc** enables multi-agent state composition
+  1398→4. **Integration with batch-invariant inference** achieves full determinism
+  1399→
+  1400→When deployed with ThinkingMachines kernels, the system provides a formally verifiable guarantee: **same input + same state → same output**. This transforms LLM applications from probabilistic systems into deterministic functions, enabling reproducibility, testing, auditing, and accountability.
+  1401→
+  1402→The only remaining stochasticity is human agency—what users type and how they respond—which is not a limitation but a feature: the system respects human autonomy while providing consistent, learnable, verifiable AI behavior.
+  1403→
+  1404→---
+  1405→
+  1406→## 13. Cognitive Batch Invariance (v7.1.0 Extension)
+  1407→
+  1408→Version 7.1.0 extends the architecture with formal guarantees for memory-level determinism, applying ThinkingMachines principles from LLM inference to cognitive state operations.
+  1409→
+  1410→### 13.1 The Parallel Problem
+  1411→
+  1412→ThinkingMachines identified that LLM non-determinism stems from batch-size-dependent reduction order. We observe an identical problem in cognitive state:
+  1413→
+  1414→| LLM Inference | Cognitive Assembly |
+  1415→|---------------|-------------------|
+  1416→| Batch size varies | # of memories varies |
+  1417→| ↓ | ↓ |
+  1418→| Reduction order changes | Template matching order changes |
+  1419→| ↓ | ↓ |
+  1420→| Different logits | Different context injection |
+  1421→| ↓ | ↓ |
+  1422→| **NONDETERMINISM** | **NONDETERMINISM** |
+  1423→
+  1424→### 13.2 CognitiveDeterminismAPI
+  1425→
+  1426→```yaml
+  1427→schemas:
+  1428→  CognitiveDeterminismAPI:
+  1429→    description: |
+  1430→      Guarantees deterministic behavior for cognitive operations.
+  1431→      Applied to assembly root to enable determinism constraints.
+  1432→
+  1433→    attributes:
+  1434→      cognitive:determinismMode:
+  1435→        type: "token"
+  1436→        values: ["strict", "relaxed", "none"]
+  1437→        default: "strict"
+  1438→        description: |
+  1439→          strict: All operations must be deterministic
+  1440→          relaxed: Best-effort determinism (allows optimizations)
+  1441→          none: No determinism guarantees (maximum performance)
+  1442→
+  1443→      cognitive:hashSeed:
+  1444→        type: "int64"
+  1445→        default: 0xCAFEBABE
+  1446→        description: |
+  1447→          Seed for any randomized operations.
+  1448→          Same seed + same inputs = same outputs.
+  1449→
+  1450→      cognitive:templateMatchOrder:
+  1451→        type: "token"
+  1452→        values: ["lexicographic", "priority", "chronological", "hash"]
+  1453→        default: "lexicographic"
+  1454→        description: |
+  1455→          How to order template matching when multiple templates could match.
+  1456→          MUST be fixed regardless of batch size.
+  1457→
+  1458→      cognitive:aggregationOrder:
+  1459→        type: "token"
+  1460→        values: ["id_ascending", "confidence_descending", "chronological", "hash"]
+  1461→        default: "id_ascending"
+  1462→        description: |
+  1463→          Order for aggregating multiple instances into context.
+  1464→          This is the "reduction order" for cognitive state.
+  1465→
+  1466→      cognitive:deterministicHash:
+  1467→        type: "string"
+  1468→        computed: true
+  1469→        description: |
+  1470→          SHA-256 hash of expanded cognitive state.
+  1471→          Same hash = same state (for verification).
+  1472→```
+  1473→
+  1474→### 13.3 Fixed Tile Size Strategy
+  1475→
+  1476→From ThinkingMachines: "To achieve batch invariance, we must adopt a fixed split-size strategy."
+  1477→
+  1478→**Constant Definition:**
+  1479→```python
+  1480→COGNITIVE_TILE_SIZE = 32  # Fixed, never changes
+  1481→DETERMINISM_SEED = 0xCAFEBABE  # Fixed seed for any randomized operations
+  1482→```
+  1483→
+  1484→**Implementation:**
+  1485→```python
+  1486→# WRONG: Adaptive batch size (causes nondeterminism)
+  1487→def expand_memories(memories, system_load):
+  1488→    batch_size = 100 / system_load  # NONDETERMINISTIC
+  1489→    for batch in chunk(memories, batch_size):
+  1490→        yield expand_batch(batch)
+  1491→
+  1492→# CORRECT: Fixed tile size (deterministic)
+  1493→def expand_memories(memories):
+  1494→    for batch in chunk(memories, COGNITIVE_TILE_SIZE):
+  1495→        yield expand_batch(batch)  # DETERMINISTIC
+  1496→```
+  1497→
+  1498→### 13.4 CognitiveAggregationAPI
+  1499→
+  1500→```yaml
+  1501→schemas:
+  1502→  CognitiveAggregationAPI:
+  1503→    description: |
+  1504→      Defines deterministic aggregation rules for confidence combination.
+  1505→      Equivalent to "reduction strategy" in LLM inference.
+  1506→
+  1507→    attributes:
+  1508→      cognitive:aggregationStrategy:
+  1509→        type: "token"
+  1510→        values: ["max", "mean", "weighted_mean", "decay_mean", "threshold_filter"]
+  1511→        default: "max"
+  1512→        description: |
+  1513→          max: Highest confidence wins (simple, fast)
+  1514→          mean: Average all confidences (Kahan summation)
+  1515→          weighted_mean: Weight by access_count or recency
+  1516→          decay_mean: Apply temporal decay before averaging
+  1517→          threshold_filter: Only include above threshold, then max
+  1518→
+  1519→      cognitive:conflictResolution:
+  1520→        type: "token"
+  1521→        values: ["newest_wins", "highest_confidence", "manual", "merge"]
+  1522→        default: "newest_wins"
+  1523→        description: "How to handle conflicting memories"
+  1524→
+  1525→      cognitive:thresholdMinimum:
+  1526→        type: "float"
+  1527→        default: 0.5
+  1528→        description: "Minimum confidence to include in context"
+  1529→```
+  1530→
+  1531→**Aggregation Implementations:**
+  1532→
+  1533→```python
+  1534→def aggregate_confidences(instances, strategy, config):
+  1535→    """
+  1536→    Aggregate confidences with determinism guarantee.
+  1537→    CRITICAL: Sort FIRST, then aggregate.
+  1538→    """
+  1539→    # CRITICAL: Sort first for determinism
+  1540→    sorted_instances = sorted(
+  1541→        instances,
+  1542→        key=lambda i: deterministic_sort_key(i, config.aggregation_order)
+  1543→    )
+  1544→
+  1545→    if strategy == "max":
+  1546→        return max(i.confidence for i in sorted_instances)
+  1547→
+  1548→    elif strategy == "mean":
+  1549→        # Kahan summation for batch-invariant accumulation
+  1550→        return kahan_sum([i.confidence for i in sorted_instances]) / len(sorted_instances)
+  1551→
+  1552→    elif strategy == "weighted_mean":
+  1553→        total_weight = sum(i.access_count for i in sorted_instances) or 1
+  1554→        weighted = [i.confidence * i.access_count / total_weight for i in sorted_instances]
+  1555→        return kahan_sum(weighted)
+  1556→
+  1557→    elif strategy == "threshold_filter":
+  1558→        filtered = [i for i in sorted_instances if i.confidence >= config.threshold]
+  1559→        return max(i.confidence for i in filtered) if filtered else 0.0
+  1560→
+  1561→
+  1562→def kahan_sum(values):
+  1563→    """Kahan summation for numerical stability (batch-invariant)."""
+  1564→    total = 0.0
+  1565→    compensation = 0.0
+  1566→    for value in values:
+  1567→        y = value - compensation
+  1568→        t = total + y
+  1569→        compensation = (t - total) - y
+  1570→        total = t
+  1571→    return total
+  1572→```
+  1573→
+  1574→### 13.5 CognitiveRetrievalAPI
+  1575→
+  1576→```yaml
+  1577→schemas:
+  1578→  CognitiveRetrievalAPI:
+  1579→    description: |
+  1580→      Batch-invariant memory retrieval.
+  1581→      Same query always returns same results.
+  1582→
+  1583→    attributes:
+  1584→      cognitive:retrievalStrategy:
+  1585→        type: "token"
+  1586→        values: ["exact", "semantic", "hybrid"]
+  1587→        default: "exact"
+  1588→
+  1589→      cognitive:maxResults:
+  1590→        type: "int"
+  1591→        default: 100
+  1592→        description: "Fixed limit (not adaptive to system load)"
+  1593→
+  1594→      cognitive:sortOrder:
+  1595→        type: "token"
+  1596→        values: ["confidence_desc", "recency_desc", "relevance_desc", "id_asc"]
+  1597→        default: "confidence_desc"
+  1598→        description: "Deterministic sort order for results"
+  1599→
+  1600→      cognitive:tileSize:
+  1601→        type: "int"
+  1602→        default: 32
+  1603→        description: |
+  1604→          Fixed tile size for retrieval batching.
+  1605→          From ThinkingMachines: "fixed split-size preserves batch invariance"
+  1606→
+  1607→    invariance_guarantees:
+  1608→      query_invariance: "Same query + same memory bank = same results"
+  1609→      batch_invariance: "Result independent of concurrent queries"
+  1610→      order_invariance: "Results in consistent order regardless of retrieval batch size"
+  1611→```
+  1612→
+  1613→### 13.6 CognitiveRelationshipAPI (Cross-Instance References)
+  1614→
+  1615→```yaml
+  1616→schemas:
+  1617→  CognitiveRelationshipAPI:
+  1618→    description: |
+  1619→      Inter-instance relationships for complex cognition.
+  1620→      Enables graph structure, not just flat arrays.
+  1621→
+  1622→    relationships:
+  1623→      cognitive:supersedes:
+  1624→        type: "rel"
+  1625→        description: "This instance replaces another"
+  1626→        example: |
+  1627→          # mem_042 supersedes mem_017
+  1628→          rel cognitive:supersedes = </Instances/mem_017>
+  1629→
+  1630→      cognitive:derivedFrom:
+  1631→        type: "rel[]"
+  1632→        description: "This instance synthesized from others"
+  1633→        example: |
+  1634→          # A conclusion derived from multiple observations
+  1635→          rel cognitive:derivedFrom = [
+  1636→              </Instances/obs_001>,
+  1637→              </Instances/obs_002>,
+  1638→              </Instances/obs_003>
+  1639→          ]
+  1640→
+  1641→      cognitive:contradicts:
+  1642→        type: "rel"
+  1643→        description: "This instance conflicts with another"
+  1644→        resolution: "Use conflictResolution strategy"
+  1645→
+  1646→      cognitive:supports:
+  1647→        type: "rel[]"
+  1648→        description: "This instance corroborates others"
+  1649→        effect: "Increases confidence of supported instances"
+  1650→```
+  1651→
+  1652→### 13.7 CognitiveAuditAPI (Verification Tools)
+  1653→
+  1654→```yaml
+  1655→schemas:
+  1656→  CognitiveAuditAPI:
+  1657→    description: |
+  1658→      Audit trail and determinism verification for cognitive operations.
+  1659→
+  1660→    attributes:
+  1661→      cognitive:auditEnabled:
+  1662→        type: "bool"
+  1663→        default: false
+  1664→
+  1665→      cognitive:operationLog:
+  1666→        type: "string[]"
+  1667→        description: "Log of operations applied to this assembly"
+  1668→
+  1669→      cognitive:stateHash:
+  1670→        type: "string"
+  1671→        computed: true
+  1672→        description: |
+  1673→          SHA-256 of canonical expanded state.
+  1674→          Use for determinism verification:
+  1675→          same inputs → same hash (GUARANTEED)
+  1676→```
+  1677→
+  1678→**Verification Tests:**
+  1679→
+  1680→```python
+  1681→def verify_round_trip(memories):
+  1682→    """Verify compress → expand → compress is identity."""
+  1683→    assembly = compress(memories)
+  1684→    expanded = expand(assembly)
+  1685→    recompressed = compress(expanded)
+  1686→    assert hash(assembly) == hash(recompressed)
+  1687→
+  1688→def verify_determinism(memories, n_trials=100):
+  1689→    """Verify same inputs always produce same outputs."""
+  1690→    hashes = set()
+  1691→    for _ in range(n_trials):
+  1692→        assembly = compress(memories)
+  1693→        hashes.add(hash(expand(assembly)))
+  1694→    assert len(hashes) == 1  # Exactly 1 unique hash
+  1695→
+  1696→def verify_batch_invariance(memories):
+  1697→    """Verify results don't depend on tile size."""
+  1698→    results = []
+  1699→    for tile_size in [1, 8, 32, 128, 1024]:
+  1700→        result = compress_with_tile_size(memories, tile_size)
+  1701→        results.append(hash(expand(result)))
+  1702→    assert len(set(results)) == 1  # All hashes identical
+  1703→```
+  1704→
+  1705→### 13.8 Compression Profiles
+  1706→
+  1707→```yaml
+  1708→profiles:
+  1709→  context_injection:
+  1710→    description: "For injecting into LLM context"
+  1711→    target: "Maximum compression, minimal tokens"
+  1712→    settings:
+  1713→      format: "library_reference"
+  1714→      maxTokens: 100
+  1715→      confidenceThreshold: 0.7
+  1716→      includeMetadata: false
+  1717→      includeRelationships: false
+  1718→
+  1719→  persistent_storage:
+  1720→    description: "For disk storage between sessions"
+  1721→    target: "Lossless, human-readable"
+  1722→    settings:
+  1723→      format: "assembly_usda_verbose"
+  1724→      maxTokens: null  # No limit
+  1725→      confidenceThreshold: 0.0  # Keep all
+  1726→      includeMetadata: true
+  1727→      includeRelationships: true
+  1728→      includeAuditLog: true
+  1729→
+  1730→  api_transport:
+  1731→    description: "For network transmission"
+  1732→    target: "Balance compression and parse speed"
+  1733→    settings:
+  1734→      format: "assembly_compressed_json"
+  1735→      maxTokens: 1000
+  1736→      confidenceThreshold: 0.5
+  1737→      includeMetadata: true
+  1738→      includeRelationships: false
+  1739→
+  1740→  archive:
+  1741→    description: "For rarely-accessed historical state"
+  1742→    target: "Maximum compression, defer expansion"
+  1743→    settings:
+  1744→      format: "assembly_payload"
+  1745→      usePayloads: true
+  1746→      deferExpansion: true
+  1747→      confidenceThreshold: 0.3
+  1748→```
+  1749→
+  1750→### 13.9 Performance Budget
+  1751→
+  1752→| Operation | Target Latency | Notes |
+  1753→|-----------|---------------|-------|
+  1754→| Compression (100 memories) | < 10ms | CPU-bound, no GPU required |
+  1755→| Expansion (100 instances) | < 5ms | Can yield incrementally |
+  1756→| Exact retrieval | < 2ms | Hash-based lookup |
+  1757→| Semantic retrieval | < 50ms | Embedding similarity |
+  1758→| Context injection | 100 tokens max | Default budget |
+  1759→| Round-trip verification | < 50ms | |
+  1760→| Determinism test (100 trials) | < 500ms | |
+  1761→| Target compression | > 5:1 | For typical memory sets |
+  1762→
+  1763→### 13.10 Formal Guarantees (v7.1.0)
+  1764→
+  1765→**Theorem 5 (Tile Size Invariance):**
+  1766→For fixed tile size T and any memory set M:
+  1767→```
+  1768→expand(M, T) = expand(M, T)
+  1769→```
+  1770→regardless of system load or concurrent operations.
+  1771→
+  1772→**Theorem 6 (Aggregation Determinism):**
+  1773→For any aggregation strategy A and instance set I:
+  1774→```
+  1775→A(sort(I)) = A(sort(I))
+  1776→```
+  1777→when instances are sorted by deterministic key before aggregation.
+  1778→
+  1779→**Theorem 7 (Retrieval Invariance):**
+  1780→With fixed tile size and deterministic sorting:
+  1781→```
+  1782→retrieve(q, M) = retrieve(q, M)
+  1783→```
+  1784→across all invocations for query q and memory bank M.
+  1785→
+  1786→### 13.11 State Schema Extension (44 → 52 fields)
+  1787→
+  1788→New fields for v7.1.0:
+  1789→
+  1790→```
+  1791→# Batch Invariance Fields
+  1792→cognitive:tileSize            = 32 (fixed)
+  1793→cognitive:aggregationStrategy = "max" | "mean" | "weighted_mean" | "decay_mean" | "threshold_filter"
+  1794→cognitive:aggregationOrder    = "id_ascending" | "confidence_descending" | "chronological" | "hash"
+  1795→cognitive:templateMatchOrder  = "lexicographic" | "priority" | "chronological" | "hash"
+  1796→cognitive:deterministicHash   = string (SHA-256 of expanded state)
+  1797→cognitive:determinismMode     = "strict" | "relaxed" | "none"
+  1798→cognitive:hashSeed            = 0xCAFEBABE (fixed)
+  1799→cognitive:conflictResolution  = "newest_wins" | "highest_confidence" | "manual" | "merge"
+  1800→```
+  1801→
+  1802→### 13.12 CognitiveTemporalAPI (Gap 3)
+  1803→
+  1804→Temporal coherence for cognitive state versioning and reproducibility.
+  1805→
+  1806→```yaml
+  1807→schemas:
+  1808→  CognitiveTemporalAPI:
+  1809→    description: |
+  1810→      Temporal coherence for cognitive state.
+  1811→      Ensures consistent ordering across time and enables reproducibility.
+  1812→
+  1813→    attributes:
+  1814→      cognitive:temporalEpoch:
+  1815→        type: "int64"
+  1816→        description: "Unix timestamp for temporal grouping"
+  1817→
+  1818→      cognitive:sessionId:
+  1819→        type: "string"
+  1820→        description: "Session identifier for grouping related memories"
+  1821→
+  1822→      cognitive:schemaVersion:
+  1823→        type: "string"
+  1824→        description: "Schema version for migration support"
+  1825→        example: "7.1.0"
+  1826→
+  1827→      cognitive:templateVersion:
+  1828→        type: "string"
+  1829→        description: |
+  1830→          Version of template at instance creation.
+  1831→          If template changes, old instances remain valid.
+  1832→          Enables reproducibility of past cognitive states.
+  1833→
+  1834→      cognitive:migrationPath:
+  1835→        type: "string[]"
+  1836→        description: "Chain of migrations applied to this state"
+  1837→        example: ["v5→v6", "v6→v7", "v7→v7.1"]
+  1838→
+  1839→    temporal_ordering_rules:
+  1840→      same_session:
+  1841→        rule: "Memories from same session maintain relative order"
+  1842→        implementation: "Sort by (sessionId, instanceId)"
+  1843→
+  1844→      cross_session:
+  1845→        rule: "Sessions ordered by temporalEpoch"
+  1846→        implementation: "Sort by (temporalEpoch, sessionId, instanceId)"
+  1847→
+  1848→      determinism:
+  1849→        rule: "Same temporalEpoch + same memories = same order"
+  1850→        guarantee: "Batch-invariant temporal sorting"
+  1851→```
+  1852→
+  1853→**State Schema Extension (52 → 57 fields):**
+  1854→```
+  1855→cognitive:temporalEpoch    = int64 (Unix timestamp)
+  1856→cognitive:sessionId        = string
+  1857→cognitive:schemaVersion    = "7.1.0"
+  1858→cognitive:templateVersion  = string (per-instance)
+  1859→cognitive:migrationPath    = string[] (e.g., ["v5→v6", "v6→v7"])
+  1860→```
+  1861→
+  1862→### 13.13 CognitiveSessionAPI (Gap 7)
+  1863→
+  1864→Session lifecycle integration for cognitive state.
+  1865→
+  1866→```yaml
+  1867→schemas:
+  1868→  CognitiveSessionAPI:
+  1869→    description: |
+  1870→      Session lifecycle integration for cognitive state.
+  1871→      Connects to Claude Code's session management.
+  1872→
+  1873→    attributes:
+  1874→      cognitive:sessionState:
+  1875→        type: "token"
+  1876→        values: ["initializing", "active", "suspending", "archived"]
+  1877→
+  1878→      cognitive:sessionStartTime:
+  1879→        type: "string"
+  1880→        format: "ISO8601"
+  1881→
+  1882→      cognitive:sessionDuration:
+  1883→        type: "int"
+  1884→        description: "Duration in seconds (for decay calculations)"
+  1885→
+  1886→      cognitive:parentSessionId:
+  1887→        type: "string"
+  1888→        optional: true
+  1889→        description: "For continued sessions"
+  1890→
+  1891→    lifecycle_hooks:
+  1892→
+  1893→      on_session_start:
+  1894→        trigger: "New session initiated"
+  1895→        actions:
+  1896→          - "Parse cognitive state (auto-detect format)"
+  1897→          - "Resolve library references"
+  1898→          - "Expand to working representation"
+  1899→          - "Apply temporal decay to confidences"
+  1900→          - "Inject into context (deterministically)"
+  1901→        determinism: "GUARANTEED via fixed ordering"
+  1902→
+  1903→      on_session_checkpoint:
+  1904→        trigger: "Periodic or on-demand"
+  1905→        actions:
+  1906→          - "Capture current state"
+  1907→          - "Compress to assembly format"
+  1908→          - "Calculate state hash"
+  1909→          - "Store checkpoint"
+  1910→
+  1911→      on_session_end:
+  1912→        trigger: "Session closing"
+  1913→        actions:
+  1914→          - "Collect new memories from conversation"
+  1915→          - "Analyze for template opportunities"
+  1916→          - "Update instance access counts"
+  1917→          - "Compress to assembly format"
+  1918→          - "Generate session capture block"
+  1919→          - "Persist to storage"
+  1920→
+  1921→      on_memory_add:
+  1922→        trigger: "New memory created"
+  1923→        actions:
+  1924→          - "Match against existing templates"
+  1925→          - "If no match, check template inference threshold"
+  1926→          - "Add instance"
+  1927→          - "Invalidate state hash cache"
+  1928→```
+  1929→
+  1930→### 13.14 CognitiveCompositionAPI (Gap 2)
+  1931→
+  1932→Full USD composition support for cognitive state.
+  1933→
+  1934→```yaml
+  1935→schemas:
+  1936→  CognitiveCompositionAPI:
+  1937→    description: |
+  1938→      Enables full USD composition for cognitive state.
+  1939→      Supports inheritance chains, deferred loading, and variants.
+  1940→
+  1941→    composition_patterns:
+  1942→
+  1943→      # Profile inheritance (ADHD user inherits ADHD patterns)
+  1944→      inheritance:
+  1945→        usda_example: |
+  1946→          def CognitiveProfile "JoeProfile" (
+  1947→              inherits = </Profiles/ADHDBase>
+  1948→          )
+  1949→          {
+  1950→              # Inherits all ADHD patterns
+  1951→              # Adds user-specific instances
+  1952→          }
+  1953→
+  1954→        rules:
+  1955→          - "Inherited templates available to all instances"
+  1956→          - "User can override inherited templates (LIVRPS)"
+  1957→          - "Confidence inheritance: user overrides base"
+  1958→
+  1959→      # Deferred loading for large memory banks
+  1960→      payload:
+  1961→        usda_example: |
+  1962→          def CognitiveAssembly "FullHistory" (
+  1963→              payload = @./memory_archive.usda@
+  1964→          )
+  1965→          {
+  1966→              # Load on demand, not at composition
+  1967→          }
+  1968→
+  1969→        use_cases:
+  1970→          - "Historical memories (rarely accessed)"
+  1971→          - "Archived projects"
+  1972→          - "Large pattern libraries"
+  1973→
+  1974→      # Cognitive state variants
+  1975→      variants:
+  1976→        usda_example: |
+  1977→          def CognitiveAssembly "UserState" (
+  1978→              variants = {
+  1979→                  string energyLevel = "high"
+  1980→              }
+  1981→              variantSets = ["energyLevel"]
+  1982→          )
+  1983→          {
+  1984→              variantSet "energyLevel" = {
+  1985→                  "high" {
+  1986→                      rel activePatterns = [</Patterns/creative>, </Patterns/exploration>]
+  1987→                  }
+  1988→                  "low" {
+  1989→                      rel activePatterns = [</Patterns/mechanical>, </Patterns/maintenance>]
+  1990→                  }
+  1991→                  "depleted" {
+  1992→                      rel activePatterns = [</Patterns/rest>, </Patterns/recovery>]
+  1993→                  }
+  1994→              }
+  1995→          }
+  1996→
+  1997→        applications:
+  1998→          - "Energy-dependent pattern routing"
+  1999→          - "Context-dependent memory retrieval"
+  2000→          - "A/B testing cognitive strategies"
+  2001→
+  2002→      # Pattern specialization
+  2003→      specializes:
+  2004→        usda_example: |
+  2005→          def CognitiveTemplate "stuck_on_code" (
+  2006→              specializes = </Templates/stuck_generic>
+  2007→          )
+  2008→          {
+  2009→              # Inherits stuck_generic pattern
+  2010→              # Adds code-specific interventions
+  2011→              string cognitive:pattern = "When stuck on {code_type} > {threshold}, apply {code_intervention}"
+  2012→          }
+  2013→```
+  2014→
+  2015→### 13.15 Claude Code MCP Integration (Gap 10)
+  2016→
+  2017→MCP tools and infrastructure integration for Claude Code.
+  2018→
+  2019→```yaml
+  2020→claude_code_integration:
+  2021→
+  2022→  mcp_tools:
+  2023→
+  2024→    cognitive_compress:
+  2025→      description: "Compress flat memories to assembly"
+  2026→      input_schema:
+  2027→        memories: "List[Dict[str, Any]]"
+  2028→        library_ref: "Optional[str]"
+  2029→        profile: "Optional[str]"  # context_injection, persistent_storage, etc.
+  2030→      output_schema:
+  2031→        assembly: "str"
+  2032→        stats:
+  2033→          compression_ratio: "float"
+  2034→          template_count: "int"
+  2035→          instance_count: "int"
+  2036→          determinism_hash: "str"
+  2037→
+  2038→    cognitive_expand:
+  2039→      description: "Expand assembly to flat memories"
+  2040→      input_schema:
+  2041→        assembly: "str"
+  2042→        verify_determinism: "bool"
+  2043→      output_schema:
+  2044→        memories: "List[Dict[str, Any]]"
+  2045→        determinism_hash: "str"
+  2046→
+  2047→    cognitive_verify:
+  2048→      description: "Verify determinism guarantees"
+  2049→      input_schema:
+  2050→        assembly: "str"
+  2051→        test_type: "Literal['round_trip', 'batch_invariance', 'temporal_coherence']"
+  2052→      output_schema:
+  2053→        passed: "bool"
+  2054→        details: "Dict[str, Any]"
+  2055→
+  2056→    cognitive_query:
+  2057→      description: "Query memory bank (batch-invariant)"
+  2058→      input_schema:
+  2059→        assembly: "str"
+  2060→        query: "str"
+  2061→        strategy: "Literal['exact', 'semantic', 'hybrid']"
+  2062→        max_results: "int"
+  2063→      output_schema:
+  2064→        results: "List[Dict[str, Any]]"
+  2065→        determinism_hash: "str"
+  2066→
+  2067→  file_locations:
+  2068→    cognitive_state: "~/.claude/cognitive/state.usda"
+  2069→    template_libraries: "~/.claude/cognitive/libraries/"
+  2070→    session_checkpoints: "~/.claude/cognitive/checkpoints/"
+  2071→    audit_logs: "~/.claude/cognitive/audit/"
+  2072→
+  2073→  session_hooks:
+  2074→
+  2075→    CLAUDE_md_integration:
+  2076→      description: "Surface cognitive state in CLAUDE.md"
+  2077→      format: |
+  2078→        ## Cognitive State (v7.1)
+  2079→        ```
+  2080→        CA:memoryBank@adhd:1.0
+  2081→        I:momentum|{momentum}|{confidence}
+  2082→        I:energy|{energy}|{confidence}
+  2083→        # ... truncated to top 10 by confidence
+  2084→        ```
+  2085→        Hash: {determinism_hash}
+  2086→
+  2087→    slash_commands:
+  2088→      "/cognitive status": "Show current state summary"
+  2089→      "/cognitive expand": "Show fully expanded state"
+  2090→      "/cognitive verify": "Run determinism tests"
+  2091→      "/cognitive compress": "Force recompression"
+  2092→      "/cognitive checkpoint": "Create named checkpoint"
+  2093→```
+  2094→
+  2095→### 13.16 Migration Path (Gap 12)
+  2096→
+  2097→Migration from v6 (flat memories) to v7.1 (cognitive assembly with batch invariance).
+  2098→
+  2099→```yaml
+  2100→migration:
+  2101→
+  2102→  v6_to_v7:
+  2103→    description: "Migrate flat memory format to cognitive assembly"
+  2104→
+  2105→    steps:
+  2106→      1_detect_format:
+  2107→        input: "Existing cognitive state"
+  2108→        output: "Format identification (flat, assembly, mixed)"
+  2109→
+  2110→      2_analyze_patterns:
+  2111→        input: "Flat memories"
+  2112→        output: "Template candidates with instance counts"
+  2113→        threshold: "min 2 instances per template"
+  2114→
+  2115→      3_compress:
+  2116→        input: "Flat memories + templates"
+  2117→        output: "CognitiveAssembly"
+  2118→        preserve:
+  2119→          - "All memory content (lossless)"
+  2120→          - "All confidence values"
+  2121→          - "All metadata"
+  2122→
+  2123→      4_verify:
+  2124→        input: "Original flat + compressed assembly"
+  2125→        output: "Verification report"
+  2126→        tests:
+  2127→          - "Round-trip equality"
+  2128→          - "Determinism (100 trials)"
+  2129→          - "Compression ratio"
+  2130→
+  2131→      5_persist:
+  2132→        input: "Verified assembly"
+  2133→        output: "Stored state"
+  2134→        format: "assembly_usda_verbose"
+  2135→
+  2136→    rollback:
+  2137→      description: "Assembly → flat is always possible (lossless)"
+  2138→      command: "cognitive_expand"
+  2139→
+  2140→    gradual_adoption:
+  2141→      phase_1: "Store as assembly, expand on load (safe)"
+  2142→      phase_2: "Store and load as assembly (full adoption)"
+  2143→      phase_3: "Full assembly pipeline with libraries (optimized)"
+  2144→
+  2145→  v7_to_v71:
+  2146→    description: "Add batch invariance fields to v7.0 assembly"
+  2147→
+  2148→    steps:
+  2149→      1_add_determinism_fields:
+  2150→        - "cognitive:determinismMode = 'strict'"
+  2151→        - "cognitive:tileSize = 32"
+  2152→        - "cognitive:hashSeed = 0xCAFEBABE"
+  2153→
+  2154→      2_add_temporal_fields:
+  2155→        - "cognitive:schemaVersion = '7.1.0'"
+  2156→        - "cognitive:temporalEpoch = current_timestamp()"
+  2157→        - "cognitive:migrationPath = ['v7→v7.1']"
+  2158→
+  2159→      3_compute_hashes:
+  2160→        - "cognitive:deterministicHash = sha256(expanded_state)"
+  2161→
+  2162→      4_verify:
+  2163→        - "Run batch_invariance_test"
+  2164→        - "Run determinism_test"
+  2165→
+  2166→    backwards_compatible: true
+  2167→    rollback: "Remove new fields (no data loss)"
+  2168→```
+  2169→
+  2170→**Migration Commands:**
+  2171→```bash
+  2172→# Check current format
+  2173→cognitive_verify --detect-format
+  2174→
+  2175→# Migrate v6 → v7.1
+  2176→cognitive_compress --migrate-from=v6 --verify
+  2177→
+  2178→# Migrate v7.0 → v7.1
+  2179→cognitive_compress --add-determinism-fields --verify
+  2180→
+  2181→# Rollback to flat
+  2182→cognitive_expand --output-format=flat
+  2183→```
+  2184→
+  2185→### 13.17 State Schema Extension Summary (44 → 62 fields)
+  2186→
+  2187→**v7.1.0 Complete Field Additions:**
+  2188→
+  2189→```
+  2190→# Batch Invariance (8 fields) - Section 13.11
+  2191→cognitive:tileSize            = 32 (fixed)
+  2192→cognitive:aggregationStrategy = "max" | "mean" | "weighted_mean" | "decay_mean" | "threshold_filter"
+  2193→cognitive:aggregationOrder    = "id_ascending" | "confidence_descending" | "chronological" | "hash"
+  2194→cognitive:templateMatchOrder  = "lexicographic" | "priority" | "chronological" | "hash"
+  2195→cognitive:deterministicHash   = string (SHA-256)
+  2196→cognitive:determinismMode     = "strict" | "relaxed" | "none"
+  2197→cognitive:hashSeed            = 0xCAFEBABE
+  2198→cognitive:conflictResolution  = "newest_wins" | "highest_confidence" | "manual" | "merge"
+  2199→
+  2200→# Temporal Coherence (5 fields) - Section 13.12
+  2201→cognitive:temporalEpoch       = int64 (Unix timestamp)
+  2202→cognitive:sessionId           = string
+  2203→cognitive:schemaVersion       = "7.1.0"
+  2204→cognitive:templateVersion     = string (per-instance)
+  2205→cognitive:migrationPath       = string[]
+  2206→
+  2207→# Session Lifecycle (5 fields) - Section 13.13
+  2208→cognitive:sessionState        = "initializing" | "active" | "suspending" | "archived"
+  2209→cognitive:sessionStartTime    = string (ISO8601)
+  2210→cognitive:sessionDuration     = int (seconds)
+  2211→cognitive:parentSessionId     = string (optional)
+  2212→cognitive:lastCheckpointHash  = string
+  2213→```
+  2214→
+  2215→---
+  2216→
+  2217→## Appendix A: USD Schema Reference
+  2218→
+  2219→See `cognitive_substrate_v7.usda` for complete schema definitions.
+  2220→
+  2221→## Appendix D: BCM Learning Mathematics
+  2222→
+  2223→**Bienenstock-Cooper-Munro Saturation:**
+  2224→
+  2225→The BCM sliding threshold provides homeostatic regulation:
+  2226→
+  2227→```
+  2228→θ_m(t+1) = θ_m(t) × α + (1 - α) × ȳ²(t)
+  2229→```
+  2230→
+  2231→Where:
+  2232→- θ_m = sliding threshold
+  2233→- α = decay factor (typically 0.95)
+  2234→- ȳ = recent activity average
+  2235→
+  2236→**Trail Strength Update:**
+  2237→
+  2238→```
+  2239→Δs = η × (y - θ_m) × x × saturation(s)
+  2240→s_new = clip(s + Δs, 0.01, 100.0)
+  2241→```
+  2242→
+  2243→Where:
+  2244→- η = base learning rate
+  2245→- y = outcome signal
+  2246→- x = activation level
+  2247→- saturation(s) = 1 / (1 + exp(-(s - θ_m) / T))
+  2248→
+  2249→**Time Decay:**
+  2250→
+  2251→```
+  2252→s(t) = s(0) × exp(-t / τ)
+  2253→τ = 2 hours (half-life)
+  2254→```
+  2255→
+  2256→## Appendix E: Grounding Layer Implementation
+  2257→
+  2258→**Oracle Query Protocol:**
+  2259→
+  2260→```python
+  2261→# Deterministic oracle query
+  2262→result = oracle_registry.query(
+  2263→    oracle_id="houdini_rbd",
+  2264→    query="position(ball, frame=48)",
+  2265→    cache_key=hash(query),
+  2266→    max_age_seconds=300
+  2267→)
+  2268→
+  2269→# Evidence chain construction
+  2270→evidence = Evidence(
+  2271→    source=oracle_id,
+  2272→    query=query,
+  2273→    result=result,
+  2274→    timestamp=now(),
+  2275→    confidence=1.0  # Oracle is authoritative
+  2276→)
+  2277→warehouse.append(evidence)
+  2278→```
+  2279→
+  2280→## Appendix B: Determinism Specification (L0D)
+  2281→
+  2282→See `determinism_spec.usda` for pattern dictionaries, activation matrices, and tiebreaker rules.
+  2283→
+  2284→## Appendix C: API Reference
+  2285→
+  2286→See SDK documentation for complete interface specifications.
+  2287→
+  2288→---
+  2289→
+  2290→## Acknowledgments
+  2291→
+  2292→The author thanks Pixar Animation Studios for creating and open-sourcing Universal Scene Description (USD), whose composition semantics inspired this architecture. The author also acknowledges the ThinkingMachines Lab for their foundational work on batch-invariant LLM inference, which enables the determinism guarantees central to this system.
+  2293→
+  2294→---
+  2295→
+  2296→## Code and Data Availability
+  2297→
+  2298→The specification and reference implementation are available under the MIT License:
+  2299→
+  2300→**Specification Repository:**
+  2301→https://github.com/JosephOIbrahim/usd-cognitive-substrate
+  2302→
+  2303→**Reference Implementation:**
+  2304→https://github.com/JosephOIbrahim/Orchestra
+  2305→
+  2306→The reference implementation (Orchestra v7.0.0) includes:
+  2307→- Full cognitive orchestration system with 7 intervention experts + 4 grounding experts
+  2308→- Grounding Layer with oracle registry and evidence warehouse
+  2309→- BCM stigmergic learning with trail-based confidence
+  2310→- Plasticity auto-triggers and signal reliability tracking
+  2311→- `cogroute_bench.py` — CogRoute-Bench standardized benchmark suite
+  2312→- Complete test suite with 1047+ unit tests
+  2313→- PyPI package: `pip install cognitive-orchestra`
+  2314→
+  2315→Benchmark results: 94.6% routing accuracy, 100% determinism, 0.13ms average latency.
+  2316→
+  2317→**v7.0.0 Experimental Validation:**
+  2318→- Grounding: 710/710 physics queries bit-identical (100%)
+  2319→- Constraint Satisfaction: 10/10 determinism (hash: fc23a00c926e)
+  2320→- USD Unity: 10/10 determinism (hash: e89e5138077c), 32/32 edge cases
+  2321→
+  2322→---
+  2323→
+  2324→## References
+  2325→
+  2326→1. Pixar Animation Studios. (2016). *Universal Scene Description*. https://graphics.pixar.com/usd/
+  2327→
+  2328→2. He, Horace and Thinking Machines Lab. (2025). "Defeating Nondeterminism in LLM Inference." *Thinking Machines Lab: Connectionism*, September 2025. https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/
+  2329→
+  2330→3. Anderson, J. R. (2007). *How Can the Human Mind Occur in the Physical Universe?* Oxford University Press.
+  2331→
+  2332→4. Laird, J. E. (2012). *The Soar Cognitive Architecture*. MIT Press.
+  2333→
+  2334→5. Franklin, S., Madl, T., D'Mello, S., and Snaider, J. (2016). "LIDA: A Systems-level Architecture for Cognition, Emotion, and Learning." *IEEE Transactions on Autonomous Mental Development*, 6(1):19-41.
+  2335→
+  2336→---
+  2337→
+  2338→*Date: 2026-01-31*
+  2339→*Version: 7.1.0*
+  2340→*Classification: Academic Pre-Publication Draft*
+  2341→

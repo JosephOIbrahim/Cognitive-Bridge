@@ -1,0 +1,66 @@
+# Claude Code Prompt — ComfyUI Agent: Demo Integration Audit
+
+## Context
+
+I'm preparing a live demo for the ComfyUI NYC meetup at ZeroSpace (Brooklyn). The demo shows two of my systems — **ComfyUI Agent** and **Synapse** (an AI-to-Houdini/Solaris bridge) — coordinating via MCP so that a user can speak in natural language and have an AI agent generate assets in ComfyUI, then place and compose them in a Houdini/Solaris USD stage, all in one conversational flow.
+
+The orchestration layer is Claude itself, talking to both MCP servers simultaneously:
+
+```
+User (natural language)
+  → Claude (orchestrator)
+      → ComfyUI Agent MCP (generate, inspect, modify, execute workflows)
+      → Synapse MCP (place assets in Houdini/Solaris, manage USD stage)
+```
+
+## Your Task
+
+Audit this repo (comfyui-agent) for demo readiness. I need you to answer these questions with specifics — file paths, function names, code snippets. Not hand-wavy summaries.
+
+### 1. MCP Server — Current State
+
+- Where is the MCP server implementation? What transport does it use (stdio, SSE, HTTP)?
+- Which of the 61 tools are currently exposed via MCP? All of them, or a subset?
+- Is there a tool manifest / schema that an MCP client can discover?
+- What's the startup command and configuration?
+- Are there any known limitations or TODOs flagged in comments?
+
+### 2. Output Pipeline — What Happens After Generation
+
+- When ComfyUI finishes generating an image/video, where does the output land? (filesystem path, returned via API, WebSocket message?)
+- Is there a tool that retrieves/references the generated output in a way another system could consume? (e.g., file path, base64, URL)
+- Can the agent currently "hand off" a generated asset — meaning: return a reference (path, URI, or payload) that an external system could use to import that asset?
+
+### 3. What's Missing for the Demo
+
+Given the architecture above, identify the gaps:
+
+- Can the MCP server currently be run alongside another MCP server (Synapse) in the same Claude session? Any conflicts (port, transport, naming)?
+- Is there a tool or capability to: "generate this image, then return the output path so Synapse can import it into a USD stage"? If not, what would that tool look like?
+- Are there any hardcoded assumptions (localhost only, specific file paths, single-session) that would break in a demo context?
+- What would need to change to support a workflow like:
+  1. User says: "Generate a cyberpunk cityscape and place it as a backdrop in my USD stage"
+  2. ComfyUI Agent loads a txt2img workflow, sets the prompt, queues execution, monitors progress
+  3. ComfyUI Agent returns the output image path
+  4. Claude passes that path to Synapse MCP
+  5. Synapse creates a MaterialX shader referencing the image and assigns it to a backdrop plane in Solaris
+
+### 4. Demo Stability Concerns
+
+- WebSocket monitoring: how robust is it? Does it handle ComfyUI disconnects/reconnects?
+- Execution timeout: is there a timeout on workflow execution? What happens if generation takes 2+ minutes (e.g., video)?
+- Error surfaces: if ComfyUI errors mid-generation, does the agent surface a useful error through MCP, or does it silently fail?
+
+### 5. Quick Wins
+
+- What's the fastest path to a working demo? What can I skip, what's essential?
+- Are there any existing tools that are 80% of what I need and just need a small wrapper?
+- Is the Demo module (2 tools mentioned in README) relevant here?
+
+## Output Format
+
+Give me a structured report with:
+1. **Current State** — what exists and works today
+2. **Gaps** — what's missing, with specifics
+3. **Recommendations** — ordered by priority, with estimated effort (trivial / half-day / multi-day)
+4. **Risk Register** — things that could blow up during a live demo

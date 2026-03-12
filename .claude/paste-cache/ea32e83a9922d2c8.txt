@@ -1,0 +1,170 @@
+Yeah — decoupling is the secret sauce because it turns “AI watching my viewport” from a frame-rate hostage situation into a civilized pipeline.
+
+Here’s the mental model Epic’s architecture is nudging you toward:
+
+Render thread produces frames whenever it wants (60–120fps).
+AI consumes frames whenever it can (1–10fps, bursty).
+A buffer/adapter layer sits between them and prevents either from stalling the other.
+
+The decoupled architecture (clean and scalable)
+1) Producer: “give me pixels”
+
+Pick one producer source, depending on what “viewport” means in your rig:
+
+Backbuffer (most literal “what user sees”).
+
+SceneViewport capture (editor tooling / specific viewport).
+
+RenderTarget / SceneCapture2D (if you need custom buffers or a dedicated camera).
+
+Key rule: producer never blocks on the consumer. It just hands off a reference/handle + a timestamp.
+
+2) Adapter: “normalize pixels into a stable format”
+
+This layer does the transforms that you don’t want scattered across your system:
+
+Resize (e.g., 1920×1080 → 768×432 for AI)
+
+Color space / tonemap choice (linear vs display-referred)
+
+Format conversion (GPU texture → something encodable)
+
+Keep this layer GPU-friendly if possible; avoid sync points.
+
+3) Decoupler: “shock absorber”
+
+This is the heart. Conceptually:
+
+A ring buffer (fixed size) of “frame packets”
+
+A drop policy (important!)
+
+Optional: latest-frame latch mode
+
+Two common modes:
+
+A) Latest-only (recommended for interactive tools)
+AI always processes “the newest available frame,” skipping intermediate frames.
+
+Pros: lowest latency, stable feel
+
+Cons: you don’t get every frame (you don’t want them anyway)
+
+B) Ring buffer (recommended for analysis/recording)
+Store the last N frames; consumer drains at its pace.
+
+Pros: time continuity
+
+Cons: latency can grow if consumer lags
+
+Drop policy options (pick one):
+
+Drop oldest when full (keeps freshness)
+
+Drop newest when full (keeps continuity)
+
+Adaptive: drop more aggressively while camera is moving
+
+4) Consumer: “AI perception workers”
+
+Your AI side pulls frames when ready and does:
+
+Encode (JPEG/PNG) or direct tensor conversion
+
+Package with metadata (below)
+
+Send to Codex (or your local model) and receive directives
+
+Most important: consumer never calls back into rendering synchronously. Responses become commands queued back to the game thread/editor.
+
+The “Perception Packet” (what to send besides pixels)
+
+Pixels alone are ambiguous. A packet that makes Codex actually useful:
+
+image (downscaled)
+
+timestamp
+
+camera: transform, FOV, focus distance, exposure
+
+viewport: resolution, aspect
+
+scene context: level/map name, selected actors, active camera actor
+
+Optional “AI superpowers” buffers:
+
+depth (low-res)
+
+object mask(s)
+
+custom IDs (even 8-bit is useful)
+
+motion vectors (if you’re fancy)
+
+This is how you evolve from “Codex guesses what it sees” to “Codex reasons with ground truth.”
+
+Performance rules (so you don’t torch 60fps)
+
+If you remember only these:
+
+1) Never do GPU→CPU readback at full rate.
+Throttle capture to AI rate (2–10fps) or keep frames on GPU and only read back the one you actually consume.
+
+2) Prefer latest-only latch for interactive rigs.
+It feels snappy and prevents “AI lag backlog.”
+
+3) Encode off the render thread.
+Render thread produces; worker threads encode/send.
+
+4) Downscale early.
+AI rarely needs 4K. Capture 4K for humans, sample 720p-ish for AI.
+
+A concrete “Epic-shaped” module layout
+
+Think like plugin boundaries:
+
+ViewportPerception (producer + decoupler)
+
+Hooks backbuffer/viewport/RT
+
+Creates FramePacket { textureRef, timestamp, metadataStub }
+
+Pushes into decoupler (latest latch or ring)
+
+PixelAdapter (format/resize/convert)
+
+GPU resize/conversion path
+
+Produces “AI-ready surface”
+
+PerceptionWorkers (consumer)
+
+Pull newest packet when idle
+
+Finalize metadata (camera/selection)
+
+Encode + send to model endpoint
+
+Emits ActionIntents back to UE
+
+ActionRouter (game/editor thread)
+
+Applies safe actions (select actor, move camera, toggle showflags)
+
+Logs everything (reproducibility matters)
+
+The killer feature you get “for free” with decoupling
+
+Once you’ve separated produce/consume rates, you can add:
+
+Motion gating: only sample when camera stops moving
+
+Event-driven sampling: sample on selection change, material edit, light tweak
+
+Priority sampling: spike to 10fps during a camera move, drop to 1fps at rest
+
+Multi-consumer: one feed for Codex, one for recording, one for QA
+
+Same producer, many brains.
+
+If you implement just latest-frame latch + throttled capture + metadata packet, you’ll already have a rig that feels “native” instead of “AI bolted on.” From there, you can graduate to masks/depth and it becomes dangerously powerful for lookdev/debugging.

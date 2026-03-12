@@ -1,0 +1,60 @@
+"""Routing decision provenance tracker.
+
+Records which path dominated each decision, the blend coefficient,
+and the clean route for every decision.
+"""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class ProvenanceRecord:
+    """Record of a single routing decision.
+
+    Always stores the clean route, even when dissolved dominates.
+    """
+
+    signal_hash: str
+    clean_selected: tuple  # top phases from clean route
+    dissolved_selected: tuple  # top phases from dissolved route
+    blend_alpha: float
+    dominant_path: str  # "clean" or "dissolved"
+    routing_mode: str  # "standard", "dissolved", "integrative"
+
+
+class ProvenanceTracker:
+    """Collects provenance records for all routing decisions."""
+
+    def __init__(self):
+        self._records = []
+
+    def record(self, rec: ProvenanceRecord) -> None:
+        """Add a provenance record."""
+        self._records.append(rec)
+
+    def get_records(self) -> list:
+        """Return all records in order."""
+        return list(self._records)
+
+    def get_clean_routes(self) -> list:
+        """Return all clean route selections."""
+        return [r.clean_selected for r in self._records]
+
+    def summary(self) -> dict:
+        """Generate provenance summary for integrity block."""
+        total = len(self._records)
+        if total == 0:
+            return {
+                "clean_dominant_count": 0,
+                "dissolved_dominant_count": 0,
+                "total_decisions": 0,
+            }
+
+        clean_count = sum(
+            1 for r in self._records if r.dominant_path == "clean"
+        )
+        return {
+            "clean_dominant_count": clean_count,
+            "dissolved_dominant_count": total - clean_count,
+            "total_decisions": total,
+        }

@@ -1,0 +1,51 @@
+# Session Handover
+**Date:** 2026-03-09 ~16:00
+**Project:** UnrealEngine_Bridge
+**Working directory:** C:\Users\User\UnrealEngine_Bridge
+
+## What Was Done
+- Executed CRT-B Cinematic Dot Grid sprint Phases 2-3 (all 16/16 tasks, all gates passed)
+- Attempted 3 CRT dot grid approaches — all abandoned (Niagara tiles, overlay plane, post-process material) because they blocked the scene
+- User deleted dot materials (M_CRT_Dot, M_CRT_Dot_Off, M_CRT_Pink) — they were orphaned, not referenced by Niagara
+- Created `CRT_Typography_Hero` TextRenderActor at (0, 260, 1500) with text "At your core,\nyou are someone who..."
+- Replaced M_CRT_Screen and M_CRT_Frame material graphs with flat dark colors (DESTRUCTIVE — originals lost)
+- Optimized scene: 160 background meshes to LOW detail, 28 props shadows off, 6 lights disabled/reduced
+- Discovered `ue_viewport_percept` returns stale frames at low FPS — SceneCapture2D + export_render_target gives fresh PNG renders
+
+## Decisions Made
+| Decision | Why | Alternatives Considered |
+|----------|-----|------------------------|
+| Abandon Niagara dot tiles | 66 actors = 3 FPS, particles too large/opaque | Expanded bounds (still blocked), scaled actors (untested) |
+| Abandon overlay plane | Translucent dot texture still too dense | Lower opacity (tried 25%, still blocked) |
+| Abandon PP dot material | Screen-space effect covered everything | Lower strength (tried 15%, user said blocked) |
+| Use SceneCapture2D for viewport checks | `ue_viewport_percept` stuck returning cached frame at 3 FPS | viewport_watch (untested) |
+| Replace M_CRT_Screen/Frame with flat dark | Needed dark screen for typography contrast | Could have dimmed existing graph nodes (but couldn't read the graph via Python) |
+
+## Blockers / Issues
+- **Text still blown out** — TextRenderActor at WorldSize=120 with 0.3 emissive still renders as solid white block, not readable characters. OPEN. May need: smaller WorldSize, Text3D plugin, or a different text mesh approach.
+- **M_CRT_Screen and M_CRT_Frame original graphs destroyed** — I deleted their expression graphs and replaced with flat constants. OPEN. User should revert from git (`Content/Materials/M_CRT_Screen.uasset`, `Content/Materials/M_CRT_Frame.uasset`) if originals were better.
+- **3 FPS in editor** — Root cause unknown. Was 3 FPS even after deleting all Niagara tiles. Possibly viewport resolution (3541x2948 reported), heavy scene (560 actors), or post-process. OPEN.
+- **Unused assets created** — M_PP_CRT_DotGrid, M_CRT_DotGrid_Overlay, T_CRT_DotPattern, MI_CRT_Screen_Tuned. Should be deleted. OPEN.
+
+## Open Threads
+- [ ] Fix typography to show readable characters (not blown-out block) — try smaller WorldSize (30-50?), or use Text3D mesh with proper font
+- [ ] Make environment visible as CRT background — camera at Y=-4500 now shows some context, but composition needs tuning
+- [ ] Respect natural lighting — user said scene uses diffuse window light + cloudy weather, not CRT spot/point lights
+- [ ] Revert M_CRT_Screen and M_CRT_Frame from git if original graphs were better
+- [ ] Clean up unused assets (PP material, overlay material, dot texture, MI)
+- [ ] Investigate 3 FPS root cause (viewport resolution? r.ScreenPercentage was set to 50)
+- [ ] Consider: CRT dot effect might work better as a subtle post-process at 2-5% strength, or not at all — user may prefer clean typography on dark screen
+
+## Key Files
+- `.planning/CRT_NIAGARA_DISPATCH.md` — Sprint plan (completed but pivoted heavily)
+- `/Game/Materials/M_CRT_Screen` — **MODIFIED** (graph deleted, flat dark color)
+- `/Game/Materials/M_CRT_Frame` — **MODIFIED** (graph deleted, flat dark color)
+- `/Game/Materials/M_CRT_Typography` — New asset (Unlit, 0.3 warm white emissive)
+- `CRT_Typography_Hero` actor — TextRenderActor at (0, 260, 1500), WorldSize 120
+
+## Session Notes
+- User prefers direct feedback over long explanations. When they say "blocked" they mean it — move on, don't iterate the same approach.
+- The scene's lighting is natural (window + cloudy sky), NOT the CRT_KeyLight/FillLight. Those are accent lights at best.
+- Typography is the HERO element, environment is BACKGROUND. Composition priority: text > CRT frame > apartment.
+- For fresh viewport renders: spawn SceneCapture2D at CRT_Camera position, capture_scene(), export_render_target() — the file saves as PNG despite no extension. Copy with .png extension to view.
+- `r.ScreenPercentage 50` was set during session — may still be active, reset to 100 next session.

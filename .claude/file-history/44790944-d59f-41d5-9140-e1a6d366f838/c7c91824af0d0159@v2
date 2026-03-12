@@ -1,0 +1,286 @@
+{
+  "semantic_index": {
+    "description": "Fast lookup index mapping topics to documentation locations",
+    "indexing_strategy": "Topic -> Documents -> Agent Relevance",
+    "topics": {
+      "scatter": {
+        "primary_doc": "node_reference/sop_nodes/scatter.md",
+        "related_docs": [
+          "node_reference/sop_nodes/copy.md",
+          "performance_reference/optimization_strategies.md",
+          "tutorials/workflow_guides/scatter_optimization.md",
+          "vex_reference/examples/performance_optimization.md"
+        ],
+        "keywords": ["scatter", "copy", "instancing", "duplicate", "copies"],
+        "agent_relevance": {
+          "Librarian": 0.95,
+          "VexAuditor": 0.4,
+          "GraphTracer": 0.85
+        },
+        "common_queries": [
+          "How do I use scatter?",
+          "How do I optimize scatter for 10M points?",
+          "What's the difference between scatter and copy?",
+          "Scatter node slow - why?",
+          "Scatter performance bottleneck"
+        ],
+        "performance_notes": "Bottleneck: attribute iteration, copy count scaling"
+      },
+      "copy": {
+        "primary_doc": "node_reference/sop_nodes/copy.md",
+        "related_docs": [
+          "node_reference/sop_nodes/scatter.md",
+          "performance_reference/complexity_analysis.md",
+          "tutorials/best_practices/instancing.md"
+        ],
+        "keywords": ["copy", "duplicate", "instancing", "instances"],
+        "agent_relevance": {
+          "Librarian": 0.9,
+          "GraphTracer": 0.8,
+          "VexAuditor": 0.3
+        },
+        "common_queries": [
+          "How do I copy geometry?",
+          "Copy vs Scatter - which should I use?",
+          "How many copies can I make?"
+        ],
+        "performance_notes": "Linear scaling with copy count, instance overhead"
+      },
+      "vex": {
+        "primary_doc": "vex_reference/fundamentals.md",
+        "related_docs": [
+          "vex_reference/functions.md",
+          "vex_reference/attributes.md",
+          "vex_reference/types.md",
+          "vex_reference/performance.md",
+          "vex_reference/examples/basic_patterns.md",
+          "tutorials/best_practices/vex_optimization.md"
+        ],
+        "keywords": ["vex", "wrangle", "vop", "expression", "code", "syntax", "type", "control flow"],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "Librarian": 0.7,
+          "GraphTracer": 0.3
+        },
+        "common_queries": [
+          "How do I write VEX code?",
+          "What's the syntax for VEX?",
+          "How do I access point attributes in VEX?",
+          "VEX optimization tips",
+          "Common VEX patterns",
+          "VEX data types",
+          "VEX control flow"
+        ]
+      },
+      "vex_functions": {
+        "primary_doc": "vex_reference/functions.md",
+        "related_docs": [
+          "vex_reference/fundamentals.md",
+          "vex_reference/attributes.md",
+          "vex_reference/examples/basic_patterns.md"
+        ],
+        "keywords": ["vex", "function", "signature", "pcfind", "noise", "lerp", "fit", "addpoint", "removepoint", "nearpoint", "chramp", "channel"],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "Librarian": 0.8,
+          "GraphTracer": 0.4
+        },
+        "common_queries": [
+          "VEX function list",
+          "What VEX function does X?",
+          "pcfind parameters",
+          "How to use chramp",
+          "VEX noise functions",
+          "VEX math functions"
+        ]
+      },
+      "vex_attributes": {
+        "primary_doc": "vex_reference/attributes.md",
+        "related_docs": [
+          "vex_reference/fundamentals.md",
+          "geometry_reference/point_attributes.md",
+          "vex_reference/functions.md"
+        ],
+        "keywords": ["vex", "attribute", "@P", "@N", "@Cd", "point", "prim", "vertex", "detail", "group", "prefix", "type binding", "intrinsic"],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "GraphTracer": 0.9,
+          "Librarian": 0.7
+        },
+        "common_queries": [
+          "How do I read attributes in VEX?",
+          "What is @P?",
+          "How do I create custom attributes?",
+          "VEX type prefixes",
+          "How to access second input in VEX",
+          "VEX groups"
+        ]
+      },
+      "vex_types": {
+        "primary_doc": "vex_reference/types.md",
+        "related_docs": [
+          "vex_reference/fundamentals.md",
+          "vex_reference/functions.md"
+        ],
+        "keywords": ["vex", "type", "conversion", "cast", "vector", "matrix", "quaternion", "vector4", "matrix3", "int", "float", "string", "array"],
+        "agent_relevance": {
+          "VexAuditor": 0.90,
+          "Librarian": 0.75,
+          "GraphTracer": 0.3
+        },
+        "common_queries": [
+          "VEX data types",
+          "How to convert types in VEX",
+          "What is vector4?",
+          "Quaternion in VEX",
+          "Matrix operations in VEX"
+        ]
+      },
+      "vex_performance": {
+        "primary_doc": "vex_reference/performance.md",
+        "related_docs": [
+          "performance_reference/optimization_strategies.md",
+          "vex_reference/functions.md",
+          "vex_reference/examples/basic_patterns.md"
+        ],
+        "keywords": ["vex", "performance", "optimization", "speed", "slow", "fast", "bottleneck", "pcfind", "distance2", "parallel"],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "GraphTracer": 0.7,
+          "Librarian": 0.5
+        },
+        "common_queries": [
+          "How to make VEX faster",
+          "VEX optimization tips",
+          "Why is my wrangle slow?",
+          "pcfind vs nearpoints performance",
+          "VEX memory optimization"
+        ],
+        "performance_notes": "VEX compiles to native SIMD; avoid branching, use squared distances, prefer pcfind over nearpoints"
+      },
+      "vex_patterns": {
+        "primary_doc": "vex_reference/examples/basic_patterns.md",
+        "related_docs": [
+          "vex_reference/functions.md",
+          "vex_reference/attributes.md",
+          "tutorials/best_practices/vex_optimization.md"
+        ],
+        "keywords": ["vex", "pattern", "example", "snippet", "recipe", "deform", "color", "noise", "spiral", "wave", "group", "solver", "transfer"],
+        "agent_relevance": {
+          "VexAuditor": 0.95,
+          "Librarian": 0.6,
+          "GraphTracer": 0.5
+        },
+        "common_queries": [
+          "VEX examples",
+          "Common VEX patterns",
+          "How to deform with VEX",
+          "VEX color by attribute",
+          "VEX point generation",
+          "VEX solver pattern"
+        ]
+      },
+      "attributes": {
+        "primary_doc": "geometry_reference/point_attributes.md",
+        "related_docs": [
+          "geometry_reference/primitive_attributes.md",
+          "geometry_reference/detail_attributes.md",
+          "api_reference/core/attributes.md",
+          "vex_reference/attributes.md"
+        ],
+        "keywords": ["attributes", "point", "primitive", "detail", "@P", "@N"],
+        "agent_relevance": {
+          "GraphTracer": 0.95,
+          "VexAuditor": 0.85,
+          "Librarian": 0.7
+        },
+        "common_queries": [
+          "What is @P?",
+          "How do I create custom attributes?",
+          "What attributes does scatter create?",
+          "Point vs primitive attributes"
+        ]
+      },
+      "performance": {
+        "primary_doc": "performance_reference/optimization_strategies.md",
+        "related_docs": [
+          "performance_reference/complexity_analysis.md",
+          "performance_reference/memory_usage.md",
+          "performance_reference/cook_time_profiling.md",
+          "vex_reference/performance.md"
+        ],
+        "keywords": ["performance", "optimization", "slow", "bottleneck", "fast"],
+        "agent_relevance": {
+          "VexAuditor": 0.85,
+          "GraphTracer": 0.8,
+          "Librarian": 0.6
+        },
+        "common_queries": [
+          "Why is my cook time slow?",
+          "How do I optimize my network?",
+          "What's the bottleneck?",
+          "Performance optimization tips",
+          "How many points can I handle?"
+        ]
+      },
+      "geometry": {
+        "primary_doc": "geometry_reference/geometry_types.md",
+        "related_docs": [
+          "geometry_reference/operations.md",
+          "geometry_reference/constraints.md",
+          "node_reference/sop_nodes/*.md"
+        ],
+        "keywords": ["geometry", "mesh", "polygon", "points", "primitives"],
+        "agent_relevance": {
+          "GraphTracer": 0.95,
+          "Librarian": 0.8,
+          "VexAuditor": 0.5
+        },
+        "common_queries": [
+          "What are geometry types?",
+          "Polygon vs mesh?",
+          "How do I manipulate geometry?"
+        ]
+      },
+      "machine_learning": {
+        "primary_doc": "machine_learning/ml_fundamentals.md",
+        "related_docs": [
+          "machine_learning/neural_networks_in_houdini.md",
+          "machine_learning/training_data.md",
+          "machine_learning/example_networks/*.hiplc",
+          "tutorials/example_files/H21_ML_*.hiplc"
+        ],
+        "keywords": ["machine learning", "neural network", "ml", "ai"],
+        "agent_relevance": {
+          "Librarian": 0.85,
+          "VexAuditor": 0.4,
+          "GraphTracer": 0.3
+        },
+        "common_queries": [
+          "How do I use machine learning in Houdini?",
+          "Neural networks in Houdini",
+          "ML examples and workflows"
+        ]
+      },
+      "api": {
+        "primary_doc": "api_reference/core/*.md",
+        "related_docs": [
+          "api_reference/classes/*.md",
+          "api_reference/functions/*.md",
+          "tutorials/best_practices/*.md"
+        ],
+        "keywords": ["api", "function", "class", "method", "hdk"],
+        "agent_relevance": {
+          "Librarian": 0.95,
+          "VexAuditor": 0.6,
+          "GraphTracer": 0.4
+        },
+        "common_queries": [
+          "SOP_Node API",
+          "How do I use GU_Detail?",
+          "HDK function reference"
+        ]
+      }
+    }
+  }
+}

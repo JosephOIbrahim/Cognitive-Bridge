@@ -1,0 +1,156 @@
+'use client';
+
+/**
+ * Perception Context
+ * Phase 2: USD Substrate Integration
+ *
+ * Provides:
+ * - Shared perception state across components
+ * - Event recording for chat behavior feedback
+ * - Archetype and confidence accessors
+ */
+
+import { createContext, useContext, useState, useCallback, useRef, useEffect, ReactNode } from 'react';
+import { VisitorClassifier } from './classifier';
+import { SensorEvent, SensorEventType, VisitorArchetype } from './types';
+import type { PerceptionState } from './types';
+
+interface PerceptionContextValue {
+  perceptionState: PerceptionState | null;
+  updatePerceptionState: (state: PerceptionState) => void;
+  // Record events from any component (e.g., ChatBot)
+  recordEvent: (event: Omit<SensorEvent, 'sessionId'>) => void;
+  // Get current session ID
+  sessionId: string;
+  // Convenience accessors
+  archetype: VisitorArchetype | null;
+  confidence: number;
+  // Stability info for debugging
+  stability: {
+    consecutiveSameArchetype: number;
+    totalClassifications: number;
+  } | null;
+  // Awareness mode: reveals AI perception layer
+  awarenessMode: boolean;
+  toggleAwarenessMode: () => void;
+}
+
+const PerceptionContext = createContext<PerceptionContextValue | null>(null);
+
+export function PerceptionProvider({ children }: { children: ReactNode }) {
+  const [perceptionState, setPerceptionState] = useState<PerceptionState | null>(null);
+  const [awarenessMode, setAwarenessMode] = useState(false);
+  const isHydratedRef = useRef(false);
+
+  // Shared classifier instance
+  const classifierRef = useRef<VisitorClassifier | null>(null);
+  const sessionIdRef = useRef<string>('');
+
+  // Initialize session ID on mount
+  if (!sessionIdRef.current) {
+    sessionIdRef.current = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // Initialize classifier on mount
+  if (!classifierRef.current) {
+    classifierRef.current = new VisitorClassifier();
+  }
+
+  // Hydrate awarenessMode from sessionStorage on mount
+  useEffect(() => {
+    const stored = sessionStorage.getItem('awarenessMode');
+    if (stored === 'true') {
+      setAwarenessMode(true);
+    }
+    isHydratedRef.current = true;
+  }, []);
+
+  // Persist awarenessMode to sessionStorage when it changes
+  useEffect(() => {
+    if (isHydratedRef.current) {
+      sessionStorage.setItem('awarenessMode', String(awarenessMode));
+    }
+  }, [awarenessMode]);
+
+  const updatePerceptionState = useCallback((state: PerceptionState) => {
+    setPerceptionState(state);
+  }, []);
+
+  /**
+   * Toggle awareness mode - reveals AI perception layer
+   * Triggered by double-clicking the chatbot icon
+   */
+  const toggleAwarenessMode = useCallback(() => {
+    setAwarenessMode(prev => !prev);
+  }, []);
+
+  /**
+   * Record an event from any component
+   * Used by ChatBot to feed chat behavior back into classification
+   */
+  const recordEvent = useCallback((eventWithoutSession: Omit<SensorEvent, 'sessionId'>) => {
+    if (!classifierRef.current) return;
+
+    const event: SensorEvent = {
+      ...eventWithoutSession,
+      sessionId: sessionIdRef.current,
+    };
+
+    classifierRef.current.addEvent(event);
+
+    // Re-classify and update state
+    const profile = classifierRef.current.classify();
+    const newState: PerceptionState = {
+      sessionId: sessionIdRef.current,
+      events: [], // Don't pass full event buffer
+      profile,
+      adaptations: {
+        projectOrder: 'default',
+        lastAdaptation: Date.now(),
+      },
+    };
+    setPerceptionState(newState);
+  }, []);
+
+  const value: PerceptionContextValue = {
+    perceptionState,
+    updatePerceptionState,
+    recordEvent,
+    sessionId: sessionIdRef.current,
+    archetype: perceptionState?.profile.archetype ?? null,
+    confidence: perceptionState?.profile.confidence ?? 0,
+    stability: perceptionState?.profile.stability ?? null,
+    awarenessMode,
+    toggleAwarenessMode,
+  };
+
+  return (
+    <PerceptionContext.Provider value={value}>
+      {children}
+    </PerceptionContext.Provider>
+  );
+}
+
+export function usePerception(): PerceptionContextValue {
+  const context = useContext(PerceptionContext);
+  if (!context) {
+    // Return safe defaults if used outside provider
+    return {
+      perceptionState: null,
+      updatePerceptionState: () => {},
+      recordEvent: () => {},
+      sessionId: '',
+      archetype: null,
+      confidence: 0,
+      stability: null,
+      awarenessMode: false,
+      toggleAwarenessMode: () => {},
+    };
+  }
+  return context;
+}
+
+/**
+ * Export SensorEventType for convenience
+ */
+export { SensorEventType };

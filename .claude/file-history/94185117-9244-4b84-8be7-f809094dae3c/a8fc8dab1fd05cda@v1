@@ -1,0 +1,68 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+
+const roles = [
+  'Visual Effects Artist',
+  'Lighting Technical Director',
+  'CG/AI Artist',
+  '3D Generalist'
+];
+
+export function RotatingRole() {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isBlinking, setIsBlinking] = useState(false);
+
+  useEffect(() => {
+    // Blink every 3 seconds with elegant flow
+    const blinkInterval = setInterval(() => {
+      setIsBlinking(true);
+      setTimeout(() => setIsBlinking(false), 800); // Blink duration: 800ms for more elegance
+    }, 3000);
+
+    return () => clearInterval(blinkInterval);
+  }, []);
+
+  const handleNext = () => {
+    setCurrentIndex((prev) => (prev + 1) % roles.length);
+  };
+
+  return (
+    <div className="flex items-center gap-2 md:gap-3">
+      {/* Role Title - clickable, elegant fade with subtle shift */}
+      <button
+        onClick={handleNext}
+        className="inline-block min-w-[200px] md:min-w-[300px] hover:opacity-70 text-left"
+        style={{
+          color: '#6a6a6a',
+          fontFamily: 'var(--font-lora)',
+          fontStyle: 'italic',
+          fontWeight: 400,
+          opacity: isBlinking ? 0.2 : 1,
+          transform: isBlinking ? 'translateX(-3px)' : 'translateX(0)',
+          transition: 'all 700ms ease-in-out',
+          cursor: 'pointer',
+          background: 'none',
+          border: 'none',
+          padding: 0
+        }}
+      >
+        {roles[currentIndex]}
+      </button>
+
+      {/* Arrow (pointing left) - provocative motion, visual indicator only */}
+      <span
+        aria-hidden="true"
+        style={{
+          color: '#6a6a6a',
+          fontSize: '1.5rem',
+          transform: isBlinking ? 'translateX(-16px) scale(1.08)' : 'translateX(0) scale(1)',
+          transition: 'all 800ms ease-in-out',
+          pointerEvents: 'none'
+        }}
+      >
+        ←
+      </span>
+    </div>
+  );
+}

@@ -1,0 +1,122 @@
+"use client";
+
+import Image from "next/image";
+import { useInView } from "@/lib/hooks";
+import { PlaceholderImage } from "./PlaceholderImage";
+import { detailImages } from "@/lib/images";
+import { T } from "@/lib/tokens";
+import type { CaseStudySection as CaseStudySectionType } from "@/lib/types";
+import styles from "./CaseStudySection.module.css";
+
+interface Props {
+  section: CaseStudySectionType;
+  color: string;
+  title: string;
+  slug: string;
+  index: number;
+}
+
+export function CaseStudySection({ section, color, title, slug, index }: Props) {
+  const [ref, inView] = useInView({ threshold: 0.1 });
+  const imgCount = section.images || 2;
+
+  // Get all detail images for this project, then slice for this section
+  // Each section consumes `imgCount` images sequentially
+  const allDetails = detailImages(slug);
+
+  // Calculate which detail images belong to this section
+  // by summing up previous sections' image counts
+  // For simplicity, just offset by section index * average
+  // We'll use a sequential approach: section 0 gets first N, section 1 gets next N, etc.
+  const startIdx = getStartIndex(index, imgCount);
+  const sectionImages = allDetails.slice(startIdx, startIdx + imgCount);
+
+  return (
+    <div ref={ref} className={styles.section}>
+      <div
+        className={styles.textBlock}
+        style={{
+          opacity: inView ? 1 : 0,
+          transform: inView ? "translateY(0)" : "translateY(20px)",
+          transition: `all 600ms ${T.easeOut}`,
+        }}
+      >
+        <h2 className={styles.heading}>{section.heading}</h2>
+        <p className={styles.body}>{section.body}</p>
+      </div>
+
+      {imgCount === 1 ? (
+        sectionImages[0] ? (
+          <div style={{ position: "relative", width: "100%", height: "clamp(240px, 40vh, 480px)" }}>
+            <Image src={sectionImages[0]} alt={section.heading} fill style={{ objectFit: "cover", borderRadius: "var(--img-radius)" }} sizes="(max-width: 768px) 100vw, 80vw" />
+          </div>
+        ) : (
+          <PlaceholderImage color={color} title={section.heading} height="clamp(240px, 40vh, 480px)" />
+        )
+      ) : imgCount === 2 ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: index % 2 === 0 ? "2fr 1fr" : "1fr 2fr",
+            gap: 20,
+            alignItems: "start",
+          }}
+        >
+          {[0, 1].map((i) => {
+            const src = sectionImages[i];
+            const h = i === (index % 2 === 0 ? 0 : 1) ? 400 : 300;
+            return src ? (
+              <div key={i} style={{ position: "relative", height: h }}>
+                <Image src={src} alt={`${title} detail`} fill style={{ objectFit: "cover", borderRadius: "var(--img-radius)" }} sizes="(max-width: 768px) 100vw, 50vw" />
+              </div>
+            ) : (
+              <PlaceholderImage key={i} color={color} title={`${title} ${index}-${i}`} height={h} />
+            );
+          })}
+        </div>
+      ) : (
+        <div>
+          {sectionImages[0] ? (
+            <div style={{ position: "relative", width: "100%", height: "clamp(240px, 40vh, 480px)" }}>
+              <Image src={sectionImages[0]} alt={`${title} hero`} fill style={{ objectFit: "cover", borderRadius: "var(--img-radius)" }} sizes="(max-width: 768px) 100vw, 80vw" />
+            </div>
+          ) : (
+            <PlaceholderImage color={color} title={`${title} hero`} height="clamp(240px, 40vh, 480px)" />
+          )}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: index % 2 === 0 ? "1fr 2fr" : "2fr 1fr",
+              gap: 20,
+              marginTop: 20,
+              alignItems: "start",
+            }}
+          >
+            {[1, 2].map((i) => {
+              const src = sectionImages[i];
+              const h = i === (index % 2 === 0 ? 2 : 1) ? 380 : 280;
+              return src ? (
+                <div key={i} style={{ position: "relative", height: h }}>
+                  <Image src={src} alt={`${title} detail`} fill style={{ objectFit: "cover", borderRadius: "var(--img-radius)" }} sizes="(max-width: 768px) 100vw, 50vw" />
+                </div>
+              ) : (
+                <PlaceholderImage key={i} color={color} title={`${title} ${index}-${i}`} height={h} />
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Calculate the starting detail image index for a given section */
+function getStartIndex(sectionIndex: number, _imgCount: number): number {
+  // Simple sequential allocation: each section gets its images in order
+  // This works because case study sections define their own image counts
+  // Section 0: starts at 0, Section 1: starts at section0.images, etc.
+  // Since we don't have previous sections' counts here, use a simple offset
+  // based on typical patterns (2-3 images per section)
+  const offsets = [0, 2, 4, 7, 10, 13];
+  return offsets[sectionIndex] ?? sectionIndex * 3;
+}

@@ -1,0 +1,112 @@
+"""Clean channel converter orchestrator.
+
+Orchestrates: parse() -> resolve() -> render() -> hash()
+Produces a CleanConversionResult with full provenance.
+
+This converter is INJECTION-BLIND: it produces identical output
+regardless of injection state. No gain modulation, no cross-expert
+bleeding, no entropy injection.
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from src.lossless.clean_channel.hasher import (
+    hash_anchors,
+    hash_sections,
+    hash_string,
+)
+from src.lossless.clean_channel.renderer import (
+    extract_anchor_sections,
+    extract_modulated_sections,
+    render_full_markdown,
+    render_sections,
+)
+from src.lossless.clean_channel.resolver import resolve_from_root
+
+
+@dataclass(frozen=True, slots=True)
+class CleanConversionResult:
+    """Result of a clean (injection-blind) conversion.
+
+    Attributes:
+        markdown: The full clean markdown output.
+        sections: Phase-name -> markdown section mapping.
+        anchor_sections: Anchor-only sections.
+        modulated_sections: Modulated-only sections.
+        clean_hash: SHA256 of the full markdown.
+        anchor_hash: SHA256 of anchor sections only.
+        sections_hash: SHA256 of all sections (keyed).
+        prim_count: Number of resolved prims.
+        conflict_log: List of composition conflict records.
+    """
+
+    markdown: str
+    sections: tuple  # tuple of (key, value) pairs for immutability
+    anchor_sections: tuple
+    modulated_sections: tuple
+    clean_hash: str
+    anchor_hash: str
+    sections_hash: str
+    prim_count: int
+    conflict_log: tuple
+
+    def get_sections_dict(self) -> dict:
+        """Return sections as a regular dict."""
+        return dict(self.sections)
+
+    def get_anchor_dict(self) -> dict:
+        """Return anchor sections as a regular dict."""
+        return dict(self.anchor_sections)
+
+    def get_modulated_dict(self) -> dict:
+        """Return modulated sections as a regular dict."""
+        return dict(self.modulated_sections)
+
+
+class CleanConverter:
+    """Injection-blind converter: USDA -> clean markdown.
+
+    Usage:
+        converter = CleanConverter(root_path)
+        result = converter.convert()
+    """
+
+    def __init__(self, root_path: Path):
+        self.root_path = root_path
+
+    def convert(self) -> CleanConversionResult:
+        """Run the full clean conversion pipeline.
+
+        Returns:
+            CleanConversionResult with all hashes and provenance.
+        """
+        # Stage 1: Parse + Resolve
+        prims, conflict_log = resolve_from_root(self.root_path)
+
+        # Stage 2: Render to sections
+        sections = render_sections(prims)
+
+        # Stage 3: Render full markdown
+        markdown = render_full_markdown(sections)
+
+        # Stage 4: Extract anchor/modulated partitions
+        anchor_secs = extract_anchor_sections(sections)
+        modulated_secs = extract_modulated_sections(sections)
+
+        # Stage 5: Hash everything
+        clean_hash = hash_string(markdown)
+        anchor_hash = hash_anchors(sections)
+        sections_hash = hash_sections(sections)
+
+        return CleanConversionResult(
+            markdown=markdown,
+            sections=tuple(sorted(sections.items())),
+            anchor_sections=tuple(sorted(anchor_secs.items())),
+            modulated_sections=tuple(sorted(modulated_secs.items())),
+            clean_hash=clean_hash,
+            anchor_hash=anchor_hash,
+            sections_hash=sections_hash,
+            prim_count=len(prims),
+            conflict_log=tuple(conflict_log),
+        )

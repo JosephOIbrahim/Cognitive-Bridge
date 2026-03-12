@@ -1,0 +1,165 @@
+import { ImageResponse } from 'next/og';
+
+// Image metadata
+export const runtime = 'edge';
+export const alt = 'Joseph Ibrahim — VFX Lighting TD';
+export const size = {
+  width: 1200,
+  height: 630,
+};
+export const contentType = 'image/png';
+
+// Option 2: VFX Frame Background
+// Still from reel with elegant typography overlay
+export default async function Image() {
+  // Load Lora italic font (same as homepage hero)
+  const loraItalic = await fetch(
+    new URL('https://fonts.gstatic.com/s/lora/v35/0QI6MX1D_JOuGQbT0gvTJPa787weuxJMkqt8ndeY9Z6JTg.woff2')
+  ).then((res) => res.arrayBuffer());
+
+  // Load DM Sans for secondary text
+  const dmSans = await fetch(
+    new URL('https://fonts.gstatic.com/s/dmsans/v15/rP2Hp2ywxg089UriCZOIHQ.woff2')
+  ).then((res) => res.arrayBuffer());
+
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#141414',
+          display: 'flex',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* VFX Frame background - from general reel */}
+        <img
+          src="https://vumbnail.com/1057290380.jpg"
+          alt=""
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            opacity: 0.5,
+            filter: 'saturate(0.8) contrast(1.1)',
+          }}
+        />
+
+        {/* Dark gradient overlay for text legibility */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '100%',
+            height: '100%',
+            background: 'linear-gradient(135deg, rgba(20,20,20,0.95) 0%, rgba(20,20,20,0.7) 50%, rgba(20,20,20,0.85) 100%)',
+          }}
+        />
+
+        {/* Text content - centered */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            width: '100%',
+            height: '100%',
+            padding: '60px',
+            position: 'relative',
+            zIndex: 10,
+            textAlign: 'center',
+          }}
+        >
+          {/* Name - Lora italic, matching homepage hero */}
+          <div
+            style={{
+              color: '#f0f0f0',
+              fontFamily: 'Lora',
+              fontWeight: 400,
+              fontStyle: 'italic',
+              fontSize: '72px',
+              lineHeight: 1.15,
+              letterSpacing: '0.005em',
+              marginBottom: '20px',
+            }}
+          >
+            Joseph Ibrahim
+          </div>
+
+          {/* Tagline */}
+          <div
+            style={{
+              color: '#a0a0a0',
+              fontFamily: 'DM Sans',
+              fontWeight: 400,
+              fontSize: '28px',
+              lineHeight: 1.4,
+              letterSpacing: '0.02em',
+              marginBottom: '28px',
+            }}
+          >
+            VFX Lighting TD
+          </div>
+
+          {/* Description - echoing homepage hero */}
+          <div
+            style={{
+              color: '#7a7a7a',
+              fontFamily: 'Lora',
+              fontStyle: 'italic',
+              fontWeight: 400,
+              fontSize: '24px',
+              lineHeight: 1.5,
+              letterSpacing: '0.005em',
+              maxWidth: '600px',
+            }}
+          >
+            Sixteen years. Feature films, commercials, real-time engines.
+          </div>
+        </div>
+
+        {/* Subtle site URL */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '40px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            color: '#5a5a5a',
+            fontFamily: 'DM Sans',
+            fontWeight: 500,
+            fontSize: '14px',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+          }}
+        >
+          josephibrahim.com
+        </div>
+      </div>
+    ),
+    {
+      ...size,
+      fonts: [
+        {
+          name: 'Lora',
+          data: loraItalic,
+          style: 'italic',
+          weight: 400,
+        },
+        {
+          name: 'DM Sans',
+          data: dmSans,
+          style: 'normal',
+          weight: 400,
+        },
+      ],
+    }
+  );
+}

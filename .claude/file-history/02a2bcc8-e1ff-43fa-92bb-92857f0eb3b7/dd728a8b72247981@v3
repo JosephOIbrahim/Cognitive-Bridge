@@ -1,0 +1,590 @@
+"""
+remote_control_bridge.py - REST API wrapper for UE5 Remote Control.
+
+Wraps the UE5 Remote Control plugin's HTTP API (localhost:30010).
+Used by the MCP server (Phase 3) and can be run standalone for testing.
+
+Usage:
+    python remote_control_bridge.py --test    # Run self-test (editor must be running)
+    python remote_control_bridge.py --info    # Check if editor is reachable
+"""
+
+import json
+import os
+import sys
+import argparse
+from typing import Any, Optional
+
+import httpx
+
+BASE_URL = "http://localhost:30010"
+TIMEOUT = 10.0
+
+
+class UnrealRemoteControl:
+    """Synchronous wrapper around UE5 Remote Control REST API."""
+
+    def __init__(self, base_url: str = BASE_URL, timeout: float = TIMEOUT):
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self._client = httpx.Client(base_url=self.base_url, timeout=self.timeout)
+        # Temp dir for Python script files sent to the editor
+        import tempfile
+        self._temp_dir = os.path.join(tempfile.gettempdir(), "ue_mcp_scripts")
+        os.makedirs(self._temp_dir, exist_ok=True)
+
+    def close(self):
+        self._client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    # ------------------------------------------------------------------
+    # Health / info
+    # ------------------------------------------------------------------
+
+    def info(self) -> dict:
+        """GET /remote/info - check if Remote Control is running."""
+        r = self._client.get("/remote/info")
+        r.raise_for_status()
+        return r.json()
+
+    def is_connected(self) -> bool:
+        """Return True if the editor's Remote Control API is reachable."""
+        try:
+            self.info()
+            return True
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return False
+
+    # ------------------------------------------------------------------
+    # Object property access
+    # ------------------------------------------------------------------
+
+    def get_property(self, object_path: str, property_name: str) -> Any:
+        """GET a property value from a UObject by path."""
+        r = self._client.put(
+            "/remote/object/property",
+            json={
+                "objectPath": object_path,
+                "propertyName": property_name,
+                "access": "READ_ACCESS",
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def set_property(self, object_path: str, property_name: str, value: Any) -> dict:
+        """SET a property value on a UObject by path."""
+        r = self._client.put(
+            "/remote/object/property",
+            json={
+                "objectPath": object_path,
+                "propertyName": property_name,
+                "propertyValue": {"value": value} if not isinstance(value, dict) else value,
+                "access": "WRITE_ACCESS",
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+    # ------------------------------------------------------------------
+    # Object function calls
+    # ------------------------------------------------------------------
+
+    def call_function(
+        self,
+        object_path: str,
+        function_name: str,
+        params: Optional[dict] = None,
+    ) -> dict:
+        """Call a function on a UObject."""
+        payload: dict[str, Any] = {
+            "objectPath": object_path,
+            "functionName": function_name,
+        }
+        if params:
+            payload["parameters"] = params
+        r = self._client.put("/remote/object/call", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+    # ------------------------------------------------------------------
+    # Actor operations
+    # ------------------------------------------------------------------
+
+    def spawn_actor(
+        self,
+        class_path: str,
+        location: tuple[float, float, float] = (0, 0, 0),
+        rotation: tuple[float, float, float] = (0, 0, 0),
+        label: Optional[str] = None,
+    ) -> dict:
+        """Spawn an actor via Python execution in the editor."""
+        loc_str = f"unreal.Vector({location[0]}, {location[1]}, {location[2]})"
+        rot_str = f"unreal.Rotator({rotation[0]}, {rotation[1]}, {rotation[2]})"
+        label_line = f'\n    actor.set_actor_label("{label}")' if label else ""
+
+        code = f"""
+import unreal
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actor = subsystem.spawn_actor_from_class(
+    unreal.EditorAssetLibrary.load_blueprint_class("{class_path}") if "/" in "{class_path}" else getattr(unreal, "{class_path}"),
+    {loc_str},
+    {rot_str}
+)
+if actor:{label_line}
+    result = actor.get_path_name()
+else:
+    result = "SPAWN_FAILED"
+print("RESULT:" + result)
+"""
+        return self.execute_python(code)
+
+    def delete_actor(self, actor_path: str) -> dict:
+        """Delete an actor by its object path."""
+        code = f"""
+import unreal
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actor = unreal.EditorAssetLibrary.load_asset("{actor_path}")
+if actor:
+    subsystem.destroy_actor(actor)
+    print("RESULT:DELETED")
+else:
+    print("RESULT:NOT_FOUND")
+"""
+        return self.execute_python(code)
+
+    def list_actors(self, class_filter: Optional[str] = None) -> dict:
+        """List actors in the current level."""
+        filter_line = ""
+        if class_filter:
+            filter_line = f"""
+    if not actor.get_class().get_name() == "{class_filter}":
+        continue"""
+
+        code = f"""
+import unreal
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+results = []
+for actor in actors:{filter_line}
+    results.append({{
+        "name": actor.get_actor_label(),
+        "class": actor.get_class().get_name(),
+        "path": actor.get_path_name(),
+        "location": [actor.get_actor_location().x, actor.get_actor_location().y, actor.get_actor_location().z]
+    }})
+import json
+print("RESULT:" + json.dumps(results))
+"""
+        return self.execute_python(code)
+
+    def set_actor_transform(
+        self,
+        actor_path: str,
+        location: Optional[tuple[float, float, float]] = None,
+        rotation: Optional[tuple[float, float, float]] = None,
+        scale: Optional[tuple[float, float, float]] = None,
+    ) -> dict:
+        """Set location/rotation/scale on an actor."""
+        lines = ["import unreal"]
+        lines.append(f'actor = unreal.EditorAssetLibrary.load_asset("{actor_path}")')
+        lines.append("if actor:")
+        if location:
+            lines.append(f"    actor.set_actor_location(unreal.Vector({location[0]}, {location[1]}, {location[2]}), False, False)")
+        if rotation:
+            lines.append(f"    actor.set_actor_rotation(unreal.Rotator({rotation[0]}, {rotation[1]}, {rotation[2]}), False)")
+        if scale:
+            lines.append(f"    actor.set_actor_scale3d(unreal.Vector({scale[0]}, {scale[1]}, {scale[2]}))")
+        lines.append('    print("RESULT:OK")')
+        lines.append('else:')
+        lines.append('    print("RESULT:NOT_FOUND")')
+        return self.execute_python("\n".join(lines))
+
+    # ------------------------------------------------------------------
+    # Python execution
+    # ------------------------------------------------------------------
+
+    def execute_python(self, code: str) -> dict:
+        """Execute arbitrary Python code in the editor context via Remote Control.
+
+        Uses KismetSystemLibrary.ExecuteConsoleCommand with the 'py' prefix,
+        which routes to the PythonScriptPlugin console command handler.
+        Requires bEnableRemoteControlConsoleExecution=True in project settings.
+        """
+        # Write code to a temp file and execute it, avoiding quote escaping issues
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8",
+            dir=self._temp_dir,
+        ) as f:
+            f.write(code)
+            temp_path = f.name.replace("\\", "/")
+
+        r = self._client.put(
+            "/remote/object/call",
+            json={
+                "objectPath": "/Script/Engine.Default__KismetSystemLibrary",
+                "functionName": "ExecuteConsoleCommand",
+                "parameters": {
+                    "WorldContextObject": "",
+                    "Command": f"py {temp_path}",
+                },
+            },
+        )
+        r.raise_for_status()
+        return {"executed": True, "temp_script": temp_path, "response": r.json()}
+
+    # ------------------------------------------------------------------
+    # Asset operations
+    # ------------------------------------------------------------------
+
+    def find_assets(self, search_pattern: str, class_filter: Optional[str] = None) -> dict:
+        """Search Content Browser for assets matching a pattern."""
+        class_line = ""
+        if class_filter:
+            class_line = f', unreal.TopLevelAssetPath("/Script/Engine", "{class_filter}")'
+
+        code = f"""
+import unreal
+registry = unreal.AssetRegistryHelpers.get_asset_registry()
+assets = registry.get_assets_by_package_name("{search_pattern}") if "/" in "{search_pattern}" else []
+if not assets:
+    filt = unreal.ARFilter()
+    assets = registry.get_all_assets(filt)
+    assets = [a for a in assets if "{search_pattern}".lower() in str(a.asset_name).lower()]
+results = []
+for a in assets[:50]:
+    results.append({{
+        "name": str(a.asset_name),
+        "path": str(a.package_name),
+        "class": str(a.asset_class_path.asset_name) if hasattr(a.asset_class_path, 'asset_name') else str(a.asset_class_path)
+    }})
+import json
+print("RESULT:" + json.dumps(results))
+"""
+        return self.execute_python(code)
+
+    def get_level_info(self) -> dict:
+        """Get info about the current level."""
+        code = """
+import unreal
+world = unreal.EditorLevelLibrary.get_editor_world()
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+level_name = world.get_name() if world else "Unknown"
+import json
+print("RESULT:" + json.dumps({
+    "level_name": level_name,
+    "actor_count": len(actors)
+}))
+"""
+        return self.execute_python(code)
+
+    def save_level(self) -> dict:
+        """Save the current level."""
+        code = """
+import unreal
+unreal.EditorLevelLibrary.save_current_level()
+print("RESULT:SAVED")
+"""
+        return self.execute_python(code)
+
+
+class AsyncUnrealRemoteControl:
+    """Async wrapper for MCP server use (httpx.AsyncClient)."""
+
+    def __init__(self, base_url: str = BASE_URL, timeout: float = TIMEOUT):
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=self.timeout)
+        import tempfile
+        self._temp_dir = os.path.join(tempfile.gettempdir(), "ue_mcp_scripts")
+        os.makedirs(self._temp_dir, exist_ok=True)
+
+    async def close(self):
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
+    async def info(self) -> dict:
+        r = await self._client.get("/remote/info")
+        r.raise_for_status()
+        return r.json()
+
+    async def is_connected(self) -> bool:
+        try:
+            await self.info()
+            return True
+        except (httpx.ConnectError, httpx.TimeoutException):
+            return False
+
+    async def get_property(self, object_path: str, property_name: str) -> Any:
+        r = await self._client.put(
+            "/remote/object/property",
+            json={
+                "objectPath": object_path,
+                "propertyName": property_name,
+                "access": "READ_ACCESS",
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def set_property(self, object_path: str, property_name: str, value: Any) -> dict:
+        r = await self._client.put(
+            "/remote/object/property",
+            json={
+                "objectPath": object_path,
+                "propertyName": property_name,
+                "propertyValue": {"value": value} if not isinstance(value, dict) else value,
+                "access": "WRITE_ACCESS",
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def call_function(
+        self,
+        object_path: str,
+        function_name: str,
+        params: Optional[dict] = None,
+    ) -> dict:
+        payload: dict[str, Any] = {
+            "objectPath": object_path,
+            "functionName": function_name,
+        }
+        if params:
+            payload["parameters"] = params
+        r = await self._client.put("/remote/object/call", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+    async def execute_python(self, code: str) -> dict:
+        """Execute Python in the editor via console command + temp file."""
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8",
+            dir=self._temp_dir,
+        ) as f:
+            f.write(code)
+            temp_path = f.name.replace("\\", "/")
+
+        r = await self._client.put(
+            "/remote/object/call",
+            json={
+                "objectPath": "/Script/Engine.Default__KismetSystemLibrary",
+                "functionName": "ExecuteConsoleCommand",
+                "parameters": {
+                    "WorldContextObject": "",
+                    "Command": f"py {temp_path}",
+                },
+            },
+        )
+        r.raise_for_status()
+        return {"executed": True, "temp_script": temp_path, "response": r.json()}
+
+    async def spawn_actor(
+        self,
+        class_path: str,
+        location: tuple[float, float, float] = (0, 0, 0),
+        rotation: tuple[float, float, float] = (0, 0, 0),
+        label: Optional[str] = None,
+    ) -> dict:
+        loc_str = f"unreal.Vector({location[0]}, {location[1]}, {location[2]})"
+        rot_str = f"unreal.Rotator({rotation[0]}, {rotation[1]}, {rotation[2]})"
+        label_line = f'\n    actor.set_actor_label("{label}")' if label else ""
+        code = f"""
+import unreal
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actor = subsystem.spawn_actor_from_class(
+    unreal.EditorAssetLibrary.load_blueprint_class("{class_path}") if "/" in "{class_path}" else getattr(unreal, "{class_path}"),
+    {loc_str},
+    {rot_str}
+)
+if actor:{label_line}
+    result = actor.get_path_name()
+else:
+    result = "SPAWN_FAILED"
+print("RESULT:" + result)
+"""
+        return await self.execute_python(code)
+
+    async def delete_actor(self, actor_path: str) -> dict:
+        code = f"""
+import unreal
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actor = unreal.EditorAssetLibrary.load_asset("{actor_path}")
+if actor:
+    subsystem.destroy_actor(actor)
+    print("RESULT:DELETED")
+else:
+    print("RESULT:NOT_FOUND")
+"""
+        return await self.execute_python(code)
+
+    async def list_actors(self, class_filter: Optional[str] = None) -> dict:
+        filter_line = ""
+        if class_filter:
+            filter_line = f"""
+    if not actor.get_class().get_name() == "{class_filter}":
+        continue"""
+        code = f"""
+import unreal
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+results = []
+for actor in actors:{filter_line}
+    results.append({{
+        "name": actor.get_actor_label(),
+        "class": actor.get_class().get_name(),
+        "path": actor.get_path_name(),
+        "location": [actor.get_actor_location().x, actor.get_actor_location().y, actor.get_actor_location().z]
+    }})
+import json
+print("RESULT:" + json.dumps(results))
+"""
+        return await self.execute_python(code)
+
+    async def set_actor_transform(
+        self,
+        actor_path: str,
+        location: Optional[tuple[float, float, float]] = None,
+        rotation: Optional[tuple[float, float, float]] = None,
+        scale: Optional[tuple[float, float, float]] = None,
+    ) -> dict:
+        lines = ["import unreal"]
+        lines.append(f'actor = unreal.EditorAssetLibrary.load_asset("{actor_path}")')
+        lines.append("if actor:")
+        if location:
+            lines.append(f"    actor.set_actor_location(unreal.Vector({location[0]}, {location[1]}, {location[2]}), False, False)")
+        if rotation:
+            lines.append(f"    actor.set_actor_rotation(unreal.Rotator({rotation[0]}, {rotation[1]}, {rotation[2]}), False)")
+        if scale:
+            lines.append(f"    actor.set_actor_scale3d(unreal.Vector({scale[0]}, {scale[1]}, {scale[2]}))")
+        lines.append('    print("RESULT:OK")')
+        lines.append('else:')
+        lines.append('    print("RESULT:NOT_FOUND")')
+        return await self.execute_python("\n".join(lines))
+
+    async def find_assets(self, search_pattern: str, class_filter: Optional[str] = None) -> dict:
+        code = f"""
+import unreal
+registry = unreal.AssetRegistryHelpers.get_asset_registry()
+assets = registry.get_assets_by_package_name("{search_pattern}") if "/" in "{search_pattern}" else []
+if not assets:
+    filt = unreal.ARFilter()
+    assets = registry.get_all_assets(filt)
+    assets = [a for a in assets if "{search_pattern}".lower() in str(a.asset_name).lower()]
+results = []
+for a in assets[:50]:
+    results.append({{
+        "name": str(a.asset_name),
+        "path": str(a.package_name),
+        "class": str(a.asset_class_path.asset_name) if hasattr(a.asset_class_path, 'asset_name') else str(a.asset_class_path)
+    }})
+import json
+print("RESULT:" + json.dumps(results))
+"""
+        return await self.execute_python(code)
+
+    async def get_level_info(self) -> dict:
+        code = """
+import unreal
+world = unreal.EditorLevelLibrary.get_editor_world()
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+level_name = world.get_name() if world else "Unknown"
+import json
+print("RESULT:" + json.dumps({
+    "level_name": level_name,
+    "actor_count": len(actors)
+}))
+"""
+        return await self.execute_python(code)
+
+    async def save_level(self) -> dict:
+        code = """
+import unreal
+unreal.EditorLevelLibrary.save_current_level()
+print("RESULT:SAVED")
+"""
+        return await self.execute_python(code)
+
+
+# ------------------------------------------------------------------
+# CLI entry point for testing
+# ------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="UE5 Remote Control Bridge")
+    parser.add_argument("--test", action="store_true", help="Run spawn/read/delete round-trip test")
+    parser.add_argument("--info", action="store_true", help="Check if editor is reachable")
+    args = parser.parse_args()
+
+    with UnrealRemoteControl() as ue:
+        if args.info or not args.test:
+            if ue.is_connected():
+                info = ue.info()
+                print(f"Connected to UE5 Remote Control")
+                print(json.dumps(info, indent=2))
+            else:
+                print("ERROR: Cannot reach UE5 editor at localhost:30010")
+                print("Make sure the editor is running with RemoteControl plugin enabled.")
+                sys.exit(1)
+
+        if args.test:
+            if not ue.is_connected():
+                print("ERROR: Editor not reachable. Start UE5 with RemoteControl plugin.")
+                sys.exit(1)
+
+            print("\n--- Round-trip test ---")
+
+            # 1. Spawn
+            print("1. Spawning test cube...")
+            result = ue.spawn_actor(
+                "StaticMeshActor",
+                location=(200, 200, 100),
+                label="BridgeTestCube"
+            )
+            print(f"   Spawn result: {result}")
+
+            # 2. List actors
+            print("2. Listing actors...")
+            actors = ue.list_actors()
+            print(f"   Found actors: {actors}")
+
+            # 3. Get level info
+            print("3. Level info...")
+            level_info = ue.get_level_info()
+            print(f"   Level: {level_info}")
+
+            # 4. Delete (via Python exec)
+            print("4. Cleaning up test actor...")
+            cleanup = ue.execute_python("""
+import unreal
+subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+actors = subsystem.get_all_level_actors()
+for a in actors:
+    if a.get_actor_label() == "BridgeTestCube":
+        subsystem.destroy_actor(a)
+        print("RESULT:CLEANED")
+        break
+else:
+    print("RESULT:NOT_FOUND")
+""")
+            print(f"   Cleanup: {cleanup}")
+
+            print("\n--- Test complete ---")
+
+
+if __name__ == "__main__":
+    main()

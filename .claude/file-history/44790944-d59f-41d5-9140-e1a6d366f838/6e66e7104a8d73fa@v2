@@ -1,0 +1,189 @@
+# Global Cognitive Substrate
+
+Global reasoning protocols and cognitive frameworks. Loaded automatically for all projects and sessions.
+
+- **Workspace navigation and domain knowledge** --> `~/CLAUDE.md`
+- **Project-specific context** --> each project's `CLAUDE.md`
+- **This file** --> reasoning protocols, workflow scaffolds, cognitive patterns
+
+Adapted from [Context-Engineering](https://github.com/davidkimai/Context-Engineering) and integrated with Orchestra/Synapse cognitive infrastructure.
+
+---
+
+## Reasoning Protocols
+
+### Systematic Decomposition
+
+When facing complex or ambiguous problems, follow this sequence explicitly:
+
+1. **Understand** -- Restate the problem in your own words. Clarify goals, constraints, and success criteria. If ambiguous, ask.
+2. **Analyze** -- Break into components. Identify dependencies, ordering constraints, and unknowns.
+3. **Plan** -- Design a step-by-step approach. Use extended thinking to evaluate 2-3 alternatives before committing. Surface trade-offs.
+4. **Execute** -- Implement methodically. Verify correctness at each step, not just at the end.
+5. **Verify** -- Validate against the original requirements. Run tests. Check edge cases.
+6. **Refine** -- Improve based on verification. If verification fails, loop back to Analyze, not just retry.
+
+### Self-Reflection Loop
+
+After producing non-trivial outputs (code, architecture, analysis), silently evaluate:
+
+- **Completeness** -- What's missing? What assumptions are implicit?
+- **Correctness** -- Are facts sound? Is logic valid? Could this break?
+- **Blind spots** -- What would a reviewer catch? What would fail in production?
+- **Improvements** -- What's the simplest change that makes this meaningfully better?
+
+Apply improvements before presenting. Don't narrate the reflection unless the user asks for reasoning traces.
+
+### Knowledge Gap Protocol
+
+When requirements exceed current understanding:
+
+1. **Identify** the specific gap -- don't guess or confabulate
+2. **Research** using available tools (read files, grep, glob, web search)
+3. **Integrate** findings into your working model before proceeding
+4. **Flag** remaining uncertainties explicitly to the user
+
+---
+
+## Workflow Protocols
+
+### Pre-Execution Checks (Multi-Step Tasks)
+
+Before executing any multi-step task involving file edits or system changes, **pause and verify**:
+
+1. **Target verification** -- Confirm the files you plan to edit are repo source, not deployed copies. Check the Source vs Deployed table in `~/CLAUDE.md`.
+2. **Process check** -- If the task involves pipelines, renders, or background scripts, verify no previous instance is still running.
+3. **Plan disclosure** -- For tasks touching 3+ files or running system commands, state your plan (which files, what changes, what commands) and wait for approval before proceeding.
+4. **Shell selection** -- If the task requires environment variables, elevation, or registry changes, use PowerShell, not Git Bash.
+
+### Explore-Plan-Code-Commit
+
+Default workflow for any code modification task:
+
+1. **Explore** -- Read relevant files. Understand existing patterns, naming conventions, test structure. Do not write code yet.
+2. **Plan** -- Design the approach. Use extended thinking for non-trivial changes. Evaluate alternatives. Consider blast radius.
+3. **Implement** -- Write code following the plan. Verify at each step. Match existing project style.
+4. **Finalize** -- Run tests. Stage specific files. Commit with clear messages. Only push when asked.
+
+### Test-Driven Development
+
+When requirements are clear and testable:
+
+1. Write tests from requirements first (do not implement yet)
+2. Run tests -- verify they fail for the right reasons
+3. Implement the minimum code to make tests pass
+4. Refactor while keeping tests green
+5. Commit tests and implementation together
+
+### Bug Diagnosis
+
+Systematic isolation for debugging (do not jump to fixes):
+
+1. **Reproduce** -- Establish reliable repro steps, identify environmental factors
+2. **Isolate** -- Narrow scope: which component, which input, which path?
+3. **Trace** -- Follow execution through the code, examine state at key points
+4. **Hypothesize** -- Form 2-3 testable theories about root cause
+5. **Verify** -- Confirm the actual root cause before writing any fix
+
+---
+
+## Code Protocols
+
+### Before Modifying Code
+
+- Read the file first. Understand the existing patterns before suggesting changes.
+- Check for tests. Run them before and after changes.
+- Prefer minimal, focused changes over broad refactors unless explicitly asked.
+- Match the existing code style (naming, indentation, patterns) of the file you're editing.
+
+### Refactoring Safety
+
+1. Document current behavior via tests or observation before changing anything
+2. Make incremental changes -- verify after each one
+3. Never change behavior and structure in the same step
+4. If tests exist, run them after every change
+
+### Code Review Mindset
+
+When analyzing code, evaluate systematically:
+
+- **Structure** -- Organization, component boundaries, separation of concerns
+- **Flow** -- Execution paths, data flow, error propagation
+- **Quality** -- Edge cases, error handling, resource management
+- **Security** -- Input validation, injection risks, auth boundaries
+- **Performance** -- Algorithmic complexity, unnecessary allocations, I/O patterns
+
+---
+
+## Slash Command Agents
+
+36 commands installed at `~/.claude/commands/`. Invoke with `/command-name`:
+
+### Domain Agents (16)
+
+| Agent | Domain | Best For |
+|-------|--------|----------|
+| `/research` | Research | Structured evidence gathering, literature review |
+| `/test` | Testing | Test generation, mutation testing, coverage analysis |
+| `/security` | Security | Threat modeling, vulnerability assessment, compliance |
+| `/optimize` | Performance | Profiling, bottleneck analysis, benchmarking |
+| `/deploy` | DevOps | Deployment automation, rollback planning |
+| `/monitor` | Ops | System health monitoring, alerting |
+| `/cli` | Terminal | Workflow automation, alias creation |
+| `/doc` | Docs | Documentation generation, technical writing |
+| `/data` | Data | Transformation, validation, schema enforcement |
+| `/meta` | Orchestration | Multi-agent coordination, workflow sequencing |
+| `/alignment` | AI Safety | Safety evaluation, prompt injection analysis |
+| `/diligence` | Analysis | Due diligence research, risk assessment |
+| `/legal` | Legal | Contract review, regulatory analysis |
+| `/lit` | Academic | Literature review, citation management |
+| `/marketing` | Marketing | Strategy, campaign planning, content |
+| `/comms` | Communications | Stakeholder comms, crisis response |
+
+Each agent follows a phased workflow: context/scope --> domain-specific phases --> synthesis --> audit. They accept arguments inline (e.g., `/research Q="topic" field="domain" years=5`).
+
+### Context Engineering Commands (11)
+
+| Command | Category | Best For |
+|---------|----------|----------|
+| `/reasoning` | Cognitive Template | Reasoning scaffolds for tricky logic problems |
+| `/verification` | Cognitive Template | Systematic proof and validation patterns |
+| `/persist` | Protocol Shell | Memory persistence and long-term context strategies |
+| `/emerge` | Protocol Shell | Find hidden connections between concepts |
+| `/schema` | Cognitive Schema | Structure APIs, data models, agent protocols |
+| `/recurse` | Protocol Shell | Iterative self-evolving problem refinement |
+| `/recall` | Protocol Shell | Recover lost context and reconstruct memory |
+| `/amplify` | Protocol Shell | Strengthen weak signals in data and profiling |
+| `/eval` | Reference | Evaluation framework and quality checklists |
+| `/patterns` | Reference | Design patterns catalog |
+| `/heal` | Protocol Shell | Self-repair for semantic inconsistencies |
+
+### Workflow Protocols (9)
+
+| Command | Best For |
+|---------|----------|
+| `/conversation` | Information extraction, dynamic dialogue, clarification, debate |
+| `/document` | Structured articles, technical writing, documentation, editing |
+| `/creative` | Ideation, story development, character building, worldbuilding |
+| `/research-wf` | Literature review, systematic inquiry, hypothesis validation |
+| `/knowledge` | Knowledge extraction, skill development, learning pathways |
+| `/meta-recursive` | Self-improvement, prompt optimization, reflection loops |
+| `/interpretability` | Black-box explanation, reasoning reconstruction, decision tracing |
+| `/collaborative` | Multi-agent coordination, consensus building, conflict resolution |
+| `/cross-modal` | Multimodal reasoning, text-to-image bridging, sensory grounding |
+
+Source: [Context-Engineering](https://github.com/davidkimai/Context-Engineering) protocol shells, cognitive tools, workflows, and references.
+
+---
+
+## Claude Code Configuration
+
+### Slash Command / Skill File Naming
+
+When creating or renaming files for Claude Code slash commands or skills, use the format `SKILL.md` inside a named directory:
+- Correct: `.claude/commands/research/SKILL.md`
+- Wrong: `.claude/commands/research.agent.md` (dotted filenames don't resolve)
+
+### Debugging Context
+
+When troubleshooting system-level or environment issues, gather OS, shell, and environment info upfront before attempting fixes. On this machine: Windows 11, Git Bash as primary terminal, PowerShell for elevated commands. Lead with that context to avoid retry cycles from platform-specific assumptions.

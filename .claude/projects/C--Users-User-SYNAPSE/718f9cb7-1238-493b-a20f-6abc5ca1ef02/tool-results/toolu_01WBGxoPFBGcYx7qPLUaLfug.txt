@@ -1,0 +1,1014 @@
+diff --git a/agent/synapse_agent.py b/agent/synapse_agent.py
+index 47cc93f..bd1c5e8 100644
+--- a/agent/synapse_agent.py
++++ b/agent/synapse_agent.py
+@@ -1,17 +1,22 @@
+ """
+-synapse_agent.py — Synapse VFX Co-Pilot Agent
++synapse_agent.py -- Synapse VFX Co-Pilot Agent
+ 
+ Entry point for the autonomous agent. Connects to Houdini via Synapse,
+-registers custom tools, and runs an agentic loop with Opus 4.6 that can
+-inspect, execute, verify, and iterate on VFX tasks.
++registers custom tools, and runs a plan-iterate-checkpoint loop with
++Opus 4.6 that can inspect, execute, verify, and self-heal.
++
++Sprint C adds: multi-goal planning, checkpoint/resume, self-healing retries.
+ 
+ Uses the anthropic SDK (0.75.0) with standard tool-use message loop.
+ 
+ USAGE:
+     cd C:/Users/User/.synapse/agent
+     python synapse_agent.py "Set up three-point lighting for the cave scene"
++    python synapse_agent.py --no-resume "Start fresh on lighting"
++    python synapse_agent.py --list-checkpoints
+ """
+ 
++import argparse
+ import asyncio
+ import json
+ import sys
+@@ -36,7 +41,8 @@ logger = logging.getLogger("synapse.agent")
+ # Model configuration
+ MODEL = "claude-opus-4-6-20250929"
+ MAX_TOKENS = 16384
+-MAX_AGENT_TURNS = 30  # Safety limit on agentic loop iterations
++MAX_AGENT_TURNS = 30  # Safety limit for entire session
++MAX_SUBGOAL_TURNS = 10  # Tighter limit per sub-goal
+ 
+ 
+ def _load_system_prompt() -> str:
+@@ -49,10 +55,10 @@ def _load_system_prompt() -> str:
+         personality = claude_md.read_text(encoding="utf-8")
+ 
+     return (
+-        "You are the Synapse VFX Co-Pilot — an AI assistant embedded in a "
++        "You are the Synapse VFX Co-Pilot -- an AI assistant embedded in a "
+         "professional VFX artist's Houdini workflow. You have direct access to "
+         "their live Houdini scene via custom tools. Your communication style "
+-        "is that of a supportive senior artist — encouraging, specific, and "
++        "is that of a supportive senior artist -- encouraging, specific, and "
+         "forward-looking. Never blame. Always suggest next steps.\n\n"
+         "WORKFLOW: Inspect scene -> Plan approach -> Execute (one mutation at a time) "
+         "-> Verify result -> Iterate until goal is met.\n\n"
+@@ -65,58 +71,33 @@ def _load_system_prompt() -> str:
+     )
+ 
+ 
+-async def run_agent(goal: str):
+-    """
+-    Initialize Synapse connection, then run the agentic tool-use loop.
+-    """
+-    from anthropic import Anthropic
+-    from synapse_ws import SynapseClient
+-    from synapse_tools import set_client, execute_tool, TOOL_DEFINITIONS
+-    from synapse_hooks import validate_execute_code
+-
+-    # --- Step 1: Connect to Houdini ---
+-    logger.info("Connecting to Synapse...")
+-    synapse = SynapseClient()
+-    await synapse.connect()
+-    set_client(synapse)
+-
+-    # Verify connection
+-    ping_result = await synapse.ping()
+-    logger.info("Synapse connected: %s", ping_result)
+-
+-    scene = await synapse.scene_info()
+-    logger.info("Scene: %s", scene)
+-
+-    # --- Step 2: Create Anthropic client ---
+-    client = Anthropic()
+-
+-    system_prompt = _load_system_prompt()
+-
+-    # Initial message with goal and scene context
+-    user_message = (
+-        f"GOAL: {goal}\n\n"
+-        f"SCENE CONTEXT: Connected to Synapse at ws://localhost:9999. "
+-        f"Scene info: {json.dumps(scene, default=str)}\n\n"
+-        "START by inspecting the scene to understand what you're working with. "
+-        "Plan your approach, then execute step by step with verification."
+-    )
++# ---------------------------------------------------------------------------
++# Core tool-use loop (extracted for reuse by sub-goal runner)
++# ---------------------------------------------------------------------------
+ 
+-    messages = [{"role": "user", "content": user_message}]
++async def _run_tool_loop(
++    anthropic_client,
++    system_prompt: str,
++    messages: list[dict],
++    tools: list[dict],
++    validate_hook,
++    tops_hook,
++    max_turns: int = MAX_AGENT_TURNS,
++) -> list[dict]:
++    """Run the inner tool-use loop. Returns updated messages list.
+ 
+-    logger.info("Starting agent with goal: %s", goal)
+-    print(f"\n{'='*60}")
+-    print(f"  SYNAPSE AGENT — Goal: {goal}")
+-    print(f"{'='*60}\n")
++    Processes tool calls until the model stops calling tools or max_turns is hit.
++    """
++    from synapse_tools import execute_tool
+ 
+-    # --- Step 3: Agentic loop ---
+-    for turn in range(MAX_AGENT_TURNS):
+-        logger.info("Agent turn %d/%d", turn + 1, MAX_AGENT_TURNS)
++    for turn in range(max_turns):
++        logger.info("  Turn %d/%d", turn + 1, max_turns)
+ 
+-        response = client.messages.create(
++        response = anthropic_client.messages.create(
+             model=MODEL,
+             max_tokens=MAX_TOKENS,
+             system=system_prompt,
+-            tools=TOOL_DEFINITIONS,
++            tools=tools,
+             messages=messages,
+         )
+ 
+@@ -137,17 +118,10 @@ async def run_agent(goal: str):
+                     "input": block.input,
+                 })
+ 
+-        # Add assistant message to history
+         messages.append({"role": "assistant", "content": assistant_content})
+ 
+-        # If no tool calls, the agent is done
+         if not tool_uses:
+-            logger.info("Agent completed (no more tool calls)")
+-            break
+-
+-        # If stop_reason is end_turn with no tool calls, done
+-        if response.stop_reason == "end_turn" and not tool_uses:
+-            logger.info("Agent completed (end_turn)")
++            logger.info("  No more tool calls -- sub-goal complete")
+             break
+ 
+         # Execute all tool calls
+@@ -156,18 +130,21 @@ async def run_agent(goal: str):
+             tool_name = tool_use.name
+             tool_input = tool_use.input
+ 
+-            logger.info("Tool call: %s(%s)", tool_name, json.dumps(tool_input)[:200])
++            logger.info("  Tool: %s(%s)", tool_name, json.dumps(tool_input)[:200])
+ 
+-            # Pre-validation hook for execute
++            # Pre-validation hooks
+             if tool_name == "synapse_execute" and "code" in tool_input:
+-                warning = validate_execute_code(tool_input["code"])
++                warning = validate_hook(tool_input["code"])
++                if warning:
++                    logger.warning("  Pre-validation: %s", warning)
++
++            if tool_name == "synapse_tops_cook":
++                warning = tops_hook(tool_input)
+                 if warning:
+-                    logger.warning("Pre-validation: %s", warning)
+-                    # Inject warning as prefix to result (advisory only)
++                    logger.warning("  TOPS advisory: %s", warning)
+ 
+-            # Execute the tool
+             result_str = await execute_tool(tool_name, tool_input)
+-            logger.info("Tool result: %s", result_str[:300])
++            logger.info("  Result: %s", result_str[:300])
+ 
+             tool_results.append({
+                 "type": "tool_result",
+@@ -175,30 +152,274 @@ async def run_agent(goal: str):
+                 "content": result_str,
+             })
+ 
+-        # Add tool results to history
+         messages.append({"role": "user", "content": tool_results})
+ 
+-    else:
+-        logger.warning("Agent hit max turns (%d)", MAX_AGENT_TURNS)
+-        print(f"\n[Agent reached {MAX_AGENT_TURNS} turns — stopping to avoid runaway loops]")
++    return messages
++
++
++# ---------------------------------------------------------------------------
++# Sub-goal runners
++# ---------------------------------------------------------------------------
++
++async def run_subgoal(
++    anthropic_client,
++    subgoal,
++    messages: list[dict],
++    system_prompt: str,
++    tools: list[dict],
++    validate_hook,
++    tops_hook,
++    max_turns: int = MAX_SUBGOAL_TURNS,
++) -> tuple[bool, list[dict]]:
++    """Execute a single sub-goal using the tool-use loop.
++
++    Returns (success: bool, updated_messages: list).
++    """
++    goal_msg = (
++        f"SUB-GOAL: {subgoal.description}\n"
++        f"VERIFICATION: {subgoal.verification}\n\n"
++        "Work on this sub-goal. When done, summarize what you accomplished."
++    )
++    messages.append({"role": "user", "content": goal_msg})
++
++    len_before = len(messages)
++    messages = await _run_tool_loop(
++        anthropic_client, system_prompt, messages, tools,
++        validate_hook, tops_hook, max_turns=max_turns,
++    )
++
++    # Consider it successful if the model produced any output
++    made_progress = len(messages) > len_before
++    return made_progress, messages
++
++
++async def run_subgoal_with_healing(
++    anthropic_client,
++    subgoal,
++    messages: list[dict],
++    system_prompt: str,
++    tools: list[dict],
++    validate_hook,
++    tops_hook,
++) -> tuple[bool, list[dict]]:
++    """Execute sub-goal with retry on failure."""
++    total_attempts = subgoal.max_retries + 1
++
++    for attempt in range(1, total_attempts + 1):
++        subgoal.status = "running"
++        subgoal.attempts = attempt
++
++        logger.info(
++            "Sub-goal '%s' attempt %d/%d",
++            subgoal.description[:50], attempt, total_attempts,
++        )
++
++        success, messages = await run_subgoal(
++            anthropic_client, subgoal, messages, system_prompt,
++            tools, validate_hook, tops_hook,
++        )
++
++        if success:
++            subgoal.status = "completed"
++            return True, messages
++
++        if attempt < total_attempts:
++            retry_msg = (
++                f"The previous attempt at this sub-goal didn't fully succeed "
++                f"(attempt {attempt}/{total_attempts}). "
++                f"Let's try a different approach."
++            )
++            messages.append({"role": "user", "content": retry_msg})
++            logger.info("  Retrying sub-goal with different approach...")
++
++    subgoal.status = "failed"
++    subgoal.error = "Exhausted retries"
++    return False, messages
++
++
++# ---------------------------------------------------------------------------
++# Main agent entry point
++# ---------------------------------------------------------------------------
++
++async def run_agent(goal: str, no_resume: bool = False):
++    """
++    Plan-iterate-checkpoint agent loop.
++
++    1. Connect to Houdini, get scene context
++    2. Check for existing checkpoint (unless --no-resume)
++    3. Create or resume a plan
++    4. Execute sub-goals in topological order with self-healing
++    5. Checkpoint after each sub-goal
++    """
++    from anthropic import Anthropic
++    from synapse_ws import SynapseClient
++    from synapse_tools import set_client, TOOL_DEFINITIONS
++    from synapse_hooks import validate_execute_code, validate_tops_cook
++    from synapse_planner import (
++        create_plan, topological_order, goal_hash as compute_goal_hash,
++    )
++    from synapse_checkpoint import (
++        save_checkpoint, resume_from_checkpoint, Checkpoint,
++    )
++
++    # --- Step 1: Connect to Houdini ---
++    logger.info("Connecting to Synapse...")
++    synapse = SynapseClient()
++    await synapse.connect()
++    set_client(synapse)
++
++    ping_result = await synapse.ping()
++    logger.info("Synapse connected: %s", ping_result)
++
++    scene = await synapse.scene_info()
++    logger.info("Scene: %s", scene)
++
++    # --- Step 2: Create Anthropic client ---
++    client = Anthropic()
++    system_prompt = _load_system_prompt()
++
++    print(f"\n{'='*60}")
++    print(f"  SYNAPSE AGENT -- Goal: {goal}")
++    print(f"{'='*60}\n")
++
++    # --- Step 3: Check for checkpoint or create plan ---
++    gh = compute_goal_hash(goal)
++    plan = None
++    messages = []
++
++    if not no_resume:
++        resumed = resume_from_checkpoint(gh)
++        if resumed:
++            plan, messages = resumed
++            completed = [sg for sg in plan.sub_goals if sg.status == "completed"]
++            print(f"  Resuming from checkpoint ({len(completed)}/{len(plan.sub_goals)} sub-goals done)")
++            logger.info("Resumed checkpoint: %d/%d sub-goals", len(completed), len(plan.sub_goals))
++
++    if plan is None:
++        print("  Creating plan...")
++        plan = await create_plan(client, goal, scene)
++        ordered = topological_order(plan.sub_goals)
++        plan.sub_goals = ordered
++        logger.info("Plan created: %d sub-goals", len(plan.sub_goals))
++
++        # Initial context message
++        user_message = (
++            f"GOAL: {goal}\n\n"
++            f"SCENE CONTEXT: Connected to Synapse at ws://localhost:9999. "
++            f"Scene info: {json.dumps(scene, default=str)}\n\n"
++            f"PLAN ({len(plan.sub_goals)} sub-goals):\n"
++        )
++        for i, sg in enumerate(plan.sub_goals, 1):
++            user_message += f"  {i}. {sg.description}\n"
++        user_message += "\nI'll work through each sub-goal in order."
++
++        messages = [{"role": "user", "content": user_message}]
++
++    # Print plan
++    print(f"\n  Plan ({len(plan.sub_goals)} sub-goals):")
++    for i, sg in enumerate(plan.sub_goals, 1):
++        status_icon = {
++            "completed": "+", "running": "~",
++            "failed": "!", "pending": " ",
++        }.get(sg.status, " ")
++        print(f"  [{status_icon}] {i}. {sg.description}")
++    print()
++
++    # --- Step 4: Execute sub-goals ---
++    for sg in plan.sub_goals:
++        if sg.status == "completed":
++            continue
++        if sg.status == "failed":
++            logger.info("Skipping failed sub-goal: %s", sg.description[:50])
++            continue
++
++        # Check dependencies
++        completed_ids = {s.id for s in plan.sub_goals if s.status == "completed"}
++        unmet = [dep for dep in sg.depends_on if dep not in completed_ids]
++        if unmet:
++            logger.warning(
++                "Sub-goal '%s' has unmet dependencies, skipping",
++                sg.description[:50],
++            )
++            sg.status = "failed"
++            sg.error = "Unmet dependencies"
++            continue
++
++        print(f"\n{'─'*40}")
++        print(f"  Sub-goal: {sg.description}")
++        print(f"{'─'*40}\n")
++
++        success, messages = await run_subgoal_with_healing(
++            client, sg, messages, system_prompt,
++            TOOL_DEFINITIONS, validate_execute_code, validate_tops_cook,
++        )
++
++        # Checkpoint after each sub-goal
++        cp = Checkpoint(
++            plan=plan,
++            messages=messages,
++            completed_goals=[s.id for s in plan.sub_goals if s.status == "completed"],
++            scene_snapshot=scene,
++        )
++        save_checkpoint(cp)
++
++        if not success:
++            print(f"\n  Sub-goal failed after {sg.attempts} attempts: {sg.description}")
++            logger.warning("Sub-goal failed: %s", sg.description[:50])
++            # Continue with remaining sub-goals that don't depend on this one
++
++    # --- Step 5: Summary ---
++    completed = [sg for sg in plan.sub_goals if sg.status == "completed"]
++    failed = [sg for sg in plan.sub_goals if sg.status == "failed"]
+ 
+-    # --- Cleanup ---
+     await synapse.disconnect()
+     logger.info("Disconnected from Synapse")
++
+     print(f"\n{'='*60}")
+-    print("  SYNAPSE AGENT — Complete")
++    print(f"  SYNAPSE AGENT -- Complete")
++    print(f"  {len(completed)}/{len(plan.sub_goals)} sub-goals completed")
++    if failed:
++        print(f"  {len(failed)} sub-goals failed:")
++        for sg in failed:
++            print(f"    - {sg.description} ({sg.error})")
+     print(f"{'='*60}\n")
+ 
+ 
+ def main():
+-    """CLI entry point."""
+-    if len(sys.argv) < 2:
+-        print("Usage: python synapse_agent.py \"<goal>\"")
+-        print('Example: python synapse_agent.py "Set up three-point lighting"')
++    """CLI entry point with argparse."""
++    parser = argparse.ArgumentParser(
++        description="Synapse VFX Co-Pilot -- autonomous Houdini agent",
++    )
++    parser.add_argument(
++        "goal", nargs="*", help="Goal to accomplish in the Houdini scene",
++    )
++    parser.add_argument(
++        "--no-resume", action="store_true",
++        help="Start fresh, ignoring any saved checkpoints",
++    )
++    parser.add_argument(
++        "--list-checkpoints", action="store_true",
++        help="List saved checkpoints and exit",
++    )
++    args = parser.parse_args()
++
++    if args.list_checkpoints:
++        from synapse_checkpoint import list_checkpoints
++        cps = list_checkpoints()
++        if not cps:
++            print("No checkpoints saved.")
++        else:
++            print(f"  {len(cps)} checkpoint(s):")
++            for cp in cps:
++                print(f"    {cp['goal_hash']}  {cp['size_bytes']:>8}b  {cp['path']}")
++        return
++
++    goal = " ".join(args.goal)
++    if not goal:
++        parser.print_help()
+         sys.exit(1)
+ 
+-    goal = " ".join(sys.argv[1:])
+-    asyncio.run(run_agent(goal))
++    asyncio.run(run_agent(goal, no_resume=args.no_resume))
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/agent/synapse_hooks.py b/agent/synapse_hooks.py
+index 0046863..0243cc1 100644
+--- a/agent/synapse_hooks.py
++++ b/agent/synapse_hooks.py
+@@ -99,6 +99,17 @@ def validate_execute_code(code: str) -> Optional[str]:
+     return None
+ 
+ 
++def validate_tops_cook(tool_input: dict) -> Optional[str]:
++    """Advisory check for TOPS cook calls.
++
++    Returns a warning string if potential issues detected, None otherwise.
++    """
++    max_retries = tool_input.get("max_retries", 0)
++    if max_retries > 5:
++        return "max_retries > 5 may cause long waits -- consider a lower value"
++    return None
++
++
+ def enrich_tool_result(tool_name: str, tool_input: dict, result: Any) -> Optional[str]:
+     """
+     Post-process a tool result with coaching-tone enrichment.
+diff --git a/agent/synapse_tools.py b/agent/synapse_tools.py
+index 3e1688f..98f7716 100644
+--- a/agent/synapse_tools.py
++++ b/agent/synapse_tools.py
+@@ -312,6 +312,201 @@ TOOL_DEFINITIONS = [
+             "required": [],
+         },
+     },
++    # ─── TOPS / Pipeline tools ─────────────────────────────────
++    {
++        "name": "synapse_tops_cook",
++        "description": (
++            "Cook a TOP node with optional retry and validation. "
++            "Uses cook-and-validate pipeline: cooks the node, checks work item states, "
++            "and optionally retries on failure. Good for reliable batch processing."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "node": {
++                    "type": "string",
++                    "description": "TOP node path to cook (e.g. '/obj/topnet1/ropfetch1').",
++                },
++                "max_retries": {
++                    "type": "integer",
++                    "description": "Number of retry attempts on failure (default 0).",
++                },
++                "validate_states": {
++                    "type": "boolean",
++                    "description": "Check work item states after cooking (default true).",
++                },
++            },
++            "required": ["node"],
++        },
++    },
++    {
++        "name": "synapse_tops_status",
++        "description": (
++            "Get pipeline health status for a TOP network. "
++            "Returns node states, work item counts, cook progress, and any errors. "
++            "Use this to monitor long-running cooks or diagnose pipeline issues."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "topnet_path": {
++                    "type": "string",
++                    "description": "Path to the TOP network (e.g. '/obj/topnet1').",
++                },
++                "include_items": {
++                    "type": "boolean",
++                    "description": "Include individual work item details (default false).",
++                },
++            },
++            "required": ["topnet_path"],
++        },
++    },
++    {
++        "name": "synapse_tops_diagnose",
++        "description": (
++            "Diagnose failures in a TOP node. Inspects work items, scheduler state, "
++            "upstream dependencies, and error logs. Use this when a cook fails and "
++            "you need to understand why."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "node": {
++                    "type": "string",
++                    "description": "TOP node path to diagnose.",
++                },
++            },
++            "required": ["node"],
++        },
++    },
++    {
++        "name": "synapse_tops_wedge",
++        "description": (
++            "Set up and cook a parameter wedge in a TOP network. "
++            "Creates variations of a parameter across specified values. "
++            "Great for exploring different looks quickly."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "topnet_path": {
++                    "type": "string",
++                    "description": "TOP network path (e.g. '/obj/topnet1').",
++                },
++                "attribute_name": {
++                    "type": "string",
++                    "description": "Parameter/attribute to wedge (e.g. 'roughness').",
++                },
++                "values": {
++                    "type": "array",
++                    "items": {"type": "number"},
++                    "description": "List of values to wedge over (e.g. [0.1, 0.3, 0.5, 0.7]).",
++                },
++            },
++            "required": ["topnet_path", "attribute_name", "values"],
++        },
++    },
++    {
++        "name": "synapse_tops_work_items",
++        "description": (
++            "Query work items from a TOP node. Returns item IDs, states, "
++            "attributes, and output files. Optionally filter by state."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "node": {
++                    "type": "string",
++                    "description": "TOP node path to query work items from.",
++                },
++                "state_filter": {
++                    "type": "string",
++                    "description": "Filter by state: cooked, failed, waiting, uncooked (empty = all).",
++                },
++            },
++            "required": ["node"],
++        },
++    },
++    {
++        "name": "synapse_tops_cook_stats",
++        "description": (
++            "Get cook timing and throughput statistics for a TOP node. "
++            "Returns total cook time, per-item averages, throughput, "
++            "and resource usage."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "node": {
++                    "type": "string",
++                    "description": "TOP node path to get stats for.",
++                },
++            },
++            "required": ["node"],
++        },
++    },
++    {
++        "name": "synapse_capture_viewport",
++        "description": (
++            "Capture a screenshot of the Houdini viewport. Returns the image path. "
++            "Use this for visual verification after making scene changes — "
++            "check that lighting, materials, and layout look right."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "format": {
++                    "type": "string",
++                    "description": "Image format: 'jpeg' or 'png' (default 'jpeg').",
++                    "enum": ["jpeg", "png"],
++                },
++                "width": {
++                    "type": "integer",
++                    "description": "Optional width to resize capture to.",
++                },
++                "height": {
++                    "type": "integer",
++                    "description": "Optional height to resize capture to.",
++                },
++            },
++            "required": [],
++        },
++    },
++    {
++        "name": "synapse_batch",
++        "description": (
++            "Execute multiple Synapse commands atomically in a single round-trip. "
++            "All commands run in order within one undo group — Ctrl+Z reverts the "
++            "whole batch. Use this for tightly coupled operations that must succeed "
++            "or fail together."
++        ),
++        "input_schema": {
++            "type": "object",
++            "properties": {
++                "commands": {
++                    "type": "array",
++                    "items": {
++                        "type": "object",
++                        "properties": {
++                            "type": {"type": "string", "description": "Command type (e.g. 'create_node', 'set_parm')."},
++                            "payload": {"type": "object", "description": "Command payload."},
++                        },
++                        "required": ["type"],
++                    },
++                    "description": "List of commands to execute in order.",
++                },
++                "atomic": {
++                    "type": "boolean",
++                    "description": "Wrap in single undo group (default true).",
++                },
++                "stop_on_error": {
++                    "type": "boolean",
++                    "description": "Stop on first error (default false).",
++                },
++            },
++            "required": ["commands"],
++        },
++    },
+ ]
+ 
+ 
+@@ -396,6 +591,58 @@ async def execute_tool(tool_name: str, tool_input: dict) -> str:
+             result = await client.memory_status()
+             return json.dumps(result, indent=2, default=str)
+ 
++        # TOPS / Pipeline tools
++        elif tool_name == "synapse_tops_cook":
++            result = await client.tops_cook(
++                node=tool_input["node"],
++                max_retries=tool_input.get("max_retries", 0),
++                validate=tool_input.get("validate_states", True),
++            )
++            return json.dumps(result, indent=2, default=str)
++
++        elif tool_name == "synapse_tops_status":
++            result = await client.tops_status(
++                topnet_path=tool_input["topnet_path"],
++                include_items=tool_input.get("include_items", False),
++            )
++            return json.dumps(result, indent=2, default=str)
++
++        elif tool_name == "synapse_tops_diagnose":
++            result = await client.tops_diagnose(node=tool_input["node"])
++            return json.dumps(result, indent=2, default=str)
++
++        elif tool_name == "synapse_tops_wedge":
++            result = await client.tops_wedge(
++                topnet_path=tool_input["topnet_path"],
++                attribute_name=tool_input["attribute_name"],
++                values=tool_input["values"],
++            )
++            return json.dumps(result, indent=2, default=str)
++
++        elif tool_name == "synapse_tops_work_items":
++            result = await client.tops_work_items(
++                node=tool_input["node"],
++                state_filter=tool_input.get("state_filter", ""),
++            )
++            return json.dumps(result, indent=2, default=str)
++
++        elif tool_name == "synapse_tops_cook_stats":
++            result = await client.tops_cook_stats(node=tool_input["node"])
++            return json.dumps(result, indent=2, default=str)
++
++        elif tool_name == "synapse_capture_viewport":
++            payload = {k: v for k, v in tool_input.items() if v is not None}
++            result = await client.capture_viewport(**payload)
++            return json.dumps(result, indent=2, default=str)
++
++        elif tool_name == "synapse_batch":
++            result = await client.batch_commands(
++                commands=tool_input["commands"],
++                atomic=tool_input.get("atomic", True),
++                stop_on_error=tool_input.get("stop_on_error", False),
++            )
++            return json.dumps(result, indent=2, default=str)
++
+         else:
+             return json.dumps({"error": f"Unknown tool: {tool_name}"})
+ 
+diff --git a/agent/synapse_ws.py b/agent/synapse_ws.py
+index fd1f3cf..7b3338b 100644
+--- a/agent/synapse_ws.py
++++ b/agent/synapse_ws.py
+@@ -40,6 +40,13 @@ _SLOW_COMMANDS = {
+     "inspect_selection": 30.0,
+     "inspect_scene": 30.0,
+     "inspect_node": 30.0,
++    "tops_cook_and_validate": 600.0,
++    "tops_pipeline_status": 60.0,
++    "tops_diagnose": 30.0,
++    "tops_setup_wedge": 120.0,
++    "tops_get_work_items": 30.0,
++    "tops_get_cook_stats": 30.0,
++    "batch_commands": 60.0,
+ }
+ 
+ 
+@@ -381,3 +388,40 @@ class SynapseClient:
+     async def memory_status(self) -> dict:
+         """Get Living Memory evolution stage, file sizes, session count."""
+         return await self._send_command("memory_status")
++
++    # --- TOPS / Pipeline ---
++
++    async def tops_cook(self, node: str, max_retries: int = 0, validate: bool = True) -> dict:
++        """Cook a TOP node with optional retry and state validation."""
++        payload = {"node": node, "max_retries": max_retries, "validate_states": validate}
++        return await self._send_command("tops_cook_and_validate", payload)
++
++    async def tops_status(self, topnet_path: str, include_items: bool = False) -> dict:
++        """Get pipeline health status for a TOP network."""
++        payload = {"topnet_path": topnet_path, "include_items": include_items}
++        return await self._send_command("tops_pipeline_status", payload)
++
++    async def tops_diagnose(self, node: str) -> dict:
++        """Diagnose failures in a TOP node."""
++        return await self._send_command("tops_diagnose", {"node": node})
++
++    async def tops_wedge(self, topnet_path: str, attribute_name: str, values: list) -> dict:
++        """Set up and cook a parameter wedge."""
++        payload = {"topnet_path": topnet_path, "attribute_name": attribute_name, "values": values}
++        return await self._send_command("tops_setup_wedge", payload)
++
++    async def tops_work_items(self, node: str, state_filter: str = "") -> dict:
++        """Query work items from a TOP node."""
++        payload = {"node": node}
++        if state_filter:
++            payload["state_filter"] = state_filter
++        return await self._send_command("tops_get_work_items", payload)
++
++    async def tops_cook_stats(self, node: str) -> dict:
++        """Get cook timing and throughput stats for a TOP node."""
++        return await self._send_command("tops_get_cook_stats", {"node": node})
++
++    async def batch_commands(self, commands: list, atomic: bool = True, stop_on_error: bool = False) -> dict:
++        """Execute multiple commands atomically in one round-trip."""
++        payload = {"commands": commands, "atomic": atomic, "stop_on_error": stop_on_error}
++        return await self._send_command("batch_commands", payload)
+diff --git a/agent/tests/test_agent.py b/agent/tests/test_agent.py
+index 0397041..b2989ee 100644
+--- a/agent/tests/test_agent.py
++++ b/agent/tests/test_agent.py
+@@ -1,11 +1,19 @@
+-"""Tests for synapse_agent.py — agent entry point and system prompt."""
++"""Tests for synapse_agent.py -- agent entry point, system prompt, and sub-goal runners."""
+ 
+ import sys
+ import os
++import pytest
++from unittest.mock import MagicMock, AsyncMock
+ 
+ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+ 
+-from synapse_agent import _load_system_prompt
++from synapse_agent import (
++    _load_system_prompt,
++    run_subgoal,
++    run_subgoal_with_healing,
++    MAX_SUBGOAL_TURNS,
++    MAX_AGENT_TURNS,
++)
+ 
+ 
+ def test_system_prompt_loads():
+@@ -24,3 +32,80 @@ def test_system_prompt_includes_claude_md():
+     assert "supportive senior artist" in prompt.lower()
+     assert "ensure_node" in prompt
+     assert "xn__" in prompt
++
++
++def test_max_subgoal_turns_less_than_agent():
++    """Sub-goal turn limit is tighter than the overall agent limit."""
++    assert MAX_SUBGOAL_TURNS < MAX_AGENT_TURNS
++    assert MAX_SUBGOAL_TURNS == 10
++
++
++def test_validate_tops_cook_hook():
++    """validate_tops_cook warns on high max_retries."""
++    from synapse_hooks import validate_tops_cook
++    assert validate_tops_cook({"node": "/obj/topnet1/fetch1"}) is None
++    assert validate_tops_cook({"max_retries": 3}) is None
++    warning = validate_tops_cook({"max_retries": 10})
++    assert warning is not None
++    assert "long waits" in warning
++
++
++@pytest.mark.asyncio
++async def test_run_subgoal_injects_goal_message():
++    """run_subgoal injects SUB-GOAL message into conversation."""
++    from synapse_planner import SubGoal
++
++    sg = SubGoal(id="test", description="Create a light", verification="Light exists")
++
++    # Mock the anthropic client to return end_turn immediately
++    mock_block = MagicMock()
++    mock_block.type = "text"
++    mock_block.text = "Done!"
++
++    mock_response = MagicMock()
++    mock_response.content = [mock_block]
++    mock_response.stop_reason = "end_turn"
++
++    mock_client = MagicMock()
++    mock_client.messages.create.return_value = mock_response
++
++    messages = [{"role": "user", "content": "Initial context"}]
++
++    success, updated_msgs = await run_subgoal(
++        mock_client, sg, messages, "system prompt", [],
++        lambda code: None, lambda inp: None,
++        max_turns=1,
++    )
++
++    assert success is True
++    # Check that SUB-GOAL message was injected
++    goal_msgs = [m for m in updated_msgs if isinstance(m.get("content"), str) and "SUB-GOAL:" in m["content"]]
++    assert len(goal_msgs) == 1
++    assert "Create a light" in goal_msgs[0]["content"]
++
++
++@pytest.mark.asyncio
++async def test_run_subgoal_with_healing_marks_completed():
++    """run_subgoal_with_healing marks sub-goal as completed on success."""
++    from synapse_planner import SubGoal
++
++    sg = SubGoal(id="test", description="Test", max_retries=2)
++
++    mock_block = MagicMock()
++    mock_block.type = "text"
++    mock_block.text = "Done"
++
++    mock_response = MagicMock()
++    mock_response.content = [mock_block]
++
++    mock_client = MagicMock()
++    mock_client.messages.create.return_value = mock_response
++
++    success, _ = await run_subgoal_with_healing(
++        mock_client, sg, [], "prompt", [],
++        lambda code: None, lambda inp: None,
++    )
++
++    assert success is True
++    assert sg.status == "completed"
++    assert sg.attempts == 1
+diff --git a/agent/tests/test_tools.py b/agent/tests/test_tools.py
+index 08d3098..bd34022 100644
+--- a/agent/tests/test_tools.py
++++ b/agent/tests/test_tools.py
+@@ -36,7 +36,16 @@ def test_tool_definitions_count():
+     assert "synapse_memory_write" in names
+     assert "synapse_memory_query" in names
+     assert "synapse_memory_status" in names
+-    assert len(names) == 12
++    # 12 original + 8 TOPS/viewport/batch tools
++    assert "synapse_tops_cook" in names
++    assert "synapse_tops_status" in names
++    assert "synapse_tops_diagnose" in names
++    assert "synapse_tops_wedge" in names
++    assert "synapse_tops_work_items" in names
++    assert "synapse_tops_cook_stats" in names
++    assert "synapse_capture_viewport" in names
++    assert "synapse_batch" in names
++    assert len(names) == 20
+ 
+ 
+ def test_tool_definitions_have_required_fields():
+@@ -165,3 +174,71 @@ async def test_execute_inspect_node():
+         include_geometry=True,
+         include_expressions=True,
+     )
++
++
++# ── TOPS / Pipeline tool execution tests ──────────────────────
++
++
++@pytest.mark.asyncio
++async def test_execute_tops_cook():
++    """synapse_tops_cook passes correct args to client."""
++    mock_client = AsyncMock(spec=SynapseClient)
++    mock_client.tops_cook = AsyncMock(return_value={"status": "cooked", "items": 10})
++    set_client(mock_client)
++
++    result = await execute_tool("synapse_tops_cook", {
++        "node": "/obj/topnet1/ropfetch1",
++        "max_retries": 2,
++        "validate_states": True,
++    })
++    data = json.loads(result)
++    assert data["status"] == "cooked"
++    mock_client.tops_cook.assert_awaited_once_with(
++        node="/obj/topnet1/ropfetch1", max_retries=2, validate=True,
++    )
++
++
++@pytest.mark.asyncio
++async def test_execute_tops_status():
++    """synapse_tops_status passes correct args to client."""
++    mock_client = AsyncMock(spec=SynapseClient)
++    mock_client.tops_status = AsyncMock(return_value={"healthy": True, "nodes": 5})
++    set_client(mock_client)
++
++    result = await execute_tool("synapse_tops_status", {
++        "topnet_path": "/obj/topnet1",
++    })
++    data = json.loads(result)
++    assert data["healthy"] is True
++    mock_client.tops_status.assert_awaited_once_with(
++        topnet_path="/obj/topnet1", include_items=False,
++    )
++
++
++@pytest.mark.asyncio
++async def test_execute_capture_viewport():
++    """synapse_capture_viewport passes format arg."""
++    mock_client = AsyncMock(spec=SynapseClient)
++    mock_client.capture_viewport = AsyncMock(return_value={"image_path": "/tmp/capture.jpg"})
++    set_client(mock_client)
++
++    result = await execute_tool("synapse_capture_viewport", {"format": "jpeg"})
++    data = json.loads(result)
++    assert data["image_path"] == "/tmp/capture.jpg"
++
++
++@pytest.mark.asyncio
++async def test_execute_batch():
++    """synapse_batch passes commands to client."""
++    mock_client = AsyncMock(spec=SynapseClient)
++    mock_client.batch_commands = AsyncMock(return_value={"results": [{"ok": True}]})
++    set_client(mock_client)
++
++    result = await execute_tool("synapse_batch", {
++        "commands": [{"type": "ping"}],
++    })
++    data = json.loads(result)
++    assert data["results"][0]["ok"] is True
++    mock_client.batch_commands.assert_awaited_once_with(
++        commands=[{"type": "ping"}], atomic=True, stop_on_error=False,
++    )

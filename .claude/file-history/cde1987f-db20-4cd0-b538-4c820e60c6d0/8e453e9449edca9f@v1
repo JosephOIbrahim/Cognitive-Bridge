@@ -1,0 +1,110 @@
+# Plan: JoyofVEX RAG Integration into Synapse
+
+## Context
+
+The JoyofVEX pipeline extracted 2,183 VEX code-explanation pairs from Matt Estela's "The Joy of VEX" YouTube series (8 episodes, Days 1-20). The pipeline is complete (`output/joy_of_vex_rag.jsonl`). Synapse's knowledge system (`KnowledgeIndex`) auto-discovers markdown reference files + semantic_index.json topics. No engine code changes needed — we just need to transform the JSONL into Synapse's format and drop it in.
+
+## What Gets Created
+
+### 1. Converter Script
+**`vex_rag_pipeline/scripts/09_synapse_export.py`** (~400 lines)
+
+Single script that:
+- Reads `output/joy_of_vex_rag.jsonl`
+- Deduplicates (2,183 → ~700-800 unique curated entries)
+- Routes records into 15 thematic markdown files
+- Updates `semantic_index.json` with 15 new topics
+- Updates `agent_relevance_map.json` with 15 new entries
+
+CLI: `python scripts/09_synapse_export.py [--synapse-rag PATH] [--dry-run]`
+
+### 2. Fifteen Markdown Reference Files
+Written to `Synapse/rag/skills/houdini21-reference/`:
+
+| File | Source Category | Content |
+|------|----------------|---------|
+| `joy_of_vex_quaternions.md` | math_operations (quaternion/@orient) | Quaternion creation, slerp, qrotate |
+| `joy_of_vex_trigonometry.md` | math_operations (sin/cos) + animation | Sine waves, circular motion, oscillation |
+| `joy_of_vex_vector_math.md` | math_operations (remainder) | dot, cross, fit, clamp, matrices |
+| `joy_of_vex_deformation.md` | geometry_manipulation (animated) | Wave displacement, ramp deformation |
+| `joy_of_vex_geometry.md` | geometry_manipulation (general) | Intrinsics, bbox, prim operations |
+| `joy_of_vex_surface_sampling.md` | geometry_manipulation (primuv/minpos) | UV sampling, distance queries |
+| `joy_of_vex_nearpoints.md` | point_clouds (nearpoints/pcfind) | Neighbor lookups, proximity blending |
+| `joy_of_vex_pcopen.md` | point_clouds (pcopen/pcfilter) | Point cloud iteration, filtering |
+| `joy_of_vex_color.md` | color | Color from attributes, ramps, gradients |
+| `joy_of_vex_ramps.md` | ui_and_parameters | Channel refs, chramp, slider controls |
+| `joy_of_vex_attributes_tutorial.md` | attributes | Attribute creation, types, binding |
+| `joy_of_vex_geometry_creation.md` | geometry_creation | addpoint, addprim, procedural geo |
+| `joy_of_vex_flow_control.md` | flow_control | Loops, conditionals, foreach |
+| `joy_of_vex_noise.md` | noise_and_randomness | snoise, curlnoise, random patterns |
+| `joy_of_vex_tips.md` | small cats merged | Debugging, optimization, groups, misc |
+
+Format matches existing reference files (e.g., `vex_patterns.md`):
+```markdown
+# Joy of VEX: Color
+
+> Tutorial examples from The Joy of VEX video series by Matt Estela.
+
+## Color from Attributes
+
+### Setting Color from Normal [Ep1, 12:56]
+```vex
+@Cd = @N;
+```
+Sets color equal to the normal vector, mapping XYZ direction to RGB.
+[Watch](https://youtube.com/watch?v=...)
+```
+
+### 3. Updated Metadata (merge, not overwrite)
+- `semantic_index.json`: 42 → 57 topics (15 new `joy_of_vex_*` entries with keywords)
+- `agent_relevance_map.json`: 42 → 57 entries (all new topics → `sop_agent`)
+
+## Deduplication Strategy
+
+1. **Normalize code**: strip whitespace, collapse to single line
+2. **Group by normalized code**: keep record with longest explanation (ties broken by lowest episode, then lowest ID — He2025 deterministic)
+3. **Per-file cap**: max 80 entries per file, drop shortest explanations beyond cap
+4. **Min quality**: exclude records with `len(explanation) < 30` or `len(code.strip()) < 10`
+5. **`needs_review` records**: included with `[Needs Review]` badge in header
+
+## Keyword Design
+
+Each topic gets 5-7 keywords. Compound forms avoid collision with existing topics:
+- `joy_of_vex` on all 15 (catches broad "joy of vex" queries)
+- `quaternion_tutorial` not `quaternion` (avoids collision with `vex_types`)
+- `sine_wave_vex` not `sin` (too generic)
+- Function-specific: `pcopen_tutorial`, `nearpoints_example`, `slerp_example`
+
+## Routing Logic
+
+Records assigned to files by `(category, vex_functions)`:
+- `math_operations` + quaternion/@orient → quaternions
+- `math_operations` + sin/cos → trigonometry
+- `math_operations` + other → vector_math
+- `geometry_manipulation` + primuv/minpos → surface_sampling
+- `geometry_manipulation` + sin/cos + @P → deformation
+- `geometry_manipulation` + other → geometry
+- `point_clouds` + pcopen/pcfilter → pcopen
+- `point_clouds` + other → nearpoints
+- Small categories (simulation, arrays, debugging, optimization, groups) → tips
+
+## Files Modified
+
+| File | Action |
+|------|--------|
+| `vex_rag_pipeline/scripts/09_synapse_export.py` | **CREATE** — converter script |
+| `Synapse/rag/documentation/_metadata/semantic_index.json` | **MERGE** — add 15 topics |
+| `Synapse/rag/documentation/_metadata/agent_relevance_map.json` | **MERGE** — add 15 entries |
+| `Synapse/rag/skills/houdini21-reference/joy_of_vex_*.md` | **CREATE** — 15 reference files |
+
+**No existing files modified or overwritten.** The 6 existing `vex_*.md` files are untouched. Synapse's `knowledge.py` requires zero changes.
+
+## Verification
+
+After running the script:
+1. Confirm 15 new `joy_of_vex_*.md` files in skills dir (50-500 lines each)
+2. Confirm `semantic_index.json` has 57 topics (was 42)
+3. Confirm `agent_relevance_map.json` has 57 entries
+4. Run Synapse knowledge tests: `python -m pytest Synapse/tests/test_knowledge.py -v`
+5. Smoke test lookups via MCP: `synapse_knowledge_lookup("quaternion tutorial joy of vex")` should return results
+6. Spot-check 2-3 markdown files for correct formatting

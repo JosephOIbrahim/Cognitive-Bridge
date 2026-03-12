@@ -1,0 +1,472 @@
+"""
+MPM H21 Masterclass - Transcript Extraction for RAG System
+============================================================
+Phase 1: Extract clean transcripts from Youtube2Webpage HTML output
+and write RAG-compatible markdown with YAML frontmatter.
+
+Outputs:
+  - Tier 1: _raw_documentation/mpm_masterclass/XX_name.md  (clean timestamped transcripts)
+  - Tier 2: tutorials/workflow_guides/mpm_*.md              (structured stubs for knowledge extraction)
+  - Updates: _metadata/semantic_index.json                  (new topic entries)
+
+Source: C:/Users/User/mpm-h21-masterclass/
+Target: G:/HOUDINI21_RAG_SYSTEM/documentation/
+"""
+
+import json
+import os
+import re
+import html
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+SOURCE_DIR = Path("C:/Users/User/mpm-h21-masterclass")
+TARGET_DIR = Path("G:/HOUDINI21_RAG_SYSTEM/documentation")
+RAW_DIR = TARGET_DIR / "_raw_documentation" / "mpm_masterclass"
+TUTORIALS_DIR = TARGET_DIR / "tutorials" / "workflow_guides"
+METADATA_DIR = TARGET_DIR / "_metadata"
+
+SERIES_NAME = "SideFX MPM H21 Masterclass"
+SERIES_URL = "https://www.sidefx.com/tutorials/mpm-h21-masterclass/"
+PRESENTER = "Alex Wevinger"
+
+# Video metadata: (slug, youtube_url, human_title, keywords)
+VIDEOS = [
+    ("00-overview", "https://www.youtube.com/watch?v=nD183jP3H4Y",
+     "MPM H21 Masterclass Overview",
+     ["mpm", "overview", "houdini_21", "masterclass", "new_features", "mpm_solver"]),
+    ("01-surface-tension", "https://www.youtube.com/watch?v=HAv1t7q7VRk",
+     "MPM Surface Tension",
+     ["mpm", "surface_tension", "fluid_sim", "droplets", "mpm_solver", "viscosity"]),
+    ("02-auto-sleep", "https://www.youtube.com/watch?v=MwSsXRof_7Y",
+     "MPM Auto Sleep",
+     ["mpm", "auto_sleep", "optimization", "performance", "simulation", "rest_state"]),
+    ("03-continuous-emission", "https://www.youtube.com/watch?v=AGjuRlj5sm4",
+     "MPM Continuous Emission",
+     ["mpm", "continuous_emission", "particle_emission", "source", "fluid_source"]),
+    ("04-friction-stickiness", "https://www.youtube.com/watch?v=UYj3sUThg-0",
+     "MPM Friction and Stickiness",
+     ["mpm", "friction", "stickiness", "material_properties", "collision", "adhesion"]),
+    ("05-deforming-colliders", "https://www.youtube.com/watch?v=RylqkW5ePww",
+     "MPM Deforming Colliders",
+     ["mpm", "deforming_colliders", "collision", "animated_geometry", "rbd"]),
+    ("06-mpmsurface", "https://www.youtube.com/watch?v=ZNImPE9WbkI",
+     "MPM Surface Meshing",
+     ["mpm", "mpmsurface", "meshing", "surface_extraction", "post_simulation", "particle_to_mesh"]),
+    ("07-mpmdebrissource", "https://www.youtube.com/watch?v=83EffKFYeCU",
+     "MPM Debris Source",
+     ["mpm", "mpmdebrissource", "debris", "secondary_elements", "chunks", "fragments"]),
+    ("08-mpmpostfracture", "https://www.youtube.com/watch?v=XAQgQi3wkNU",
+     "MPM Post Fracture",
+     ["mpm", "mpmpostfracture", "fracture", "voronoi", "destruction", "post_simulation"]),
+    ("09-mpmdeformpieces", "https://www.youtube.com/watch?v=iasTN8SZC4A",
+     "MPM Deform Pieces",
+     ["mpm", "mpmdeformpieces", "deformation", "pieces", "chunks", "post_simulation"]),
+    ("10-destruction-workflow", "https://www.youtube.com/watch?v=mQuOe296oeg",
+     "MPM Destruction Workflow",
+     ["mpm", "destruction", "workflow", "fracture", "rbd", "pipeline", "production"]),
+    ("11-paintball-impact", "https://www.youtube.com/watch?v=zj5ANrtD-X8",
+     "MPM Paintball Impact",
+     ["mpm", "paintball", "impact", "splatter", "viscous_fluid", "collision"]),
+    ("12-pumpkin-smash", "https://www.youtube.com/watch?v=OVQAAlh-3s8",
+     "MPM Pumpkin Smash",
+     ["mpm", "pumpkin", "smash", "destruction", "organic", "fracture", "debris"]),
+    ("13-car-rain", "https://www.youtube.com/watch?v=mKg7OWiBQE4",
+     "MPM Car Rain",
+     ["mpm", "car", "rain", "water", "environment", "surface_tension", "droplets"]),
+    ("14-wolf-snow", "https://www.youtube.com/watch?v=JUcON39F7zE",
+     "MPM Wolf Snow",
+     ["mpm", "wolf", "snow", "character_interaction", "deformation", "particles"]),
+    ("15-creature-breach", "https://www.youtube.com/watch?v=Y16j3XTaX-Q",
+     "MPM Creature Breach",
+     ["mpm", "creature", "breach", "water", "splash", "character_fx", "ocean"]),
+    ("16-train-wreck", "https://www.youtube.com/watch?v=fwAuygMxk2w",
+     "MPM Train Wreck",
+     ["mpm", "train", "wreck", "destruction", "large_scale", "rbd", "debris"]),
+    ("17-building-attack", "https://www.youtube.com/watch?v=beyRxMYzwsk",
+     "MPM Building Attack",
+     ["mpm", "building", "attack", "destruction", "large_scale", "fracture", "collapse"]),
+]
+
+# Paragraph grouping: combine caption lines within this window (seconds)
+PARAGRAPH_WINDOW = 30
+
+# ---------------------------------------------------------------------------
+# HTML Parsing
+# ---------------------------------------------------------------------------
+
+def parse_html_transcript(html_path):
+    """Parse a Youtube2Webpage index.html and extract (timestamp, text) pairs."""
+    with open(html_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Extract YouTube URL from the source link
+    url_match = re.search(r'href="(https://www\.youtube\.com/watch\?v=[^"]+)"', content)
+    youtube_url = url_match.group(1) if url_match else ""
+
+    # Extract all caption entries: <span id="HH:MM:SS.mmm">text</span>
+    pattern = r'<span id="(\d{2}:\d{2}:\d{2}\.\d{3})">(.+?)</span>'
+    entries = []
+    for match in re.finditer(pattern, content):
+        timestamp = match.group(1)
+        text = html.unescape(match.group(2)).strip()
+        # Clean up common auto-caption artifacts
+        text = re.sub(r'^>>\s*', '', text)  # Remove >> prefix
+        text = text.strip()
+        if text and text.lower() not in ('[music]', '[applause]'):
+            entries.append((timestamp, text))
+
+    return youtube_url, entries
+
+
+def timestamp_to_seconds(ts):
+    """Convert HH:MM:SS.mmm to float seconds."""
+    parts = ts.split(':')
+    h, m = int(parts[0]), int(parts[1])
+    s = float(parts[2])
+    return h * 3600 + m * 60 + s
+
+
+def format_timestamp_short(ts):
+    """Convert HH:MM:SS.mmm to MM:SS for display."""
+    parts = ts.split(':')
+    h, m, s = int(parts[0]), int(parts[1]), parts[2].split('.')[0]
+    total_min = h * 60 + m
+    return f"{total_min}:{s}"
+
+
+def group_into_paragraphs(entries, window=PARAGRAPH_WINDOW):
+    """Group caption entries into paragraphs by time window."""
+    if not entries:
+        return []
+
+    paragraphs = []
+    current_lines = []
+    current_start_ts = entries[0][0]
+    current_start_sec = timestamp_to_seconds(entries[0][0])
+
+    for ts, text in entries:
+        sec = timestamp_to_seconds(ts)
+        # Start new paragraph if we've exceeded the window
+        if sec - current_start_sec >= window and current_lines:
+            paragraphs.append((current_start_ts, ' '.join(current_lines)))
+            current_lines = [text]
+            current_start_ts = ts
+            current_start_sec = sec
+        else:
+            current_lines.append(text)
+
+    # Flush remaining
+    if current_lines:
+        paragraphs.append((current_start_ts, ' '.join(current_lines)))
+
+    return paragraphs
+
+
+# ---------------------------------------------------------------------------
+# Tier 1: Raw Transcript Markdown
+# ---------------------------------------------------------------------------
+
+def write_raw_transcript(slug, youtube_url, title, keywords, entries, paragraphs):
+    """Write a clean Tier 1 transcript markdown file."""
+    filename = slug.replace('-', '_') + '.md'
+    filepath = RAW_DIR / filename
+    part_num = int(slug.split('-')[0])
+
+    lines = []
+    # YAML frontmatter
+    lines.append('---')
+    lines.append(f'title: "{title}"')
+    lines.append('category: _raw_documentation')
+    lines.append('subcategory: mpm_masterclass')
+    kw_str = json.dumps(keywords, ensure_ascii=False)
+    lines.append(f'keywords: {kw_str}')
+    lines.append('agent_relevance:')
+    lines.append('  Librarian: 0.85')
+    lines.append('  GraphTracer: 0.70')
+    lines.append('  VexAuditor: 0.40')
+    lines.append('source:')
+    lines.append('  type: youtube_video')
+    lines.append(f'  url: "{youtube_url}"')
+    lines.append(f'  series: "{SERIES_NAME}"')
+    lines.append(f'  part: {part_num}')
+    lines.append('  total_parts: 18')
+    lines.append(f'  presenter: "{PRESENTER}"')
+    lines.append(f'transcript_lines: {len(entries)}')
+    if entries:
+        first_ts = format_timestamp_short(entries[0][0])
+        last_ts = format_timestamp_short(entries[-1][0])
+        lines.append(f'duration_range: "{first_ts} - {last_ts}"')
+    lines.append('---')
+    lines.append('')
+
+    # Document body
+    lines.append(f'# {title}')
+    lines.append('')
+    lines.append(f'**Series:** [{SERIES_NAME}]({SERIES_URL})')
+    lines.append(f'**Source:** [YouTube]({youtube_url})')
+    lines.append(f'**Presenter:** {PRESENTER}')
+    lines.append(f'**Part:** {part_num} of 18')
+    lines.append(f'**Transcript Lines:** {len(entries)}')
+    lines.append('')
+    lines.append('---')
+    lines.append('')
+    lines.append('## Transcript')
+    lines.append('')
+
+    for ts, text in paragraphs:
+        short_ts = format_timestamp_short(ts)
+        sec = int(timestamp_to_seconds(ts))
+        yt_link = f"{youtube_url}&t={sec}"
+        lines.append(f'**[{short_ts}]({yt_link})** {text}')
+        lines.append('')
+
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+    return filepath
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: Structured Knowledge Stub
+# ---------------------------------------------------------------------------
+
+def write_knowledge_stub(slug, youtube_url, title, keywords, paragraphs, part_num):
+    """Write a Tier 2 structured knowledge stub for later enrichment."""
+    filename = 'mpm_' + slug.split('-', 1)[1].replace('-', '_') + '.md'
+    filepath = TUTORIALS_DIR / filename
+
+    # Determine related docs (link to adjacent parts)
+    related = []
+    if part_num > 0:
+        prev_slug = VIDEOS[part_num - 1][0]
+        prev_title = VIDEOS[part_num - 1][2]
+        prev_file = 'mpm_' + prev_slug.split('-', 1)[1].replace('-', '_') + '.md'
+        related.append({
+            'path': f'tutorials/workflow_guides/{prev_file}',
+            'reason': f'Previous in series: {prev_title}'
+        })
+    if part_num < len(VIDEOS) - 1:
+        next_slug = VIDEOS[part_num + 1][0]
+        next_title = VIDEOS[part_num + 1][2]
+        next_file = 'mpm_' + next_slug.split('-', 1)[1].replace('-', '_') + '.md'
+        related.append({
+            'path': f'tutorials/workflow_guides/{next_file}',
+            'reason': f'Next in series: {next_title}'
+        })
+
+    lines = []
+    # YAML frontmatter
+    lines.append('---')
+    lines.append(f'title: "{title}"')
+    lines.append('category: tutorials')
+    lines.append('subcategory: workflow_guides')
+    kw_str = json.dumps(keywords, ensure_ascii=False)
+    lines.append(f'keywords: {kw_str}')
+    lines.append('agent_relevance:')
+    lines.append('  Librarian: 0.90')
+    lines.append('  GraphTracer: 0.75')
+    lines.append('  VexAuditor: 0.45')
+    lines.append('related_documents:')
+    for rel in related:
+        lines.append(f'  - path: "{rel["path"]}"')
+        lines.append(f'    reason: "{rel["reason"]}"')
+    lines.append('common_queries:')
+    # Generate natural queries from title
+    topic = title.replace('MPM ', '').replace('H21 Masterclass ', '')
+    lines.append(f'  - "How does {topic.lower()} work in MPM?"')
+    lines.append(f'  - "MPM {topic.lower()} tutorial"')
+    lines.append(f'  - "Houdini 21 {topic.lower()} setup"')
+    lines.append('source:')
+    lines.append('  type: youtube_video')
+    lines.append(f'  url: "{youtube_url}"')
+    lines.append(f'  series: "{SERIES_NAME}"')
+    lines.append(f'  part: {part_num}')
+    lines.append('  total_parts: 18')
+    lines.append(f'  presenter: "{PRESENTER}"')
+    lines.append('---')
+    lines.append('')
+
+    # Document body
+    lines.append(f'# {title}')
+    lines.append('')
+    lines.append(f'**Source:** [{SERIES_NAME} - Part {part_num}]({youtube_url})')
+    lines.append(f'**Presenter:** {PRESENTER}')
+    lines.append('')
+    lines.append('## Overview')
+    lines.append('')
+    lines.append(f'<!-- TODO: Synthesize from transcript - _raw_documentation/mpm_masterclass/{slug.replace("-", "_")}.md -->')
+    lines.append('')
+
+    # Extract first 3 paragraphs as preview
+    lines.append('## Key Points')
+    lines.append('')
+    preview_count = min(5, len(paragraphs))
+    for ts, text in paragraphs[:preview_count]:
+        # Truncate long paragraphs for the stub
+        preview = text[:300] + '...' if len(text) > 300 else text
+        lines.append(f'- {preview}')
+    lines.append('')
+
+    lines.append('## Nodes & Parameters')
+    lines.append('')
+    lines.append('<!-- TODO: Extract node references from transcript -->')
+    lines.append('')
+    lines.append('| Node | Purpose | Key Parameters |')
+    lines.append('|------|---------|----------------|')
+    lines.append('| | | |')
+    lines.append('')
+
+    lines.append('## Workflow Steps')
+    lines.append('')
+    lines.append('<!-- TODO: Extract workflow steps from transcript -->')
+    lines.append('')
+
+    lines.append('## Tips & Insights')
+    lines.append('')
+    lines.append('<!-- TODO: Extract tips from transcript -->')
+    lines.append('')
+
+    lines.append('---')
+    raw_file = slug.replace('-', '_') + '.md'
+    lines.append(f'*Full transcript: [_raw_documentation/mpm_masterclass/{raw_file}](../../_raw_documentation/mpm_masterclass/{raw_file})*')
+
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+    return filepath
+
+
+# ---------------------------------------------------------------------------
+# Metadata: semantic_index.json update
+# ---------------------------------------------------------------------------
+
+def build_semantic_entries():
+    """Build semantic index entries for all 18 videos."""
+    entries = {}
+    for slug, url, title, keywords in VIDEOS:
+        part_num = int(slug.split('-')[0])
+        topic_key = 'mpm_' + slug.split('-', 1)[1].replace('-', '_')
+        raw_file = slug.replace('-', '_') + '.md'
+        tutorial_file = topic_key + '.md'
+
+        # Related docs: adjacent parts + overview
+        related = [f'tutorials/workflow_guides/{tutorial_file}']
+        if part_num != 0:
+            related.append('tutorials/workflow_guides/mpm_overview.md')
+
+        entry = {
+            'primary_doc': f'tutorials/workflow_guides/{tutorial_file}',
+            'related_docs': related + [
+                f'_raw_documentation/mpm_masterclass/{raw_file}'
+            ],
+            'keywords': keywords,
+            'agent_relevance': {
+                'Librarian': 0.90,
+                'GraphTracer': 0.75,
+                'VexAuditor': 0.45
+            },
+            'common_queries': [
+                f'How does {title.replace("MPM ", "").lower()} work?',
+                f'{title} tutorial',
+                f'MPM {slug.split("-", 1)[1].replace("-", " ")} Houdini 21',
+            ],
+            'source_type': 'youtube_video',
+            'series': SERIES_NAME,
+        }
+        entries[topic_key] = entry
+
+    return entries
+
+
+def update_semantic_index(new_entries):
+    """Merge new entries into the existing semantic_index.json."""
+    index_path = METADATA_DIR / 'semantic_index.json'
+    with open(index_path, 'r', encoding='utf-8') as f:
+        index = json.load(f)
+
+    topics = index.get('semantic_index', {}).get('topics', {})
+    added = 0
+    for key, entry in sorted(new_entries.items()):
+        if key not in topics:
+            topics[key] = entry
+            added += 1
+        else:
+            # Update existing entry
+            topics[key] = entry
+
+    index['semantic_index']['topics'] = dict(sorted(topics.items()))
+
+    with open(index_path, 'w', encoding='utf-8') as f:
+        json.dump(index, f, indent=2, ensure_ascii=False, sort_keys=False)
+
+    return added
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    # Create output directories
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    TUTORIALS_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"MPM H21 Masterclass -> RAG Transcript Extraction")
+    print(f"Source: {SOURCE_DIR}")
+    print(f"Target: {TARGET_DIR}")
+    print(f"Videos: {len(VIDEOS)}")
+    print("=" * 60)
+
+    total_lines = 0
+    total_paragraphs = 0
+
+    for i, (slug, url, title, keywords) in enumerate(VIDEOS):
+        html_path = SOURCE_DIR / slug / "index.html"
+        if not html_path.exists():
+            print(f"  SKIP: {slug} (no index.html)")
+            continue
+
+        # Parse HTML
+        youtube_url, entries = parse_html_transcript(html_path)
+        if not youtube_url:
+            youtube_url = url  # Fallback to our mapping
+
+        # Group into paragraphs
+        paragraphs = group_into_paragraphs(entries)
+
+        # Write Tier 1: Raw transcript
+        raw_path = write_raw_transcript(slug, youtube_url, title, keywords, entries, paragraphs)
+
+        # Write Tier 2: Knowledge stub
+        part_num = int(slug.split('-')[0])
+        stub_path = write_knowledge_stub(slug, youtube_url, title, keywords, paragraphs, part_num)
+
+        total_lines += len(entries)
+        total_paragraphs += len(paragraphs)
+
+        print(f"  [{i+1:2d}/18] {slug}")
+        print(f"         {len(entries)} lines -> {len(paragraphs)} paragraphs")
+        print(f"         Tier 1: {raw_path.name}")
+        print(f"         Tier 2: {stub_path.name}")
+
+    print("=" * 60)
+    print(f"Total: {total_lines} caption lines -> {total_paragraphs} paragraphs")
+
+    # Update semantic index
+    print("\nUpdating semantic_index.json...")
+    new_entries = build_semantic_entries()
+    added = update_semantic_index(new_entries)
+    print(f"  Added/updated {added} topic entries in semantic index")
+
+    print("\nDone! Phase 1 complete.")
+    print(f"  Tier 1 (raw transcripts):    {RAW_DIR}")
+    print(f"  Tier 2 (knowledge stubs):    {TUTORIALS_DIR}")
+    print(f"  Metadata updated:            {METADATA_DIR / 'semantic_index.json'}")
+
+
+if __name__ == '__main__':
+    main()

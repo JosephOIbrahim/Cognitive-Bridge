@@ -1,0 +1,1223 @@
+     1→"""
+     2→Canonical Tool Registry -- Single Source of Truth
+     3→
+     4→Every MCP tool definition lives here. Both transports import from this module:
+     5→- stdio bridge (mcp_server.py) generates Tool() objects from TOOL_DEFS
+     6→- Streamable HTTP (mcp/tools.py) builds JSON tool definitions from TOOL_DEFS
+     7→
+     8→Adding a new tool:
+     9→1. Add handler in the appropriate handlers_*.py file
+    10→2. Add entry to TOOL_DEFS in this file
+    11→3. Both transports pick it up automatically
+    12→
+    13→No hou dependency. No imports from synapse.server or synapse.mcp.tools.
+    14→Only json and orjson (optional).
+    15→"""
+    16→
+    17→import json
+    18→from typing import Any
+    19→
+    20→try:
+    21→    import orjson
+    22→
+    23→    def _dumps_str(obj) -> str:
+    24→        return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS).decode()
+    25→except ImportError:
+    26→
+    27→    def _dumps_str(obj) -> str:
+    28→        return json.dumps(obj, sort_keys=True)
+    29→
+    30→
+    31→# =========================================================================
+    32→# Dispatch ID counter (He2025: sequential, not uuid4)
+    33→# =========================================================================
+    34→
+    35→_call_counter = 0
+    36→
+    37→
+    38→def _next_call_id(tool_name: str) -> str:
+    39→    global _call_counter
+    40→    _call_counter += 1
+    41→    return f"mcp-{tool_name}-{_call_counter}"
+    42→
+    43→
+    44→# =========================================================================
+    45→# Payload builders (transform MCP arguments to handler payload)
+    46→# =========================================================================
+    47→
+    48→
+    49→def _passthrough(_args: dict) -> dict:
+    50→    return {}
+    51→
+    52→
+    53→def _identity(args: dict) -> dict:
+    54→    return dict(args)
+    55→
+    56→
+    57→def _execute_python_payload(args: dict) -> dict:
+    58→    p = {"content": args["code"]}
+    59→    if "dry_run" in args:
+    60→        p["dry_run"] = args["dry_run"]
+    61→    if "atomic" in args:
+    62→        p["atomic"] = args["atomic"]
+    63→    return p
+    64→
+    65→
+    66→def _stage_info_payload(args: dict) -> dict:
+    67→    p = {}
+    68→    if "node" in args:
+    69→        p["node"] = args["node"]
+    70→    return p
+    71→
+    72→
+    73→def _decide_payload(args: dict) -> dict:
+    74→    p = {"decision": args["decision"]}
+    75→    if "reasoning" in args:
+    76→        p["reasoning"] = args["reasoning"]
+    77→    if "alternatives" in args:
+    78→        alt = args["alternatives"]
+    79→        p["alternatives"] = (
+    80→            [a.strip() for a in alt.split(",") if a.strip()]
+    81→            if isinstance(alt, str) else alt
+    82→        )
+    83→    return p
+    84→
+    85→
+    86→def _add_memory_payload(args: dict) -> dict:
+    87→    p = {"content": args["content"]}
+    88→    if "memory_type" in args:
+    89→        p["memory_type"] = args["memory_type"]
+    90→    if "tags" in args:
+    91→        p["tags"] = args["tags"]
+    92→    return p
+    93→
+    94→
+    95→def _filter_keys(keys):
+    96→    """Return a payload builder that passes through only the specified keys."""
+    97→    def _builder(args: dict) -> dict:
+    98→        return {k: args[k] for k in keys if k in args}
+    99→    return _builder
+   100→
+   101→
+   102→def _network_explain_payload(args: dict) -> dict:
+   103→    """Rename root_path -> node for the network_explain handler."""
+   104→    return {**{k: v for k, v in args.items() if k != "root_path"}, "node": args["root_path"]}
+   105→
+   106→
+   107→def _delete_node_payload(args: dict) -> dict:
+   108→    return {"node": args["node"]}
+   109→
+   110→
+   111→# =========================================================================
+   112→# Schema helpers
+   113→# =========================================================================
+   114→
+   115→_EMPTY_SCHEMA: dict = {"type": "object", "properties": {}, "required": []}
+   116→
+   117→
+   118→# =========================================================================
+   119→# Tool definitions
+   120→# =========================================================================
+   121→# Each entry: (name, command_type, payload_builder, description,
+   122→#              inputSchema, read_only, destructive, idempotent)
+   123→
+   124→TOOL_DEFS: list[tuple] = [
+   125→    # -- Utility --
+   126→    ("synapse_ping", "ping", _passthrough,
+   127→     "Check if Houdini/Synapse is connected and responding.",
+   128→     _EMPTY_SCHEMA, True, False, True),
+   129→    ("synapse_health", "get_health", _passthrough,
+   130→     "Get system health status including resilience layer.",
+   131→     _EMPTY_SCHEMA, True, False, True),
+   132→
+   133→    # -- Scene --
+   134→    ("houdini_scene_info", "get_scene_info", _passthrough,
+   135→     "Get current Houdini scene info: HIP file path, current frame, FPS, and frame range.",
+   136→     _EMPTY_SCHEMA, True, False, True),
+   137→    ("houdini_get_selection", "get_selection", _passthrough,
+   138→     "Get the currently selected nodes in Houdini.",
+   139→     _EMPTY_SCHEMA, True, False, True),
+   140→
+   141→    # -- Node operations --
+   142→    ("houdini_create_node", "create_node", _identity,
+   143→     "Create a new node in Houdini. Returns the path of the created node.",
+   144→     {"type": "object", "properties": {
+   145→         "parent": {"type": "string", "description": "Parent node path (e.g. '/obj')"},
+   146→         "type": {"type": "string", "description": "Node type (e.g. 'geo', 'null')"},
+   147→         "name": {"type": "string", "description": "Optional node name"},
+   148→     }, "required": ["parent", "type"]},
+   149→     False, True, False),
+   150→
+   151→    ("houdini_delete_node", "delete_node", _delete_node_payload,
+   152→     "Delete a node in Houdini by its path.",
+   153→     {"type": "object", "properties": {
+   154→         "node": {"type": "string", "description": "Full path of the node to delete"},
+   155→     }, "required": ["node"]},
+   156→     False, True, False),
+   157→
+   158→    ("houdini_connect_nodes", "connect_nodes", _identity,
+   159→     "Connect the output of one node to the input of another.",
+   160→     {"type": "object", "properties": {
+   161→         "source": {"type": "string", "description": "Source node path (output from)"},
+   162→         "target": {"type": "string", "description": "Target node path (input to)"},
+   163→         "source_output": {"type": "integer", "description": "Source output index (default: 0)"},
+   164→         "target_input": {"type": "integer", "description": "Target input index (default: 0)"},
+   165→     }, "required": ["source", "target"]},
+   166→     False, True, False),
+   167→
+   168→    # -- Parameters --
+   169→    ("houdini_get_parm", "get_parm",
+   170→     _filter_keys(("node", "parm")),
+   171→     "Read a parameter value from a Houdini node.",
+   172→     {"type": "object", "properties": {
+   173→         "node": {"type": "string", "description": "Node path"},
+   174→         "parm": {"type": "string", "description": "Parameter name"},
+   175→     }, "required": ["node", "parm"]},
+   176→     True, False, True),
+   177→
+   178→    ("houdini_set_parm", "set_parm",
+   179→     _filter_keys(("node", "parm", "value")),
+   180→     "Set a parameter value on a Houdini node. "
+   181→     "For USD/Solaris nodes, parameter names are encoded "
+   182→     "(e.g. xn__inputsintensity_i0a not 'intensity'). "
+   183→     "Use houdini_inspect_node first to discover exact names.",
+   184→     {"type": "object", "properties": {
+   185→         "node": {"type": "string", "description": "Node path"},
+   186→         "parm": {"type": "string", "description": "Parameter name"},
+   187→         "value": {"description": "Value to set"},
+   188→     }, "required": ["node", "parm", "value"]},
+   189→     False, True, True),
+   190→
+   191→    # -- Execution --
+   192→    ("houdini_execute_python", "execute_python", _execute_python_payload,
+   193→     "Execute Python code in Houdini's runtime environment. "
+   194→     "ONE mutation per call. Wrapped in undo group -- automatic rollback on failure.",
+   195→     {"type": "object", "properties": {
+   196→         "code": {"type": "string", "description": "Python code to execute"},
+   197→         "dry_run": {"type": "boolean", "description": "Syntax-check only (default: false)"},
+   198→         "atomic": {"type": "boolean", "description": "Wrap in undo group (default: true)"},
+   199→     }, "required": ["code"]},
+   200→     False, True, False),
+   201→
+   202→    ("houdini_execute_vex", "execute_vex", _identity,
+   203→     "Execute VEX code by creating an Attribute Wrangle node.",
+   204→     {"type": "object", "properties": {
+   205→         "snippet": {"type": "string", "description": "VEX code snippet"},
+   206→         "run_over": {"type": "string", "description": "Points, Primitives, Vertices, or Detail"},
+   207→         "input_node": {"type": "string", "description": "Optional input geometry node path"},
+   208→     }, "required": ["snippet"]},
+   209→     False, True, False),
+   210→
+   211→    # -- USD/Solaris --
+   212→    ("houdini_stage_info", "get_stage_info", _stage_info_payload,
+   213→     "Get USD stage information: prim list and types.",
+   214→     {"type": "object", "properties": {
+   215→         "node": {"type": "string", "description": "Optional LOP node path"},
+   216→     }, "required": []},
+   217→     True, False, True),
+   218→
+   219→    ("houdini_get_usd_attribute", "get_usd_attribute",
+   220→     _filter_keys(("node", "prim_path", "attribute_name")),
+   221→     "Read a USD attribute value from a prim on the stage.",
+   222→     {"type": "object", "properties": {
+   223→         "node": {"type": "string", "description": "LOP node path (optional)"},
+   224→         "prim_path": {"type": "string", "description": "USD prim path"},
+   225→         "attribute_name": {"type": "string", "description": "USD attribute name"},
+   226→     }, "required": ["prim_path", "attribute_name"]},
+   227→     True, False, True),
+   228→
+   229→    ("houdini_set_usd_attribute", "set_usd_attribute",
+   230→     _filter_keys(("node", "prim_path", "attribute_name", "value")),
+   231→     "Set a USD attribute on a prim.",
+   232→     {"type": "object", "properties": {
+   233→         "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+   234→         "prim_path": {"type": "string", "description": "USD prim path"},
+   235→         "attribute_name": {"type": "string", "description": "USD attribute name"},
+   236→         "value": {"description": "Value to set"},
+   237→     }, "required": ["prim_path", "attribute_name", "value"]},
+   238→     False, True, False),
+   239→
+   240→    ("houdini_create_usd_prim", "create_usd_prim",
+   241→     _filter_keys(("node", "prim_path", "prim_type")),
+   242→     "Create a USD prim on the stage.",
+   243→     {"type": "object", "properties": {
+   244→         "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+   245→         "prim_path": {"type": "string", "description": "USD prim path to create"},
+   246→         "prim_type": {"type": "string", "description": "USD prim type (default: Xform)"},
+   247→     }, "required": ["prim_path"]},
+   248→     False, True, False),
+   249→
+   250→    ("houdini_modify_usd_prim", "modify_usd_prim",
+   251→     _filter_keys(("node", "prim_path", "kind", "purpose", "active")),
+   252→     "Modify USD prim metadata: kind, purpose, or active state.",
+   253→     {"type": "object", "properties": {
+   254→         "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+   255→         "prim_path": {"type": "string", "description": "USD prim path"},
+   256→         "kind": {"type": "string", "description": "Model kind"},
+   257→         "purpose": {"type": "string", "description": "Prim purpose"},
+   258→         "active": {"type": "boolean", "description": "Whether the prim is active"},
+   259→     }, "required": ["prim_path"]},
+   260→     False, True, False),
+   261→
+   262→    # -- Viewport / Render --
+   263→    ("houdini_capture_viewport", "capture_viewport", _identity,
+   264→     "Capture the Houdini viewport as an image.",
+   265→     {"type": "object", "properties": {
+   266→         "width": {"type": "integer", "description": "Width in pixels"},
+   267→         "height": {"type": "integer", "description": "Height in pixels"},
+   268→         "format": {"type": "string", "enum": ["jpeg", "png"], "description": "Image format"},
+   269→     }, "required": []},
+   270→     True, False, True),
+   271→
+   272→    ("houdini_render", "render", _identity,
+   273→     "Render a frame using Karma XPU, Karma CPU, Mantra, or any ROP node.",
+   274→     {"type": "object", "properties": {
+   275→         "node": {"type": "string", "description": "ROP node path (auto-discovers if omitted)"},
+   276→         "frame": {"type": "number", "description": "Frame to render"},
+   277→         "width": {"type": "integer", "description": "Override resolution width"},
+   278→         "height": {"type": "integer", "description": "Override resolution height"},
+   279→     }, "required": []},
+   280→     False, True, False),
+   281→
+   282→    ("synapse_validate_frame", "validate_frame", _identity,
+   283→     "Validate a rendered frame for quality issues: black frames, NaN, clipping, fireflies.",
+   284→     {"type": "object", "properties": {
+   285→         "image_path": {"type": "string", "description": "Path to rendered image"},
+   286→         "checks": {"type": "array", "items": {"type": "string"}, "description": "Checks to run (default: all)"},
+   287→         "thresholds": {"type": "object", "description": "Threshold overrides"},
+   288→     }, "required": ["image_path"]},
+   289→     True, False, True),
+   290→
+   291→    ("synapse_configure_render_passes", "configure_render_passes", _identity,
+   292→     "Configure render passes (AOVs) for Karma. Creates RenderVar prims for compositing. "
+   293→     "Presets: beauty, diffuse, specular, emission, normal, depth, position, albedo, "
+   294→     "crypto_material, crypto_object, motion, sss. Also accepts custom pass definitions.",
+   295→     {"type": "object", "properties": {
+   296→         "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+   297→         "passes": {"type": "array", "items": {"type": "string"},
+   298→                    "description": "List of pass names (e.g. ['beauty', 'diffuse', 'normal', 'crypto_object'])"},
+   299→         "clear_existing": {"type": "boolean", "description": "Clear existing render vars before adding new ones (default: false)"},
+   300→     }, "required": ["passes"]},
+   301→     False, True, False),
+   302→
+   303→    # -- Keyframe / Render Settings --
+   304→    ("houdini_set_keyframe", "set_keyframe", _identity,
+   305→     "Set a keyframe on a node parameter at a specific frame.",
+   306→     {"type": "object", "properties": {
+   307→         "node": {"type": "string", "description": "Node path"},
+   308→         "parm": {"type": "string", "description": "Parameter name"},
+   309→         "value": {"type": "number", "description": "Value to set"},
+   310→         "frame": {"type": "number", "description": "Frame number"},
+   311→     }, "required": ["node", "parm", "value"]},
+   312→     False, True, False),
+   313→
+   314→    ("houdini_render_settings", "render_settings", _identity,
+   315→     "Read and optionally modify render settings on a ROP or Karma node.",
+   316→     {"type": "object", "properties": {
+   317→         "node": {"type": "string", "description": "ROP or render settings node path"},
+   318→         "settings": {"type": "object", "description": "Optional overrides"},
+   319→     }, "required": ["node"]},
+   320→     False, True, True),
+   321→
+   322→    # -- TOPs / PDG --
+   323→    ("houdini_wedge", "wedge", _identity,
+   324→     "Run a TOPs/PDG wedge to explore parameter variations.",
+   325→     {"type": "object", "properties": {
+   326→         "node": {"type": "string", "description": "TOP network or wedge node path"},
+   327→         "parm": {"type": "string", "description": "Parameter to wedge"},
+   328→         "values": {"type": "array", "items": {"type": "number"}, "description": "Values to wedge over"},
+   329→     }, "required": ["node"]},
+   330→     False, True, False),
+   331→
+   332→    # -- TOPS / PDG (Phase 1) --
+   333→    ("tops_get_work_items", "tops_get_work_items", _identity,
+   334→     "Get work items from a TOP node with optional state filtering.",
+   335→     {"type": "object", "properties": {
+   336→         "node": {"type": "string", "description": "TOP node path"},
+   337→         "state_filter": {"type": "string", "description": "Filter by state: all, cooked, failed, cooking, scheduled, uncooked, cancelled (default: all)"},
+   338→         "include_attributes": {"type": "boolean", "description": "Include work item attributes (default: true)"},
+   339→         "limit": {"type": "integer", "description": "Max items to return (default: 100)"},
+   340→     }, "required": ["node"]},
+   341→     True, False, True),
+   342→
+   343→    ("tops_get_dependency_graph", "tops_get_dependency_graph", _identity,
+   344→     "Get the dependency graph for a TOP network: nodes, types, work item counts, and edges.",
+   345→     {"type": "object", "properties": {
+   346→         "topnet_path": {"type": "string", "description": "TOP network path"},
+   347→         "depth": {"type": "integer", "description": "Traversal depth (-1 for full, default: -1)"},
+   348→     }, "required": ["topnet_path"]},
+   349→     True, False, True),
+   350→
+   351→    ("tops_get_cook_stats", "tops_get_cook_stats", _identity,
+   352→     "Get cook statistics for a TOP node or network: work item counts by state and cook times.",
+   353→     {"type": "object", "properties": {
+   354→         "node": {"type": "string", "description": "TOP node or network path"},
+   355→     }, "required": ["node"]},
+   356→     True, False, True),
+   357→
+   358→    ("tops_cook_node", "tops_cook_node", _identity,
+   359→     "Cook a TOP node. Supports blocking/non-blocking and generate-only modes.",
+   360→     {"type": "object", "properties": {
+   361→         "node": {"type": "string", "description": "TOP node path"},
+   362→         "generate_only": {"type": "boolean", "description": "Generate work items only, don't cook (default: false)"},
+   363→         "blocking": {"type": "boolean", "description": "Wait for cook to complete (default: true)"},
+   364→         "top_down": {"type": "boolean", "description": "Cook upstream nodes first (default: true)"},
+   365→     }, "required": ["node"]},
+   366→     False, True, False),
+   367→
+   368→    ("tops_generate_items", "tops_generate_items", _identity,
+   369→     "Generate work items for a TOP node without cooking. Preview what a node will produce.",
+   370→     {"type": "object", "properties": {
+   371→         "node": {"type": "string", "description": "TOP node path"},
+   372→     }, "required": ["node"]},
+   373→     False, True, False),
+   374→
+   375→    # -- TOPS / PDG (Phase 2: Scheduler & Control) --
+   376→    ("tops_configure_scheduler", "tops_configure_scheduler", _identity,
+   377→     "Configure the scheduler for a TOP network: type, max concurrent, working directory.",
+   378→     {"type": "object", "properties": {
+   379→         "topnet_path": {"type": "string", "description": "TOP network path"},
+   380→         "scheduler_type": {"type": "string", "description": "Scheduler type (default: local)"},
+   381→         "max_concurrent": {"type": "integer", "description": "Max concurrent processes"},
+   382→         "working_dir": {"type": "string", "description": "PDG working directory"},
+   383→     }, "required": ["topnet_path"]},
+   384→     False, True, True),
+   385→
+   386→    ("tops_cancel_cook", "tops_cancel_cook", _identity,
+   387→     "Cancel an active cook on a TOP node or network.",
+   388→     {"type": "object", "properties": {
+   389→         "node": {"type": "string", "description": "TOP node or network path"},
+   390→     }, "required": ["node"]},
+   391→     False, True, False),
+   392→
+   393→    ("tops_dirty_node", "tops_dirty_node", _identity,
+   394→     "Dirty a TOP node to clear cached results. Optionally dirty upstream nodes too.",
+   395→     {"type": "object", "properties": {
+   396→         "node": {"type": "string", "description": "TOP node path"},
+   397→         "dirty_upstream": {"type": "boolean", "description": "Also dirty upstream nodes (default: false)"},
+   398→     }, "required": ["node"]},
+   399→     False, True, True),
+   400→
+   401→    # -- TOPS / PDG (Phase 3: Advanced) --
+   402→    ("tops_setup_wedge", "tops_setup_wedge", _identity,
+   403→     "Set up a Wedge TOP node for parameter variation exploration.",
+   404→     {"type": "object", "properties": {
+   405→         "topnet_path": {"type": "string", "description": "TOP network path"},
+   406→         "wedge_name": {"type": "string", "description": "Name for the wedge node (default: wedge1)"},
+   407→         "attributes": {"type": "array", "items": {"type": "object"}, "description": "List of {name, type, start, end, steps}"},
+   408→     }, "required": ["topnet_path", "attributes"]},
+   409→     False, True, False),
+   410→
+   411→    ("tops_batch_cook", "tops_batch_cook", _identity,
+   412→     "Cook multiple TOP nodes in sequence, collecting per-node results and aggregate stats.",
+   413→     {"type": "object", "properties": {
+   414→         "node_paths": {"type": "array", "items": {"type": "string"}, "description": "List of TOP node paths to cook"},
+   415→         "blocking": {"type": "boolean", "description": "Wait for each cook (default: true)"},
+   416→         "stop_on_error": {"type": "boolean", "description": "Stop on first error (default: true)"},
+   417→     }, "required": ["node_paths"]},
+   418→     False, True, False),
+   419→
+   420→    ("tops_query_items", "tops_query_items", _identity,
+   421→     "Query work items by attribute value with filter operators (eq, gt, lt, gte, lte, contains, regex).",
+   422→     {"type": "object", "properties": {
+   423→         "node": {"type": "string", "description": "TOP node path"},
+   424→         "query_attribute": {"type": "string", "description": "Attribute name to filter on"},
+   425→         "filter_op": {"type": "string", "enum": ["eq", "gt", "lt", "gte", "lte", "contains", "regex"], "description": "Filter operator (default: eq)"},
+   426→         "filter_value": {"description": "Value to match against"},
+   427→     }, "required": ["node", "query_attribute", "filter_value"]},
+   428→     True, False, True),
+   429→
+   430→    # -- TOPS / PDG (Phase 4: Autonomous Operations) --
+   431→    ("tops_cook_and_validate", "tops_cook_and_validate", _identity,
+   432→     "Cook a TOP node with automatic retry on failure. Self-healing: cook -> validate -> dirty -> retry.",
+   433→     {"type": "object", "properties": {
+   434→         "node": {"type": "string", "description": "TOP node path"},
+   435→         "max_retries": {"type": "integer", "description": "Max retry attempts on failure (default: 0)"},
+   436→         "validate_states": {"type": "boolean", "description": "Check work item states after cook (default: true)"},
+   437→     }, "required": ["node"]},
+   438→     False, True, False),
+   439→
+   440→    ("tops_diagnose", "tops_diagnose", _identity,
+   441→     "Diagnose failures on a TOP node: inspect failed items, scheduler config, upstream deps, and suggestions.",
+   442→     {"type": "object", "properties": {
+   443→         "node": {"type": "string", "description": "TOP node path"},
+   444→         "include_scheduler": {"type": "boolean", "description": "Include scheduler info (default: true)"},
+   445→         "include_dependencies": {"type": "boolean", "description": "Include upstream dependency check (default: true)"},
+   446→     }, "required": ["node"]},
+   447→     True, False, True),
+   448→
+   449→    ("tops_pipeline_status", "tops_pipeline_status", _identity,
+   450→     "Full health check for a TOP network: per-node status, aggregate stats, issues, and suggestions.",
+   451→     {"type": "object", "properties": {
+   452→         "topnet_path": {"type": "string", "description": "TOP network path"},
+   453→         "include_items": {"type": "boolean", "description": "Include per-node work items (default: false)"},
+   454→     }, "required": ["topnet_path"]},
+   455→     True, False, True),
+   456→
+   457→    # -- TOPS / PDG (Phase 5: Streaming & Render Integration) --
+   458→    ("tops_monitor_stream", "tops_monitor_stream", _identity,
+   459→     "Start, stop, or check status of event-driven TOPS cook monitoring. "
+   460→     "Push-based alternative to polling -- registers PDG event callbacks that "
+   461→     "track work_item_started/completed/failed, cook_progress, cook_complete events. "
+   462→     "Use action='start' to begin, 'status' to check, 'stop' to end.",
+   463→     {"type": "object", "properties": {
+   464→         "node": {"type": "string", "description": "TOP node or network path to monitor"},
+   465→         "action": {"type": "string", "enum": ["start", "stop", "status"],
+   466→                    "description": "Action: start, stop, or status (default: start)"},
+   467→         "monitor_id": {"type": "string", "description": "Monitor ID (required for stop/status, returned by start)"},
+   468→     }, "required": ["node"]},
+   469→     False, False, False),
+   470→
+   471→    ("tops_render_sequence", "tops_render_sequence", _identity,
+   472→     "Render a frame sequence via TOPS/PDG. Single-call interface for 'render frames 1-48'. "
+   473→     "Validates stage, creates/reuses TOPS network, sets frame range, generates work items, "
+   474→     "starts cook. Idempotent -- reuses existing network if one matches.",
+   475→     {"type": "object", "properties": {
+   476→         "start_frame": {"type": "integer", "description": "First frame to render"},
+   477→         "end_frame": {"type": "integer", "description": "Last frame to render (inclusive)"},
+   478→         "step": {"type": "integer", "description": "Frame step (default: 1)"},
+   479→         "camera": {"type": "string", "description": "Camera USD prim path"},
+   480→         "output_dir": {"type": "string", "description": "Output directory for rendered frames"},
+   481→         "output_prefix": {"type": "string", "description": "Filename prefix (default: render)"},
+   482→         "rop_node": {"type": "string", "description": "ROP node path (auto-discovers if omitted)"},
+   483→         "topnet_path": {"type": "string", "description": "Existing TOP network to reuse"},
+   484→         "pixel_samples": {"type": "integer", "description": "Override pixel samples"},
+   485→         "resolution": {"type": "array", "items": {"type": "integer"},
+   486→                        "description": "Override resolution [width, height]"},
+   487→         "blocking": {"type": "boolean", "description": "Wait for cook to complete (default: false)"},
+   488→     }, "required": ["start_frame", "end_frame"]},
+   489→     False, True, False),
+   490→
+   491→    ("tops_multi_shot", "tops_multi_shot", _identity,
+   492→     "Create a TOPS network for multi-shot rendering. Accepts a list of shot definitions "
+   493→     "(name, frame range, camera, overrides), creates per-shot work items in a genericgenerator, "
+   494→     "feeds into ropfetch for rendering, partitions results by shot name. "
+   495→     "Returns a job_id for monitoring.",
+   496→     {"type": "object", "properties": {
+   497→         "shots": {"type": "array", "items": {"type": "object", "properties": {
+   498→             "name": {"type": "string", "description": "Shot name (e.g. sq010_sh010)"},
+   499→             "frame_start": {"type": "integer", "description": "First frame (default: 1001)"},
+   500→             "frame_end": {"type": "integer", "description": "Last frame (default: 1048)"},
+   501→             "camera": {"type": "string", "description": "Camera USD prim path"},
+   502→             "overrides": {"type": "object", "description": "Shot-specific parameter overrides"},
+   503→         }, "required": ["name"]}, "description": "List of shot definitions"},
+   504→         "topnet_path": {"type": "string", "description": "Existing TOP network to reuse"},
+   505→         "renderer": {"type": "string", "description": "Renderer (default: karma_xpu)"},
+   506→         "output_dir": {"type": "string", "description": "Base output directory (default: $HIP/render)"},
+   507→         "camera_pattern": {"type": "string", "description": "Camera path template (default: /cameras/{shot}_cam)"},
+   508→         "rop_node": {"type": "string", "description": "ROP node path (auto-discovers if omitted)"},
+   509→         "blocking": {"type": "boolean", "description": "Wait for cook to complete (default: false)"},
+   510→         "encode_movie": {"type": "boolean", "description": "Add ffmpeg encode per shot (default: false)"},
+   511→     }, "required": ["shots"]},
+   512→     False, True, False),
+   513→
+   514→    # -- USD Scene Assembly --
+   515→    ("houdini_reference_usd", "reference_usd", _identity,
+   516→     "Import a USD file into the stage via reference, payload, or sublayer. "
+   517→     "Payload mode uses deferred loading for heavy assets. "
+   518→     "For Karma rendering, sublayer is the most reliable import mode.",
+   519→     {"type": "object", "properties": {
+   520→         "file": {"type": "string", "description": "Path to USD file"},
+   521→         "prim_path": {"type": "string", "description": "Target prim path (default: /)"},
+   522→         "mode": {"type": "string", "enum": ["reference", "payload", "sublayer"],
+   523→                  "description": "Import mode: reference (default), payload (deferred load), or sublayer (most Karma-compatible)"},
+   524→         "parent": {"type": "string", "description": "Parent LOP network path"},
+   525→     }, "required": ["file"]},
+   526→     False, True, False),
+   527→
+   528→    ("houdini_query_prims", "query_prims", _identity,
+   529→     "Query USD stage prims with filtering by type, purpose, and name pattern. "
+   530→     "Returns matching prims with their paths, types, and metadata.",
+   531→     {"type": "object", "properties": {
+   532→         "node": {"type": "string", "description": "LOP node path. If omitted, uses current selection."},
+   533→         "root_path": {"type": "string", "description": "USD prim path to start walking from (default: /)"},
+   534→         "prim_type": {"type": "string", "description": "Filter by USD type name (e.g. 'Mesh', 'DomeLight', 'Material')"},
+   535→         "purpose": {"type": "string", "description": "Filter by purpose (e.g. 'default', 'render', 'proxy', 'guide')"},
+   536→         "name_pattern": {"type": "string", "description": "Regex or substring filter on prim name"},
+   537→         "max_depth": {"type": "integer", "description": "Max traversal depth (default: 10)"},
+   538→         "limit": {"type": "integer", "description": "Max prims to return (default: 100)"},
+   539→     }, "required": []},
+   540→     True, False, False),
+   541→
+   542→    ("houdini_manage_variant_set", "manage_variant_set", _identity,
+   543→     "Manage USD variant sets on a prim: list, create, or select variants. "
+   544→     "Use 'list' to see existing variant sets, 'create' to add a new set "
+   545→     "with named variants, or 'select' to switch the active variant.",
+   546→     {"type": "object", "properties": {
+   547→         "node": {"type": "string", "description": "LOP node path. If omitted, uses current selection."},
+   548→         "prim_path": {"type": "string", "description": "USD prim path to manage variants on"},
+   549→         "action": {"type": "string", "enum": ["list", "create", "select"],
+   550→                    "description": "Action to perform (default: list)"},
+   551→         "variant_set": {"type": "string", "description": "Variant set name (required for create/select)"},
+   552→         "variants": {"type": "array", "items": {"type": "string"},
+   553→                      "description": "Variant names to create (required for create action)"},
+   554→         "variant": {"type": "string", "description": "Variant to select (required for select action)"},
+   555→     }, "required": ["prim_path"]},
+   556→     False, True, True),
+   557→
+   558→    ("houdini_manage_collection", "manage_collection", _identity,
+   559→     "Manage USD collections on a prim for light linking, material assignment, "
+   560→     "and grouping. Use 'list' to see existing collections, 'create' to make a "
+   561→     "new collection with include/exclude paths, 'add'/'remove' to modify paths.",
+   562→     {"type": "object", "properties": {
+   563→         "node": {"type": "string", "description": "LOP node path. If omitted, uses current selection."},
+   564→         "prim_path": {"type": "string", "description": "USD prim path to manage collections on"},
+   565→         "action": {"type": "string", "enum": ["list", "create", "add", "remove"],
+   566→                    "description": "Action to perform (default: list)"},
+   567→         "collection_name": {"type": "string", "description": "Collection name (required for create/add/remove)"},
+   568→         "paths": {"type": "array", "items": {"type": "string"},
+   569→                   "description": "Prim paths to include (required for create/add/remove)"},
+   570→         "exclude_paths": {"type": "array", "items": {"type": "string"},
+   571→                           "description": "Prim paths to exclude (optional, create only)"},
+   572→         "expansion_rule": {"type": "string", "enum": ["expandPrims", "expandPrimsAndProperties", "explicitOnly"],
+   573→                            "description": "Collection expansion rule (default: expandPrims)"},
+   574→     }, "required": ["prim_path"]},
+   575→     False, True, True),
+   576→
+   577→    ("synapse_validate_ordering", "solaris_validate_ordering", _identity,
+   578→     "Walk a LOP network backwards from the render node, detecting ambiguous "
+   579→     "merge points where input order affects USD opinion strength. Flags "
+   580→     "merge and sublayer LOPs with 2+ inputs as potential ordering issues.",
+   581→     {"type": "object", "properties": {
+   582→         "node": {"type": "string", "description": "Starting node path (render ROP or Karma LOP). Auto-discovers if omitted."},
+   583→         "max_depth": {"type": "integer", "description": "Maximum traversal depth (default: 50)"},
+   584→     }, "required": []},
+   585→     True, False, True),
+   586→
+   587→    ("houdini_configure_light_linking", "configure_light_linking", _identity,
+   588→     "Configure light linking between lights and geometry via USD collections. "
+   589→     "Control which geometry a light illuminates or casts shadows on. "
+   590→     "Actions: 'include' (limit illumination), 'exclude' (block illumination), "
+   591→     "'shadow_include'/'shadow_exclude' (shadow control), 'reset' (illuminate everything).",
+   592→     {"type": "object", "properties": {
+   593→         "node": {"type": "string", "description": "LOP node path. If omitted, uses current selection."},
+   594→         "light_path": {"type": "string", "description": "USD prim path of the light"},
+   595→         "action": {"type": "string",
+   596→                    "enum": ["include", "exclude", "shadow_include", "shadow_exclude", "reset"],
+   597→                    "description": "Light linking action (default: include)"},
+   598→         "geo_paths": {"type": "array", "items": {"type": "string"},
+   599→                       "description": "Geometry prim paths to include/exclude (not needed for reset)"},
+   600→     }, "required": ["light_path"]},
+   601→     False, True, False),
+   602→
+   603→    # -- Materials --
+   604→    ("houdini_create_textured_material", "create_textured_material", _identity,
+   605→     "Create a production MaterialX material with texture file inputs. "
+   606→     "Supports diffuse, roughness, metalness, normal, opacity, and displacement maps. "
+   607→     "Handles UDIM textures and UV coordinate wiring automatically. "
+   608→     "Use this for textured lookdev; use create_material for simple solid colors.",
+   609→     {"type": "object", "properties": {
+   610→         "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+   611→         "name": {"type": "string", "description": "Material name (default: textured_material)"},
+   612→         "diffuse_map": {"type": "string", "description": "Path to diffuse/albedo texture file"},
+   613→         "roughness_map": {"type": "string", "description": "Path to roughness texture file"},
+   614→         "metalness_map": {"type": "string", "description": "Path to metalness texture file"},
+   615→         "normal_map": {"type": "string", "description": "Path to normal map texture file"},
+   616→         "displacement_map": {"type": "string", "description": "Path to displacement map texture file"},
+   617→         "opacity_map": {"type": "string", "description": "Path to opacity/alpha texture file"},
+   618→         "roughness": {"type": "number", "description": "Scalar roughness fallback if no texture (0-1)"},
+   619→         "metalness": {"type": "number", "description": "Scalar metalness fallback if no texture (0-1)"},
+   620→         "geo_pattern": {"type": "string", "description": "Optional geometry prim pattern to auto-assign material"},
+   621→     }, "required": []},
+   622→     False, True, False),
+   623→
+   624→    ("houdini_create_material", "create_material", _identity,
+   625→     "Create a material with a shader in the LOP network. Supports base color, "
+   626→     "metalness, roughness, opacity, emission, and subsurface parameters.",
+   627→     {"type": "object", "properties": {
+   628→         "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+   629→         "name": {"type": "string", "description": "Material name"},
+   630→         "shader_type": {"type": "string", "description": "Shader type (default: mtlxstandard_surface)"},
+   631→         "base_color": {"type": "array", "items": {"type": "number"}, "description": "[r, g, b] 0-1"},
+   632→         "metalness": {"type": "number", "description": "Metalness 0-1"},
+   633→         "roughness": {"type": "number", "description": "Roughness 0-1"},
+   634→         "opacity": {"type": "number", "description": "Opacity 0-1 (1=fully opaque)"},
+   635→         "emission": {"type": "number", "description": "Emission weight 0-1"},
+   636→         "emission_color": {"type": "array", "items": {"type": "number"}, "description": "Emission color [r, g, b] 0-1"},
+   637→         "subsurface": {"type": "number", "description": "Subsurface scattering weight 0-1"},
+   638→         "subsurface_color": {"type": "array", "items": {"type": "number"}, "description": "Subsurface color [r, g, b] 0-1"},
+   639→     }, "required": []},
+   640→     False, True, False),
+   641→
+   642→    ("houdini_assign_material", "assign_material", _identity,
+   643→     "Assign a material to geometry prims.",
+   644→     {"type": "object", "properties": {
+   645→         "node": {"type": "string", "description": "LOP node to wire after (optional)"},
+   646→         "prim_pattern": {"type": "string", "description": "Geometry prim path or pattern"},
+   647→         "material_path": {"type": "string", "description": "USD material path"},
+   648→     }, "required": ["prim_pattern", "material_path"]},
+   649→     False, True, False),
+   650→
+   651→    ("houdini_read_material", "read_material", _identity,
+   652→     "Read what material is assigned to a prim and its shader settings.",
+   653→     {"type": "object", "properties": {
+   654→         "node": {"type": "string", "description": "LOP node (optional)"},
+   655→         "prim_path": {"type": "string", "description": "USD prim to inspect"},
+   656→     }, "required": ["prim_path"]},
+   657→     True, False, True),
+   658→
+   659→    # -- Knowledge / RAG --
+   660→    ("synapse_knowledge_lookup", "knowledge_lookup",
+   661→     _filter_keys(("query",)),
+   662→     "Look up Houdini knowledge: parameter names, node types, workflow guides.",
+   663→     {"type": "object", "properties": {
+   664→         "query": {"type": "string", "description": "Natural language query"},
+   665→     }, "required": ["query"]},
+   666→     True, False, True),
+   667→
+   668→    # -- Introspection --
+   669→    ("synapse_inspect_selection", "inspect_selection", _identity,
+   670→     "Inspect selected nodes: parameters, connections, geometry stats, input graph.",
+   671→     {"type": "object", "properties": {
+   672→         "depth": {"type": "integer", "description": "Input traversal depth (default: 1)"},
+   673→     }, "required": []},
+   674→     True, False, True),
+   675→
+   676→    ("synapse_inspect_scene", "inspect_scene", _identity,
+   677→     "Bird's-eye scene overview: node tree, context breakdown, warnings, sticky notes.",
+   678→     {"type": "object", "properties": {
+   679→         "root": {"type": "string", "description": "Starting node path (default: '/')"},
+   680→         "max_depth": {"type": "integer", "description": "Traversal depth (default: 3)"},
+   681→         "context_filter": {"type": "string", "description": "Filter by category (e.g. 'Sop')"},
+   682→     }, "required": []},
+   683→     True, False, True),
+   684→
+   685→    ("synapse_inspect_node", "inspect_node", _identity,
+   686→     "Deep-dive into a single node: all parameters, expressions, code, geometry, HDA info.",
+   687→     {"type": "object", "properties": {
+   688→         "node": {"type": "string", "description": "Full node path"},
+   689→         "include_code": {"type": "boolean", "description": "Include VEX/Python code (default: true)"},
+   690→         "include_geometry": {"type": "boolean", "description": "Include geometry attributes (default: true)"},
+   691→         "include_expressions": {"type": "boolean", "description": "Include expressions (default: true)"},
+   692→     }, "required": ["node"]},
+   693→     True, False, True),
+   694→
+   695→    # -- Network Explain --
+   696→    ("houdini_network_explain", "network_explain", _network_explain_payload,
+   697→     "Walk a Houdini node network and produce a structured explanation: data flow order, "
+   698→     "detected workflow patterns (scatter, terrain, simulation, VDB, etc.), non-default "
+   699→     "parameter values, and suggested parameters to promote for HDA interfaces.",
+   700→     {"type": "object", "properties": {
+   701→         "root_path": {"type": "string", "description": "Path to network root (e.g. '/obj/geo1')"},
+   702→         "depth": {"type": "integer", "description": "How deep to traverse subnets (default: 2, max: 5)"},
+   703→         "detail_level": {"type": "string", "enum": ["summary", "standard", "detailed"],
+   704→                          "description": "Level of detail (default: standard)"},
+   705→         "include_parameters": {"type": "boolean", "description": "Include key non-default parameter values (default: true)"},
+   706→         "include_expressions": {"type": "boolean", "description": "Include channel expressions (default: false)"},
+   707→         "format": {"type": "string", "enum": ["prose", "structured", "help_card"],
+   708→                    "description": "Output format (default: structured)"},
+   709→     }, "required": ["root_path"]},
+   710→     True, False, True),
+   711→
+   712→    # -- Memory --
+   713→    ("synapse_context", "context", _passthrough,
+   714→     "Get project context from Synapse memory.",
+   715→     _EMPTY_SCHEMA, True, False, True),
+   716→
+   717→    ("synapse_search", "search",
+   718→     _filter_keys(("query",)),
+   719→     "Search project memory for relevant entries.",
+   720→     {"type": "object", "properties": {
+   721→         "query": {"type": "string", "description": "Search query"},
+   722→     }, "required": ["query"]},
+   723→     True, False, True),
+   724→
+   725→    ("synapse_recall", "recall",
+   726→     _filter_keys(("query",)),
+   727→     "Recall relevant memories for a given context or question.",
+   728→     {"type": "object", "properties": {
+   729→         "query": {"type": "string", "description": "Context or question"},
+   730→     }, "required": ["query"]},
+   731→     True, False, True),
+   732→
+   733→    ("synapse_decide", "decide", _decide_payload,
+   734→     "Record a decision in project memory with reasoning.",
+   735→     {"type": "object", "properties": {
+   736→         "decision": {"type": "string", "description": "The decision made"},
+   737→         "reasoning": {"type": "string", "description": "Why this decision was made"},
+   738→         "alternatives": {"type": "string", "description": "Alternatives considered"},
+   739→     }, "required": ["decision"]},
+   740→     False, False, False),
+   741→
+   742→    ("synapse_add_memory", "add_memory", _add_memory_payload,
+   743→     "Add a memory entry to the project.",
+   744→     {"type": "object", "properties": {
+   745→         "content": {"type": "string", "description": "Memory content to store"},
+   746→         "memory_type": {"type": "string", "description": "Type (note, context, reference, task)"},
+   747→         "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags"},
+   748→     }, "required": ["content"]},
+   749→     False, False, True),
+   750→
+   751→    # -- Scene Memory (Living Memory) --
+   752→    ("synapse_project_setup", "project_setup", _identity,
+   753→     "Call this FIRST in every session. Returns project memory, scene memory, "
+   754→     "agent state, and evolution stage. Without this, you have no context.",
+   755→     {"type": "object", "properties": {
+   756→         "force_refresh": {"type": "boolean", "description": "Force re-read (default: false)"},
+   757→     }, "required": []},
+   758→     False, False, True),
+   759→
+   760→    ("synapse_memory_write", "memory_write", _identity,
+   761→     "Write a memory entry to scene or project memory.",
+   762→     {"type": "object", "properties": {
+   763→         "entry_type": {"type": "string", "description": "Type of memory entry"},
+   764→         "content": {"type": "object", "description": "Entry content"},
+   765→         "scope": {"type": "string", "enum": ["scene", "project", "both"], "description": "Where to write"},
+   766→     }, "required": ["entry_type", "content"]},
+   767→     False, False, False),
+   768→
+   769→    ("synapse_memory_query", "memory_query", _identity,
+   770→     "Query scene or project memory.",
+   771→     {"type": "object", "properties": {
+   772→         "query": {"type": "string", "description": "Search query"},
+   773→         "scope": {"type": "string", "enum": ["scene", "project", "all"]},
+   774→         "type_filter": {"type": "string"},
+   775→     }, "required": ["query"]},
+   776→     True, False, True),
+   777→
+   778→    ("synapse_memory_status", "memory_status", _passthrough,
+   779→     "Get memory system status: evolution stage, file sizes, session count.",
+   780→     _EMPTY_SCHEMA, True, False, True),
+   781→
+   782→    ("synapse_evolve_memory", "evolve_memory", _passthrough,
+   783→     "Manually trigger memory evolution.",
+   784→     {"type": "object", "properties": {
+   785→         "scope": {"type": "string", "enum": ["scene", "project"]},
+   786→         "target_stage": {"type": "string", "enum": ["charmeleon", "charizard"]},
+   787→         "dry_run": {"type": "boolean", "description": "Preview without evolving (default: true)"},
+   788→     }, "required": []},
+   789→     False, False, False),
+   790→
+   791→    # -- HDA (Houdini Digital Asset) --
+   792→    ("houdini_hda_create", "hda_create", _identity,
+   793→     "Convert a subnet into a Houdini Digital Asset (HDA). "
+   794→     "Sets metadata (author, version), installs the .hda file. "
+   795→     "The subnet must already exist -- use create_node to build it first.",
+   796→     {"type": "object", "properties": {
+   797→         "subnet_path": {"type": "string", "description": "Path to subnet node to convert"},
+   798→         "operator_name": {"type": "string", "description": "Internal operator type name"},
+   799→         "operator_label": {"type": "string", "description": "Human-readable label"},
+   800→         "category": {"type": "string", "enum": ["Sop", "Object", "Driver", "Lop", "Top"],
+   801→                      "description": "Node category for the HDA"},
+   802→         "version": {"type": "string", "description": "SemVer version (default: 1.0.0)"},
+   803→         "save_path": {"type": "string", "description": "File path to save the .hda file"},
+   804→         "min_inputs": {"type": "integer", "description": "Minimum inputs (default: 0)"},
+   805→         "max_inputs": {"type": "integer", "description": "Maximum inputs (default: 1)"},
+   806→         "icon": {"type": "string", "description": "Optional icon name"},
+   807→     }, "required": ["subnet_path", "operator_name", "operator_label", "category", "save_path"]},
+   808→     False, True, False),
+   809→
+   810→    ("houdini_hda_promote_parm", "hda_promote_parm", _identity,
+   811→     "Promote an internal node parameter to the HDA's top-level interface. "
+   812→     "Idempotent -- re-promoting updates rather than duplicates.",
+   813→     {"type": "object", "properties": {
+   814→         "hda_path": {"type": "string", "description": "Path to the HDA instance node"},
+   815→         "internal_node": {"type": "string", "description": "Relative path to internal node"},
+   816→         "parm_name": {"type": "string", "description": "Parameter name on the internal node"},
+   817→         "label": {"type": "string", "description": "Optional label override"},
+   818→         "folder": {"type": "string", "description": "Optional folder/tab name"},
+   819→         "callback": {"type": "string", "description": "Optional Python callback script"},
+   820→         "conditions": {"type": "object", "description": "Optional visibility conditions"},
+   821→     }, "required": ["hda_path", "internal_node", "parm_name"]},
+   822→     False, True, True),
+   823→
+   824→    ("houdini_hda_set_help", "hda_set_help", _identity,
+   825→     "Set help documentation on an HDA. Generates Houdini wiki markup "
+   826→     "from structured inputs: summary, description, per-parameter help, and tips.",
+   827→     {"type": "object", "properties": {
+   828→         "hda_path": {"type": "string", "description": "Path to the HDA instance node"},
+   829→         "summary": {"type": "string", "description": "Short summary"},
+   830→         "description": {"type": "string", "description": "Full description (wiki markup)"},
+   831→         "parameters_help": {"type": "object", "description": "{parm_name: help_text}"},
+   832→         "tips": {"type": "array", "items": {"type": "string"}, "description": "List of tips"},
+   833→         "author": {"type": "string", "description": "Author name"},
+   834→     }, "required": ["hda_path"]},
+   835→     False, True, True),
+   836→
+   837→    ("houdini_hda_package", "hda_package", _identity,
+   838→     "High-level HDA orchestrator: create subnet, convert to HDA, promote parameters, "
+   839→     "set help -- all in one call. Atomic undo group rolls back on failure.",
+   840→     {"type": "object", "properties": {
+   841→         "description": {"type": "string", "description": "What the HDA should do"},
+   842→         "name": {"type": "string", "description": "Operator name"},
+   843→         "category": {"type": "string", "enum": ["Sop", "Object", "Driver", "Lop", "Top"],
+   844→                      "description": "Node category"},
+   845→         "save_path": {"type": "string", "description": "File path to save .hda"},
+   846→         "inputs": {"type": "array", "items": {"type": "string"}, "description": "Input descriptions"},
+   847→         "promoted_parms": {"type": "array", "items": {"type": "object"},
+   848→                           "description": "List of {node, parm, label} dicts"},
+   849→         "nodes": {"type": "array", "items": {"type": "object", "properties": {
+   850→             "type": {"type": "string", "description": "Node type to create"},
+   851→             "name": {"type": "string", "description": "Node name"},
+   852→             "parms": {"type": "object", "description": "Parameter values to set"},
+   853→         }, "required": ["type"]}, "description": "Internal nodes to create before HDA conversion"},
+   854→         "connections": {"type": "array", "items": {"type": "array", "items": {"type": "string"}},
+   855→             "description": "Connection triples: [src_name, dst_name, dst_input_idx]. Use __input0 for subnet input"},
+   856→     }, "required": ["description", "name", "category", "save_path"]},
+   857→     False, True, False),
+   858→
+   859→    ("houdini_hda_list", "hda_list", _passthrough,
+   860→     "List all Synapse-authored HDAs currently loaded in Houdini. "
+   861→     "Scans loaded HDA files for definitions with author=synapse metadata.",
+   862→     {"type": "object", "properties": {}, "required": []},
+   863→     True, False, False),
+   864→
+   865→    # -- Undo / Redo --
+   866→    ("houdini_undo", "undo", _passthrough,
+   867→     "Undo the last Houdini operation. Steps back one undo level.",
+   868→     _EMPTY_SCHEMA, False, True, False),
+   869→
+   870→    ("houdini_redo", "redo", _passthrough,
+   871→     "Redo the last undone Houdini operation. Steps forward one undo level.",
+   872→     _EMPTY_SCHEMA, False, True, False),
+   873→
+   874→    # -- Batch --
+   875→    ("synapse_batch", "batch_commands", _identity,
+   876→     "Execute multiple Synapse commands in a single round-trip.",
+   877→     {"type": "object", "properties": {
+   878→         "commands": {"type": "array", "items": {"type": "object"}, "description": "Commands to execute"},
+   879→         "atomic": {"type": "boolean", "description": "Wrap in undo group (default: true)"},
+   880→         "stop_on_error": {"type": "boolean", "description": "Stop on first error (default: false)"},
+   881→     }, "required": ["commands"]},
+   882→     False, True, False),
+   883→
+   884→    # -- Metrics / Stats --
+   885→    ("synapse_metrics", "get_metrics", _passthrough,
+   886→     "Get Synapse metrics in Prometheus text format.",
+   887→     _EMPTY_SCHEMA, True, False, True),
+   888→
+   889→    ("synapse_router_stats", "router_stats", _passthrough,
+   890→     "Get tier cascade routing statistics.",
+   891→     _EMPTY_SCHEMA, True, False, True),
+   892→
+   893→    ("synapse_list_recipes", "list_recipes", _passthrough,
+   894→     "List all available recipes with names, descriptions, and trigger patterns.",
+   895→     _EMPTY_SCHEMA, True, False, True),
+   896→
+   897→    # -- Render Farm --
+   898→    ("synapse_render_sequence", "render_sequence", _identity,
+   899→     "Render a frame range with per-frame validation, automatic issue diagnosis, "
+   900→     "and self-improving fixes. Learns from each render to start smarter next time.",
+   901→     {"type": "object", "properties": {
+   902→         "rop": {"type": "string", "description": "ROP node path (auto-discovers if omitted)"},
+   903→         "start_frame": {"type": "integer", "description": "First frame to render"},
+   904→         "end_frame": {"type": "integer", "description": "Last frame to render (inclusive)"},
+   905→         "step": {"type": "integer", "description": "Frame step (default: 1)"},
+   906→         "auto_fix": {"type": "boolean", "description": "Auto-diagnose and fix issues (default: true)"},
+   907→         "max_retries": {"type": "integer", "description": "Max retries per frame (default: 3)"},
+   908→     }, "required": ["start_frame", "end_frame"]},
+   909→     False, True, False),
+   910→
+   911→    ("synapse_render_farm_status", "render_farm_status", _passthrough,
+   912→     "Check progress of a running render farm job: running state, scene tags, current frame.",
+   913→     _EMPTY_SCHEMA, True, False, True),
+   914→
+   915→    # -- Autonomous Render --
+   916→    ("synapse_autonomous_render", "autonomous_render", _identity,
+   917→     "Execute an autonomous render loop: plan the render from intent, validate the scene, "
+   918→     "execute via TOPS, evaluate quality, and re-render if needed. Returns a full report.",
+   919→     {"type": "object", "properties": {
+   920→         "intent": {"type": "string", "description": "What to render (e.g., 'render frames 1-48', 'render turntable with ARRI Alexa 35 at 50mm')"},
+   921→         "max_iterations": {"type": "integer", "default": 3, "description": "Max re-render attempts if quality check fails"},
+   922→         "quality_threshold": {"type": "number", "default": 0.85, "description": "Minimum quality score (0.0-1.0) for frames to pass"},
+   923→     }, "required": ["intent"]},
+   924→     False, True, False),
+   925→
+   926→    # -- Safe / Progressive Render --
+   927→    ("synapse_safe_render", "safe_render", _identity,
+   928→     "Render with pre-flight validation. Checks camera, materials, and output path "
+   929→     "before rendering. Auto-forces background mode for high-resolution renders to prevent Houdini lockup.",
+   930→     {"type": "object", "properties": {
+   931→         "rop_path": {"type": "string", "description": "Path to the usdrender ROP node (auto-discovered if omitted)"},
+   932→         "soho_foreground": {"type": "integer", "enum": [0, 1], "description": "Force foreground (1) or background (0) rendering. If omitted, auto-decides based on resolution."},
+   933→     }, "required": []},
+   934→     False, True, False),
+   935→
+   936→    ("synapse_render_progressively", "render_progressively", _identity,
+   937→     "Progressive 3-pass render: test (256x256, 4 samples) -> preview (720p, 16 samples) "
+   938→     "-> production (user settings). Validates each pass before proceeding.",
+   939→     {"type": "object", "properties": {
+   940→         "rop_path": {"type": "string", "description": "Path to the usdrender ROP node (auto-discovered if omitted)"},
+   941→         "resolution": {"type": "array", "items": {"type": "integer"}, "description": "Production resolution [width, height]. Default: [1920, 1080]"},
+   942→         "samples": {"type": "integer", "description": "Production pixel samples. Default: 64"},
+   943→     }, "required": []},
+   944→     False, True, False),
+   945→
+   946→    # -- Live Metrics (Sprint E) --
+   947→    ("synapse_live_metrics", "get_live_metrics", _identity,
+   948→     "Get live metrics snapshot: scene health, routing, resilience, sessions. "
+   949→     "Pass history_count > 0 for historical snapshots.",
+   950→     {"type": "object", "properties": {
+   951→         "history_count": {"type": "integer", "description": "Historical snapshots to return (0 = latest)"},
+   952→     }, "required": []},
+   953→     True, False, True),
+   954→
+   955→    # -- Copernicus (COPs) -- Foundation --
+   956→    ("cops_create_network", "cops_create_network", _identity,
+   957→     "Create a COP2 network container for Copernicus image processing.",
+   958→     {"type": "object", "properties": {
+   959→         "parent": {"type": "string", "description": "Parent node path (default: /obj)"},
+   960→         "name": {"type": "string", "description": "Network name (default: cop2net)"},
+   961→         "initial_nodes": {"type": "array", "items": {"type": "string"},
+   962→                           "description": "COP node types to create inside"},
+   963→     }, "required": []},
+   964→     False, True, False),
+   965→
+   966→    ("cops_create_node", "cops_create_node", _identity,
+   967→     "Create a COP node inside a COP network.",
+   968→     {"type": "object", "properties": {
+   969→         "parent": {"type": "string", "description": "COP network path"},
+   970→         "type": {"type": "string", "description": "COP node type"},
+   971→         "name": {"type": "string", "description": "Optional node name"},
+   972→     }, "required": ["parent", "type"]},
+   973→     False, True, False),
+   974→
+   975→    ("cops_connect", "cops_connect", _identity,
+   976→     "Connect two COP nodes together.",
+   977→     {"type": "object", "properties": {
+   978→         "source": {"type": "string", "description": "Source COP node path"},
+   979→         "target": {"type": "string", "description": "Target COP node path"},
+   980→         "source_output": {"type": "integer", "description": "Source output index (default: 0)"},
+   981→         "target_input": {"type": "integer", "description": "Target input index (default: 0)"},
+   982→     }, "required": ["source", "target"]},
+   983→     False, True, False),
+   984→
+   985→    ("cops_set_opencl", "cops_set_opencl", _identity,
+   986→     "Set OpenCL kernel code on a COP node for GPU-accelerated processing.",
+   987→     {"type": "object", "properties": {
+   988→         "node": {"type": "string", "description": "COP node path"},
+   989→         "kernel_code": {"type": "string", "description": "OpenCL kernel source"},
+   990→         "kernel_name": {"type": "string", "description": "Kernel entry point function name"},
+   991→     }, "required": ["node", "kernel_code"]},
+   992→     False, True, False),
+   993→
+   994→    ("cops_read_layer_info", "cops_read_layer_info",
+   995→     _filter_keys(("node",)),
+   996→     "Read layer info from a COP node: resolution, data type, channels, cook status.",
+   997→     {"type": "object", "properties": {
+   998→         "node": {"type": "string", "description": "COP node path"},
+   999→     }, "required": ["node"]},
+  1000→     True, False, True),
+  1001→
+  1002→    # -- Copernicus (COPs) -- Pipeline Integration --
+  1003→    ("cops_to_materialx", "cops_to_materialx", _identity,
+  1004→     "Connect COP output to MaterialX shader via op: path for live procedural textures.",
+  1005→     {"type": "object", "properties": {
+  1006→         "cop_path": {"type": "string", "description": "COP node path (texture source)"},
+  1007→         "material_node": {"type": "string", "description": "MaterialX shader node path"},
+  1008→         "input_name": {"type": "string", "description": "Shader texture input (default: base_color_texture)"},
+  1009→         "plane": {"type": "string", "description": "COP plane (default: C)"},
+  1010→     }, "required": ["cop_path", "material_node"]},
+  1011→     False, True, False),
+  1012→
+  1013→    ("cops_composite_aovs", "cops_composite_aovs", _identity,
+  1014→     "Build a COP network to composite Karma AOV layers from EXR renders.",
+  1015→     {"type": "object", "properties": {
+  1016→         "parent": {"type": "string", "description": "Parent node path (default: /obj)"},
+  1017→         "exr_path": {"type": "string", "description": "Path to multi-layer EXR file"},
+  1018→         "aov_list": {"type": "array", "items": {"type": "string"},
+  1019→                      "description": "AOV layer names"},
+  1020→         "name": {"type": "string", "description": "Network name (default: aov_comp)"},
+  1021→     }, "required": ["exr_path"]},
+  1022→     False, True, False),
+  1023→
+  1024→    ("cops_analyze_render", "cops_analyze_render", _identity,
+  1025→     "Analyze rendered image in COPs: black pixels, dynamic range, clipping, noise.",
+  1026→     {"type": "object", "properties": {
+  1027→         "node": {"type": "string", "description": "COP node with image"},
+  1028→         "checks": {"type": "array", "items": {"type": "string"},
+  1029→                    "description": "Checks to run (default: all)"},
+  1030→     }, "required": ["node"]},
+  1031→     True, False, True),
+  1032→
+  1033→    ("cops_slap_comp", "cops_slap_comp", _identity,
+  1034→     "Configure live viewport compositing overlay using COP output.",
+  1035→     {"type": "object", "properties": {
+  1036→         "cop_path": {"type": "string", "description": "COP node for overlay"},
+  1037→         "blend_mode": {"type": "string", "description": "over, add, multiply (default: over)"},
+  1038→         "opacity": {"type": "number", "description": "Overlay opacity 0-1 (default: 1.0)"},
+  1039→     }, "required": ["cop_path"]},
+  1040→     False, True, False),
+  1041→
+  1042→    # -- Copernicus (COPs) -- Procedural & Motion Design --
+  1043→    ("cops_create_solver", "cops_create_solver", _identity,
+  1044→     "Create Block Begin/End solver pair for iterative COP processing.",
+  1045→     {"type": "object", "properties": {
+  1046→         "parent": {"type": "string", "description": "COP network path"},
+  1047→         "name": {"type": "string", "description": "Solver name (default: solver)"},
+  1048→         "iterations": {"type": "integer", "description": "Iterations (default: 10)"},
+  1049→         "method": {"type": "string", "description": "singlepass or simulate (default: singlepass)"},
+  1050→     }, "required": ["parent"]},
+  1051→     False, True, False),
+  1052→
+  1053→    ("cops_procedural_texture", "cops_procedural_texture", _identity,
+  1054→     "Generate procedural texture: noise (perlin/worley/simplex), ramp, tiling.",
+  1055→     {"type": "object", "properties": {
+  1056→         "parent": {"type": "string", "description": "COP network path"},
+  1057→         "noise_type": {"type": "string", "description": "perlin, worley, simplex, alligator"},
+  1058→         "frequency": {"type": "number", "description": "Noise frequency (default: 1.0)"},
+  1059→         "octaves": {"type": "integer", "description": "Fractal octaves (default: 4)"},
+  1060→         "resolution": {"type": "array", "items": {"type": "integer"}, "description": "[w, h]"},
+  1061→         "name": {"type": "string", "description": "Node name"},
+  1062→     }, "required": ["parent"]},
+  1063→     False, True, False),
+  1064→
+  1065→    ("cops_growth_propagation", "cops_growth_propagation", _identity,
+  1066→     "DLA-style growth solver: iterative dilate/blur/threshold from seed mask.",
+  1067→     {"type": "object", "properties": {
+  1068→         "parent": {"type": "string", "description": "COP network path"},
+  1069→         "seed_mask": {"type": "string", "description": "Seed mask COP node path"},
+  1070→         "iterations": {"type": "integer", "description": "Growth iterations (default: 20)"},
+  1071→         "growth_rate": {"type": "number", "description": "Growth rate 0-1 (default: 0.5)"},
+  1072→         "blur_amount": {"type": "number", "description": "Blur between iterations (default: 1.0)"},
+  1073→         "threshold": {"type": "number", "description": "Threshold cutoff (default: 0.5)"},
+  1074→         "name": {"type": "string", "description": "Solver name"},
+  1075→     }, "required": ["parent"]},
+  1076→     False, True, False),
+  1077→
+  1078→    ("cops_reaction_diffusion", "cops_reaction_diffusion", _identity,
+  1079→     "Gray-Scott reaction-diffusion solver via OpenCL for organic patterns.",
+  1080→     {"type": "object", "properties": {
+  1081→         "parent": {"type": "string", "description": "COP network path"},
+  1082→         "feed_rate": {"type": "number", "description": "Feed rate F (default: 0.055)"},
+  1083→         "kill_rate": {"type": "number", "description": "Kill rate k (default: 0.062)"},
+  1084→         "diffusion_a": {"type": "number", "description": "Diffusion A (default: 1.0)"},
+  1085→         "diffusion_b": {"type": "number", "description": "Diffusion B (default: 0.5)"},
+  1086→         "iterations": {"type": "integer", "description": "Iterations (default: 100)"},
+  1087→         "resolution": {"type": "array", "items": {"type": "integer"}, "description": "[w, h]"},
+  1088→         "name": {"type": "string", "description": "Solver name"},
+  1089→     }, "required": ["parent"]},
+  1090→     False, True, False),
+  1091→
+  1092→    ("cops_pixel_sort", "cops_pixel_sort", _identity,
+  1093→     "Pixel sorting effect by luminance/hue with threshold and direction.",
+  1094→     {"type": "object", "properties": {
+  1095→         "parent": {"type": "string", "description": "COP network path"},
+  1096→         "input_node": {"type": "string", "description": "Input COP node"},
+  1097→         "sort_by": {"type": "string", "description": "luminance, hue, saturation, value"},
+  1098→         "direction": {"type": "string", "description": "horizontal, vertical, diagonal"},
+  1099→         "threshold_low": {"type": "number", "description": "Low threshold 0-1 (default: 0.2)"},
+  1100→         "threshold_high": {"type": "number", "description": "High threshold 0-1 (default: 0.8)"},
+  1101→         "name": {"type": "string", "description": "Node name"},
+  1102→     }, "required": ["parent"]},
+  1103→     False, True, False),
+  1104→
+  1105→    ("cops_stylize", "cops_stylize", _identity,
+  1106→     "NPR stylization: toon, risograph, posterize, edge detect.",
+  1107→     {"type": "object", "properties": {
+  1108→         "parent": {"type": "string", "description": "COP network path"},
+  1109→         "input_node": {"type": "string", "description": "Input COP node"},
+  1110→         "style_type": {"type": "string", "description": "toon, risograph, posterize, edge_detect"},
+  1111→         "levels": {"type": "integer", "description": "Quantization levels (default: 6)"},
+  1112→         "edge_width": {"type": "number", "description": "Edge width (default: 1.0)"},
+  1113→         "name": {"type": "string", "description": "Node name"},
+  1114→     }, "required": ["parent"]},
+  1115→     False, True, False),
+  1116→
+  1117→    # -- Copernicus (COPs) -- Advanced --
+  1118→    ("cops_wetmap", "cops_wetmap", _identity,
+  1119→     "Wetmap effect: temporal decay from SOP velocity/collision in UV space.",
+  1120→     {"type": "object", "properties": {
+  1121→         "parent": {"type": "string", "description": "COP network path"},
+  1122→         "sop_path": {"type": "string", "description": "SOP velocity/collision source"},
+  1123→         "decay": {"type": "number", "description": "Decay rate 0-1 (default: 0.95)"},
+  1124→         "blur": {"type": "number", "description": "Spread blur (default: 2.0)"},
+  1125→         "resolution": {"type": "array", "items": {"type": "integer"}, "description": "UV res"},
+  1126→         "name": {"type": "string", "description": "Node name"},
+  1127→     }, "required": ["parent"]},
+  1128→     False, True, False),
+  1129→
+  1130→    ("cops_bake_textures", "cops_bake_textures", _identity,
+  1131→     "UV texture baking setup: normal, AO, curvature, position maps.",
+  1132→     {"type": "object", "properties": {
+  1133→         "parent": {"type": "string", "description": "COP network path"},
+  1134→         "high_res": {"type": "string", "description": "High-res SOP path"},
+  1135→         "low_res": {"type": "string", "description": "Low-res SOP path"},
+  1136→         "map_types": {"type": "array", "items": {"type": "string"}, "description": "Maps to bake"},
+  1137→         "resolution": {"type": "array", "items": {"type": "integer"}, "description": "Output res"},
+  1138→         "name": {"type": "string", "description": "Setup name"},
+  1139→     }, "required": ["parent"]},
+  1140→     False, True, False),
+  1141→
+  1142→    ("cops_temporal_analysis", "cops_temporal_analysis", _identity,
+  1143→     "Temporal coherence analysis: flicker, frame diff, consistency check.",
+  1144→     {"type": "object", "properties": {
+  1145→         "node": {"type": "string", "description": "COP node path"},
+  1146→         "frame_range": {"type": "array", "items": {"type": "integer"}, "description": "[start, end]"},
+  1147→         "metrics": {"type": "array", "items": {"type": "string"}, "description": "Metrics to compute"},
+  1148→     }, "required": ["node"]},
+  1149→     True, False, True),
+  1150→
+  1151→    ("cops_stamp_scatter", "cops_stamp_scatter", _identity,
+  1152→     "Stamp image scattering with randomized transform per instance.",
+  1153→     {"type": "object", "properties": {
+  1154→         "parent": {"type": "string", "description": "COP network path"},
+  1155→         "stamp_source": {"type": "string", "description": "Stamp COP node"},
+  1156→         "count": {"type": "integer", "description": "Instance count (default: 50)"},
+  1157→         "scale_range": {"type": "array", "items": {"type": "number"}, "description": "[min, max] scale"},
+  1158→         "rotation_range": {"type": "array", "items": {"type": "number"}, "description": "[min, max] degrees"},
+  1159→         "seed": {"type": "integer", "description": "Random seed (default: 42)"},
+  1160→         "name": {"type": "string", "description": "Node name"},
+  1161→     }, "required": ["parent"]},
+  1162→     False, True, False),
+  1163→
+  1164→    ("cops_batch_cook", "cops_batch_cook", _identity,
+  1165→     "Batch-cook multiple COP nodes sequentially.",
+  1166→     {"type": "object", "properties": {
+  1167→         "nodes": {"type": "array", "items": {"type": "string"}, "description": "COP node paths"},
+  1168→         "parallel": {"type": "boolean", "description": "Use TOPS (default: false)"},
+  1169→         "frame_range": {"type": "array", "items": {"type": "integer"}, "description": "[start, end]"},
+  1170→         "name": {"type": "string", "description": "Batch name"},
+  1171→     }, "required": ["nodes"]},
+  1172→     False, True, False),
+  1173→]
+  1174→
+  1175→
+  1176→# =========================================================================
+  1177→# Indexed lookup tables (built once at import time)
+  1178→# =========================================================================
+  1179→
+  1180→# tool_name -> (command_type, payload_builder)
+  1181→TOOL_DISPATCH: dict[str, tuple[str, Any]] = {}
+  1182→
+  1183→# tool_name -> full MCP tool definition dict
+  1184→TOOL_JSON: dict[str, dict] = {}
+  1185→
+  1186→for _def in TOOL_DEFS:
+  1187→    _name, _cmd, _builder, _desc, _schema, _ro, _destr, _idemp = _def
+  1188→    TOOL_DISPATCH[_name] = (_cmd, _builder)
+  1189→    TOOL_JSON[_name] = {
+  1190→        "name": _name,
+  1191→        "description": _desc,
+  1192→        "inputSchema": _schema,
+  1193→        "annotations": {
+  1194→            "title": _name.replace("_", " ").replace("houdini ", "").replace("synapse ", "").title(),
+  1195→            "readOnlyHint": _ro,
+  1196→            "destructiveHint": _destr,
+  1197→            "idempotentHint": _idemp,
+  1198→            "openWorldHint": False,
+  1199→        },
+  1200→    }
+  1201→
+  1202→# Pre-sorted tool list (built once at import, never changes)
+  1203→TOOLS_LIST_CACHE: list[dict] = sorted(TOOL_JSON.values(), key=lambda t: t["name"])
+  1204→
+  1205→# Sorted tool names for quick lookup
+  1206→TOOL_NAMES: list[str] = sorted(TOOL_DISPATCH.keys())
+  1207→
+  1208→
+  1209→# =========================================================================
+  1210→# Public payload builder aliases (for import by other modules)
+  1211→# =========================================================================
+  1212→
+  1213→passthrough = _passthrough
+  1214→identity = _identity
+  1215→execute_python_payload = _execute_python_payload
+  1216→stage_info_payload = _stage_info_payload
+  1217→decide_payload = _decide_payload
+  1218→add_memory_payload = _add_memory_payload
+  1219→filter_keys = _filter_keys
+  1220→network_explain_payload = _network_explain_payload
+  1221→next_call_id = _next_call_id
+  1222→dumps_str = _dumps_str
+  1223→

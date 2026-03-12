@@ -1,0 +1,153 @@
+import { notFound } from "next/navigation";
+import Image from "next/image";
+import { PROJECTS, getProject, CASE_STUDIES } from "@/lib/projects";
+import { MetaTag } from "@/components/MetaTag";
+import { PlaceholderImage } from "@/components/PlaceholderImage";
+import { CaseStudySection } from "@/components/CaseStudySection";
+import { heroImage, detailImages } from "@/lib/images";
+import Link from "next/link";
+import type { Metadata } from "next";
+
+interface PageProps {
+  params: Promise<{ slug: string }>;
+}
+
+export async function generateStaticParams() {
+  return PROJECTS.map((p) => ({ slug: p.slug }));
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const project = getProject(slug);
+  if (!project) return {};
+  return {
+    title: project.title,
+    description: project.desc,
+  };
+}
+
+export default async function ProjectPage({ params }: PageProps) {
+  const { slug } = await params;
+  const project = getProject(slug);
+  if (!project) notFound();
+
+  const caseStudy = CASE_STUDIES[project.slug];
+  const hero = heroImage(project.slug);
+  const details = detailImages(project.slug);
+  const idx = PROJECTS.findIndex((p) => p.slug === project.slug);
+  const prev = idx > 0 ? PROJECTS[idx - 1] : null;
+  const next = idx < PROJECTS.length - 1 ? PROJECTS[idx + 1] : null;
+
+  return (
+    <div style={{ paddingTop: "var(--nav-h)" }}>
+      {/* Header */}
+      <div style={{ padding: "clamp(40px, 8vh, 100px) var(--pad) clamp(32px, 4vh, 60px)", maxWidth: "var(--max-w)", margin: "0 auto" }}>
+        <div style={{ display: "flex", gap: "clamp(32px, 4vw, 80px)", alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 400px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+              <MetaTag label={project.category} />
+              <MetaTag label={project.year} />
+            </div>
+            <h1 style={{ fontSize: "clamp(32px, 4vw, 56px)", fontWeight: 400, letterSpacing: "-0.02em", color: "var(--text)", margin: "0 0 16px", lineHeight: 1.1 }}>
+              {project.title}
+            </h1>
+            <p style={{ fontSize: "clamp(16px, 1.4vw, 20px)", fontWeight: 400, color: "var(--muted)", lineHeight: 1.5, margin: 0, maxWidth: 480 }}>
+              {project.desc}
+            </p>
+          </div>
+          <div style={{ flex: "0 0 200px", paddingTop: 40 }}>
+            {[
+              { label: "Role", value: "Brand Design Director" },
+              { label: "Year", value: project.year },
+              { label: "Scope", value: "Identity, Systems, Guidelines" },
+            ].map((item) => (
+              <div key={item.label} style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>
+                  {item.label}
+                </div>
+                <div style={{ fontSize: 15, color: "var(--text)", fontWeight: 400, lineHeight: 1.4 }}>
+                  {item.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Hero image */}
+      {hero ? (
+        <div style={{ position: "relative", width: "100%", height: "clamp(300px, 50vh, 600px)" }}>
+          <Image
+            src={hero}
+            alt={project.title}
+            fill
+            style={{ objectFit: "cover" }}
+            sizes="100vw"
+            priority
+          />
+        </div>
+      ) : (
+        <PlaceholderImage color={project.color} title={project.title} height="clamp(300px, 50vh, 600px)" style={{ borderRadius: 0 }} />
+      )}
+
+      {/* Case study or gallery fallback */}
+      <div style={{ maxWidth: "var(--max-w)", margin: "0 auto", padding: "0 var(--pad)" }}>
+        {caseStudy ? (
+          caseStudy.sections.map((section, si) => (
+            <CaseStudySection key={si} section={section} color={project.color} title={project.title} slug={project.slug} index={si} />
+          ))
+        ) : details.length > 0 ? (
+          <>
+            {/* Asymmetric gallery rows from detail images */}
+            {Array.from({ length: Math.ceil(details.length / 2) }, (_, row) => {
+              const left = details[row * 2];
+              const right = details[row * 2 + 1];
+              const isEven = row % 2 === 0;
+              return (
+                <div key={row} style={{ display: "grid", gridTemplateColumns: isEven ? "2fr 1fr" : "1fr 2fr", gap: 20, margin: "40px 0", alignItems: "start" }}>
+                  <div style={{ position: "relative", height: isEven ? 440 : 300 }}>
+                    <Image src={left} alt={`${project.title} detail`} fill style={{ objectFit: "cover", borderRadius: "var(--img-radius)" }} sizes="(max-width: 768px) 100vw, 60vw" />
+                  </div>
+                  {right && (
+                    <div style={{ position: "relative", height: isEven ? 320 : 460 }}>
+                      <Image src={right} alt={`${project.title} detail`} fill style={{ objectFit: "cover", borderRadius: "var(--img-radius)" }} sizes="(max-width: 768px) 100vw, 40vw" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, margin: "40px 0", alignItems: "start" }}>
+              <PlaceholderImage color={project.color} title={`${project.title} 1`} height={440} />
+              <PlaceholderImage color={project.color} title={`${project.title} 2`} height={320} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 20, alignItems: "start" }}>
+              <PlaceholderImage color={project.color} title={`${project.title} 3`} height={300} />
+              <PlaceholderImage color={project.color} title={`${project.title} 4`} height={460} />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Prev/Next navigation */}
+      <div style={{ maxWidth: "var(--max-w)", margin: "60px auto 0", padding: "0 var(--pad)", display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--border)", paddingTop: 32 }}>
+        {prev ? (
+          <Link href={`/work/${prev.slug}`} style={{ fontSize: 16, color: "var(--text)" }}>
+            <span style={{ fontSize: 11, color: "var(--muted)", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Previous</span>
+            {prev.title}
+          </Link>
+        ) : <div />}
+        {next ? (
+          <Link href={`/work/${next.slug}`} style={{ fontSize: 16, color: "var(--text)", textAlign: "right" }}>
+            <span style={{ fontSize: 11, color: "var(--muted)", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Next</span>
+            {next.title}
+          </Link>
+        ) : <div />}
+      </div>
+
+      <div style={{ height: 60 }} />
+    </div>
+  );
+}

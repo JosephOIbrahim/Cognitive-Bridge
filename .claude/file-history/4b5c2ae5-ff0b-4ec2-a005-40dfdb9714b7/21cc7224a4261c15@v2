@@ -1,0 +1,30 @@
+"use client";
+
+import { CATEGORIES, PROJECTS } from "@/lib/projects";
+import styles from "./CategoryFilter.module.css";
+
+const ACTIVE_CATEGORIES = CATEGORIES.filter(
+  (cat) => cat === "All" || PROJECTS.some((p) => p.category === cat)
+);
+
+interface CategoryFilterProps {
+  active: string;
+  onChange: (category: string) => void;
+}
+
+export function CategoryFilter({ active, onChange }: CategoryFilterProps) {
+  return (
+    <div className={styles.container}>
+      {ACTIVE_CATEGORIES.map((cat) => (
+        <button
+          key={cat}
+          className={`${styles.button} ${active === cat ? styles.buttonActive : ""}`}
+          onClick={() => onChange(cat)}
+        >
+          {cat}
+          <span className={styles.underline} />
+        </button>
+      ))}
+    </div>
+  );
+}

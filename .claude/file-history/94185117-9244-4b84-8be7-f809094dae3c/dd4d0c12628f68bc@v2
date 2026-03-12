@@ -1,0 +1,94 @@
+'use client';
+
+import { ReactNode } from 'react';
+
+/**
+ * AccordionCategory - Expandable category section for PROCESS page
+ *
+ * COLOR HIERARCHY MANTRA:
+ * - Title expanded: --text-primary (brightest)
+ * - Title collapsed: --grey-500 (medium)
+ * - Chevron: --text-dim (dimmest)
+ *
+ * Information hierarchy = Color hierarchy
+ */
+
+interface AccordionCategoryProps {
+  title: string;
+  count: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  prefersReducedMotion?: boolean;
+}
+
+export default function AccordionCategory({
+  title,
+  count,
+  isExpanded,
+  onToggle,
+  children,
+  prefersReducedMotion = false
+}: AccordionCategoryProps) {
+  return (
+    <section className="mb-12 sm:mb-[72px]">
+      {/* Section Header - Matches INFO page section labels */}
+      {/* min-h-[44px] ensures touch-friendly tap target */}
+      <button
+        onClick={onToggle}
+        className="w-full text-left flex items-center gap-4 cursor-pointer group min-h-[44px]"
+        style={{ marginBottom: isExpanded ? '36px' : '0' }}
+        aria-expanded={isExpanded}
+      >
+        {/* Title - PRIMARY when expanded, SECONDARY when collapsed */}
+        <h2
+          style={{
+            color: isExpanded ? 'var(--text-primary)' : 'var(--grey-500)',
+            fontFamily: 'var(--font-display)',
+            fontWeight: 400,
+            fontSize: 'clamp(22px, 2.2vw, 28px)',
+            lineHeight: 1.15,
+            letterSpacing: '0.005em',
+            transition: prefersReducedMotion ? 'none' : 'color 250ms ease'
+          }}
+        >
+          {title}
+        </h2>
+
+        {/* Chevron - TERTIARY */}
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          style={{
+            color: isExpanded ? 'var(--grey-500)' : 'var(--text-dim)',
+            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: prefersReducedMotion ? 'none' : 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1), color 250ms ease'
+          }}
+        >
+          <path d="M2 4L6 8L10 4" />
+        </svg>
+      </button>
+
+      {/* Expandable Content - CSS Grid for smooth height animation */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: isExpanded ? '1fr' : '0fr',
+          opacity: isExpanded ? 1 : 0,
+          transition: prefersReducedMotion
+            ? 'none'
+            : 'grid-template-rows 350ms cubic-bezier(0.4, 0, 0.2, 1), opacity 250ms ease'
+        }}
+      >
+        <div style={{ overflow: 'hidden' }}>
+          {children}
+        </div>
+      </div>
+    </section>
+  );
+}

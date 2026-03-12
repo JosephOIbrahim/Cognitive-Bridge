@@ -1,0 +1,44 @@
+"""Evaluation order invariance verification.
+
+Ensures that phase evaluation order and expert priority order remain
+stable across diverse signal inputs and repeated reads.
+"""
+
+from src.lossless.constants import PHASES
+from src.lossless.experts.registry import get_expert_names
+from src.lossless.routing.cascade import SignalFingerprint, evaluate_cascade
+
+
+def check_phase_evaluation_order() -> bool:
+    """Verify phase evaluation order is identical across diverse signals.
+
+    Tests 9 signal combinations (3 valences x 3 domains) and confirms
+    the cascade always evaluates phases in canonical PHASES order.
+
+    Returns:
+        True if order is stable across all test signals.
+    """
+    signals = [
+        SignalFingerprint(emotional_valence=ev, domain_signal=ds)
+        for ev in ["calm", "frustrated", "energized"]
+        for ds in ["general", "vfx", "web"]
+    ]
+    for signal in signals:
+        result = evaluate_cascade(signal)
+        order = [ps.phase for ps in result.phase_scores]
+        if order != list(PHASES):
+            return False
+    return True
+
+
+def check_expert_order_invariance() -> bool:
+    """Verify expert priority order is stable across 100 consecutive reads.
+
+    Returns:
+        True if get_expert_names() returns the same list every time.
+    """
+    baseline = get_expert_names()
+    for _ in range(100):
+        if get_expert_names() != baseline:
+            return False
+    return True

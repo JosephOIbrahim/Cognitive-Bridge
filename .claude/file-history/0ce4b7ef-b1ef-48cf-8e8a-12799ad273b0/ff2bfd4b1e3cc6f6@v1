@@ -1,0 +1,35 @@
+# Plan: Compile TranslatorsCard in UE 5.7
+
+## Context
+The TranslatorsCard UE5 bridge project has 20 C++ source files that have never been compiled. Fixes were applied in the previous conversation turn (FORCE_ANSI_ALLOCATOR, JSON parsing resilience, map path correction, GameMode config). Now we need to compile and fix any errors.
+
+## Steps
+
+1. **Run the build command** via Build.bat:
+   ```
+   "C:/Program Files/Epic Games/UE_5.7/Engine/Build/BatchFiles/Build.bat" TranslatorsCardEditor Win64 Development "C:/Users/User/Translators-Game/TranslatorsGame/ue-bridge/TranslatorsCard.uproject"
+   ```
+   This will be a long-running command (likely 2-5 minutes). Run with extended timeout.
+
+2. **Analyze build output** for errors. Expected risk areas:
+   - UE 5.7 API changes vs what the code was written against
+   - `IWYUSupport` enum value in Build.cs (may have changed in 5.7)
+   - `FJsonObject` method signatures (TryGetStringField, etc.)
+   - UMG widget constructor patterns
+   - DirectoryWatcher module availability
+
+3. **Fix any compile errors** iteratively — re-run build after each fix round.
+
+4. **Verify** the build succeeds and editor target binaries appear in `ue-bridge/Binaries/Win64/`.
+
+## Key Files
+- `ue-bridge/TranslatorsCard.uproject`
+- `ue-bridge/Source/TranslatorsCard.Target.cs` (Game target)
+- `ue-bridge/Source/TranslatorsCardEditor.Target.cs` (Editor target)
+- `ue-bridge/Source/TranslatorsCard/TranslatorsCard.Build.cs`
+- `ue-bridge/Source/TranslatorsCard/BridgeComponent.cpp` (largest file, most API surface)
+- `ue-bridge/Source/TranslatorsCard/UI/*.cpp` (6 widget files)
+
+## Verification
+- Build completes with 0 errors
+- `ue-bridge/Binaries/Win64/` contains compiled editor binaries

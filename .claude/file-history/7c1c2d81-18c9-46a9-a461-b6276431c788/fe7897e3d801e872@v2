@@ -1,0 +1,165 @@
+"""Consistency report generator.
+
+Runs all consistency checks (evaluation order, batch invariance, fixed
+split-size, lossless guarantees, mixing matrix health) and produces a
+structured CONSISTENCY_REPORT.md markdown document.
+"""
+
+from pathlib import Path
+
+from src.lossless.consistency.auditor import (
+    check_fixed_expert_count,
+    check_fixed_phase_count,
+    check_phase_order_stable,
+    check_tile_size_positive,
+)
+from src.lossless.consistency.batch_invariance import (
+    check_anchor_hash_invariance,
+    check_clean_signal_invariance,
+)
+from src.lossless.consistency.reduction_order import (
+    check_expert_order_invariance,
+    check_phase_evaluation_order,
+)
+from src.lossless.constants import PROFILES
+from src.lossless.injection.state import InjectionState
+from src.lossless.integration.combiner import reconstruct_clean
+from src.lossless.integration.pipeline import LosslessPipeline
+
+
+def generate_report(root_path: Path) -> str:
+    """Generate full CONSISTENCY_REPORT.md content.
+
+    Args:
+        root_path: Path to the root USDA file.
+
+    Returns:
+        Markdown string with all check results.
+    """
+    lines = ["# Consistency Report", "", "## 1. EVALUATION ORDER INVARIANCE", ""]
+
+    # 1. Evaluation order
+    r = check_phase_evaluation_order()
+    lines.append(f"- Phase order: {'PASS' if r else 'FAIL'}")
+    r = check_phase_order_stable()
+    lines.append(f"- Phase list stability: {'PASS' if r else 'FAIL'}")
+    r = check_expert_order_invariance()
+    lines.append(f"- Expert order: {'PASS' if r else 'FAIL'}")
+
+    # Section order
+    section_pass = _check_section_order(root_path)
+    lines.append(f"- Section order: {'PASS' if section_pass else 'FAIL'}")
+
+    # 2. Batch invariance
+    lines += ["", "## 2. BATCH INVARIANCE", ""]
+    ci = check_clean_signal_invariance(root_path)
+    lines.append(f"- Clean signal invariance: {'PASS' if ci['passed'] else 'FAIL'}")
+    ai = check_anchor_hash_invariance(root_path)
+    lines.append(f"- Anchor hash invariance: {'PASS' if ai['passed'] else 'FAIL'}")
+
+    # 3. Fixed split-size
+    lines += ["", "## 3. FIXED SPLIT-SIZE", ""]
+    lines.append(f"- Fixed phase count: {'PASS' if check_fixed_phase_count() else 'FAIL'}")
+    lines.append(f"- Fixed expert count: {'PASS' if check_fixed_expert_count() else 'FAIL'}")
+    lines.append(f"- COGNITIVE_TILE_SIZE: {'PASS' if check_tile_size_positive() else 'FAIL'}")
+
+    # 4. Lossless guarantees
+    lines += ["", "## 4. LOSSLESS GUARANTEES", ""]
+    lg = _check_lossless_guarantees(root_path)
+    for k, v in sorted(lg.items()):
+        lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
+
+    # 5. Mixing matrix health
+    lines += ["", "## 5. MIXING MATRIX HEALTH", ""]
+    mm = _check_mixing_matrix(root_path)
+    for k, v in sorted(mm.items()):
+        lines.append(f"- {k}: {'PASS' if v else 'FAIL'}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _check_section_order(root_path: Path) -> bool:
+    baseline_keys = None
+    for name in sorted(PROFILES.keys()):
+        state = InjectionState()
+        if name != "none":
+            state.activate(name)
+            for _ in range(5):
+                state.advance_exchange()
+        result = LosslessPipeline(root_path, state).convert()
+        keys = list(dict(result.combined.sections).keys())
+        if baseline_keys is None:
+            baseline_keys = keys
+        elif keys != baseline_keys:
+            return False
+    return True
+
+
+def _check_lossless_guarantees(root_path: Path) -> dict:
+    results = {}
+    # Identity at zero
+    r = LosslessPipeline(root_path).convert()
+    clean = r.clean.get_sections_dict()
+    combined = r.combined.get_sections_dict()
+    results["Identity at zero"] = all(
+        clean.get(p, "") == combined.get(p, "") for p in sorted(clean.keys())
+    )
+    # Reconstruction
+    recon_pass = True
+    for name in sorted(PROFILES.keys()):
+        state = InjectionState()
+        if name != "none":
+            state.activate(name)
+            for _ in range(5):
+                state.advance_exchange()
+        result = LosslessPipeline(root_path, state).convert()
+        reconstructed = reconstruct_clean(result.combined)
+        clean_d = result.clean.get_sections_dict()
+        if reconstructed != clean_d:
+            recon_pass = False
+    results["Reconstruction"] = recon_pass
+    # Fidelity
+    results["Fidelity = 1.0"] = all(
+        "fidelity: 1.000000" in LosslessPipeline(
+            root_path, _make_state(n)
+        ).convert().integrity_block
+        for n in sorted(PROFILES.keys())
+    )
+    # Determinism
+    det_pass = True
+    for name in sorted(PROFILES.keys()):
+        hashes = [
+            LosslessPipeline(root_path, _make_state(name)).convert().clean.clean_hash
+            for _ in range(10)
+        ]
+        if len(set(hashes)) != 1:
+            det_pass = False
+    results["Determinism (10x)"] = det_pass
+    return results
+
+
+def _check_mixing_matrix(root_path: Path) -> dict:
+    from src.lossless.constants import MAX_CONDITION_NUMBER
+    results = {}
+    invertible = True
+    condition_ok = True
+    for name in sorted(PROFILES.keys()):
+        state = _make_state(name)
+        mt = state.mixing_tracker
+        if not mt.is_invertible():
+            invertible = False
+        if mt.condition_number() >= MAX_CONDITION_NUMBER:
+            condition_ok = False
+    results["Invertible at all profiles"] = invertible
+    results["Condition number < 10"] = condition_ok
+    return results
+
+
+def _make_state(profile_name: str) -> InjectionState:
+    state = InjectionState()
+    if profile_name != "none":
+        state.activate(profile_name)
+        for _ in range(5):
+            state.advance_exchange()
+    return state

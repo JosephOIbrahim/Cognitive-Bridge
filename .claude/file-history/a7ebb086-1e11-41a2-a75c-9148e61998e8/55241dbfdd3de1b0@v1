@@ -1,0 +1,355 @@
+# Sprint D: Studio Deployment — RBAC, Multi-User Sessions, Remote Access
+
+## Context
+
+Sprint C (Agent SDK v2) is complete: multi-goal planner, checkpoint/resume, self-healing retries, 20 agent tools, 111 agent tests passing. The Synapse core has 1,118 tests passing with 39 registered handlers, full MCP + TOPS integration, and existing API key auth in `auth.py`.
+
+**Problem:** Synapse currently binds to `127.0.0.1` with a single shared API key and no per-user identity. Studios need per-artist roles (viewer/artist/lead/admin), multi-user session tracking, LAN/VPN access, and per-user audit trails.
+
+**Sprint D gate files:**
+```
+python/synapse/server/rbac.py          — NEW
+python/synapse/server/sessions.py      — NEW
+docs/studio/DEPLOYMENT.md              — NEW
+```
+
+---
+
+## Phase 1: RBAC Module (`server/rbac.py`)
+
+Create `python/synapse/server/rbac.py` (~150 lines).
+
+### Data Model
+
+```python
+class Role(Enum):
+    VIEWER = "viewer"     # Read-only: inspect, capture, query
+    ARTIST = "artist"     # Read + write: create, edit, execute, render
+    LEAD = "lead"         # Artist + user management
+    ADMIN = "admin"       # Full access including server config
+```
+
+### Permission Matrix
+
+Two-layer system: **allow set** + **deny set** per role, with wildcard matching (`inspect_*`, `tops_get_*`).
+
+- `ROLE_PERMISSIONS` — what each role CAN do (with wildcards)
+- `ROLE_DENIALS` — what each role CANNOT do (overrides permissions)
+- Use `fnmatch.fnmatch()` for wildcard matching (stdlib, no new deps)
+- VIEWER permissions: all `_READ_ONLY_COMMANDS` from handlers.py + capture_viewport + knowledge_lookup + tops read commands
+- ARTIST: everything except `server_config`, `manage_users`
+- LEAD: everything except `server_config`
+- ADMIN: unrestricted
+
+### Key Functions
+
+```python
+def check_permission(role: Role, command: str) -> bool:
+    """Check if role is allowed to execute command. Uses fnmatch wildcards."""
+
+def get_role_permissions(role: Role) -> set[str]:
+    """Return expanded permission set for a role."""
+
+def is_rbac_enabled() -> bool:
+    """True if deploy mode is not 'local'. Local mode skips RBAC."""
+```
+
+### Integration Point — `websocket.py`
+
+RBAC check goes in `_handle_message()` AFTER command parsing, BEFORE handler dispatch (between lines 390-415). The check is a single `if` block:
+
+```python
+# After: command = SynapseCommand.from_json(message)
+# Before: handler dispatch
+if is_rbac_enabled():
+    user_session = self._session_manager.get_by_client(client_id)
+    if user_session and not check_permission(user_session.role, command.type):
+        websocket.send(SynapseResponse(
+            id=command.id, success=False,
+            error=f"Your role ({user_session.role.value}) doesn't have permission for '{command.type}'"
+        ).to_json())
+        return
+```
+
+**Backward compat:** Local mode (`SYNAPSE_DEPLOY_MODE` unset or `"local"`) skips RBAC entirely — zero behavior change for existing users.
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `python/synapse/server/rbac.py` | **NEW** — Role enum, permission matrix, `check_permission()`, `is_rbac_enabled()` |
+| `tests/test_rbac.py` | **NEW** — ~25 tests |
+
+---
+
+## Phase 2: Multi-User Sessions (`server/sessions.py`)
+
+Create `python/synapse/server/sessions.py` (~180 lines).
+
+### Data Model
+
+```python
+@dataclass
+class UserSession:
+    session_id: str        # deterministic_uuid(user_id + monotonic)
+    user_id: str           # From auth token lookup
+    role: Role             # From users.json
+    display_name: str      # Human-friendly name
+    created_at: float      # time.monotonic()
+    last_active: float     # Updated on each request
+    client_id: str         # WebSocket client_id
+    metadata: dict         # IP, user agent, etc.
+```
+
+### SessionManager
+
+```python
+class SessionManager:
+    """Thread-safe multi-user session tracker."""
+    _sessions: dict[str, UserSession]      # session_id -> UserSession
+    _client_map: dict[str, str]            # client_id -> session_id
+    _lock: threading.Lock
+
+    def create_session(self, user_id: str, role: Role, client_id: str, ...) -> UserSession
+    def get_session(self, session_id: str) -> UserSession | None
+    def get_by_client(self, client_id: str) -> UserSession | None
+    def touch(self, session_id: str) -> None     # Update last_active
+    def remove_session(self, session_id: str) -> None
+    def expire_stale(self, max_idle: float = 3600.0) -> int
+    def active_sessions(self) -> list[UserSession]  # Sorted by user_id
+```
+
+### User Directory
+
+`~/.synapse/users.json` — loaded by SessionManager on init:
+
+```json
+{
+  "users": [
+    {"id": "alice", "name": "Alice Chen", "role": "lead", "key_hash": "sha256:abc..."},
+    {"id": "bob", "name": "Bob Kim", "role": "artist", "key_hash": "sha256:def..."}
+  ]
+}
+```
+
+Key functions:
+```python
+def load_user_directory(path: Path | None = None) -> dict[str, dict]
+    """Load users.json, return dict keyed by user_id."""
+
+def lookup_user_by_key(token: str, users: dict) -> dict | None
+    """Find user whose key_hash matches SHA-256 of token. Uses hmac.compare_digest."""
+
+def hash_api_key(key: str) -> str
+    """Return 'sha256:' + hex digest for storage in users.json."""
+```
+
+### Integration Points
+
+**`websocket.py` auth handshake (lines 272-308):** After successful `authenticate()`, look up the user in the directory and create a `UserSession`:
+
+```python
+# After: authenticate(token, auth_key) succeeds
+if self._session_manager:
+    user_info = lookup_user_by_key(token, self._user_directory)
+    if user_info:
+        user_session = self._session_manager.create_session(
+            user_id=user_info["id"],
+            role=Role(user_info["role"]),
+            client_id=client_id,
+            display_name=user_info.get("name", user_info["id"]),
+        )
+```
+
+**`handlers.py` `_submit_logs()` (line 277):** Pass `user_id` to `audit_log().log()`:
+
+```python
+audit_log().log(
+    operation=cmd_type,
+    message=f"Executed {cmd_type}",
+    ...
+    user_id=self._user_id,  # New field, set from UserSession
+)
+```
+
+**`audit.py` `log()` method (line 213):** Add `user_id: str = ""` parameter (it's already a field on `AuditEntry`, just not exposed in the `log()` signature).
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `python/synapse/server/sessions.py` | **NEW** — UserSession, SessionManager, user directory loader |
+| `python/synapse/core/audit.py` | Add `user_id` param to `log()` method signature (~2 lines) |
+| `python/synapse/server/handlers.py` | Add `_user_id` field to SynapseHandler, pass to `_submit_logs()` (~5 lines) |
+| `python/synapse/server/websocket.py` | Wire SessionManager into auth handshake + RBAC check (~20 lines) |
+| `tests/test_sessions.py` | **NEW** — ~20 tests |
+
+---
+
+## Phase 3: Deployment Config & Remote Access
+
+### Deploy Configuration
+
+`~/.synapse/deploy.json` schema + loader:
+
+```python
+# In sessions.py or a small deploy_config.py section
+@dataclass
+class DeployConfig:
+    mode: str = "local"           # "local" | "studio-lan" | "studio-vpn"
+    bind: str = "127.0.0.1"      # "0.0.0.0" for studio modes
+    port: int = 9999
+    auth_required: bool = False   # True for studio modes
+    users_file: str = "~/.synapse/users.json"
+    tls_enabled: bool = False
+    tls_certfile: str = ""
+    tls_keyfile: str = ""
+    default_role: str = "artist"
+    session_timeout: float = 3600.0  # 1 hour idle
+
+def load_deploy_config() -> DeployConfig:
+    """Load from SYNAPSE_DEPLOY_CONFIG env var or ~/.synapse/deploy.json."""
+```
+
+### `websocket.py` Changes
+
+- `SynapseServer.__init__()`: Accept `deploy_config: DeployConfig | None` parameter
+- When `mode != "local"`: bind to `deploy_config.bind`, require auth, enable RBAC, create SessionManager
+- When `mode == "local"`: current behavior unchanged (backward compat)
+
+### TLS (VPN mode only)
+
+Minimal `ssl.SSLContext` wrapper (~20 lines in `sessions.py` or inline in `websocket.py`):
+```python
+def create_tls_context(certfile: str, keyfile: str) -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(certfile, keyfile)
+    return ctx
+```
+
+Applied in `_run_server()` when `deploy_config.tls_enabled` is True.
+
+### Deployment Guide
+
+Create `docs/studio/DEPLOYMENT.md` — covers:
+1. Deployment modes (local / studio-lan / studio-vpn)
+2. `deploy.json` configuration reference
+3. User directory setup (`users.json`, `hash_api_key()` utility)
+4. Firewall rules for port 9999
+5. TLS certificate setup for VPN mode
+6. Data flow security note (Claude Code → Anthropic API)
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `python/synapse/server/sessions.py` | Add `DeployConfig`, `load_deploy_config()`, TLS helper (~40 lines added) |
+| `python/synapse/server/websocket.py` | Accept DeployConfig, conditional bind/auth/RBAC/TLS (~30 lines) |
+| `docs/studio/DEPLOYMENT.md` | **NEW** — deployment guide (~120 lines markdown) |
+
+---
+
+## Phase 4: Integration & Polish
+
+### Wire Everything Together in `websocket.py`
+
+The `SynapseServer` constructor gets a `deploy_config` parameter. Based on mode:
+- `"local"`: No SessionManager, no RBAC, bind `127.0.0.1`. Zero behavior change.
+- `"studio-lan"`: SessionManager created, RBAC enabled, bind `0.0.0.0`, auth required.
+- `"studio-vpn"`: Same as LAN + TLS context wrapping the server socket.
+
+### `__init__.py` Exports
+
+Add to `python/synapse/server/__init__.py`:
+```python
+from .rbac import Role, check_permission, is_rbac_enabled
+from .sessions import SessionManager, UserSession, DeployConfig, load_deploy_config
+```
+
+### Auth Failure Audit
+
+Log auth failures with IP and timestamp (already have `logger.warning` — add `audit_log().log()` call with `AuditLevel.WARNING` and `AuditCategory.SYSTEM`).
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `python/synapse/server/__init__.py` | Add RBAC + sessions exports (~4 lines) |
+| `python/synapse/server/websocket.py` | Final wiring of all components |
+| `tests/test_studio_integration.py` | **NEW** — ~10 integration tests (deploy config → RBAC → sessions end-to-end) |
+
+---
+
+## Complete File Manifest
+
+| # | File | Action | Lines |
+|---|------|--------|-------|
+| 1 | `python/synapse/server/rbac.py` | **CREATE** | ~150 |
+| 2 | `python/synapse/server/sessions.py` | **CREATE** | ~220 |
+| 3 | `python/synapse/core/audit.py` | MODIFY | ~5 (add `user_id` param to `log()`) |
+| 4 | `python/synapse/server/handlers.py` | MODIFY | ~10 (add `_user_id`, pass to audit) |
+| 5 | `python/synapse/server/websocket.py` | MODIFY | ~50 (deploy config, session mgr, RBAC check) |
+| 6 | `python/synapse/server/__init__.py` | MODIFY | ~4 (exports) |
+| 7 | `docs/studio/DEPLOYMENT.md` | **CREATE** | ~120 |
+| 8 | `tests/test_rbac.py` | **CREATE** | ~25 tests |
+| 9 | `tests/test_sessions.py` | **CREATE** | ~20 tests |
+| 10 | `tests/test_studio_integration.py` | **CREATE** | ~10 tests |
+
+---
+
+## Reuse Inventory
+
+| Existing | Reused For |
+|----------|-----------|
+| `auth.py: authenticate()`, `hmac.compare_digest` | Key comparison in user lookup |
+| `auth.py: hash_key_for_log()` | Logging auth events safely |
+| `auth.py: get_auth_key()` | Fallback for local mode |
+| `determinism.py: deterministic_uuid()` | Session ID generation |
+| `resilience.py: RateLimiter.acquire(client_id)` | Per-user rate limiting (already supports it) |
+| `audit.py: AuditEntry.user_id` field | Already exists, just needs wiring |
+| `handlers.py: _READ_ONLY_COMMANDS` frozenset | Basis for VIEWER role permissions |
+| `protocol.py: _to_json_str()` | Response serialization |
+
+---
+
+## He2025 Compliance
+
+| Pattern | Applied In |
+|---------|-----------|
+| `deterministic_uuid()` | Session IDs |
+| `hmac.compare_digest()` | All key comparisons |
+| `sort_keys=True` | users.json, deploy.json serialization |
+| `sorted()` | User lists, session lists, permission sets |
+| `encoding="utf-8"` | All config file I/O |
+| `time.monotonic()` | Session timestamps |
+
+---
+
+## Implementation Order
+
+1. **Phase 1** (rbac.py + test_rbac.py) — standalone, no dependencies
+2. **Phase 2** (sessions.py + test_sessions.py + audit.py tweak) — depends on Phase 1 Role enum
+3. **Phase 3** (deploy config + DEPLOYMENT.md + websocket.py changes) — depends on Phase 2
+4. **Phase 4** (integration wiring + __init__.py + integration tests) — composes all phases
+
+---
+
+## Verification
+
+```bash
+# Phase 1: RBAC
+python -m pytest tests/test_rbac.py -v
+
+# Phase 2: Sessions
+python -m pytest tests/test_sessions.py -v
+
+# Phase 3+4: Full suite
+python -m pytest tests/test_rbac.py tests/test_sessions.py tests/test_studio_integration.py -v
+
+# Existing tests still pass
+python -m pytest tests/ -v
+
+# Sprint D gate check
+ls python/synapse/server/rbac.py python/synapse/server/sessions.py docs/studio/DEPLOYMENT.md
+# Must list all 3 files
+```

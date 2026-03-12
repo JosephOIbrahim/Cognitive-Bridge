@@ -1,0 +1,151 @@
+"""
+Steps 8-10: Execute preflight and HDA builders via Synapse bridge.
+
+Step 8: Verify Houdini connection
+Step 9: Run synapse_preflight()
+Step 10: Build 4 HDAs (save to otls/)
+"""
+
+import asyncio
+import sys
+import os
+
+# Add the Synapse agent SDK to path
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+
+from synapse_ws import SynapseClient, SynapseConnectionError, SynapseExecutionError
+
+
+async def main():
+    print("=" * 60)
+    print("Cinema Camera Rig v4.0 — Steps 8-10 via Synapse")
+    print("=" * 60)
+
+    try:
+        async with SynapseClient() as client:
+            # --- Step 8: Verify connection ---
+            print("\n[Step 8] Verifying Houdini connection...")
+            ping = await client.ping()
+            print(f"  Ping OK: {ping}")
+
+            info = await client.scene_info()
+            print(f"  Houdini version: {info.get('houdini_version', 'unknown')}")
+            print(f"  HIP file: {info.get('hip_file', 'unknown')}")
+            print("  [PASS] Step 8 — Houdini connected via Synapse")
+
+            # --- Set env vars in Houdini session ---
+            print("\n  Setting CINEMA_CAMERA_PATH in Houdini session...")
+            env_code = r"""
+import os
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+os.environ.setdefault("WOLFRAM_APP_ID", "YOUR-APP-ID-HERE")
+result = {"CINEMA_CAMERA_PATH": os.environ["CINEMA_CAMERA_PATH"]}
+"""
+            env_result = await client.execute_python(env_code, timeout=10)
+            print(f"  Env set: {env_result}")
+
+            # --- Step 9: Preflight ---
+            print("\n[Step 9] Running synapse_preflight()...")
+            preflight_code = r"""
+import sys
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+from cinema_camera.synapse_preflight import synapse_preflight
+result = synapse_preflight()
+"""
+            preflight_result = await client.execute_python(preflight_code, timeout=30)
+            print(f"  Preflight result: {preflight_result}")
+
+            if isinstance(preflight_result, dict):
+                if preflight_result.get("status") == "ready" or preflight_result.get("passed"):
+                    print("  [PASS] Step 9 — Preflight passed")
+                else:
+                    print("  [WARN] Step 9 — Preflight returned non-ready status")
+                    for k, v in preflight_result.items():
+                        print(f"    {k}: {v}")
+            else:
+                print(f"  Preflight returned: {preflight_result}")
+
+            # --- Step 10: Build 4 HDAs ---
+            print("\n[Step 10] Building 4 HDAs...")
+            otls_dir = r"C:\Users\User\OneDrive\Documents\houdini21.0\otls"
+
+            builders = [
+                ("chops_biomechanics", "build_chops_biomechanics_hda"),
+                ("cop_anamorphic_flare", "build_cop_anamorphic_flare_hda"),
+                ("cop_sensor_noise", "build_cop_sensor_noise_hda"),
+                ("cop_stmap_aov", "build_cop_stmap_aov_hda"),
+            ]
+
+            hda_paths = []
+            for label, func_name in builders:
+                print(f"\n  Building {label}...")
+                build_code = f"""
+import sys, importlib
+sys.path.insert(0, r"C:\\Users\\User\\OneDrive\\Documents\\houdini21.0\\scripts\\python")
+# Force reload to pick up latest code
+import cinema_camera.builders.build_{label} as mod
+importlib.reload(mod)
+path = mod.{func_name}(save_dir=r"{otls_dir}")
+# Install the HDA so it's available in the session
+import hou
+hou.hda.installFile(path)
+result = path
+"""
+                try:
+                    path = await client.execute_python(build_code, timeout=60)
+                    print(f"    Saved & installed: {path}")
+                    hda_paths.append(path)
+                except SynapseExecutionError as e:
+                    print(f"    [FAIL] {label}: {e}")
+                    hda_paths.append(None)
+
+            # --- Verify HDAs loaded ---
+            print("\n[Step 10] Verifying HDAs are loaded...")
+            verify_code = r"""
+import hou
+checks = [
+    (hou.chopNodeTypeCategory(), "cinema::chops_biomechanics::1.0"),
+    (hou.cop2NodeTypeCategory(), "cinema::cop_anamorphic_flare::2.0"),
+    (hou.cop2NodeTypeCategory(), "cinema::cop_sensor_noise::1.0"),
+    (hou.cop2NodeTypeCategory(), "cinema::cop_stmap_aov::1.0"),
+]
+results = {}
+for cat, name in checks:
+    nt = hou.nodeType(cat, name)
+    results[name] = nt is not None
+result = results
+"""
+            verify = await client.execute_python(verify_code, timeout=15)
+            print(f"  HDA verification: {verify}")
+
+            all_ok = True
+            if isinstance(verify, dict):
+                for name, loaded in verify.items():
+                    status = "PASS" if loaded else "FAIL"
+                    print(f"    [{status}] {name}")
+                    if not loaded:
+                        all_ok = False
+
+            # --- Summary ---
+            print("\n" + "=" * 60)
+            built = sum(1 for p in hda_paths if p is not None)
+            print(f"Steps 8-10 complete: {built}/4 HDAs built")
+            if all_ok and built == 4:
+                print("ALL STEPS PASSED")
+            else:
+                print("Some steps need attention — see output above")
+            print("=" * 60)
+
+    except SynapseConnectionError as e:
+        print(f"\n[FAIL] Cannot connect to Synapse: {e}")
+        print("Make sure Houdini is running with Synapse server on port 9999")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n[FAIL] Unexpected error: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,0 +1,494 @@
+"""
+MPM H21 Masterclass - Phase 2: Transcript Enrichment
+=====================================================
+Automated enrichment of raw transcripts into structured knowledge docs.
+
+Applies:
+  - Auto-caption error correction (npm->MPM, Udini->Houdini, etc.)
+  - Known Houdini node name extraction
+  - Filler word removal for key sections
+  - Paragraph-level topic detection
+  - Workflow step extraction
+  - Tip/insight extraction
+
+Reads:  _raw_documentation/mpm_masterclass/*.md
+Writes: tutorials/workflow_guides/mpm_*.md (overwrites stubs)
+"""
+
+import json
+import re
+from pathlib import Path
+
+TARGET_DIR = Path("G:/HOUDINI21_RAG_SYSTEM/documentation")
+RAW_DIR = TARGET_DIR / "_raw_documentation" / "mpm_masterclass"
+TUTORIALS_DIR = TARGET_DIR / "tutorials" / "workflow_guides"
+
+# ---------------------------------------------------------------------------
+# Auto-caption corrections
+# ---------------------------------------------------------------------------
+
+CORRECTIONS = {
+    r'\bnpm\b': 'MPM',
+    r'\bNPM\b': 'MPM',
+    r'\bUdini\b': 'Houdini',
+    r'\budini\b': 'Houdini',
+    r'\bIP file\b': 'HIP file',
+    r'\bip file\b': 'HIP file',
+    r'\bhip file\b': 'HIP file',
+    r'\bVram\b': 'VRAM',
+    r'\bVRAMm\b': 'VRAM',
+    r'\bvram\b': 'VRAM',
+    r'\bgpu\b': 'GPU',
+    r'\bcpu\b': 'CPU',
+    r'\bsop\b': 'SOP',
+    r'\bdop\b': 'DOP',
+    r'\bvop\b': 'VOP',
+    r'\blop\b': 'LOP',
+    r'\brbd\b': 'RBD',
+    r'\busd\b': 'USD',
+    r'\bopen cl\b': 'OpenCL',
+    r'\bopencl\b': 'OpenCL',
+    r'\bnpm configure\b': 'MPM Configure',
+    r'\bnpm solver\b': 'MPM Solver',
+    r'\bnpm collider\b': 'MPM Collider',
+    r'\bnpm source\b': 'MPM Source',
+    r'\bnpm surface\b': 'MPM Surface',
+    r'\bnpm debris source\b': 'MPM Debris Source',
+    r'\bnpm post fracture\b': 'MPM Post Fracture',
+    r'\bnpm deform pieces\b': 'MPM Deform Pieces',
+    r'\bnpm pole structure\b': 'MPM Post Fracture',
+    r'\bnpm pull structure\b': 'MPM Post Fracture',
+    r'\bpole structure\b': 'Post Fracture',
+    r'\bpull structure\b': 'Post Fracture',
+}
+
+def apply_corrections(text):
+    """Apply auto-caption error corrections."""
+    for pattern, replacement in CORRECTIONS.items():
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
+
+# ---------------------------------------------------------------------------
+# Known Houdini nodes for extraction
+# ---------------------------------------------------------------------------
+
+KNOWN_NODES = [
+    "MPM Configure", "MPM Solver", "MPM Collider", "MPM Source",
+    "MPM Surface", "MPM Debris Source", "MPM Post Fracture", "MPM Deform Pieces",
+    "RBD Material Fracture", "RBD Bullet Solver", "SOP Solver",
+    "Vellum Solver", "Vellum Configure",
+    "Attribute Wrangle", "Attribute VOP", "Attribute Transfer",
+    "VDB from Particles", "VDB Smooth SDF", "Convert VDB",
+    "Scatter", "Copy to Points", "Transform", "Merge", "Switch",
+    "Group", "Blast", "Delete", "Null", "File Cache",
+    "DOP Network", "SOP Network", "Object Merge",
+    "Remesh", "Smooth", "Subdivide", "PolyReduce",
+    "Volume Rasterize", "Volume VOP",
+    "Particle Fluid Surface",
+    "POP Source", "POP Solver",
+    "Pyro Solver", "Smoke Solver",
+    "Voronoi Fracture", "Boolean",
+    "For Each", "Compile Block",
+    "Timeshift", "Trail",
+]
+
+def extract_nodes(text):
+    """Find Houdini node names mentioned in text."""
+    found = {}
+    text_lower = text.lower()
+    for node in KNOWN_NODES:
+        if node.lower() in text_lower:
+            # Count occurrences
+            count = len(re.findall(re.escape(node.lower()), text_lower))
+            found[node] = count
+    # Sort by frequency
+    return sorted(found.items(), key=lambda x: -x[1])
+
+
+# ---------------------------------------------------------------------------
+# Filler removal
+# ---------------------------------------------------------------------------
+
+FILLER_PATTERNS = [
+    r'\bum\b,?\s*', r'\buh\b,?\s*', r'\blike\b,?\s*(?=\w)',
+    r'\byou know\b,?\s*', r'\bbasically\b,?\s*',
+    r'\bkind of\b', r'\bsort of\b',
+    r'\bso\b,?\s*(?=[A-Z])',  # "So" at sentence start
+    r'\bokay\.?\s*(?=[A-Z])',  # "Okay" at sentence start
+    r'\bright\??\s*(?=[A-Z])',  # "Right" at sentence start
+    r'\s{2,}', # collapse whitespace
+]
+
+def clean_filler(text):
+    """Remove filler words for cleaner prose."""
+    for pattern in FILLER_PATTERNS:
+        text = re.sub(pattern, ' ', text)
+    text = re.sub(r'\s{2,}', ' ', text).strip()
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Topic/section detection
+# ---------------------------------------------------------------------------
+
+TOPIC_KEYWORDS = {
+    'surface_tension': ['surface tension', 'tension', 'droplet', 'cohesion'],
+    'collision': ['collider', 'collision', 'collide', 'particle level collision'],
+    'friction': ['friction', 'stickiness', 'sticky', 'adhesion'],
+    'emission': ['emission', 'emit', 'source', 'continuous'],
+    'sleep': ['sleep', 'auto sleep', 'rest', 'freeze', 'dormant'],
+    'meshing': ['surface', 'mesh', 'remesh', 'particle fluid surface', 'vdb'],
+    'debris': ['debris', 'chunk', 'fragment', 'secondary'],
+    'fracture': ['fracture', 'voronoi', 'crack', 'break', 'shatter'],
+    'deformation': ['deform', 'bend', 'stretch', 'squash'],
+    'destruction': ['destruction', 'destroy', 'demolition', 'collapse'],
+    'resolution': ['resolution', 'particle size', 'particle separation'],
+    'performance': ['performance', 'speed', 'fast', 'slow', 'optimize', 'cache'],
+    'gpu': ['gpu', 'opencl', 'vram', 'cuda'],
+    'material': ['material', 'preset', 'water', 'sand', 'snow', 'mud'],
+    'workflow': ['workflow', 'pipeline', 'setup', 'configure'],
+    'rendering': ['render', 'karma', 'mantra', 'shader', 'material'],
+}
+
+def detect_topics(paragraphs):
+    """Detect major topics from paragraph content."""
+    topic_scores = {}
+    for ts, text in paragraphs:
+        text_lower = text.lower()
+        for topic, keywords in TOPIC_KEYWORDS.items():
+            for kw in keywords:
+                if kw in text_lower:
+                    topic_scores[topic] = topic_scores.get(topic, 0) + 1
+
+    return sorted(topic_scores.items(), key=lambda x: -x[1])[:6]
+
+
+def extract_tips(paragraphs):
+    """Extract tip-like sentences from paragraphs."""
+    tip_patterns = [
+        r'(?:make sure|be careful|don\'t forget|important|tip|trick|'
+        r'watch out|be aware|keep in mind|note that|remember|'
+        r'you might want|you\'re going to want|one thing to|'
+        r'the key is|the trick is|a good practice)[^.]*\.',
+    ]
+    tips = []
+    for ts, text in paragraphs:
+        corrected = apply_corrections(text)
+        for pattern in tip_patterns:
+            matches = re.findall(pattern, corrected, re.IGNORECASE)
+            for m in matches:
+                cleaned = clean_filler(m).strip()
+                if len(cleaned) > 20 and cleaned not in tips:
+                    tips.append(cleaned)
+    return tips[:8]
+
+
+def extract_workflow_steps(paragraphs):
+    """Extract workflow-like sequential steps."""
+    step_patterns = [
+        r'(?:first thing|first step|step one|first)[^.]*\.',
+        r'(?:next thing|next step|then we|and then|after that)[^.]*\.',
+        r'(?:finally|last thing|last step)[^.]*\.',
+    ]
+    steps = []
+    for ts, text in paragraphs:
+        corrected = apply_corrections(text)
+        for pattern in step_patterns:
+            matches = re.findall(pattern, corrected, re.IGNORECASE)
+            for m in matches:
+                cleaned = clean_filler(m).strip()
+                if len(cleaned) > 15:
+                    steps.append(cleaned)
+    return steps[:10]
+
+
+# ---------------------------------------------------------------------------
+# Build enriched document
+# ---------------------------------------------------------------------------
+
+VIDEO_META = {
+    '00_overview': ('MPM H21 Masterclass Overview', 0),
+    '01_surface_tension': ('MPM Surface Tension', 1),
+    '02_auto_sleep': ('MPM Auto Sleep', 2),
+    '03_continuous_emission': ('MPM Continuous Emission', 3),
+    '04_friction_stickiness': ('MPM Friction and Stickiness', 4),
+    '05_deforming_colliders': ('MPM Deforming Colliders', 5),
+    '06_mpmsurface': ('MPM Surface Meshing', 6),
+    '07_mpmdebrissource': ('MPM Debris Source', 7),
+    '08_mpmpostfracture': ('MPM Post Fracture', 8),
+    '09_mpmdeformpieces': ('MPM Deform Pieces', 9),
+    '10_destruction_workflow': ('MPM Destruction Workflow', 10),
+    '11_paintball_impact': ('MPM Paintball Impact', 11),
+    '12_pumpkin_smash': ('MPM Pumpkin Smash', 12),
+    '13_car_rain': ('MPM Car Rain', 13),
+    '14_wolf_snow': ('MPM Wolf Snow', 14),
+    '15_creature_breach': ('MPM Creature Breach', 15),
+    '16_train_wreck': ('MPM Train Wreck', 16),
+    '17_building_attack': ('MPM Building Attack', 17),
+}
+
+
+def parse_raw_transcript(filepath):
+    """Parse a Tier 1 raw transcript .md file and return paragraphs."""
+    text = filepath.read_text(encoding='utf-8')
+
+    # Extract frontmatter youtube URL
+    url_match = re.search(r'url:\s*"([^"]+)"', text)
+    youtube_url = url_match.group(1) if url_match else ""
+
+    # Extract paragraphs: **[timestamp](url)** text
+    pattern = r'\*\*\[[\d:]+\]\([^)]+\)\*\*\s*(.+)'
+    paragraphs = []
+    for match in re.finditer(pattern, text):
+        paragraphs.append(('', match.group(1).strip()))
+
+    return youtube_url, paragraphs
+
+
+def read_existing_frontmatter(stub_path):
+    """Read the YAML frontmatter from existing stub file."""
+    text = stub_path.read_text(encoding='utf-8')
+    # Extract everything between --- markers
+    match = re.match(r'^(---\n.*?\n---)\n', text, re.DOTALL)
+    return match.group(1) if match else ''
+
+
+def generate_overview(title, paragraphs, topics, nodes):
+    """Generate a 2-4 sentence overview from transcript content."""
+    # Correct the first few paragraphs and use them as basis
+    first_paras = ' '.join(apply_corrections(p[1]) for p in paragraphs[:3])
+    first_paras = clean_filler(first_paras)
+
+    # Truncate to ~2-3 sentences worth
+    sentences = re.split(r'(?<=[.!?])\s+', first_paras)
+    overview_sentences = []
+    char_count = 0
+    for s in sentences:
+        if char_count > 400:
+            break
+        if len(s) > 15:  # Skip very short fragments
+            overview_sentences.append(s)
+            char_count += len(s)
+
+    if overview_sentences:
+        overview = ' '.join(overview_sentences[:4])
+    else:
+        overview = f"This video covers {title.replace('MPM ', '')} in the Houdini 21 MPM solver."
+
+    # Add topic context
+    if topics:
+        top_topics = [t[0].replace('_', ' ') for t in topics[:3]]
+        overview += f" Key topics include {', '.join(top_topics)}."
+
+    return overview
+
+
+def build_node_table(nodes_found, paragraphs):
+    """Build a markdown table of nodes with context."""
+    if not nodes_found:
+        return "| MPM Solver | Core simulation engine | (see transcript for details) |"
+
+    lines = []
+    all_text = ' '.join(apply_corrections(p[1]) for p in paragraphs).lower()
+
+    for node, count in nodes_found[:10]:
+        # Try to extract context around node mention
+        purpose = f"Referenced {count}x in transcript"
+        params = ""
+
+        # Simple context extraction
+        node_lower = node.lower()
+        idx = all_text.find(node_lower)
+        if idx >= 0:
+            context = all_text[max(0, idx-50):idx+len(node_lower)+100]
+            # Look for parameter mentions near the node
+            param_matches = re.findall(r'(?:parameter|param|setting|value|enable|disable)\w*\s+(\w+)', context)
+            if param_matches:
+                params = ', '.join(set(param_matches[:3]))
+
+        lines.append(f"| {node} | {purpose} | {params} |")
+
+    return '\n'.join(lines)
+
+
+def build_enriched_doc(raw_file):
+    """Build a complete enriched knowledge doc from a raw transcript."""
+    stem = raw_file.stem  # e.g., '01_surface_tension'
+
+    if stem not in VIDEO_META:
+        return None
+
+    title, part_num = VIDEO_META[stem]
+    youtube_url, paragraphs = parse_raw_transcript(raw_file)
+
+    # Determine stub file name
+    if stem.startswith('00_'):
+        stub_name = 'mpm_' + stem[3:] + '.md'
+    else:
+        stub_name = 'mpm_' + stem.split('_', 1)[1] + '.md'
+
+    stub_path = TUTORIALS_DIR / stub_name
+    if not stub_path.exists():
+        print(f"  WARNING: stub not found: {stub_path}")
+        return None
+
+    # Read existing frontmatter
+    frontmatter = read_existing_frontmatter(stub_path)
+
+    # Analysis
+    all_text = ' '.join(p[1] for p in paragraphs)
+    corrected_text = apply_corrections(all_text)
+    topics = detect_topics(paragraphs)
+    nodes_found = extract_nodes(corrected_text)
+    tips = extract_tips(paragraphs)
+    workflow_steps = extract_workflow_steps(paragraphs)
+
+    # Generate overview
+    overview = generate_overview(title, paragraphs, topics, nodes_found)
+
+    # Build key concepts from corrected paragraphs grouped by topic
+    concept_sections = []
+    if topics:
+        for topic_name, score in topics[:4]:
+            display_name = topic_name.replace('_', ' ').title()
+            # Find paragraphs most relevant to this topic
+            relevant = []
+            for ts, text in paragraphs:
+                text_lower = text.lower()
+                keywords = TOPIC_KEYWORDS.get(topic_name, [])
+                if any(kw in text_lower for kw in keywords):
+                    corrected = apply_corrections(text)
+                    cleaned = clean_filler(corrected)
+                    if len(cleaned) > 30:
+                        relevant.append(cleaned)
+
+            if relevant:
+                # Take first 2-3 relevant paragraphs, truncate
+                combined = ' '.join(relevant[:3])
+                sentences = re.split(r'(?<=[.!?])\s+', combined)
+                trimmed = ' '.join(sentences[:5])
+                if len(trimmed) > 50:
+                    concept_sections.append((display_name, trimmed))
+
+    # Build document
+    lines = []
+    lines.append(frontmatter)
+    lines.append('')
+    lines.append(f'# {title}')
+    lines.append('')
+    lines.append(f'**Source:** [SideFX MPM H21 Masterclass - Part {part_num}]({youtube_url})')
+    lines.append('**Presenter:** Alex Wevinger')
+    lines.append('')
+
+    # Overview
+    lines.append('## Overview')
+    lines.append('')
+    lines.append(overview)
+    lines.append('')
+
+    # Key Concepts
+    lines.append('## Key Concepts')
+    lines.append('')
+    if concept_sections:
+        for name, content in concept_sections:
+            lines.append(f'### {name}')
+            lines.append('')
+            lines.append(content)
+            lines.append('')
+    else:
+        # Fallback: use first few corrected paragraphs
+        for ts, text in paragraphs[:3]:
+            corrected = apply_corrections(text)
+            cleaned = clean_filler(corrected)
+            if len(cleaned) > 30:
+                lines.append(cleaned)
+                lines.append('')
+
+    # Nodes & Parameters
+    lines.append('## Nodes & Parameters')
+    lines.append('')
+    lines.append('| Node | Purpose | Key Parameters |')
+    lines.append('|------|---------|----------------|')
+    lines.append(build_node_table(nodes_found, paragraphs))
+    lines.append('')
+
+    # Workflow Steps
+    lines.append('## Workflow Steps')
+    lines.append('')
+    if workflow_steps:
+        for i, step in enumerate(workflow_steps, 1):
+            corrected = apply_corrections(step)
+            lines.append(f'{i}. {corrected}')
+    else:
+        # Generate from first few paragraphs
+        for i, (ts, text) in enumerate(paragraphs[:5], 1):
+            corrected = apply_corrections(text)
+            cleaned = clean_filler(corrected)
+            first_sentence = re.split(r'(?<=[.!?])\s+', cleaned)[0]
+            if len(first_sentence) > 15:
+                lines.append(f'{i}. {first_sentence}')
+    lines.append('')
+
+    # Tips & Insights
+    lines.append('## Tips & Insights')
+    lines.append('')
+    if tips:
+        for tip in tips:
+            corrected = apply_corrections(tip)
+            lines.append(f'- {corrected}')
+    else:
+        # Extract any cautionary or instructional sentences
+        for ts, text in paragraphs:
+            corrected = apply_corrections(text)
+            sentences = re.split(r'(?<=[.!?])\s+', corrected)
+            for s in sentences:
+                if any(w in s.lower() for w in ['can', 'should', 'need to', 'want to', 'have to']):
+                    cleaned = clean_filler(s)
+                    if 30 < len(cleaned) < 200:
+                        lines.append(f'- {cleaned}')
+                        if len([l for l in lines if l.startswith('- ')]) >= 5:
+                            break
+            if len([l for l in lines if l.startswith('- ')]) >= 5:
+                break
+
+    if not any(l.startswith('- ') for l in lines):
+        lines.append('- See full transcript for detailed parameter values and workflow specifics.')
+    lines.append('')
+
+    # Footer
+    lines.append('---')
+    lines.append(f'*Full transcript: [{stem}.md](../../_raw_documentation/mpm_masterclass/{stem}.md)*')
+
+    return stub_path, '\n'.join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    print("MPM H21 Masterclass - Phase 2: Transcript Enrichment")
+    print("=" * 60)
+
+    raw_files = sorted(RAW_DIR.glob('*.md'))
+    enriched = 0
+
+    for raw_file in raw_files:
+        result = build_enriched_doc(raw_file)
+        if result is None:
+            print(f"  SKIP: {raw_file.name}")
+            continue
+
+        stub_path, content = result
+        stub_path.write_text(content, encoding='utf-8')
+        line_count = content.count('\n') + 1
+        print(f"  ENRICHED: {stub_path.name} ({line_count} lines)")
+        enriched += 1
+
+    print("=" * 60)
+    print(f"Enriched {enriched}/{len(raw_files)} knowledge documents")
+    print(f"Output: {TUTORIALS_DIR}")
+
+
+if __name__ == '__main__':
+    main()

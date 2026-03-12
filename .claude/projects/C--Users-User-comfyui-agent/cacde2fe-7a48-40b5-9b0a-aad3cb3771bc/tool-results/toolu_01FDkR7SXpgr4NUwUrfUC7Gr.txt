@@ -1,0 +1,317 @@
+C:\Users\User\comfyui-agent\agent\cli.py-169-    else:
+C:\Users\User\comfyui-agent\agent\cli.py-170-        console.print(f"[bold]Models[/bold] ({result['directory']})")
+C:\Users\User\comfyui-agent\agent\cli.py:171:        for model_type, count in sorted(result["types"].items()):
+C:\Users\User\comfyui-agent\agent\cli.py-172-            console.print(f"  {model_type}: {count} file(s)")
+C:\Users\User\comfyui-agent\agent\cli.py-173-        console.print()
+--
+C:\Users\User\comfyui-agent\agent\cli.py-250-
+C:\Users\User\comfyui-agent\agent\cli.py-251-    console.print("[bold]Node types:[/bold]")
+C:\Users\User\comfyui-agent\agent\cli.py:252:    for ct, count in sorted(class_counts.items()):
+C:\Users\User\comfyui-agent\agent\cli.py-253-        suffix = f" (×{count})" if count > 1 else ""
+C:\Users\User\comfyui-agent\agent\cli.py-254-        console.print(f"  {ct}{suffix}")
+--
+C:\Users\User\comfyui-agent\agent\cli.py-261-    if api_nodes:
+C:\Users\User\comfyui-agent\agent\cli.py-262-        console.print("\n[bold]Editable fields:[/bold]")
+C:\Users\User\comfyui-agent\agent\cli.py:263:        for nid, node in sorted(api_nodes.items()):
+C:\Users\User\comfyui-agent\agent\cli.py-264-            ct = node.get("class_type", "?")
+C:\Users\User\comfyui-agent\agent\cli.py-265-            for field, value in node.get("inputs", {}).items():
+--
+C:\Users\User\comfyui-agent\agent\system_prompt.py-87-    if wf.get("current_workflow") and isinstance(wf["current_workflow"], dict):
+C:\Users\User\comfyui-agent\agent\system_prompt.py-88-        # He2025: sort to ensure deterministic keyword detection
+C:\Users\User\comfyui-agent\agent\system_prompt.py:89:        class_types = sorted([
+C:\Users\User\comfyui-agent\agent\system_prompt.py-90-            n.get("class_type", "")
+C:\Users\User\comfyui-agent\agent\system_prompt.py-91-            for n in wf["current_workflow"].values()
+--
+C:\Users\User\comfyui-agent\agent\system_prompt.py-154-    relevant_extras = _detect_relevant_knowledge(session_context)
+C:\Users\User\comfyui-agent\agent\system_prompt.py-155-    if KNOWLEDGE_DIR.exists():
+C:\Users\User\comfyui-agent\agent\system_prompt.py:156:        for md_file in sorted(KNOWLEDGE_DIR.glob("*.md")):
+C:\Users\User\comfyui-agent\agent\system_prompt.py-157-            stem = md_file.stem
+C:\Users\User\comfyui-agent\agent\system_prompt.py-158-            # Always load core knowledge; load extras only if relevant
+--
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-214-                    return True
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-215-    # Fallback: search all model subdirectories
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py:216:    for d in sorted(MODELS_DIR.iterdir()):
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-217-        if d.is_dir():
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-218-            for f in files:
+--
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-241-        "downloads": stats.get("downloadCount", 0),
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-242-        "favorites": stats.get("favoriteCount", 0),
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py:243:        "tags": sorted(model.get("tags", []))[:8],
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-244-        "base_model": latest.get("baseModel", ""),
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-245-        "latest_version": latest.get("name", ""),
+--
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-287-        "creator": creator.get("username", ""),
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-288-        "description": _strip_html(model.get("description", ""))[:500],
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py:289:        "tags": sorted(model.get("tags", []))[:10],
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-290-        "nsfw": model.get("nsfw", False),
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-291-        "stats": {
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-197-    # Apply filters
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-198-    filtered_names = []
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py:199:    for name in sorted(all_info.keys()):
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-200-        info = all_info[name]
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-201-        cat = (info.get("category") or "").lower()
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-252-    ext_map = _load_extension_map()
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-253-    index = {}
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:254:    for url, entry in sorted(ext_map.items()):  # He2025: sorted iteration for deterministic collision resolution
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-255-        if not isinstance(entry, list) or len(entry) < 2:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-256-            continue
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-350-    matches = []
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-351-    seen_packs = set()
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:352:    for nt, pack in sorted(index.items()):
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-353-        if query_lower in nt.lower() and pack["url"] not in seen_packs:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-354-            seen_packs.add(pack["url"])
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-640-
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-641-    # Classify
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:642:    installed = sorted(class_types & available)
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:643:    missing = sorted(class_types - available)
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-644-
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-645-    # Look up missing nodes in extension-node-map
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-866-
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-867-    types = {}
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:868:    for subdir in sorted(MODELS_DIR.iterdir()):
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-869-        if subdir.is_dir():
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-870-            count = sum(1 for f in subdir.iterdir() if f.is_file() and f.suffix in (
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-897-    any_stale = False
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-898-    any_missing = False
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:899:    for key, path in sorted(registry_files.items()):
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-900-        info = _file_age_info(path)
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-901-        registries[key] = info
+--
+C:\Users\User\comfyui-agent\agent\memory\session.py-96-    sessions = []
+C:\Users\User\comfyui-agent\agent\memory\session.py-97-
+C:\Users\User\comfyui-agent\agent\memory\session.py:98:    for path in sorted(sessions_dir.glob("*.json")):
+C:\Users\User\comfyui-agent\agent\memory\session.py-99-        try:
+C:\Users\User\comfyui-agent\agent\memory\session.py-100-            data = json.loads(path.read_text(encoding="utf-8"))
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-423-    # Build node timing summary
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-424-    timing = []
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:425:    for nid, t in sorted(node_times.items()):
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-426-        class_type = workflow.get(nid, {}).get("class_type", "Unknown")
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-427-        timing.append({
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-481-    available_nodes = set(object_info.keys())
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-482-
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:483:    for nid, node in sorted(workflow.items()):
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-484-        if not isinstance(node, dict) or "class_type" not in node:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-485-            continue
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-244-        return []
+C:\Users\User\comfyui-agent\agent\brain\memory.py-245-    all_outcomes = []
+C:\Users\User\comfyui-agent\agent\brain\memory.py:246:    for path in sorted(SESSIONS_DIR.glob("*_outcomes.jsonl")):
+C:\Users\User\comfyui-agent\agent\brain\memory.py-247-        for line in path.read_text(encoding="utf-8").strip().split("\n"):
+C:\Users\User\comfyui-agent\agent\brain\memory.py-248-            if line:
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-304-    combo_data = defaultdict(list)  # combo -> [(score, weight)]
+C:\Users\User\comfyui-agent\agent\brain\memory.py-305-    for o in outcomes:
+C:\Users\User\comfyui-agent\agent\brain\memory.py:306:        combo = tuple(sorted(o.get("model_combo", [])))
+C:\Users\User\comfyui-agent\agent\brain\memory.py-307-        if not combo:
+C:\Users\User\comfyui-agent\agent\brain\memory.py-308-            continue
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-313-
+C:\Users\User\comfyui-agent\agent\brain\memory.py-314-    results = []
+C:\Users\User\comfyui-agent\agent\brain\memory.py:315:    for combo, entries in sorted(combo_data.items()):
+C:\Users\User\comfyui-agent\agent\brain\memory.py-316-        entries.sort()  # He2025: deterministic float aggregation order
+C:\Users\User\comfyui-agent\agent\brain\memory.py-317-        total_w = sum(w for _, w in entries)
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-348-
+C:\Users\User\comfyui-agent\agent\brain\memory.py-349-    optimal = {}
+C:\Users\User\comfyui-agent\agent\brain\memory.py:350:    for param, values in sorted(param_data.items()):
+C:\Users\User\comfyui-agent\agent\brain\memory.py-351-        best_value = None
+C:\Users\User\comfyui-agent\agent\brain\memory.py-352-        best_avg = -1.0
+C:\Users\User\comfyui-agent\agent\brain\memory.py-353-        best_count = 0
+C:\Users\User\comfyui-agent\agent\brain\memory.py:354:        for value, entries in sorted(values.items()):
+C:\Users\User\comfyui-agent\agent\brain\memory.py-355-            entries.sort()  # He2025: deterministic float aggregation order
+C:\Users\User\comfyui-agent\agent\brain\memory.py-356-            total_w = sum(w for _, w in entries)
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-379-
+C:\Users\User\comfyui-agent\agent\brain\memory.py-380-    # Find fastest configs
+C:\Users\User\comfyui-agent\agent\brain\memory.py:381:    fast_outcomes = sorted(
+C:\Users\User\comfyui-agent\agent\brain\memory.py-382-        [o for o in outcomes if o.get("render_time_s") is not None],
+C:\Users\User\comfyui-agent\agent\brain\memory.py-383-        key=lambda x: x["render_time_s"],
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-507-                param_failures[f"{key}={value}"].append(score or 0)
+C:\Users\User\comfyui-agent\agent\brain\memory.py-508-
+C:\Users\User\comfyui-agent\agent\brain\memory.py:509:    for combo, scores in sorted(param_failures.items()):
+C:\Users\User\comfyui-agent\agent\brain\memory.py-510-        if len(scores) >= 2:
+C:\Users\User\comfyui-agent\agent\brain\memory.py-511-            warnings.append({
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-568-            if sampler_scores:
+C:\Users\User\comfyui-agent\agent\brain\memory.py-569-                best_sampler = max(
+C:\Users\User\comfyui-agent\agent\brain\memory.py:570:                    sorted(sampler_scores),  # He2025: sort keys for deterministic tiebreaker
+C:\Users\User\comfyui-agent\agent\brain\memory.py-571-                    key=lambda s: sum(sampler_scores[s]) / len(sampler_scores[s]),
+C:\Users\User\comfyui-agent\agent\brain\memory.py-572-                )
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-698-    if not p1 or not p2:
+C:\Users\User\comfyui-agent\agent\brain\memory.py-699-        return 0.0
+C:\Users\User\comfyui-agent\agent\brain\memory.py:700:    all_keys = sorted(set(p1.keys()) | set(p2.keys()))  # He2025: sort before iteration
+C:\Users\User\comfyui-agent\agent\brain\memory.py-701-    if not all_keys:
+C:\Users\User\comfyui-agent\agent\brain\memory.py-702-        return 0.0
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-711-
+C:\Users\User\comfyui-agent\agent\brain\memory.py-712-    for i, o in enumerate(outcomes):
+C:\Users\User\comfyui-agent\agent\brain\memory.py:713:        combo = tuple(sorted(o.get("model_combo", [])))
+C:\Users\User\comfyui-agent\agent\brain\memory.py-714-        if combo:
+C:\Users\User\comfyui-agent\agent\brain\memory.py-715-            combo_runs[combo].append(i)
+C:\Users\User\comfyui-agent\agent\brain\memory.py-716-
+C:\Users\User\comfyui-agent\agent\brain\memory.py:717:    for combo, indices in sorted(combo_runs.items()):
+C:\Users\User\comfyui-agent\agent\brain\memory.py-718-        if len(indices) >= 2:
+C:\Users\User\comfyui-agent\agent\brain\memory.py-719-            signals.append({
+--
+C:\Users\User\comfyui-agent\agent\brain\memory.py-737-    combo_last_seen = {}
+C:\Users\User\comfyui-agent\agent\brain\memory.py-738-    for i, o in enumerate(outcomes):
+C:\Users\User\comfyui-agent\agent\brain\memory.py:739:        combo = tuple(sorted(o.get("model_combo", [])))
+C:\Users\User\comfyui-agent\agent\brain\memory.py-740-        if combo:
+C:\Users\User\comfyui-agent\agent\brain\memory.py-741-            combo_last_seen[combo] = i
+C:\Users\User\comfyui-agent\agent\brain\memory.py-742-
+C:\Users\User\comfyui-agent\agent\brain\memory.py-743-    total = len(outcomes)
+C:\Users\User\comfyui-agent\agent\brain\memory.py:744:    for combo, last_idx in sorted(combo_last_seen.items()):
+C:\Users\User\comfyui-agent\agent\brain\memory.py-745-        # Count how many times this combo was used
+C:\Users\User\comfyui-agent\agent\brain\memory.py-746-        count = sum(
+C:\Users\User\comfyui-agent\agent\brain\memory.py-747-            1 for o in outcomes
+C:\Users\User\comfyui-agent\agent\brain\memory.py:748:            if tuple(sorted(o.get("model_combo", []))) == combo
+C:\Users\User\comfyui-agent\agent\brain\memory.py-749-        )
+C:\Users\User\comfyui-agent\agent\brain\memory.py-750-        # Used only once and there are many subsequent runs with other combos
+--
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-366-    resolutions = []
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-367-
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py:368:    for nid, node in sorted(wf.items()):
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-369-        if not isinstance(node, dict):
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-370-            continue
+--
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-204-            return to_json({
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-205-                "error": f"Tool '{call['tool']}' not allowed in '{profile}' profile.",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py:206:                "allowed_tools": sorted(allowed),
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-207-            })
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-208-
+--
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-264-
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-265-    summaries = []
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py:266:    for tid, task in sorted(tasks.items()):
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-267-        summary = {
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-268-            "task_id": tid,
+--
+C:\Users\User\comfyui-agent\agent\brain\planner.py-272-    """Match a goal string to a plan pattern. Returns (pattern_name, pattern)."""
+C:\Users\User\comfyui-agent\agent\brain\planner.py-273-    goal_lower = goal.lower()
+C:\Users\User\comfyui-agent\agent\brain\planner.py:274:    for name, pattern in sorted(GOAL_PATTERNS.items()):
+C:\Users\User\comfyui-agent\agent\brain\planner.py-275-        for trigger in pattern["triggers"]:
+C:\Users\User\comfyui-agent\agent\brain\planner.py-276-            if trigger in goal_lower:
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-143-
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-144-    packs = []
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py:145:    for item in sorted(CUSTOM_NODES_DIR.iterdir()):
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-146-        if not _is_node_pack(item):
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-147-            continue
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-189-        return to_json({
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-190-            "error": f"Model directory '{model_type}' not found.",
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py:191:            "available_types": sorted(available),
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-192-        })
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-193-
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-194-    # Collect model paths
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py:195:    model_files = sorted(
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-196-        f for f in model_dir.rglob("*")
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-197-        if f.is_file() and f.suffix.lower() in _MODEL_EXTENSIONS
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-232-
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-233-    summary = {}
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py:234:    for d in sorted(MODELS_DIR.iterdir()):
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-235-        if not d.is_dir():
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-236-            continue
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-276-    if not init_file.exists():
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-277-        # Try to find main Python files
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py:278:        py_files = sorted(pack_dir.glob("*.py"))
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-279-        return to_json({
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-280-            "error": f"No __init__.py in '{node_pack}'.",
+--
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-155-def _identify_family(model_name: str) -> str:
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-156-    """Identify model family from filename using pattern matching."""
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:157:    for family_id, family in sorted(MODEL_FAMILIES.items()):
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-158-        for pattern_list in [
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-159-            family["checkpoint_patterns"],
+--
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-181-            if key in model_input_names and isinstance(value, str):
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-182-                models.append(value)
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:183:    return sorted(set(models))
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-184-
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-185-
+--
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-206-    # Multiple families detected — incompatible
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-207-    conflicts = []
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:208:    family_list = sorted(families)
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-209-    for i, f1 in enumerate(family_list):
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-210-        for f2 in family_list[i + 1:]:
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-211-            # He2025: sorted iteration for deterministic model lists
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:212:            f1_models = [m for m, f in sorted(identified.items()) if f == f1]
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:213:            f2_models = [m for m, f in sorted(identified.items()) if f == f2]
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-214-            conflicts.append({
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-215-                "family_a": f1,
+--
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-258-            wf_models = _extract_models_from_workflow(data)
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-259-
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:260:        models = sorted(set(models + wf_models))
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-261-
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-262-    if not models:
+--
+C:\Users\User\comfyui-agent\agent\brain\demo.py-304-    if scenario_name == "list":
+C:\Users\User\comfyui-agent\agent\brain\demo.py-305-        scenarios = []
+C:\Users\User\comfyui-agent\agent\brain\demo.py:306:        for name, sc in sorted(DEMO_SCENARIOS.items()):
+C:\Users\User\comfyui-agent\agent\brain\demo.py-307-            scenarios.append({
+C:\Users\User\comfyui-agent\agent\brain\demo.py-308-                "name": name,
+--
+C:\Users\User\comfyui-agent\agent\brain\demo.py-322-        return to_json({
+C:\Users\User\comfyui-agent\agent\brain\demo.py-323-            "error": f"Unknown scenario: {scenario_name}",
+C:\Users\User\comfyui-agent\agent\brain\demo.py:324:            "available": sorted(DEMO_SCENARIOS.keys()),
+C:\Users\User\comfyui-agent\agent\brain\demo.py-325-        })
+C:\Users\User\comfyui-agent\agent\brain\demo.py-326-
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-156-    """
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-157-    connections = []
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:158:    for target_id, node in sorted(nodes.items()):
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-159-        if node.get("_ui_node"):
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-160-            continue  # UI-only nodes don't have connection info
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:161:        for input_name, value in sorted(node.get("inputs", {}).items()):
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-162-            if isinstance(value, list) and len(value) == 2:
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-163-                source_id = str(value[0])
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-183-    filter_lower = class_filter.lower()
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-184-
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:185:    for nid, node in sorted(nodes.items()):
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-186-        if node.get("_ui_node"):
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-187-            continue
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-229-    other = []
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-230-
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:231:    for ct in sorted(class_counts.keys()):
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-232-        ct_lower = ct.lower()
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-233-        if any(k in ct_lower for k in ("load", "checkpoint", "unet", "model")):
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-263-            by_target.setdefault(key, []).append(conn)
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-264-
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:265:        for target, conns in sorted(by_target.items()):
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-266-            sources = [f"{c['from_class']}.out[{c['from_output']}]" for c in conns]
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-267-            lines.append(f"  {target} <- {', '.join(sources)}")
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-85-def _handle_list_templates() -> str:
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-86-    templates = []
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py:87:    for name in sorted(_TEMPLATE_INFO.keys()):
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-88-        info = _TEMPLATE_INFO[name]
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-89-        path = _TEMPLATES_DIR / f"{name}.json"
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-107-
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-108-    if not path.exists():
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py:109:        available = sorted(_TEMPLATE_INFO.keys())
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-110-        return to_json({
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-111-            "error": f"Template '{template_name}' not found.",
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-130-    # Build node summary
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-131-    nodes = {}
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py:132:    for nid, node in sorted(data.items()):
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-133-        nodes[nid] = {
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-134-            "class_type": node.get("class_type", "?"),

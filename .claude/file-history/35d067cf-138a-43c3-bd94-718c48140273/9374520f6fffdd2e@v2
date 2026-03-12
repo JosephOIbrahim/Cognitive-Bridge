@@ -1,0 +1,86 @@
+"""Shared constants for the Lossless Signal Architecture.
+
+This file is THE source of truth for all magic numbers.
+Every other module imports from here. No module defines its own constants.
+"""
+
+# Phase definitions - canonical ordering for all output
+PHASES = [
+    "KNOWLEDGE", "CONSTITUTIONAL", "SAFETY", "CONSENT", "COST",
+    "SIGNAL", "PROJECT", "EXPERT", "DOMAIN", "DEFAULT",
+]
+
+# Anchor phases - NEVER modulated under any injection profile
+ANCHOR_PHASES = frozenset(["CONSTITUTIONAL", "SAFETY", "CONSENT", "KNOWLEDGE"])
+
+# Modulated phases - injection applies here
+MODULATED_PHASES = frozenset(p for p in PHASES if p not in ANCHOR_PHASES)
+
+# Receptor density map (d_n values from DMF model, topology-weighted)
+D_MAP = {
+    "KNOWLEDGE": 0.85, "CONSTITUTIONAL": 0.15, "SAFETY": 0.90,
+    "CONSENT": 0.10, "COST": 0.30, "SIGNAL": 0.80,
+    "PROJECT": 0.40, "EXPERT": 0.75, "DOMAIN": 0.50, "DEFAULT": 0.20,
+}
+
+# Injection profiles
+PROFILES = {
+    "none": {
+        "s_NM": 0.000, "routing": "standard",
+        "cross_expert": 0.00, "tangent_mult": 1.0,
+    },
+    "microdose": {
+        "s_NM": 0.005, "routing": "standard",
+        "cross_expert": 0.10, "tangent_mult": 1.5,
+    },
+    "perceptual": {
+        "s_NM": 0.015, "routing": "standard",
+        "cross_expert": 0.15, "tangent_mult": 1.75,
+    },
+    "classical": {
+        "s_NM": 0.025, "routing": "dissolved",
+        "cross_expert": 0.30, "tangent_mult": 2.5,
+    },
+    "mdma": {
+        "s_NM": 0.010, "routing": "integrative",
+        "cross_expert": 0.20, "tangent_mult": 1.25,
+    },
+}
+
+# Pharmacokinetics
+ONSET_EXCHANGES = {
+    "none": 0, "microdose": 1, "perceptual": 1,
+    "classical": 2, "mdma": 3,
+}
+OFFSET_EXCHANGES = {
+    "none": 0, "microdose": 2, "perceptual": 2,
+    "classical": 3, "mdma": 4,
+}
+
+# Batch invariance (from ThinkingMachines)
+COGNITIVE_TILE_SIZE = 32
+FLOAT_TOLERANCE = 1e-10
+
+# Integrity
+HASH_ALGORITHM = "sha256"
+
+# Expert definitions - fixed priority order (NEVER changes under injection)
+EXPERTS = [
+    "Validator", "Scaffolder", "Restorer", "Refocuser",
+    "Celebrator", "Socratic", "Direct",
+]
+
+# Signal features for Lightning Indexer
+SIGNAL_FEATURES = [
+    "emotional_valence", "domain_signal", "energy_level", "urgency",
+]
+
+# Routing modes
+ROUTING_MODES = ["standard", "dissolved", "integrative"]
+
+# Phase count is FIXED - even sparse routing records all phases
+PHASE_COUNT = len(PHASES)  # 10
+EXPERT_COUNT = len(EXPERTS)  # 7
+
+# Mixing matrix health thresholds
+MAX_CONDITION_NUMBER = 10.0

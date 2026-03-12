@@ -1,0 +1,36 @@
+Create a new file: ui/web/js/dispatch.js
+
+This module exports one function: createDeploymentCard(data)
+
+data shape:
+{
+  prompt: "make it dreamier",
+  agents: [
+    { key: "router", name: "ROUTER", role: "Pipeline Orchestrator", status: "waiting" },
+    { key: "intent", name: "INTENT", role: "Artistic Translator", status: "waiting" },
+    { key: "execution", name: "EXECUTION", role: "Workflow Patcher", status: "waiting" },
+    { key: "verify", name: "VERIFY", role: "Quality Judge", status: "waiting" }
+  ]
+}
+
+Build everything with createElement + textContent (match chat.js pattern — no innerHTML).
+
+Use the agent identity colors from CSS: var(--agent-router), var(--agent-intent), var(--agent-execution), var(--agent-verify), var(--agent-doctor).
+
+Structure:
+- Outer card: class "sd-dispatch-card", dark background (#16162a), rounded corners, 1px border #ffffff08
+- Header: "AGENTS DEPLOYED" in uppercase JetBrains Mono 11px, letter-spacing 0.04em, color #888
+- Prompt quote: the user's prompt in italic IBM Plex Sans, left jade border accent
+- Agent rows: each row has:
+  - Colored dot (8px circle matching agent color)
+  - Agent name in JetBrains Mono 12px bold
+  - MoE role in IBM Plex Sans 11px dim
+  - Status area (right-aligned): "waiting" | "active" (pulsing dot) | "complete ✓" | "error ✗"
+  - Duration badge when complete (JetBrains Mono 10px, #555)
+- Footer: "Estimated: ~Xs | N agents | N nodes" in JetBrains Mono 11px centered
+
+Export an updateAgentStatus(card, agentKey, status, message, duration) function that updates a row in-place.
+
+Add the corresponding CSS classes to ui/web/css/superduper.css at the end of the file. Include a subtle slide-up entry animation using var(--ease-out-expo).
+
+Use var(--space-md) and var(--space-lg) for all padding. Line-height 1.65 on any body text.

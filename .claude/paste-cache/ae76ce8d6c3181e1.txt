@@ -1,0 +1,375 @@
+# JAIME IBRAHIM — Site Revisions for Claude Code
+## Priority: Jaime's Direct Revisions → Audit Improvements
+## Date: February 17, 2026
+
+> **Context:** jaimeibrahim.com is a Next.js 15 (App Router) portfolio deployed on Vercel.
+> Repo: `JosephOIbrahim/jaime-ibrahim-portfolio` on GitHub.
+> Pipeline: Claude Code → GitButler → GitHub → Vercel (auto-deploy on push).
+
+---
+
+## BATCH 0 — JAIME'S REVISIONS (DO FIRST)
+
+These are direct client requests. Execute all four before moving to any audit batches.
+
+### 0A. Remove all dates from the project gallery
+
+The project grid cards currently show years (2024, 2023, 2022) next to the category tag. Remove all year/date display from:
+
+- **Homepage featured work grid** — each card shows `{category}{year}` under the description. Remove the year.
+- **Work index page** (`/work`) — same treatment, remove year from all cards.
+- **Project detail pages** — if year appears in the project header/metadata, remove it there too.
+
+**Where to look:**
+- `lib/projects.ts` or `lib/data.ts` — the `PROJECTS` array likely has a `year` field. You can leave the data in place (don't delete from the data model), just stop rendering it.
+- The grid card component (likely in `components/` or inline in page files) — find where `year` or `project.year` is rendered and remove that JSX.
+- Check both the homepage (`app/page.tsx`) and work page (`app/work/page.tsx`) for any year rendering.
+
+**Verification:** Visit `/` and `/work` — no dates should appear on any project card.
+
+---
+
+### 0B. Delete the Thoughts section entirely
+
+The site currently has a "Thoughts" nav link and a `/thoughts` page. Remove it completely:
+
+1. **Navigation** — Remove "Thoughts" from the nav links. The nav should only show: Work, About. Find the nav component (likely in `components/Nav.tsx` or `components/Navigation.tsx` or in the root layout) and delete the Thoughts link.
+2. **Page route** — Delete the entire `app/thoughts/` directory (page.tsx and any sub-routes like `app/thoughts/[slug]/`).
+3. **Data file** — If there's a `lib/thoughts.ts` or thoughts data in a shared data file, delete it or leave it (it won't be imported anywhere after removing the page).
+4. **Footer** — Check if "Thoughts" appears in the footer navigation. If so, remove it.
+5. **Sitemap** — If there's a `sitemap.ts` or `sitemap.xml` that includes `/thoughts`, remove that entry.
+
+**Verification:** "Thoughts" should not appear anywhere in the nav, footer, or sitemap. Visiting `/thoughts` should 404.
+
+---
+
+### 0C. Delete the Instagram link
+
+The site footer and possibly the nav/header show both LinkedIn and Instagram social links. Remove Instagram:
+
+1. **Header/Nav** — Find where social links are rendered. Remove the Instagram link. Keep LinkedIn.
+2. **Footer** — Same — remove Instagram, keep LinkedIn.
+3. **About page** — If Instagram is linked on the about page, remove it.
+
+**Where to look:** Search the codebase for `instagram` (case-insensitive). Remove all references to the Instagram URL and link element.
+
+**Verification:** No Instagram link should appear anywhere on the site. LinkedIn remains.
+
+---
+
+### 0D. Update "Brands I've Worked With" list
+
+The about page (and possibly the homepage or footer) shows a client/brands list. Replace the current list with Jaime's updated list:
+
+**NEW LIST (in this exact order):**
+1. Bloomberg
+2. GLG
+3. TIAA
+4. American Express
+5. Martha Stewart
+6. Bailard
+7. JC Flowers
+8. Johnson & Johnson
+9. Sony BMG
+10. Simon & Schuster
+11. Viacom
+12. Scholastic
+
+**Where to look:**
+- `app/about/page.tsx` — likely has a clients/brands section with an array of names.
+- `lib/data.ts` or `lib/projects.ts` — might have a `CLIENTS` or `BRANDS` array.
+- Search for any of the old brand names (Mastercard, JPMorgan, Deloitte, etc.) to find the exact location.
+
+**Replace the entire array** — don't append, replace. The old list was: Bloomberg, GLG, TIAA, Mastercard, JPMorgan Chase, Bank of America, Deloitte, EY, MetLife, Prudential, S&P Global, Moody's.
+
+**Verification:** Visit `/about` — the brands section should show exactly the 12 names above in order.
+
+---
+
+## BATCH 1 — SEO METADATA (from site audit)
+
+Add proper page-level metadata for every route. The root layout should already have a base `metadata` export — update each page to override with specific content.
+
+### Homepage (`app/page.tsx`)
+```typescript
+export const metadata = {
+  title: 'Jaime Ibrahim | Brand Design Director',
+  description: 'Brand Design Director with 25+ years of experience in identity systems, visual storytelling, and strategic design for Bloomberg, GLG, TIAA, and more.',
+};
+```
+
+### Work page (`app/work/page.tsx`)
+```typescript
+export const metadata = {
+  title: 'Work',
+  description: 'Selected projects spanning brand identity, systems design, event branding, and motion — 25 years of strategic visual design.',
+};
+```
+
+### About page (`app/about/page.tsx`)
+```typescript
+export const metadata = {
+  title: 'About',
+  description: 'Jaime Ibrahim is a Brand Design Director based in New York City. Strategy before aesthetics. Systems over one-offs.',
+};
+```
+
+### Per-project pages (`app/work/[slug]/page.tsx`)
+Add `generateMetadata` if not present:
+```typescript
+export async function generateMetadata({ params }: { params: { slug: string } }) {
+  const project = getProjectBySlug(params.slug);
+  if (!project) return {};
+  return {
+    title: project.title,
+    description: project.desc,
+    openGraph: {
+      images: [`/images/${project.slug}/hero.jpg`],
+    },
+  };
+}
+```
+
+**Verification:** View page source on each route — `<title>` and `<meta name="description">` should show the specified content.
+
+---
+
+## BATCH 2 — 301 REDIRECTS FOR OLD SQUARESPACE URLS
+
+Google still has old Squarespace URLs indexed. Create `next.config.js` (or update existing) redirects so those URLs resolve instead of 404ing:
+
+```javascript
+// In next.config.js or next.config.mjs
+async redirects() {
+  return [
+    // Old Squarespace portfolio slugs → new routes
+    { source: '/bank-visual-identity', destination: '/work/battlebank', permanent: true },
+    { source: '/glg-brand-identity', destination: '/work/glg-brand', permanent: true },
+    { source: '/glg-brand-video', destination: '/work/glg-video', permanent: true },
+    { source: '/glg-explainer-video', destination: '/work/glg-explainer', permanent: true },
+    { source: '/fintech-brand-identity', destination: '/work/liquidstock', permanent: true },
+    { source: '/event-brand-identity', destination: '/work/year-ahead', permanent: true },
+    { source: '/tiaa-branding', destination: '/work/tiaa', permanent: true },
+    { source: '/bloomberg-black', destination: '/work/bloomberg', permanent: true },
+    { source: '/employee-brand-identity', destination: '/work/employee-brand', permanent: true },
+    { source: '/opera-video', destination: '/work/opera', permanent: true },
+    { source: '/construction-wall', destination: '/work/construction', permanent: true },
+    { source: '/product-branding', destination: '/work/product-branding', permanent: true },
+    { source: '/visual-brand', destination: '/about', permanent: true },
+    // Catch old filtered views
+    { source: '/work-1', destination: '/work', permanent: true },
+  ];
+}
+```
+
+**Verification:** Visit `/bank-visual-identity` — should 301 redirect to `/work/battlebank`.
+
+---
+
+## BATCH 3 — SITEMAP + ROBOTS + JSON-LD
+
+### Sitemap (`app/sitemap.ts`)
+```typescript
+import { MetadataRoute } from 'next';
+
+export default function sitemap(): MetadataRoute.Sitemap {
+  const projects = getAllProjects(); // import from your data file
+  
+  const projectUrls = projects.map((p) => ({
+    url: `https://jaimeibrahim.com/work/${p.slug}`,
+    lastModified: new Date(),
+    changeFrequency: 'monthly' as const,
+    priority: 0.8,
+  }));
+
+  return [
+    { url: 'https://jaimeibrahim.com', lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 },
+    { url: 'https://jaimeibrahim.com/work', lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
+    { url: 'https://jaimeibrahim.com/about', lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
+    ...projectUrls,
+  ];
+}
+```
+
+**NOTE:** Do NOT include `/thoughts` in the sitemap — that page is being deleted in Batch 0B.
+
+### Robots (`app/robots.ts`)
+```typescript
+import { MetadataRoute } from 'next';
+
+export default function robots(): MetadataRoute.Robots {
+  return {
+    rules: { userAgent: '*', allow: '/' },
+    sitemap: 'https://jaimeibrahim.com/sitemap.xml',
+  };
+}
+```
+
+### JSON-LD (in root layout or homepage)
+Add a `<script type="application/ld+json">` with Person schema:
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "name": "Jaime Ibrahim",
+  "jobTitle": "Brand Design Director",
+  "url": "https://jaimeibrahim.com",
+  "sameAs": ["https://www.linkedin.com/in/jaimeibrahim/"],
+  "knowsAbout": ["Brand Design", "Identity Systems", "Visual Design", "Creative Direction"]
+}
+```
+
+**Verification:** Visit `/sitemap.xml` — should list all live pages (no `/thoughts`). Visit `/robots.txt` — should reference the sitemap.
+
+---
+
+## BATCH 4 — IMAGE ALT TEXT
+
+Every project hero image needs a descriptive alt tag. Find the Image components and update:
+
+| Project | Alt Text |
+|---------|----------|
+| battlebank | "Battle Bank brand identity — logo, color palette, and mountain-inspired collateral" |
+| glg-brand | "GLG global rebrand — visual identity system across digital and print touchpoints" |
+| glg-video | "GLG brand manifesto video — motion graphics frames from global town hall presentation" |
+| glg-explainer | "GLG explainer video — animated frames showing how the insight network works" |
+| liquidstock | "Liquid Stock fintech brand identity — logo mark and California-inspired visual system" |
+| year-ahead | "The Year Ahead summit branding — event signage and collateral for Chicago business summit" |
+| tiaa | "TIAA enterprise rebrand — timeline installation, collateral, and retirement data project" |
+| bloomberg | "Bloomberg video installation — motion graphics for office digital displays" |
+| employee-brand | "Bloomberg employee brand — summer picnic series event identity" |
+
+**Verification:** Inspect any project image in DevTools — `alt` attribute should contain a descriptive sentence, not empty or generic.
+
+---
+
+## BATCH 5 — OG IMAGE GENERATION
+
+Create `app/opengraph-image.tsx` using Next.js ImageResponse for auto-generated social share cards:
+
+```typescript
+import { ImageResponse } from 'next/og';
+
+export const runtime = 'edge';
+export const alt = 'Jaime Ibrahim — Brand Design Director';
+export const size = { width: 1200, height: 630 };
+export const contentType = 'image/png';
+
+export default async function Image() {
+  return new ImageResponse(
+    (
+      <div style={{
+        background: '#EEEEEC',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        padding: '80px',
+        fontFamily: 'system-ui',
+      }}>
+        <div style={{ fontSize: 64, fontWeight: 400, color: '#1a1a1a', letterSpacing: '-0.01em' }}>
+          Jaime Ibrahim
+        </div>
+        <div style={{ fontSize: 24, color: '#767676', marginTop: 16, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          Brand Design Director
+        </div>
+      </div>
+    ),
+    { ...size }
+  );
+}
+```
+
+Also create per-project OG images at `app/work/[slug]/opengraph-image.tsx` that use the project title and category.
+
+**Verification:** Use https://cards-dev.twitter.com/validator or https://www.opengraph.xyz/ to check that jaimeibrahim.com generates a branded card.
+
+---
+
+## BATCH 6 — GA4 INTEGRATION
+
+Install Google Analytics using the Next.js Script component. The user will provide the GA4 Measurement ID (format: `G-XXXXXXXXXX`).
+
+### Create `components/Analytics.tsx`
+```typescript
+'use client';
+import Script from 'next/script';
+
+export function Analytics() {
+  const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+  if (!GA_ID) return null;
+  
+  return (
+    <>
+      <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
+      <Script id="ga4" strategy="afterInteractive">
+        {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${GA_ID}');`}
+      </Script>
+    </>
+  );
+}
+```
+
+### Add to root layout
+Import and render `<Analytics />` inside the `<body>` of `app/layout.tsx`.
+
+### Set environment variable
+In Vercel dashboard → Project Settings → Environment Variables:
+- Key: `NEXT_PUBLIC_GA_ID`
+- Value: `G-XXXXXXXXXX` (to be provided)
+
+**Verification:** After deploying with the env var set, check the browser Network tab for a request to `google-analytics.com` or `googletagmanager.com`.
+
+---
+
+## CANCELLED BATCHES
+
+~~**Batch 9 — Thoughts page seed content**~~ → CANCELLED. The Thoughts section is being deleted entirely (Batch 0B). Do not create any Thoughts-related content.
+
+---
+
+## EXECUTION ORDER
+
+```
+Batch 0A → 0B → 0C → 0D   (Jaime's revisions — do all four first, commit)
+Batch 1                     (SEO metadata — commit)
+Batch 2                     (Redirects — commit)
+Batch 3                     (Sitemap + robots + JSON-LD — commit)
+Batch 4                     (Alt text — commit)
+Batch 5                     (OG images — commit)
+Batch 6                     (GA4 — commit, needs Measurement ID)
+```
+
+Each batch should be a separate commit via GitButler for clean rollback if needed.
+
+---
+
+## CODEBASE ORIENTATION
+
+```
+app/
+├── layout.tsx          ← Root layout (nav, footer, fonts, metadata)
+├── page.tsx            ← Homepage (hero + featured grid)
+├── work/
+│   ├── page.tsx        ← Work index (all projects + filters)
+│   └── [slug]/
+│       └── page.tsx    ← Project detail
+├── about/
+│   └── page.tsx        ← About + brands list
+├── thoughts/           ← DELETE THIS ENTIRE DIRECTORY (Batch 0B)
+│   └── page.tsx
+components/
+├── Nav.tsx (or Navigation.tsx)
+├── GridCard.tsx (or ProjectCard.tsx)
+├── Footer.tsx
+lib/
+├── projects.ts (or data.ts) ← Project data array + client list
+public/
+├── images/             ← Project images organized by slug
+```
+
+File names may vary — use `find` or `grep` to locate the exact files. The key data structures are:
+- A `PROJECTS` array with slug, title, category, desc, year fields
+- A `CLIENTS` or `BRANDS` array (for the about page)
+- Nav links defined either in the Nav component or root layout

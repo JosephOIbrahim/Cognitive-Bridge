@@ -1,0 +1,486 @@
+# BLUEPRINT: Creative Metadata Layer
+
+> **Status:** QUEUED — Graft onto comfyui-agent after `iterative_refine` brain tool ships  
+> **Target:** comfyui-agent only (NOT comfyui-3d-viewport)  
+> **Priority:** Post-Phase 3, pre-public rollout  
+> **Inspired by:** Griptape AI metadata feature (announced during Foundry acquisition interview)  
+> **Date:** 2026-02-19  
+> **Depends on:** `iterative_refine` brain tool, `verify_execution` tools, memory dispatch system
+
+---
+
+## 1. Problem Statement
+
+When artists generate images through ComfyUI, the technical parameters (seed, model, sampler, CFG, prompt) are already embedded in PNG metadata automatically by ComfyUI. But the **creative intent** — *why* those parameters were chosen — is lost the moment the session ends.
+
+Three weeks later, dragging that image back into ComfyUI reconstructs the node graph but not the artistic reasoning. The artist is back to "What did I do?"
+
+**The Griptape/Foundry pain point verbatim:**  
+*"You get excited and then you do it and then you're like, 'What did I do?'"*
+
+ComfyUI-agent is uniquely positioned to solve this because the agent already mediates between artistic intent ("make it dreamier") and parameter space (CFG, sampler, prompt edits). It knows both sides of the translation. The data already flows through the system — we just need to capture and serialize it.
+
+---
+
+## 2. What Already Exists (Don't Rebuild)
+
+### ComfyUI Native PNG Metadata
+ComfyUI embeds full workflow JSON in PNG tEXt chunks:
+- `prompt` — serialized API-format workflow (node IDs, params, connections)
+- `workflow` — full editor-format workflow (node positions, groups, etc.)
+
+This covers: complete node graph, all node parameters (seed, CFG, sampler, steps, model hash), connections, prompt text, model filenames.
+
+### Agent Systems Already In Place
+- **`verify_execution`** — confirms outputs, runs vision analysis on results
+- **Memory dispatch** — `dispatch_brain_message` routes observations to memory
+- **`iterative_refine`** (in progress) — autonomous quality improvement loops
+- **Workflow modification** — RFC6902 JSON patches with full audit trail
+
+**Key insight:** The `iterative_refine` loop already produces all the data needed for creative metadata. Every refinement step records: what the user asked for, what parameters changed, what the vision system observed, and whether the user accepted or rejected the result. We're just not serializing it into the output yet.
+
+---
+
+## 3. Architecture: Three Metadata Layers
+
+### Layer 1: Intent Metadata
+What the artist wanted, in their words.
+
+```json
+{
+  "comfyui_agent_meta": {
+    "schema_version": "1.0.0",
+    "intent": {
+      "original_request": "make it feel more like Blade Runner 2049, that orange haze look",
+      "interpreted_as": [
+        "warm color temperature shift",
+        "atmospheric haze/fog effect", 
+        "high contrast with desaturated midtones",
+        "anamorphic lens character"
+      ],
+      "style_references": ["Blade Runner 2049", "Roger Deakins cinematography"],
+      "session_context": "architectural visualization project, exterior shot"
+    }
+  }
+}
+```
+
+**Source:** Natural language input from user → agent's intent parsing layer.
+
+### Layer 2: Iteration History
+The refinement path from first generation to accepted result.
+
+```json
+{
+  "comfyui_agent_meta": {
+    "iteration_history": {
+      "total_iterations": 4,
+      "accepted_iteration": 3,
+      "steps": [
+        {
+          "iteration": 0,
+          "type": "initial_generation",
+          "params_snapshot": {
+            "seed": 847291,
+            "cfg": 7.0,
+            "sampler": "euler_ancestral",
+            "steps": 25,
+            "model": "sd_xl_base_1.0.safetensors",
+            "positive_prompt": "futuristic cityscape, golden hour...",
+            "negative_prompt": "cartoon, anime..."
+          },
+          "user_feedback": null,
+          "agent_observation": "Clean architectural render, neutral lighting, lacks atmospheric quality"
+        },
+        {
+          "iteration": 1,
+          "type": "refinement",
+          "trigger": "user: 'needs more of that hazy orange atmosphere'",
+          "patches_applied": [
+            {"op": "replace", "path": "/cfg", "value": 8.5},
+            {"op": "replace", "path": "/positive_prompt", "value": "...added: volumetric fog, orange atmospheric haze, anamorphic lens flare..."}
+          ],
+          "user_feedback": "getting there but too saturated",
+          "agent_observation": "Strong orange cast applied, volumetric elements present but oversaturated"
+        },
+        {
+          "iteration": 2,
+          "type": "refinement",
+          "trigger": "user: 'too saturated, pull it back'",
+          "patches_applied": [
+            {"op": "replace", "path": "/positive_prompt", "value": "...modified: desaturated warm tones, subtle fog..."}
+          ],
+          "user_feedback": "yes, that's the one",
+          "agent_observation": "Balanced atmospheric warmth, desaturated midtones, maintained architectural detail"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Source:** `iterative_refine` loop audit trail + `verify_execution` vision analysis + user accept/reject signals.
+
+### Layer 3: Session Context (Memory Bridge)
+Links the image back to the broader creative session.
+
+```json
+{
+  "comfyui_agent_meta": {
+    "session": {
+      "session_id": "sess_20260219_archviz_01",
+      "project_context": "Nexus Tower exterior shots",
+      "related_outputs": ["output_001.png", "output_002.png"],
+      "creative_direction_summary": "Blade Runner 2049 inspired architectural viz, emphasis on atmospheric lighting and desaturated warm palette",
+      "timestamp": "2026-02-19T14:32:00Z",
+      "agent_version": "comfyui-agent-0.4.0"
+    }
+  }
+}
+```
+
+**Source:** Agent memory system + session state.
+
+---
+
+## 4. Implementation Plan
+
+### Phase A: Metadata Schema & Writer (Foundation)
+
+**Goal:** Define the schema and write metadata into PNG outputs.
+
+#### A.1 — Define JSON Schema
+- Create `src/metadata/schema.ts` (or `.py` depending on codebase lang)
+- Formal JSON Schema for `comfyui_agent_meta` with all three layers
+- Version field (`schema_version: "1.0.0"`) for forward compatibility
+- All fields optional except `schema_version` — graceful degradation if data is incomplete
+
+#### A.2 — PNG Metadata Writer
+- Utility that injects `comfyui_agent_meta` as an additional PNG tEXt chunk
+- Must NOT overwrite ComfyUI's native `prompt` and `workflow` chunks
+- Use a distinct chunk key: `comfyui_agent` (avoids collision)
+- Handle: PNG only initially (WEBP/JPEG stretch goal)
+
+```
+PNG tEXt chunks after write:
+  "prompt"          → [ComfyUI native, untouched]
+  "workflow"        → [ComfyUI native, untouched]  
+  "comfyui_agent"   → [our creative metadata JSON]
+```
+
+#### A.3 — PNG Metadata Reader
+- Utility that reads `comfyui_agent` chunk from a PNG
+- Returns parsed schema object or `null` if not present
+- Graceful handling of schema version mismatches (older versions still parse what they can)
+
+#### A.4 — Tests
+- Write round-trip test: generate metadata → write to PNG → read back → assert equality
+- Test that ComfyUI native chunks are preserved after our write
+- Test schema validation (missing fields, extra fields, version mismatch)
+- Test with real ComfyUI output PNGs (include test fixtures)
+
+**Estimated scope:** ~4-6 files, ~300-400 lines, straightforward utility work.
+
+---
+
+### Phase B: Intent Capture Integration
+
+**Goal:** Capture Layer 1 (intent) data from existing agent interactions.
+
+#### B.1 — Intent Collector
+- Hook into the agent's natural language processing pipeline
+- When a user issues a generation or refinement request, extract:
+  - Raw user text (`original_request`)
+  - Agent's interpretation (`interpreted_as` — what parameters it decided to change and why)
+  - Any style references detected
+- Store as in-memory object tied to current execution context
+
+#### B.2 — Wire into `execute_with_progress`
+- After successful execution + verify, attach intent metadata to the output
+- Call PNG writer (A.2) on the output file before returning to user
+- If execution fails or user rejects, intent is still captured but not written (available for iteration history)
+
+#### B.3 — Tests
+- Mock a user request → verify intent extraction populates correctly
+- End-to-end: user request → execution → verify PNG has intent metadata
+- Edge cases: empty prompt, non-English input, very long prompts (truncation strategy)
+
+**Estimated scope:** Integration work, ~200-300 lines, depends on existing intent parsing.
+
+---
+
+### Phase C: Iteration History Integration
+
+**Goal:** Capture Layer 2 (iteration history) from `iterative_refine` loops.
+
+**Depends on:** `iterative_refine` brain tool being complete and functional.
+
+#### C.1 — Iteration Accumulator
+- Object that accumulates refinement steps as `iterative_refine` progresses
+- Each step records:
+  - Iteration number and type (initial / refinement / variation)
+  - Trigger (user feedback text or auto-refine observation)
+  - RFC6902 patches applied (already exist in the patch system)
+  - Parameter snapshot after patches
+  - Vision analysis observation from `verify_execution`
+  - User feedback (accept / reject / modify)
+
+#### C.2 — Wire into `iterative_refine` Loop
+- At each iteration boundary, push a step record to the accumulator
+- On loop exit (user accepts or max iterations), finalize the history
+- Mark which iteration was accepted (`accepted_iteration` field)
+- Serialize full history into Layer 2 metadata
+
+#### C.3 — Wire into PNG Writer
+- On accepted output, merge Layer 1 (intent) + Layer 2 (iteration history) + Layer 3 (session)
+- Write combined `comfyui_agent_meta` to output PNG
+- For multi-output workflows (e.g., batch seeds), each PNG gets its own iteration context but shared intent
+
+#### C.4 — Tests
+- Mock a 3-step refinement → verify iteration history captures all steps
+- Verify patches are recorded accurately (compare against actual workflow diff)
+- Verify accepted_iteration matches user's accept signal
+- Test batch output: multiple PNGs from one session each get correct metadata
+
+**Estimated scope:** ~400-500 lines, core integration work.
+
+---
+
+### Phase D: Reload & Reconstruct (The Payoff)
+
+**Goal:** When an image with agent metadata is loaded back in, the agent reconstructs context.
+
+#### D.1 — Metadata-Aware Image Ingestion
+- When user drags an image into ComfyUI (or references one in conversation):
+  - Agent reads `comfyui_agent` PNG chunk
+  - If present, parse and hydrate into agent memory
+  - Agent now knows: what was asked for, what was tried, what worked
+
+#### D.2 — Context Reconstruction
+- Agent greeting on metadata-rich image load:
+  ```
+  "This is from your Nexus Tower session — you were going for that 
+  Blade Runner 2049 atmospheric look. You landed on iteration 3 after 
+  pulling back the saturation. Want to continue refining from here, 
+  or use this as a starting point for something new?"
+  ```
+- Restore iteration history so user can:
+  - Continue refining from the accepted state
+  - Branch from any previous iteration ("go back to iteration 1 but keep the fog")
+  - Use as reference for a new generation ("like this but nighttime")
+
+#### D.3 — Memory Integration
+- Feed reconstructed context into the agent's memory system
+- Session context (Layer 3) reconnects to broader project memory
+- Intent (Layer 1) informs the agent's understanding of user's aesthetic preferences over time
+
+#### D.4 — Tests
+- Round-trip: generate with metadata → reload → verify agent reconstructs context correctly
+- Test reload of image with missing/partial metadata (graceful degradation)
+- Test reload of image with older schema version
+- Test "branch from iteration N" workflow
+
+**Estimated scope:** ~300-400 lines, UX-critical work — get the reconstruction greeting right.
+
+---
+
+### Phase E: Stretch Goals (Post-Rollout)
+
+Not blocking rollout. Implement based on user feedback.
+
+- **E.1 — WEBP/JPEG support:** Extend metadata writer to EXIF/XMP for non-PNG formats
+- **E.2 — Metadata gallery view:** Browse outputs by intent/session rather than filename
+- **E.3 — Cross-session intent patterns:** "You tend to prefer desaturated warm palettes" learned from accumulated metadata
+- **E.4 — Shareable metadata:** Export intent + history as standalone JSON for team sharing (without the image)
+- **E.5 — Diff view:** Visual comparison of iteration steps with annotated parameter changes
+
+---
+
+## 5. Integration Points with Existing Systems
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  USER REQUEST                        │
+│         "make it more like Blade Runner"             │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│              INTENT PARSER (existing)                 │
+│  Extracts: style refs, param implications, context   │
+│                                                      │
+│  ──► Layer 1: Intent Metadata [NEW capture point]    │
+└──────────────────────┬───────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│           WORKFLOW MODIFIER (existing)                │
+│  RFC6902 patches applied to base workflow             │
+│                                                      │
+│  ──► Layer 2: Patches recorded [NEW capture point]   │
+└──────────────────────┬───────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│        execute_with_progress (existing)               │
+│  Sends workflow to ComfyUI, monitors WebSocket        │
+└──────────────────────┬───────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│          verify_execution (existing)                  │
+│  Vision analysis of output                            │
+│                                                      │
+│  ──► Layer 2: Observation recorded [NEW capture]     │
+└──────────────────────┬───────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│         iterative_refine (in progress)                │
+│  Loop: user feedback → re-patch → re-execute          │
+│                                                      │
+│  ──► Layer 2: Full history accumulated [NEW]         │
+└──────────────────────┬───────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│          PNG METADATA WRITER [NEW]                    │
+│  Merges Layer 1 + 2 + 3 → writes tEXt chunk          │
+│  Preserves ComfyUI native chunks                      │
+└──────────────────────┬───────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│              OUTPUT PNG                               │
+│  Contains: ComfyUI workflow + agent creative metadata │
+│  Drag back in → full context reconstruction           │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+## 6. Schema Specification (v1.0.0)
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ComfyUI Agent Creative Metadata",
+  "description": "Creative intent, iteration history, and session context for AI-assisted image generation",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semver version of this metadata schema"
+    },
+    "intent": {
+      "type": "object",
+      "properties": {
+        "original_request": { "type": "string", "maxLength": 2000 },
+        "interpreted_as": { "type": "array", "items": { "type": "string" } },
+        "style_references": { "type": "array", "items": { "type": "string" } },
+        "session_context": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "iteration_history": {
+      "type": "object",
+      "properties": {
+        "total_iterations": { "type": "integer", "minimum": 0 },
+        "accepted_iteration": { "type": "integer", "minimum": 0 },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["iteration", "type"],
+            "properties": {
+              "iteration": { "type": "integer" },
+              "type": { "type": "string", "enum": ["initial_generation", "refinement", "variation", "rollback"] },
+              "trigger": { "type": "string" },
+              "patches_applied": { "type": "array", "items": { "type": "object" } },
+              "params_snapshot": { "type": "object" },
+              "user_feedback": { "type": ["string", "null"] },
+              "agent_observation": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "properties": {
+        "session_id": { "type": "string" },
+        "project_context": { "type": "string" },
+        "related_outputs": { "type": "array", "items": { "type": "string" } },
+        "creative_direction_summary": { "type": "string", "maxLength": 1000 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "agent_version": { "type": "string" }
+      }
+    }
+  }
+}
+```
+
+---
+
+## 7. Competitive Positioning
+
+| Feature | ComfyUI Native | Griptape (Foundry) | **ComfyUI-Agent** |
+|---|---|---|---|
+| Technical params in metadata | ✅ Full workflow JSON | ✅ Node settings, seeds | ✅ Inherits ComfyUI native |
+| Creative intent capture | ❌ | ❌ (not announced) | ✅ **Natural language intent** |
+| Iteration history | ❌ | ⚠️ Seed exploration only | ✅ **Full refinement path with patches** |
+| Vision-verified observations | ❌ | ❌ | ✅ **Agent saw what it produced** |
+| Context reconstruction on reload | ✅ Rebuilds node graph | ✅ Reloads settings | ✅ **Rebuilds graph + understands why** |
+| Session/project memory bridge | ❌ | ❌ | ✅ **Reconnects to broader creative context** |
+
+**The differentiator:** Griptape stores what happened. We store what happened *and why*, with the full creative reasoning chain. An image becomes a creative capsule, not just a technical snapshot.
+
+---
+
+## 8. Success Criteria
+
+- [ ] PNG metadata round-trip: write → read → identical schema object
+- [ ] ComfyUI native metadata preserved (zero interference)
+- [ ] Intent captured for every agent-mediated generation
+- [ ] Iteration history captured for every `iterative_refine` session
+- [ ] Image reload reconstructs creative context within 1 exchange
+- [ ] "Branch from iteration N" workflow functional
+- [ ] Schema versioning handles forward/backward compatibility
+- [ ] All new code covered by tests
+- [ ] Zero impact on generation latency (metadata write is post-output)
+
+---
+
+## 9. Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| PNG chunk size limits | Large iteration histories could bloat file size | Cap iteration steps at 20; truncate observation strings; compress JSON |
+| Schema evolution breaks old images | Reloaded images fail to parse | Semver + graceful partial parsing; reader handles unknown fields |
+| ComfyUI updates change native metadata format | Our reader breaks on new PNG structure | Read our chunk independently; don't depend on ComfyUI chunk structure |
+| Vision observation quality varies | Agent observations may be unhelpful on reload | Make observations optional; don't block reload on missing observations |
+| Multi-output workflows | Batch of 4 seeds = 4 PNGs, shared intent | Share intent + session across batch; per-image iteration context |
+
+---
+
+## 10. Graft Instructions for Claude Code Teams
+
+This blueprint is designed to graft onto the comfyui-agent codebase after `iterative_refine` lands.
+
+**Implementation order:** A → B → C → D (sequential, each phase builds on prior)
+
+**Do NOT:**
+- Modify ComfyUI's native metadata handling
+- Add dependencies on ComfyUI internals for metadata (our chunk is independent)
+- Block image output on metadata write failures (write is best-effort)
+- Store sensitive data in metadata (no API keys, no file paths outside project)
+
+**DO:**
+- Follow existing test patterns in the codebase (518 passing tests as baseline)
+- Follow existing lint configuration (zero warnings as baseline)
+- Use the existing RFC6902 patch objects directly in iteration history (don't re-serialize)
+- Use the existing memory dispatch system for reload context hydration
+- Add `creative_metadata` as a new tool category alongside existing 62 tools
+
+**Entry point:** Start with Phase A (schema + reader/writer utilities). These are pure functions with no integration dependencies. Ship and test them independently before wiring into the agent pipeline.

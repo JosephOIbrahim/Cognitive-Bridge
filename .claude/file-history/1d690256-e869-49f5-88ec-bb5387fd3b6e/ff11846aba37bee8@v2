@@ -1,0 +1,38 @@
+"""Check PDG logs and working directory."""
+
+def check():
+    import hou
+    import os
+
+    topnet = hou.node("/obj/renderfarm")
+    parts = []
+
+    # Check scheduler
+    sched = topnet.node("localscheduler")
+    if sched:
+        for pname in ["pdg_workingdir", "tempdirappendpid", "maxprocsmenu"]:
+            p = sched.parm(pname)
+            if p:
+                parts.append("sched.{} = {}".format(pname, repr(p.eval())))
+
+    # Look for logs in pdgtemp
+    hip = hou.hipFile.path()
+    hip_dir = os.path.dirname(hip) if hip else ""
+    pdg_temp = os.path.join(hip_dir, "pdgtemp") if hip_dir else ""
+    parts.append("HIP: " + hip)
+    parts.append("PDG temp dir: " + pdg_temp)
+    parts.append("Exists: " + str(os.path.exists(pdg_temp)))
+
+    if pdg_temp and os.path.exists(pdg_temp):
+        for root, dirs, files in os.walk(pdg_temp):
+            for f in files:
+                fp = os.path.join(root, f)
+                parts.append("  " + fp + " (" + str(os.path.getsize(fp)) + "b)")
+                if f.endswith(".log") or f.endswith(".txt"):
+                    with open(fp, encoding="utf-8", errors="replace") as fh:
+                        content = fh.read()
+                        parts.append("    -> " + content[-300:])
+
+    return "\n".join(parts)
+
+result = check()

@@ -1,0 +1,16 @@
+---
+type: moc
+domain: tangents
+---
+# Tangents
+
+```dataview
+TABLE WITHOUT ID
+  file.link AS "Tangent",
+  status AS "Status",
+  source_project AS "Source",
+  created AS "Captured"
+FROM "_tangents"
+WHERE file.name != "_README"
+SORT created DESC
+```

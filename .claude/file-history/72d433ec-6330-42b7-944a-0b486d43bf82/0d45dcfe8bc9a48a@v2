@@ -1,0 +1,95 @@
+"use client";
+
+import { useRef, useEffect, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { PlaceholderImage } from "./PlaceholderImage";
+import { MetaTag } from "./MetaTag";
+import { heroImage } from "@/lib/images";
+import type { Project } from "@/lib/types";
+import styles from "./GridCard.module.css";
+
+interface GridCardProps {
+  project: Project;
+  showText: boolean;
+  height: number;
+  columnIndex?: number;
+}
+
+export function GridCard({ project, showText, height, columnIndex = 0 }: GridCardProps) {
+  const hero = heroImage(project.slug);
+  const cardRef = useRef<HTMLAnchorElement>(null);
+  const [revealed, setRevealed] = useState(false);
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+
+    // Respect reduced motion
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq.matches) {
+      setRevealed(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setRevealed(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.15 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <Link
+      ref={cardRef}
+      href={`/work/${project.slug}`}
+      className={`${styles.card} ${revealed ? styles.cardRevealed : ""}`}
+      style={{ "--reveal-delay": `${columnIndex * 180}ms` } as React.CSSProperties}
+    >
+      {/* Image */}
+      <div className={styles.imageContainer}>
+        <div className={styles.imageInner}>
+          {hero ? (
+            <div style={{ position: "relative", width: "100%", height }}>
+              <Image
+                src={hero}
+                alt={project.heroAlt || project.title}
+                fill
+                style={{ objectFit: "cover", objectPosition: project.cropPosition || "center" }}
+                sizes="(max-width: 768px) 100vw, (max-width: 1400px) 66vw, 900px"
+              />
+            </div>
+          ) : (
+            <PlaceholderImage
+              color={project.color}
+              title={project.title}
+              height={height}
+              style={{ borderRadius: 0 }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Text block with elevator metatags */}
+      {showText && (
+        <div className={styles.textBlock}>
+          <h3 className={styles.title}>{project.title}</h3>
+          <p className={styles.desc}>{project.desc}</p>
+
+          {/* Pentagram elevator metatags */}
+          <div className={styles.metatagWrapper}>
+            <div className={styles.metatagInner}>
+              <MetaTag label={project.category} />
+            </div>
+          </div>
+        </div>
+      )}
+    </Link>
+  );
+}

@@ -1,0 +1,22 @@
+The HumanGate → GateWidget callback pipeline has a threading issue. 
+
+HumanGate.propose() holds _write_lock while iterating _on_proposal callbacks. The GateWidget callback tries to emit a Qt signal which crosses thread boundaries. The callback never fires — propose() returns with decision=pending and trace=[].
+
+But calling widget._add_proposal_card() directly works (cards_count=2). And gate proposals arriving via WebSocket also work.
+
+The fix: HumanGate.propose() should NOT hold the lock while calling callbacks. Copy the callback list under the lock, release it, THEN iterate. This is standard observer pattern thread safety:
+```python
+# Inside HumanGate.propose():
+with self._write_lock:
+    proposal = GateProposal(...)
+    callbacks = list(self._on_proposal)  # Copy under lock
+
+# Fire callbacks OUTSIDE the lock
+for cb in callbacks:
+    try:
+        cb(proposal)
+    except Exception:
+        pass  # Never let a bad callback kill the gate system
+```
+
+Find HumanGate.propose() in the codebase, apply this pattern, and verify the traced callback fires. Then test end-to-end: bridge._check_consent_gate() → HumanGate.propose() → GateWidget._on_gate_proposal → card appears in panel.

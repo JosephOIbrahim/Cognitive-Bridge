@@ -1,0 +1,222 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Workspace Overview
+
+This is a home directory workspace containing multiple projects. It is **not** a single repository. Each major project has its own `CLAUDE.md` — always read the project-specific CLAUDE.md before working in that project.
+
+The global cognitive substrate instructions live at `~/.claude/CLAUDE.md` and are always loaded automatically. That file covers reasoning protocols, workflow scaffolds, and cognitive patterns. **This file** covers cross-project navigation and shared patterns.
+
+## Session Handover
+
+At the start of every session, check if `~/.claude/handovers/latest.md` exists. If it does, read it silently and use it as context for what was done last session — decisions, open threads, key files. Don't dump it to the user unprompted, but reference it naturally when relevant (e.g., "Picking up from last session, you had an open thread about X").
+
+## Project Map
+
+### Active Projects (with test commands)
+
+| Project | Path | Tests | Test Command |
+|---------|------|-------|-------------|
+| **Orchestra** v7.1.0 | `Orchestra/` | ~1,551 | `python -m pytest` |
+| **Synapse** v5.3.0 | `Synapse/` + `~/.synapse/` | ~1,012 | `python -m pytest tests/ -v` |
+| **OTTO OS** v5.0.0-dev | `OTTO_OS/otto_v4/` | 93+4 | `cd otto_v4 && python -m pytest tests/ -v -m "not integration"` |
+| **comfyui-agent** v0.4.0 | `comfyui-agent/` | 573 | `python -m pytest tests/ -v` |
+| **RadiantSuite** | `RadiantSuite/` | 7 | `python -m pytest tests/ -v` |
+| **Optimizer V8** | `Optimizer_V7_G3/` | — | `python -m pytest tests/ -v` |
+| **RTXRemixCommandCenter** | `RTXRemixCommandCenter/` | — | `python -m pytest tests/ -v` |
+| **vex-corpus** v0.1.0 | `vex-corpus/` | — | `python -m pytest tests/ -v` |
+| **usd-security** v0.1.0 | `usd-security/` | — | `python -m pytest tests/ -v` |
+| **Substrate Tools** | `~/.claude/substrate/tools/` | 293 | `python -m pytest tests/ -v` |
+
+### Shipped / Parked
+
+| Project | Path | Notes |
+|---------|------|-------|
+| **houdini-connector** | `houdini-connector/` | Shipped, C++/Python HDK plugin |
+| **usd-cognitive-substrate** | `usd-cognitive-substrate/` | Merged into Orchestra |
+| **cognitive-orchestrator** | `cognitive-orchestrator/` | Merged into Orchestra |
+| **persistent-state-hypothesis** | `persistent-state-hypothesis/` | Published paper (DOI: 10.5281/zenodo.18332346) |
+
+### Utilities (not full projects)
+
+- `dylan-fit-sync/` — Push running workouts to NordicTrack X24 via iFit
+- `career-check/` — Single-script career utility
+- `browser-test/` — Node.js browser testing (JavaScript)
+- `claude-code-mobile/` — Mobile workspace for GitHub @claude mentions
+- `comfyui-deterministic-toolkit/` — JetBlock deterministic ComfyUI workflows
+- `Context-Engineering/` — Context engineering reference library (templates, schemas, curriculum)
+
+### Top-Level Scripts
+
+Dozens of one-off VFX Python scripts (`check_*.py`, `fix_*.py`, `setup_*.py`, `configure_*.py`) for Houdini/USD tasks. These are standalone — no shared module.
+
+## Cross-Project Architecture
+
+These projects form an interconnected ecosystem, not isolated tools. Understanding the relationships prevents duplicate work and wrong-target edits.
+
+### Project Dependency Graph
+
+```
+Orchestra (cognitive safety)
+  |-- provides: PRISM signal detection, MoE expert routing, BCM learning trails
+  |-- consumed by: Synapse (coaching tone adaptation), OTTO (constitutional gating)
+
+Synapse (Houdini AI exoskeleton)
+  |-- provides: 43 MCP tools, 6-tier routing, USD-native memory, render validation
+  |-- depends on: Houdini Python API (hou module), WebSocket transport
+  |-- agent SDK at ~/.synapse/agent/ talks to Synapse via ws://localhost:9999/synapse
+  |-- RadiantSuite domain logic (lighting, materials, GOBOs) feeds into Synapse recipes
+
+comfyui-agent (ComfyUI AI assistant)
+  |-- provides: 61 tools (understand/discover/pilot/verify), vision module, memory
+  |-- parallel to Synapse — same exoskeleton pattern, different DCC app
+
+Optimizer (workstation tuning)
+  |-- provides: NVML telemetry, Houdini memory/OCL settings, GPU power management
+  |-- feeds into: Synapse pre-render checks, ComfyUI VRAM awareness
+
+vex-corpus (VEX training data)
+  |-- provides: labeled VEX examples with difficulty ratings, consensus validation
+  |-- feeds into: Synapse RAG knowledge layer
+```
+
+### Shared Architectural Patterns
+
+Every major project implements these patterns. When modifying one project, check if the pattern exists in sibling projects:
+
+- **Memory with temporal decay** — Orchestra: 2h half-life BCM trails. OTTO: 168h half-life outcome trails. comfyui-agent: 7-day half-life. Synapse: JSONL/SQLite with Charmander->Charmeleon->Charizard evolution.
+- **MCP integration** — Synapse: 43 MCP tools via stdio + Streamable HTTP. comfyui-agent: 65 tools via MCP adapter. Orchestra: orchestra-mcp package. All expose tools following the same handler pattern.
+- **Resilience stack** — Circuit breakers, rate limiters, health checks. Synapse and comfyui-agent both implement this. Don't reinvent — follow the existing `resilience.py` pattern.
+- **Human-in-the-loop gates** — INFORM/REVIEW/APPROVE/CRITICAL levels. Synapse and RadiantSuite share this pattern via `GateProposal`.
+- **Coaching tone** — Synapse and OTTO both use "collaborative senior colleague" voice. Errors are "we hit a snag" not "invalid input."
+
+## Cross-Project Patterns
+
+### Determinism Requirements
+
+All major projects enforce application-level determinism (same inputs = same outputs):
+- `sort_keys=True` in all JSON serialization
+- Sorted dict iterations before aggregation
+- Stable tiebreakers (no `uuid.uuid4()` in hot paths, use deterministic IDs)
+- `time.time()` not used in seeds or hashing
+
+Inspired by the batch-invariance *principle* from ThinkingMachines (Horace He, 2025), which shows that individual GPU kernels are run-to-run deterministic but system-level nondeterminism arises from batch-size variance changing reduction order. Orchestra additionally implements kernel-level patterns: `COGNITIVE_TILE_SIZE=32` + Kahan summation for numerically stable aggregation.
+
+### Python Version
+
+**Python 3.14** is the system default. Key breaking change: `asyncio.get_event_loop()` raises `RuntimeError` outside a running loop. Use `@pytest.mark.asyncio` or `asyncio.run()` instead.
+
+### Testing
+
+- All Python projects use **pytest** (no unittest)
+- Orchestra uses `pytest.ini` (not pyproject.toml for pytest config); has `asyncio_mode=auto`
+- `--timeout` flag unavailable (pytest-timeout not installed)
+- Orchestra CI excludes: `test_integration.py`, `test_performance.py`, `test_chaos.py`
+
+### Installation Pattern
+
+All major projects: `pip install -e ".[dev]"` for development. Optional features via extras (e.g., `".[dev,websocket,mcp]"`).
+
+### Running a Single Test
+
+```bash
+# Single test file
+python -m pytest tests/test_routing.py -v
+
+# Single test function
+python -m pytest tests/test_routing.py::test_cache_hit -v
+
+# Tests matching a keyword
+python -m pytest tests/ -v -k "recipe"
+
+# Orchestra (from project root, uses pytest.ini)
+cd Orchestra && python -m pytest tests/test_nexus.py::TestNexusPipeline::test_phase_ordering -v
+```
+
+### Windows Environment
+
+This is a Windows 11 development environment. Always account for platform-specific behavior:
+
+- **Shell selection**: Use **PowerShell** (not cmd or Git Bash) for: environment variables (`setx`), registry edits (`reg add`), elevated commands, and path-sensitive operations. Git Bash silently mangles `setx` escaping and swallows UAC interactions.
+- **UAC elevation**: Inline `Start-Process -Verb RunAs` often fails due to prompt timing. For elevated commands, **write a temp .ps1 script and invoke it** instead of piping inline commands.
+- **Encoding**: Default is cp1252, not UTF-8. Use ASCII arrows (`<-`) not Unicode. All Python `open()` calls need explicit `encoding='utf-8'`.
+- **App Execution Aliases**: Windows ships zero-byte stubs in `WindowsApps/` that shadow real binaries. When a CLI tool fails mysteriously, check `where <tool>` and `Get-Command <tool>` in PowerShell.
+- **Imports for mocking**: `httpx`, `websockets` must be module-level for `mock.patch` to work.
+- **Platform**: AMD Threadripper PRO 7965WX (24C/48T), RTX 4090 (24GB), 128GB DDR5.
+
+### Source vs Deployed — Edit the Right Files
+
+**CRITICAL: Always edit repo source files, never deployed or installed copies.**
+
+Before editing any file, confirm it is in the repository source tree. If you're unsure which copy is canonical, ask.
+
+| Repo Source (EDIT THIS) | Deployed Copy (NEVER EDIT) |
+|---|---|
+| `Synapse/` | `~/.synapse/houdini/`, `~/.synapse/agent/`, `~/.synapse/design/` |
+| `Orchestra/` | `~/.orchestra/` |
+| `comfyui-agent/` | Any installed site-packages copy |
+| `~/.claude/commands/` | N/A (these ARE the source) |
+| `~/.claude/skills/` | N/A (these ARE the source) |
+
+If a path contains `node_modules/`, `site-packages/`, `dist/`, `.synapse/`, or `.orchestra/` — it is a deployed copy. Do not edit it.
+
+### Process Awareness
+
+Before starting long-running pipelines, renders, or background scripts:
+
+1. **Check if a previous instance is still running** — use `Get-Process` (PowerShell) or `tasklist` (cmd) to verify.
+2. **Never start a duplicate process** without confirming the old one is dead.
+3. **For Houdini**: Check if `houdini.exe` or `hbatch.exe` is already running before launching new instances.
+
+### Validate Before Scaling Up
+
+Before running any render or system-level command, first do a minimal dry-run version:
+- **Renders**: Use 320x240, no displacement, no SSS. Confirm output before increasing quality.
+- **Environment changes** (`setx`, registry): Echo the command and verify syntax before executing.
+- **Elevated commands**: Test in a non-elevated subprocess first when possible.
+
+### Language & Style
+
+- **Primary language**: Python. All major projects (Orchestra, Synapse, OTTO, comfyui-agent) are Python.
+- **Secondary**: TypeScript/React (jaimeibrahim.com portfolio site)
+- **Determinism compliance** is required for all Houdini-related and AI framework code (see Determinism Requirements above)
+- **Coaching tone** for Synapse error messages (see project CLAUDE.md)
+
+## Shared Infrastructure
+
+### `~/.claude/` — Global Config
+
+- `CLAUDE.md` — Cognitive substrate: reasoning protocols, workflow scaffolds, code patterns (always auto-loaded)
+- `commands/` — 16 slash-command agents from [Context-Engineering](https://github.com/davidkimai/Context-Engineering) (`/research`, `/test`, `/security`, `/optimize`, `/deploy`, `/monitor`, `/cli`, `/doc`, `/data`, `/meta`, `/alignment`, `/diligence`, `/legal`, `/lit`, `/marketing`, `/comms`)
+- `substrate/tools/` — Substrate tool suite (293 tests, 86% coverage)
+- `substrate/knowledge/` — Knowledge prims (89 prims, 340+ triggers)
+- `projects/_index.md` — Project orchestration (FOCUS/HOLDING/PARKED status)
+- `session_state.json` — Cross-session state tracking
+
+### `~/.synapse/` — Synapse Companion
+
+- `agent/` — Autonomous Agent SDK (`anthropic` 0.75.0, `ws://localhost:9999/synapse`)
+- `design/` — Complete design system (tokens, 21 SVGs, Qt styles)
+- `houdini/` — Shelf and panel integration for Houdini
+- `install.py` — Installer with `--dry-run`, `--verify`, `--uninstall`
+
+### `~/.orchestra/` — Orchestra Runtime State
+
+- `bcm/` — BCM learning trails (2-hour decay half-life)
+- `state/` — Session state
+
+## Lighting Law (VFX — Never Violate)
+
+When working with any PBR renderer (Karma, Arnold, RenderMan, V-Ray):
+- **Intensity is ALWAYS 1.0 or below** — never set intensity > 1
+- **Brightness controlled by EXPOSURE** (logarithmic, in stops)
+- Key:fill ratio 3:1 = 1.585 stops difference; 4:1 = 2.0 stops
+- USD exposure parm: `xn__inputsexposure_vya`, control: `xn__inputsexposure_control_wcb` = `"set"`
+
+## Key External Paths
+
+- **ComfyUI**: `G:\COMFYUI_Database` (note: `Custom_Nodes` with capital C, N)
+- **Houdini Projects**: `D:\HOUDINI_PROJECTS_2025\`
+- **Vercel Portfolio**: `G:\VERCEL_BACKUP\my-vercel-website\` (Next.js/React)
+- **AI Framework R&D**: `H:\My Drive\AI_Framework_RnD_2025\Frameworks` (parked)

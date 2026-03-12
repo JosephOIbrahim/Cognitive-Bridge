@@ -1,0 +1,106 @@
+"""Lightning Indexer: sparse routing via 4-feature scoring.
+
+From DeepSeek-V3.2's Sparse Attention: run a cheap 4-feature indexer
+to select only the top-3 relevant phases before full evaluation.
+
+DISABLED under classical profile (dissolved routing evaluates all phases).
+"""
+
+from src.lossless.routing.cascade import SignalFingerprint
+
+# Fast-path table: signal fingerprint patterns -> top-3 phases
+_FAST_PATHS = {
+    ("calm", "general", "high", "normal"): ["KNOWLEDGE", "EXPERT", "DOMAIN"],
+    ("calm", "general", "medium", "normal"): ["KNOWLEDGE", "EXPERT", "DOMAIN"],
+    ("frustrated", "general", "medium", "immediate"): [
+        "CONSTITUTIONAL", "SAFETY", "SIGNAL",
+    ],
+    ("energized", "general", "high", "exploratory"): [
+        "KNOWLEDGE", "SIGNAL", "EXPERT",
+    ],
+    ("calm", "general", "depleted", "normal"): [
+        "SAFETY", "SIGNAL", "EXPERT",
+    ],
+}
+
+# Calibration: use dense for first N exchanges
+_CALIBRATION_EXCHANGES = 10
+
+
+class LightningIndexer:
+    """Sparse routing indexer that selects top-3 phases.
+
+    Dense fallback for:
+    - First 10 exchanges (calibration)
+    - Dissolved routing mode
+    - Novel signal fingerprints (not in fast-path table)
+    """
+
+    def __init__(self):
+        self._exchange_count = 0
+        self._session_fast_paths = {}  # novel patterns promoted mid-session
+
+    def select_phases(
+        self,
+        signal: SignalFingerprint,
+        routing_mode: str = "standard",
+    ) -> list:
+        """Select which phases to evaluate.
+
+        Args:
+            signal: Signal fingerprint.
+            routing_mode: "standard", "dissolved", or "integrative".
+
+        Returns:
+            List of phase names to evaluate, or None for dense (all phases).
+        """
+        self._exchange_count += 1
+
+        # Dissolved mode: always dense
+        if routing_mode == "dissolved":
+            return None
+
+        # Calibration period: always dense
+        if self._exchange_count <= _CALIBRATION_EXCHANGES:
+            return None
+
+        # Check fast-path table
+        fp_key = (
+            signal.emotional_valence,
+            signal.domain_signal,
+            signal.energy_level,
+            signal.urgency,
+        )
+
+        if fp_key in _FAST_PATHS:
+            return list(_FAST_PATHS[fp_key])
+
+        # Check session-local fast paths
+        if fp_key in self._session_fast_paths:
+            return list(self._session_fast_paths[fp_key])
+
+        # Novel fingerprint: use dense, record for potential promotion
+        self._record_novel(fp_key)
+        return None
+
+    def _record_novel(self, fp_key: tuple) -> None:
+        """Record a novel fingerprint for potential fast-path promotion.
+
+        If seen 3+ times, promote to session-local fast path.
+        """
+        if not hasattr(self, '_novel_counts'):
+            self._novel_counts = {}
+
+        self._novel_counts[fp_key] = self._novel_counts.get(fp_key, 0) + 1
+
+        if self._novel_counts[fp_key] >= 3:
+            # Promote to session-local fast path with default phases
+            self._session_fast_paths[fp_key] = [
+                "KNOWLEDGE", "EXPERT", "SIGNAL",
+            ]
+
+    def reset(self) -> None:
+        """Reset indexer state for a new session."""
+        self._exchange_count = 0
+        self._session_fast_paths = {}
+        self._novel_counts = {}

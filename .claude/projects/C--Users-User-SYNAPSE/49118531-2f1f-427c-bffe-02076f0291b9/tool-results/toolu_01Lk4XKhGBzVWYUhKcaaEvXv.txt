@@ -1,0 +1,231 @@
+C:\Users\User\SYNAPSE\.claude\settings.local.json-16-      "Bash(copy:*)",
+C:\Users\User\SYNAPSE\.claude\settings.local.json-17-      "Bash(copy /Y \"C:\\\\Users\\\\User\\\\SYNAPSE\\\\houdini\\\\toolbar\\\\synapse.shelf\" \"C:\\\\Users\\\\User\\\\.synapse\\\\houdini\\\\toolbar\\\\synapse.shelf\")",
+C:\Users\User\SYNAPSE\.claude\settings.local.json-18-      "Bash(git add:*)",
+C:\Users\User\SYNAPSE\.claude\settings.local.json:19:[Omitted long matching line]
+C:\Users\User\SYNAPSE\.claude\settings.local.json-20-      "Bash(git push:*)",
+C:\Users\User\SYNAPSE\.claude\settings.local.json-21-      "Bash(git rm:*)",
+C:\Users\User\SYNAPSE\.claude\settings.local.json-22-[Omitted long context line]
+--
+C:\Users\User\SYNAPSE\.claude\settings.local.json-24-      "Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" status)",
+C:\Users\User\SYNAPSE\.claude\settings.local.json-25-      "Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" diff design/synapse_styles.py houdini/python_panels/synapse_panel.pypanel houdini/scripts/python/synapse_shelf.py)",
+C:\Users\User\SYNAPSE\.claude\settings.local.json-26-      "Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" add design/synapse_styles.py houdini/python_panels/synapse_panel.pypanel houdini/scripts/python/synapse_shelf.py)",
+C:\Users\User\SYNAPSE\.claude\settings.local.json:27:      "Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" commit -m \"$\\(cat <<''EOF''\nfix\\(houdini\\): PySide6 compat for Houdini 21 + catch-up changes\n\n- Try PySide6 first, fall back to PySide2 \\(panel + shelf clipboard\\)\n- Add project_setup\\(\\) shelf callback and panel button \\(from f455ed6\\)\n- Enforce sort_keys=True on all json.dumps paths \\(from 8a2f8e1\\)\n- Update docstrings to reflect Qt6 support\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+C:\Users\User\SYNAPSE\.claude\settings.local.json-28-      "Bash(git -C \"C:\\\\Users\\\\User\\\\.synapse\" push)"
+C:\Users\User\SYNAPSE\.claude\settings.local.json-29-    ]
+C:\Users\User\SYNAPSE\.claude\settings.local.json-30-  },
+--
+C:\Users\User\SYNAPSE\mcp_server.py-1118-        ),
+C:\Users\User\SYNAPSE\mcp_server.py-1119-        # -- Scene Memory (Living Memory System) --
+C:\Users\User\SYNAPSE\mcp_server.py-1120-        Tool(
+C:\Users\User\SYNAPSE\mcp_server.py:1121:            name="synapse_project_setup",
+C:\Users\User\SYNAPSE\mcp_server.py-1122-            description=(
+C:\Users\User\SYNAPSE\mcp_server.py-1123-                "Initialize or load SYNAPSE project structure for the current scene. "
+C:\Users\User\SYNAPSE\mcp_server.py-1124-                "Creates claude/ directories, seeds memory files, loads existing context. "
+--
+C:\Users\User\SYNAPSE\mcp_server.py-1394-    "synapse_metrics":       ("get_metrics",     _passthrough),
+C:\Users\User\SYNAPSE\mcp_server.py-1395-    "synapse_router_stats":  ("router_stats",    _passthrough),
+C:\Users\User\SYNAPSE\mcp_server.py-1396-    "synapse_list_recipes":  ("list_recipes",    _passthrough),
+C:\Users\User\SYNAPSE\mcp_server.py:1397:    "synapse_project_setup": ("project_setup",   lambda a: {k: a[k] for k in a}),
+C:\Users\User\SYNAPSE\mcp_server.py-1398-    "synapse_memory_write":  ("memory_write",    lambda a: {k: a[k] for k in a}),
+C:\Users\User\SYNAPSE\mcp_server.py-1399-    "synapse_memory_query":  ("memory_query",    lambda a: {k: a[k] for k in a}),
+C:\Users\User\SYNAPSE\mcp_server.py-1400-    "synapse_memory_status": ("memory_status",   _passthrough),
+--
+C:\Users\User\SYNAPSE\README.md-549-| **Execution** | `execute_python`, `execute_vex` |
+C:\Users\User\SYNAPSE\README.md-550-| **USD/Solaris** | `create_usd_prim`, `modify_usd_prim`, `get_stage_info`, `set_usd_attribute`, `get_usd_attribute` |
+C:\Users\User\SYNAPSE\README.md-551-| **Memory** | `context`, `search`, `add_memory`, `decide`, `recall` |
+C:\Users\User\SYNAPSE\README.md:552:| **Living Memory** | `project_setup`, `memory_write`, `memory_query`, `memory_status`, `evolve_memory` |
+C:\Users\User\SYNAPSE\README.md-553-| **Utility** | `ping`, `get_health`, `get_help`, `heartbeat`, `backpressure` |
+C:\Users\User\SYNAPSE\README.md-554-
+C:\Users\User\SYNAPSE\README.md-555-Parameter names are resolved through an alias system (38+ mappings). For example, `node`, `path`, and `node_path` all resolve to the canonical `node` parameter.
+--
+C:\Users\User\SYNAPSE\README.md-576-| **Rendering** | `houdini_render`, `houdini_render_settings`, `houdini_wedge`, `houdini_capture_viewport` |
+C:\Users\User\SYNAPSE\README.md-577-| **Introspection** | `synapse_inspect_selection`, `synapse_inspect_scene`, `synapse_inspect_node` |
+C:\Users\User\SYNAPSE\README.md-578-| **Memory** | `synapse_context`, `synapse_search`, `synapse_recall`, `synapse_decide`, `synapse_add_memory` |
+C:\Users\User\SYNAPSE\README.md:579:| **Living Memory** | `synapse_project_setup`, `synapse_memory_write`, `synapse_memory_query`, `synapse_memory_status`, `synapse_evolve_memory` |
+C:\Users\User\SYNAPSE\README.md-580-| **Knowledge** | `synapse_knowledge_lookup`, `synapse_list_recipes` |
+C:\Users\User\SYNAPSE\README.md-581-| **Routing** | `synapse_router_stats`, `synapse_metrics` |
+C:\Users\User\SYNAPSE\README.md-582-| **Batch** | `synapse_batch` |
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-199-        grid.setContentsMargins(margin, margin, margin, margin)
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-200-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-201-        tools = [
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:202:            ("Project\nSetup", "Initialize project memory", self._on_project_setup),
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-203-            ("Inspect\nSelection", "Analyze selected nodes", self._on_inspect_selection),
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-204-            ("Inspect\nScene", "Analyze full scene", self._on_inspect_scene),
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-205-            ("Health\nCheck", "Run scene check", self._on_health_check),
+--
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-332-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-333-    # ── Tool Callbacks ───────────────────────────────────
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-334-
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:335:    def _on_project_setup(self):
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-336-        """Initialize project memory via shelf callback."""
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-337-        self._log_activity("Setting up project...", "action")
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-338-        self._set_status("executing", "Project setup")
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-339-        try:
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-340-            import synapse_shelf
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel:341:            synapse_shelf.project_setup()
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-342-            self._log_activity("Project structure ready", "success")
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-343-            self._set_status("idle")
+C:\Users\User\SYNAPSE\houdini\python_panels\synapse_panel.pypanel-344-        except Exception as e:
+--
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-2-<shelfDocument>
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-3-  <toolshelf name="synapse" label="Synapse">
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-4-    <memberTool name="synapse_panel"/>
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf:5:    <memberTool name="synapse_project_setup"/>
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-6-    <memberTool name="synapse_inspect_selection"/>
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-7-    <memberTool name="synapse_inspect_scene"/>
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-8-    <memberTool name="synapse_last_result"/>
+--
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-24-]]></script>
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-25-  </tool>
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-26-
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf:27:  <tool name="synapse_project_setup" label="Project Setup" icon="SYNAPSE_synapse">
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-28-    <helpText>Initialize project memory for the current scene</helpText>
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-29-    <script scriptType="python"><![CDATA[
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-30-try:
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-31-    import synapse_shelf
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf:32:    synapse_shelf.project_setup()
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-33-except Exception as e:
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-34-    hou.ui.displayMessage(
+C:\Users\User\SYNAPSE\houdini\toolbar\synapse.shelf-35-        "Synapse project setup error: {}".format(e),
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-738-- Modify: `python/synapse/server/handlers.py`
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-739-- Test: `tests/test_handler_memory.py`
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-740-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md:741:**Context:** Extract all memory handlers: `memory_context`, `memory_search`, `memory_add`, `memory_decide`, `memory_recall`, `project_setup`, `memory_write`, `memory_query`, `memory_status`, `evolve_memory`. These span lines 1525-1690. Also move `_scene_paths()` static method into this mixin since it's only used by memory handlers.
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-742-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-743-**Step 1: Write the failing test**
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-744-
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-764-def test_mixin_has_scene_paths():
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-765-    assert hasattr(MemoryHandlerMixin, "_scene_paths")
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-766-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md:767:def test_mixin_has_project_setup():
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md:768:    assert hasattr(MemoryHandlerMixin, "_handle_project_setup")
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-769-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-770-def test_mixin_has_memory_write():
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-synapse-production-hardening.md-771-    assert hasattr(MemoryHandlerMixin, "_handle_memory_write")
+--
+C:\Users\User\SYNAPSE\houdini\scripts\python\synapse_shelf.py-465-        )
+C:\Users\User\SYNAPSE\houdini\scripts\python\synapse_shelf.py-466-
+C:\Users\User\SYNAPSE\houdini\scripts\python\synapse_shelf.py-467-
+C:\Users\User\SYNAPSE\houdini\scripts\python\synapse_shelf.py:468:def project_setup():
+C:\Users\User\SYNAPSE\houdini\scripts\python\synapse_shelf.py-469-    """Initialize SYNAPSE project structure for the current scene.
+C:\Users\User\SYNAPSE\houdini\scripts\python\synapse_shelf.py-470-
+C:\Users\User\SYNAPSE\houdini\scripts\python\synapse_shelf.py-471-    Creates claude/ directories, seeds memory files, loads existing context,
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-802-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-803----
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-804-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:805:### Task 3: Register new MCP tools — `synapse_project_setup` and `synapse_memory_write`
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-806-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-807-**Files:**
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-808-- Modify: `python/synapse/server/handlers.py` (add handler methods + register)
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-810-- Modify: `python/synapse/core/protocol.py` (add CommandType variants)
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-811-- Modify: `mcp_server.py` (add Tool entries + dispatch cases)
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-812-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:813:**Step 1: Write failing test for project_setup handler**
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-814-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-815-Append to `tests/test_scene_memory.py`:
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-816-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-817-```python
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-818-class TestProjectSetupHandler:
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:819:    """Test the project_setup handler via bridge."""
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-820-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:821:    def test_handle_project_setup_creates_structure(self, tmp_project):
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-822-        """Simulate what the handler would do."""
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-823-        result = sm.ensure_scene_structure(tmp_project["hip"], tmp_project["job"])
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-824-        ctx = sm.load_full_context(tmp_project["hip_dir"], tmp_project["job"])
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-843-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-844-```python
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-845-        # Scene memory operations (Living Memory)
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:846:        reg.register("project_setup", self._handle_project_setup)
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-847-        reg.register("memory_write", self._handle_memory_write)
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-848-        reg.register("memory_query", self._handle_memory_query)
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-849-        reg.register("memory_status", self._handle_memory_status)
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-856-    # SCENE MEMORY HANDLERS (Living Memory System)
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-857-    # =========================================================================
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-858-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:859:    def _handle_project_setup(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-860-        """Initialize or load SYNAPSE project structure for current scene."""
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-861-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-862-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-957-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-958-```python
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-959-        Tool(
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:960:            name="synapse_project_setup",
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-961-            description="Initialize or load SYNAPSE project structure for the current scene. Creates claude/ directories, seeds memory files, loads existing context. Idempotent. Call this after synapse_ping to load full scene context.",
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-962-            inputSchema={
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-963-                "type": "object",
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1031-In `call_tool()`, add dispatch cases:
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1032-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1033-```python
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:1034:        elif name == "synapse_project_setup":
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:1035:            cmd_type = "project_setup"
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1036-        elif name == "synapse_memory_write":
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1037-            cmd_type = "memory_write"
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1038-        elif name == "synapse_memory_query":
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1047-git add python/synapse/server/handlers.py mcp_server.py
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1048-git commit -m "feat(memory): register 4 new MCP tools for Living Memory System
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1049-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:1050:synapse_project_setup, synapse_memory_write, synapse_memory_query,
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1051-synapse_memory_status. Handler methods in handlers.py dispatch to
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1052-scene_memory module."
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1053-```
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1357-git commit -m "milestone: Phase 1 complete — Living Memory foundation
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1358-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1359-- scene_memory.py: directory mgmt, markdown read/write, session ops
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:1360:- 4 new MCP tools: project_setup, memory_write, memory_query, memory_status
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1361-- Dual-write: existing decide/add_memory/context now also write to files
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1362-- Shelf tool: synapse_connect.py for one-click shot login
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-1363-- 20+ tests, all passing"
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2848-**Step 1: Update tool count and add Living Memory section**
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2849-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2850-In `CLAUDE.md`, update:
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:2851:- MCP tool count: 38 -> 43 (5 new: project_setup, memory_write, memory_query, memory_status, evolve_memory)
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2852-- Add brief Living Memory section under Architecture
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2853-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2854-**Step 2: Run full test suite**
+--
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2876-
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2877-| Phase | Module | Tests | MCP Tools |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2878-|-------|--------|-------|-----------|
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:2879:| 1 | `scene_memory.py` | ~20 | `synapse_project_setup`, `synapse_memory_write`, `synapse_memory_query`, `synapse_memory_status` |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md:2880:| 2 | `agent_state.py` | ~10 | (integrated into project_setup) |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2881-| 3 | `evolution.py` | ~6 | `synapse_evolve_memory` |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2882-| 4 | (evolution.py ext) | ~2 | (cross-scene via memory_query) |
+C:\Users\User\SYNAPSE\docs\plans\2026-02-11-living-memory-system.md-2883-| 5 | (hardening) | — | — |
+--
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-289-
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-290-
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-291-class TestProjectSetupHandler:
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:292:    """Test the project_setup handler via bridge."""
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-293-
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py:294:    def test_handle_project_setup_creates_structure(self, tmp_project):
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-295-        """Simulate what the handler would do."""
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-296-        result = sm.ensure_scene_structure(tmp_project["hip"], tmp_project["job"])
+C:\Users\User\SYNAPSE\tests\test_scene_memory.py-297-        ctx = sm.load_full_context(tmp_project["hip_dir"], tmp_project["job"])
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-353-        reg.register("recall", self._handle_memory_recall)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-354-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-355-        # Scene memory operations (Living Memory)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:356:        reg.register("project_setup", self._handle_project_setup)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-357-        reg.register("memory_write", self._handle_memory_write)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-358-        reg.register("memory_query", self._handle_memory_query)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-359-        reg.register("memory_status", self._handle_memory_status)
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-65-        bridge = self._get_bridge()  # type: ignore[attr-defined]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-66-        return bridge.handle_memory_recall(payload)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-67-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:68:    def _handle_project_setup(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-69-        """Initialize or load SYNAPSE project structure for current scene."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-70-        from ..memory.scene_memory import ensure_scene_structure, load_full_context
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-71-

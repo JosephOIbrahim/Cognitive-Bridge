@@ -1,0 +1,118 @@
+"""5-stage lossless pipeline orchestrator.
+
+Stage 1: Parse (USDA files)
+Stage 2: Anchor Extraction
+Stage 3a: Clean Conversion (ALWAYS runs)
+Stage 3b: Injection Modulation (only if active)
+Stage 4: Residual Combination
+Stage 5: Integrity Block
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from src.lossless.constants import ANCHOR_PHASES, PHASES, PROFILES
+from src.lossless.clean_channel.converter import CleanConverter, CleanConversionResult
+from src.lossless.clean_channel.hasher import hash_string
+from src.lossless.clean_channel.renderer import render_full_markdown
+from src.lossless.injection.delta import InjectionDelta, compute_delta
+from src.lossless.injection.state import InjectionState
+from src.lossless.integration.combiner import CombinedResult, combine, reconstruct_clean
+from src.lossless.integration.integrity import generate_integrity_block
+
+
+@dataclass(frozen=True)
+class PipelineResult:
+    """Result of the full lossless pipeline.
+
+    Attributes:
+        markdown: Final output markdown (with integrity block).
+        combined: CombinedResult from Stage 4.
+        clean: CleanConversionResult from Stage 3a.
+        delta: InjectionDelta from Stage 3b.
+        integrity_block: Integrity metadata string.
+        profile_name: Active profile name.
+    """
+
+    markdown: str
+    combined: CombinedResult
+    clean: CleanConversionResult
+    delta: InjectionDelta
+    integrity_block: str
+    profile_name: str
+
+
+class LosslessPipeline:
+    """The full 5-stage lossless conversion pipeline.
+
+    Usage:
+        pipeline = LosslessPipeline(usda_root, injection_state)
+        result = pipeline.convert()
+    """
+
+    def __init__(
+        self,
+        usda_root: Path,
+        injection_state: InjectionState = None,
+    ):
+        self.usda_root = usda_root
+        self.injection_state = injection_state or InjectionState()
+        self._clean_converter = CleanConverter(usda_root)
+
+    def convert(self) -> PipelineResult:
+        """Run the full 5-stage pipeline.
+
+        Returns:
+            PipelineResult with all artifacts.
+        """
+        # Stage 1 + 2 + 3a: Clean conversion (parse, resolve, render, hash)
+        clean = self._clean_converter.convert()
+
+        # Stage 3b: Injection modulation
+        clean_sections = clean.get_sections_dict()
+        profile_name = self.injection_state.profile
+
+        if self.injection_state.active:
+            delta = compute_delta(clean_sections, profile_name)
+        else:
+            delta = InjectionDelta.empty()
+
+        # Stage 4: Residual combination
+        delta_sections = delta.get_deltas_dict()
+        alpha = self.injection_state.alpha
+        combined = combine(clean_sections, delta_sections, alpha)
+
+        # Render combined sections to markdown
+        combined_sections = combined.get_sections_dict()
+        output_md = render_full_markdown(combined_sections)
+
+        # Stage 5: Integrity block
+        source_hash = hash_string(
+            self.usda_root.read_text(encoding='utf-8')
+        )
+
+        mixing_data = self.injection_state.mixing_tracker.to_dict()
+
+        integrity_block = generate_integrity_block(
+            clean_hash=clean.clean_hash,
+            anchor_hash=clean.anchor_hash,
+            sections_hash=clean.sections_hash,
+            profile_name=profile_name,
+            s_NM=self.injection_state.get_s_NM(),
+            alpha=alpha,
+            mixing_data=mixing_data,
+            provenance_summary={},
+            source_hash=source_hash,
+        )
+
+        # Append integrity block to output
+        final_md = output_md.rstrip('\n') + '\n\n' + integrity_block + '\n'
+
+        return PipelineResult(
+            markdown=final_md,
+            combined=combined,
+            clean=clean,
+            delta=delta,
+            integrity_block=integrity_block,
+            profile_name=profile_name,
+        )

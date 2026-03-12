@@ -1,0 +1,189 @@
+"""10-phase cascade evaluation for routing decisions.
+
+Fixed evaluation order (PHASES from constants).
+Each phase returns a score and routing decision.
+Deterministic: same signal fingerprint -> same route, always.
+"""
+
+import hashlib
+from dataclasses import dataclass
+
+from src.lossless.constants import (
+    D_MAP,
+    HASH_ALGORITHM,
+    PHASES,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SignalFingerprint:
+    """A signal to be routed through the cascade.
+
+    Attributes:
+        emotional_valence: frustrated / calm / energized
+        domain_signal: vfx / web / ai_research / general
+        energy_level: high / medium / low / depleted
+        urgency: immediate / normal / exploratory
+    """
+
+    emotional_valence: str = "calm"
+    domain_signal: str = "general"
+    energy_level: str = "medium"
+    urgency: str = "normal"
+
+    def to_hash(self) -> str:
+        """Deterministic hash of the signal fingerprint."""
+        parts = [
+            f"ev={self.emotional_valence}",
+            f"ds={self.domain_signal}",
+            f"el={self.energy_level}",
+            f"ur={self.urgency}",
+        ]
+        combined = "|".join(parts)
+        h = hashlib.new(HASH_ALGORITHM)
+        h.update(combined.encode('utf-8'))
+        return h.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class PhaseScore:
+    """Score for a single phase in the cascade.
+
+    Attributes:
+        phase: Phase name string.
+        score: Computed score in [0, 1].
+        evaluated: False if skipped by sparse routing.
+    """
+
+    phase: str
+    score: float
+    evaluated: bool  # False if skipped by sparse routing
+
+
+@dataclass(frozen=True, slots=True)
+class CascadeResult:
+    """Result of a full cascade evaluation.
+
+    Always contains scores for ALL 10 phases, even if sparse routing
+    skipped some (unevaluated phases have score 0.0).
+
+    Attributes:
+        phase_scores: Tuple of PhaseScore, always PHASE_COUNT length.
+        selected_phases: Top phases by score (tuple of phase names).
+        signal_hash: Deterministic hash of the input signal.
+        routing_mode: 'dense' or 'sparse'.
+    """
+
+    phase_scores: tuple  # tuple of PhaseScore, always PHASE_COUNT length
+    selected_phases: tuple  # top phases by score
+    signal_hash: str
+    routing_mode: str  # "dense" or "sparse"
+
+    def get_scores_dict(self) -> dict:
+        """Return phase name to score mapping as a regular dict."""
+        return {ps.phase: ps.score for ps in self.phase_scores}
+
+
+def evaluate_cascade(
+    signal: SignalFingerprint,
+    active_phases: list = None,
+    gains: dict = None,
+) -> CascadeResult:
+    """Evaluate the 10-phase routing cascade.
+
+    Args:
+        signal: Signal fingerprint to route.
+        active_phases: If provided, only these phases are fully evaluated
+                      (sparse routing). All others get default score 0.
+        gains: Optional gain modifiers per phase (from injection).
+
+    Returns:
+        CascadeResult with scores for all 10 phases.
+    """
+    if gains is None:
+        gains = {}
+
+    signal_hash = signal.to_hash()
+    is_sparse = active_phases is not None
+
+    # Evaluate all phases in FIXED canonical order
+    phase_scores = []
+    for phase in PHASES:
+        if is_sparse and phase not in active_phases:
+            # Sparse: record as not evaluated
+            phase_scores.append(PhaseScore(
+                phase=phase, score=0.0, evaluated=False
+            ))
+        else:
+            # Dense: compute score deterministically
+            score = _compute_phase_score(phase, signal, signal_hash)
+
+            # Apply gain if present
+            g = gains.get(phase, 1.0)
+            score = score * g
+
+            phase_scores.append(PhaseScore(
+                phase=phase, score=score, evaluated=True
+            ))
+
+    # Select top phases by score, using phase priority as tiebreaker
+    scored = [(ps.score, PHASES.index(ps.phase), ps.phase)
+              for ps in phase_scores if ps.evaluated]
+    scored.sort(key=lambda x: (-x[0], x[1]))  # desc score, asc phase index
+    selected = tuple(s[2] for s in scored[:3])
+
+    routing_mode = "sparse" if is_sparse else "dense"
+
+    return CascadeResult(
+        phase_scores=tuple(phase_scores),
+        selected_phases=selected,
+        signal_hash=signal_hash,
+        routing_mode=routing_mode,
+    )
+
+
+def _compute_phase_score(
+    phase: str, signal: SignalFingerprint, signal_hash: str
+) -> float:
+    """Compute a deterministic score for a phase given a signal.
+
+    Uses hash-based scoring to ensure determinism.
+    """
+    # Hash phase + signal for deterministic score
+    h = hashlib.new(HASH_ALGORITHM)
+    h.update(phase.encode('utf-8'))
+    h.update(signal_hash.encode('utf-8'))
+    digest = h.hexdigest()
+
+    # Convert first 8 hex chars to a score in [0, 1]
+    base_score = int(digest[:8], 16) / (16**8)
+
+    # Weight by receptor density (phases with higher d get higher base scores
+    # for relevant signals)
+    d = D_MAP.get(phase, 0.5)
+    relevance = _signal_relevance(phase, signal)
+
+    return base_score * 0.3 + d * 0.3 + relevance * 0.4
+
+
+def _signal_relevance(phase: str, signal: SignalFingerprint) -> float:
+    """Compute relevance of a signal to a phase.
+
+    Deterministic mapping from signal features to phase relevance.
+    """
+    relevance = 0.5  # baseline
+
+    # Phase-specific relevance boosts
+    if phase == "SAFETY" and signal.emotional_valence == "frustrated":
+        relevance += 0.3
+    elif (phase == "KNOWLEDGE" and signal.domain_signal != "general") or (phase == "EXPERT" and signal.energy_level == "high"):
+        relevance += 0.2
+    elif phase == "SIGNAL" and signal.urgency == "immediate":
+        relevance += 0.25
+    elif phase == "DOMAIN" and signal.domain_signal == "vfx":
+        relevance += 0.3
+    elif phase == "CONSTITUTIONAL" and signal.emotional_valence == "frustrated":
+        relevance += 0.2
+
+    # Cap at 1.0
+    return min(relevance, 1.0)

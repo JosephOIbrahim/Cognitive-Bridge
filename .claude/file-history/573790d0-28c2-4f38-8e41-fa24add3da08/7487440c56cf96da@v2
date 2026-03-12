@@ -1,0 +1,18 @@
+#!/bin/bash
+# Source this file before running the pipeline to set up PATH on Windows.
+# Usage: source scripts/env_setup.sh
+
+FFMPEG_BIN="C:/Users/User/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.0.1-full_build/bin"
+TESS_BIN="C:/Program Files/Tesseract-OCR"
+PY_SCRIPTS="C:/Users/User/AppData/Roaming/Python/Python314/Scripts"
+
+export PATH="$FFMPEG_BIN:$TESS_BIN:$PY_SCRIPTS:$PATH"
+
+# pytesseract needs to know where tesseract lives on Windows
+export TESSERACT_CMD="C:/Program Files/Tesseract-OCR/tesseract.exe"
+
+echo "PATH updated. Verifying tools..."
+yt-dlp --version 2>/dev/null && echo "  yt-dlp: OK" || echo "  yt-dlp: MISSING"
+ffmpeg -version 2>&1 | head -1 && echo "  ffmpeg: OK" || echo "  ffmpeg: MISSING"
+tesseract --version 2>&1 | head -1 && echo "  tesseract: OK" || echo "  tesseract: MISSING"
+python -c "import cv2, pytesseract, webvtt, anthropic, tqdm; print('  Python packages: OK')" 2>&1 || echo "  Python packages: MISSING (run pip install)"

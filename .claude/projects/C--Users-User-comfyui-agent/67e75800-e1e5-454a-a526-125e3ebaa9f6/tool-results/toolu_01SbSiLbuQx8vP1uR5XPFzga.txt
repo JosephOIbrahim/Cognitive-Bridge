@@ -1,0 +1,1321 @@
+     1→"""Discovery tools — search for custom node packs and models.
+     2→
+     3→Primary data source: ComfyUI Manager's local JSON registries
+     4→(custom-node-list.json, extension-node-map.json, model-list.json).
+     5→These ship with ComfyUI-Manager and cover 4,000+ packs and 31,000+ node types.
+     6→
+     7→Secondary: HuggingFace Hub API for broader model search.
+     8→
+     9→Includes freshness tracking to detect stale registry data and suggest updates.
+    10→"""
+    11→
+    12→import json
+    13→import time
+    14→from pathlib import Path
+    15→
+    16→import httpx
+    17→
+    18→from ..config import COMFYUI_URL, CUSTOM_NODES_DIR, MODELS_DIR
+    19→from ..rate_limiter import HUGGINGFACE_LIMITER
+    20→from ._util import to_json
+    21→
+    22→# ---------------------------------------------------------------------------
+    23→# Partner Node registry — officially supported by Comfy-Org + provider
+    24→# Update quarterly or when new partnerships are announced.
+    25→# ---------------------------------------------------------------------------
+    26→
+    27→PARTNER_NODES: dict[str, dict] = {
+    28→    "Hunyuan3D": {
+    29→        "provider": "Tencent",
+    30→        "capabilities": "text/image/sketch to production 3D mesh",
+    31→        "best_for": "final production assets, high-quality 3D generation",
+    32→        "url": "https://github.com/Tencent/Hunyuan3D-2",
+    33→        "keywords": ["hunyuan3d", "hunyuan 3d", "tencent"],
+    34→    },
+    35→    "Meshy": {
+    36→        "provider": "Meshy",
+    37→        "capabilities": "AI mesh generation (stylized assets)",
+    38→        "best_for": "game-ready stylized assets, fast stylized generation",
+    39→        "url": "https://github.com/meshyai/comfyui-meshy",
+    40→        "keywords": ["meshy"],
+    41→    },
+    42→    "Tripo": {
+    43→        "provider": "Tripo",
+    44→        "capabilities": "fast 3D prototyping and iteration",
+    45→        "best_for": "rapid prototyping, quick iterations",
+    46→        "url": "https://github.com/VAST-AI-Research/ComfyUI-Tripo",
+    47→        "keywords": ["tripo", "vast-ai"],
+    48→    },
+    49→    "Rodin": {
+    50→        "provider": "Deemos",
+    51→        "capabilities": "high-quality 3D generation with geometric detail",
+    52→        "best_for": "realistic/detailed models, high geometric fidelity",
+    53→        "url": "https://github.com/Deemos-Technology/ComfyUI-Rodin",
+    54→        "keywords": ["rodin", "deemos"],
+    55→    },
+    56→}
+    57→
+    58→# Core node packs that ship with ComfyUI or are maintained by Comfy-Org
+    59→_CORE_URLS = frozenset([
+    60→    "https://github.com/comfyanonymous/ComfyUI",
+    61→])
+    62→
+    63→
+    64→def _get_source_tier(title: str, url: str) -> str:
+    65→    """Determine source tier: 'core', 'partner', or 'community'."""
+    66→    url_lower = (url or "").lower()
+    67→    title_lower = (title or "").lower()
+    68→
+    69→    # Check core
+    70→    if url_lower in _CORE_URLS or "comfyanonymous" in url_lower:
+    71→        return "core"
+    72→
+    73→    # Check partner nodes
+    74→    for partner_info in PARTNER_NODES.values():
+    75→        if partner_info["url"].lower() == url_lower:
+    76→            return "partner"
+    77→        if any(kw in title_lower for kw in partner_info["keywords"]):
+    78→            return "partner"
+    79→
+    80→    return "community"
+    81→
+    82→# ---------------------------------------------------------------------------
+    83→# Tool schemas
+    84→# ---------------------------------------------------------------------------
+    85→
+    86→TOOLS: list[dict] = [
+    87→    {
+    88→        "name": "discover",
+    89→        "description": (
+    90→            "Unified search across ComfyUI Manager registry, CivitAI, and "
+    91→            "HuggingFace for custom node packs and models. Returns results "
+    92→            "ranked by relevance with installed status. Use this for any "
+    93→            "'find me X' or 'what's available for Y' question."
+    94→        ),
+    95→        "input_schema": {
+    96→            "type": "object",
+    97→            "properties": {
+    98→                "query": {
+    99→                    "type": "string",
+   100→                    "description": (
+   101→                        "What to search for — model name, node pack, keyword, "
+   102→                        "or specific node class_type "
+   103→                        "(e.g. 'IPAdapter', 'anime LoRA for SDXL', 'depth controlnet')."
+   104→                    ),
+   105→                },
+   106→                "category": {
+   107→                    "type": "string",
+   108→                    "enum": ["nodes", "models", "all"],
+   109→                    "description": (
+   110→                        "What to search: 'nodes' for custom node packs, "
+   111→                        "'models' for checkpoints/LoRAs/etc, 'all' for both. "
+   112→                        "Default: 'all'."
+   113→                    ),
+   114→                },
+   115→                "sources": {
+   116→                    "type": "array",
+   117→                    "items": {
+   118→                        "type": "string",
+   119→                        "enum": ["registry", "civitai", "huggingface"],
+   120→                    },
+   121→                    "description": (
+   122→                        "Which sources to search. Default: all applicable "
+   123→                        "(registry for nodes, registry+civitai+huggingface for models)."
+   124→                    ),
+   125→                },
+   126→                "model_type": {
+   127→                    "type": "string",
+   128→                    "description": (
+   129→                        "Filter models by type: checkpoint, lora, vae, controlnet, "
+   130→                        "embedding, upscaler. Ignored for node searches."
+   131→                    ),
+   132→                },
+   133→                "base_model": {
+   134→                    "type": "string",
+   135→                    "description": (
+   136→                        "Filter by base model: 'sd15', 'sdxl', 'flux', 'sd3', 'pony'. "
+   137→                        "Applied to CivitAI; ignored for registry/HuggingFace."
+   138→                    ),
+   139→                },
+   140→                "sort": {
+   141→                    "type": "string",
+   142→                    "enum": ["most_downloaded", "highest_rated", "newest"],
+   143→                    "description": (
+   144→                        "CivitAI sort order. Default: 'most_downloaded'. "
+   145→                        "Ignored for non-CivitAI sources."
+   146→                    ),
+   147→                },
+   148→                "max_results": {
+   149→                    "type": "integer",
+   150→                    "description": "Max results per source (default 5).",
+   151→                },
+   152→            },
+   153→            "required": ["query"],
+   154→        },
+   155→    },
+   156→    {
+   157→        "name": "find_missing_nodes",
+   158→        "description": (
+   159→            "Analyze a workflow to find which custom nodes are missing and "
+   160→            "suggest where to get them. Checks every node class_type against "
+   161→            "the live ComfyUI instance, then looks up missing ones in the "
+   162→            "ComfyUI Manager registry. Essential for importing shared workflows."
+   163→        ),
+   164→        "input_schema": {
+   165→            "type": "object",
+   166→            "properties": {
+   167→                "path": {
+   168→                    "type": "string",
+   169→                    "description": (
+   170→                        "Path to workflow JSON file. If omitted, uses the "
+   171→                        "currently loaded workflow from workflow_patch."
+   172→                    ),
+   173→                },
+   174→            },
+   175→            "required": [],
+   176→        },
+   177→    },
+   178→    {
+   179→        "name": "get_install_instructions",
+   180→        "description": (
+   181→            "Get installation instructions for a custom node pack or model. "
+   182→            "Given a query and source, returns the specific commands needed to "
+   183→            "install (git clone for node packs, download path for models). "
+   184→            "Bridges the gap between discovery and actual installation."
+   185→        ),
+   186→        "input_schema": {
+   187→            "type": "object",
+   188→            "properties": {
+   189→                "query": {
+   190→                    "type": "string",
+   191→                    "description": (
+   192→                        "Name or identifier of the item to install — a node pack "
+   193→                        "name/URL, a model name, or a node class_type."
+   194→                    ),
+   195→                },
+   196→                "source": {
+   197→                    "type": "string",
+   198→                    "enum": ["registry", "civitai", "huggingface"],
+   199→                    "description": (
+   200→                        "Where to look up install info: 'registry' for ComfyUI "
+   201→                        "Manager node packs and models, 'civitai' for CivitAI "
+   202→                        "models, 'huggingface' for HuggingFace models. "
+   203→                        "Default: 'registry'."
+   204→                    ),
+   205→                },
+   206→            },
+   207→            "required": ["query"],
+   208→        },
+   209→    },
+   210→    {
+   211→        "name": "check_registry_freshness",
+   212→        "description": (
+   213→            "Check how fresh the local discovery data is. Reports the age of "
+   214→            "ComfyUI Manager registry files (custom-node-list, extension-node-map, "
+   215→            "model-list) and local model directories. Helps decide whether to use "
+   216→            "local cache or fetch updated data from CivitAI/HuggingFace. "
+   217→            "Use refresh=true to clear the in-memory cache and force a reload."
+   218→        ),
+   219→        "input_schema": {
+   220→            "type": "object",
+   221→            "properties": {
+   222→                "refresh": {
+   223→                    "type": "boolean",
+   224→                    "description": (
+   225→                        "If true, clears the in-memory registry cache so the next "
+   226→                        "search reloads from disk. Default: false."
+   227→                    ),
+   228→                },
+   229→            },
+   230→            "required": [],
+   231→        },
+   232→    },
+   233→]
+   234→
+   235→# ---------------------------------------------------------------------------
+   236→# Registry cache (loaded once per session from local ComfyUI Manager files)
+   237→# ---------------------------------------------------------------------------
+   238→
+   239→_MANAGER_DIR = CUSTOM_NODES_DIR / "ComfyUI-Manager"
+   240→
+   241→_cache: dict = {
+   242→    "custom_nodes": None,     # list[dict] from custom-node-list.json
+   243→    "extension_map": None,    # dict from extension-node-map.json
+   244→    "node_to_pack": None,     # dict[str, dict] — node_type -> pack info
+   245→    "model_list": None,       # list[dict] from model-list.json
+   246→}
+   247→
+   248→# Freshness tracking — records when each cache was last loaded
+   249→_freshness: dict = {
+   250→    "custom_nodes_loaded_at": None,   # epoch timestamp
+   251→    "extension_map_loaded_at": None,
+   252→    "model_list_loaded_at": None,
+   253→}
+   254→
+   255→# Staleness thresholds (seconds)
+   256→_STALE_THRESHOLD = 7 * 24 * 3600   # 7 days — registry files update infrequently
+   257→_WARN_THRESHOLD = 30 * 24 * 3600   # 30 days — strongly suggest update
+   258→
+   259→
+   260→def _load_custom_nodes() -> list[dict]:
+   261→    """Load and cache custom-node-list.json."""
+   262→    if _cache["custom_nodes"] is not None:
+   263→        return _cache["custom_nodes"]
+   264→
+   265→    path = _MANAGER_DIR / "custom-node-list.json"
+   266→    if not path.exists():
+   267→        return []
+   268→
+   269→    try:
+   270→        data = json.loads(path.read_text(encoding="utf-8"))
+   271→        _cache["custom_nodes"] = data.get("custom_nodes", [])
+   272→        _freshness["custom_nodes_loaded_at"] = time.time()
+   273→    except Exception:
+   274→        _cache["custom_nodes"] = []
+   275→
+   276→    return _cache["custom_nodes"]
+   277→
+   278→
+   279→def _load_extension_map() -> dict:
+   280→    """Load and cache extension-node-map.json."""
+   281→    if _cache["extension_map"] is not None:
+   282→        return _cache["extension_map"]
+   283→
+   284→    path = _MANAGER_DIR / "extension-node-map.json"
+   285→    if not path.exists():
+   286→        return {}
+   287→
+   288→    try:
+   289→        _cache["extension_map"] = json.loads(path.read_text(encoding="utf-8"))
+   290→        _freshness["extension_map_loaded_at"] = time.time()
+   291→    except Exception:
+   292→        _cache["extension_map"] = {}
+   293→
+   294→    return _cache["extension_map"]
+   295→
+   296→
+   297→def _build_node_to_pack() -> dict[str, dict]:
+   298→    """Build reverse index: node_type -> {url, title, node_types}."""
+   299→    if _cache["node_to_pack"] is not None:
+   300→        return _cache["node_to_pack"]
+   301→
+   302→    ext_map = _load_extension_map()
+   303→    index = {}
+   304→    for url, entry in sorted(ext_map.items()):  # He2025: sorted iteration for deterministic collision resolution
+   305→        if not isinstance(entry, list) or len(entry) < 2:
+   306→            continue
+   307→        node_types = entry[0] if isinstance(entry[0], list) else []
+   308→        meta = entry[1] if isinstance(entry[1], dict) else {}
+   309→        title = meta.get("title_aux", url.split("/")[-1] if "/" in url else url)
+   310→
+   311→        pack_info = {"url": url, "title": title, "node_count": len(node_types)}
+   312→        for nt in node_types:
+   313→            index[nt] = pack_info
+   314→
+   315→    _cache["node_to_pack"] = index
+   316→    return index
+   317→
+   318→
+   319→def _load_model_list() -> list[dict]:
+   320→    """Load and cache model-list.json."""
+   321→    if _cache["model_list"] is not None:
+   322→        return _cache["model_list"]
+   323→
+   324→    path = _MANAGER_DIR / "model-list.json"
+   325→    if not path.exists():
+   326→        return []
+   327→
+   328→    try:
+   329→        data = json.loads(path.read_text(encoding="utf-8"))
+   330→        _cache["model_list"] = data.get("models", [])
+   331→        _freshness["model_list_loaded_at"] = time.time()
+   332→    except Exception:
+   333→        _cache["model_list"] = []
+   334→
+   335→    return _cache["model_list"]
+   336→
+   337→
+   338→def _is_pack_installed(reference_url: str) -> bool:
+   339→    """Check if a custom node pack is installed locally."""
+   340→    if not CUSTOM_NODES_DIR.exists():
+   341→        return False
+   342→    # Extract folder name from git URL
+   343→    folder = reference_url.rstrip("/").split("/")[-1]
+   344→    if folder.endswith(".git"):
+   345→        folder = folder[:-4]
+   346→    return (CUSTOM_NODES_DIR / folder).is_dir()
+   347→
+   348→
+   349→def _is_model_installed(filename: str, save_path: str) -> bool:
+   350→    """Check if a model file exists in the expected directory."""
+   351→    if not MODELS_DIR.exists():
+   352→        return False
+   353→    target = MODELS_DIR / save_path / filename
+   354→    return target.exists()
+   355→
+   356→
+   357→# ---------------------------------------------------------------------------
+   358→# Unified discover — helpers
+   359→# ---------------------------------------------------------------------------
+   360→
+   361→def _normalize_result(
+   362→    name: str,
+   363→    result_type: str,
+   364→    source: str,
+   365→    relevance_score: float,
+   366→    installed: bool,
+   367→    url: str,
+   368→    **extra,
+   369→) -> dict:
+   370→    """Common result schema for unified discovery."""
+   371→    result = {
+   372→        "installed": installed,
+   373→        "name": name,
+   374→        "relevance_score": round(relevance_score, 3),
+   375→        "source": source,
+   376→        "source_tier": _get_source_tier(name, url),
+   377→        "type": result_type,
+   378→        "url": url,
+   379→    }
+   380→    # He2025: sorted keys via sorted extra insertion
+   381→    for k in sorted(extra):
+   382→        if extra[k] is not None:
+   383→            result[k] = extra[k]
+   384→    return result
+   385→
+   386→
+   387→def _search_nodes_unified(query: str, max_results: int) -> list[dict]:
+   388→    """Search custom node packs, return normalized results."""
+   389→    packs = _load_custom_nodes()
+   390→    if not packs:
+   391→        return []
+   392→
+   393→    query_lower = query.lower()
+   394→    query_words = query_lower.split()
+   395→    scored = []
+   396→
+   397→    for pack in packs:
+   398→        title = pack.get("title", "")
+   399→        desc = pack.get("description", "")
+   400→        author = pack.get("author", "")
+   401→        searchable = f"{title} {desc} {author}".lower()
+   402→
+   403→        word_hits = sum(1 for w in query_words if w in searchable)
+   404→        if word_hits == 0:
+   405→            continue
+   406→
+   407→        score = word_hits / max(len(query_words), 1)
+   408→        if query_lower in title.lower():
+   409→            score = min(score + 0.5, 1.0)
+   410→
+   411→        ref = pack.get("reference", "")
+   412→        scored.append((score, _normalize_result(
+   413→            name=title,
+   414→            result_type="node_pack",
+   415→            source="registry",
+   416→            relevance_score=score,
+   417→            installed=_is_pack_installed(ref) if ref else False,
+   418→            url=ref,
+   419→            author=author,
+   420→            description=desc[:200] if desc else None,
+   421→        )))
+   422→
+   423→    scored.sort(key=lambda x: (-x[0], x[1]["name"]))
+   424→    return [r for _, r in scored[:max_results]]
+   425→
+   426→
+   427→def _search_models_unified(
+   428→    query: str, model_type: str | None, max_results: int,
+   429→) -> list[dict]:
+   430→    """Search model registry, return normalized results."""
+   431→    models = _load_model_list()
+   432→    if not models:
+   433→        return []
+   434→
+   435→    query_lower = query.lower()
+   436→    query_words = query_lower.split()
+   437→    scored = []
+   438→
+   439→    for model in models:
+   440→        name = model.get("name", "")
+   441→        mtype = model.get("type", "")
+   442→        base = model.get("base", "")
+   443→        desc = model.get("description", "")
+   444→        searchable = f"{name} {mtype} {base} {desc}".lower()
+   445→
+   446→        if model_type and model_type.lower() not in mtype.lower():
+   447→            continue
+   448→
+   449→        word_hits = sum(1 for w in query_words if w in searchable)
+   450→        if word_hits == 0:
+   451→            continue
+   452→
+   453→        score = word_hits / max(len(query_words), 1)
+   454→        if query_lower in name.lower():
+   455→            score = min(score + 0.5, 1.0)
+   456→
+   457→        filename = model.get("filename", "")
+   458→        save_path = model.get("save_path", "")
+   459→
+   460→        scored.append((score, _normalize_result(
+   461→            name=name,
+   462→            result_type="model",
+   463→            source="registry",
+   464→            relevance_score=score,
+   465→            installed=_is_model_installed(filename, save_path) if filename and save_path else False,
+   466→            url=model.get("url", ""),
+   467→            base_model=base or None,
+   468→            description=desc[:200] if desc else None,
+   469→            model_type=mtype or None,
+   470→        )))
+   471→
+   472→    scored.sort(key=lambda x: (-x[0], x[1]["name"]))
+   473→    return [r for _, r in scored[:max_results]]
+   474→
+   475→
+   476→def _search_civitai_unified(
+   477→    query: str,
+   478→    model_type: str | None,
+   479→    base_model: str | None,
+   480→    sort: str,
+   481→    max_results: int,
+   482→) -> tuple[list[dict], str | None]:
+   483→    """Search CivitAI, return (normalized_results, error_or_None)."""
+   484→    from .civitai_api import _handle_search_civitai
+   485→
+   486→    raw = json.loads(_handle_search_civitai({
+   487→        "query": query,
+   488→        "model_type": model_type,
+   489→        "base_model": base_model,
+   490→        "sort": sort,
+   491→        "max_results": max_results,
+   492→    }))
+   493→    if "error" in raw:
+   494→        return [], raw["error"]
+   495→
+   496→    results = []
+   497→    for item in raw.get("results", []):
+   498→        # Normalize relevance from downloads (log scale)
+   499→        downloads = item.get("downloads", 0)
+   500→        rel = min(1.0, (downloads / 1_000_000) ** 0.3) if downloads > 0 else 0.1
+   501→        results.append(_normalize_result(
+   502→            name=item.get("name", ""),
+   503→            result_type="model",
+   504→            source="civitai",
+   505→            relevance_score=rel,
+   506→            installed=item.get("installed", False),
+   507→            url=item.get("url", ""),
+   508→            base_model=item.get("base_model") or None,
+   509→            downloads=downloads or None,
+   510→            model_type=item.get("type") or None,
+   511→            rating=item.get("rating") or None,
+   512→        ))
+   513→    return results, None
+   514→
+   515→
+   516→def _search_hf_unified(
+   517→    query: str, model_type: str | None, max_results: int,
+   518→) -> tuple[list[dict], str | None]:
+   519→    """Search HuggingFace, return (normalized_results, error_or_None)."""
+   520→    raw = json.loads(_search_huggingface(query, model_type, max_results))
+   521→    if "error" in raw:
+   522→        return [], raw["error"]
+   523→
+   524→    results = []
+   525→    for item in raw.get("results", []):
+   526→        downloads = item.get("downloads", 0)
+   527→        rel = min(1.0, (downloads / 1_000_000) ** 0.3) if downloads > 0 else 0.1
+   528→        results.append(_normalize_result(
+   529→            name=item.get("name", ""),
+   530→            result_type="model",
+   531→            source="huggingface",
+   532→            relevance_score=rel,
+   533→            installed=False,
+   534→            url=item.get("url", ""),
+   535→            author=item.get("author") or None,
+   536→            downloads=downloads or None,
+   537→        ))
+   538→    return results, None
+   539→
+   540→
+   541→def _deduplicate(results: list[dict]) -> list[dict]:
+   542→    """Deduplicate by lowercased name. Keep highest-scored, note also_found_on."""
+   543→    seen: dict[str, dict] = {}  # lowercase name -> result dict
+   544→    for r in results:
+   545→        key = r["name"].lower().strip()
+   546→        if key in seen:
+   547→            existing = seen[key]
+   548→            # Track sources
+   549→            if r["source"] not in existing.get("also_found_on", []):
+   550→                existing.setdefault("also_found_on", []).append(r["source"])
+   551→                existing["also_found_on"] = sorted(existing["also_found_on"])
+   552→            # Keep higher score
+   553→            if r["relevance_score"] > existing["relevance_score"]:
+   554→                also = existing.get("also_found_on", [])
+   555→                also_with_old = sorted(set(also) | {existing["source"]})
+   556→                r["also_found_on"] = [s for s in also_with_old if s != r["source"]]
+   557→                if r["also_found_on"]:
+   558→                    r["also_found_on"] = sorted(r["also_found_on"])
+   559→                else:
+   560→                    r.pop("also_found_on", None)
+   561→                seen[key] = r
+   562→        else:
+   563→            seen[key] = r
+   564→    return list(seen.values())
+   565→
+   566→
+   567→_TIER_RANK = {"core": 0, "partner": 1, "community": 2}
+   568→
+   569→
+   570→def _rank_results(results: list[dict]) -> list[dict]:
+   571→    """Rank: installed first, tier (core>partner>community), relevance, name."""
+   572→    return sorted(
+   573→        results,
+   574→        key=lambda r: (
+   575→            not r.get("installed", False),            # installed first
+   576→            _TIER_RANK.get(r.get("source_tier", "community"), 2),  # tier rank
+   577→            -r.get("relevance_score", 0),              # higher score first
+   578→            r.get("name", ""),                         # alphabetical tiebreaker
+   579→        ),
+   580→    )
+   581→
+   582→
+   583→def _handle_discover(tool_input: dict) -> str:
+   584→    """Unified discovery across registry, CivitAI, and HuggingFace."""
+   585→    query = tool_input["query"]
+   586→    category = tool_input.get("category", "all")
+   587→    sources = tool_input.get("sources")
+   588→    model_type = tool_input.get("model_type")
+   589→    base_model = tool_input.get("base_model")
+   590→    sort = tool_input.get("sort", "most_downloaded")
+   591→    max_results = tool_input.get("max_results", 5)
+   592→
+   593→    all_results: list[dict] = []
+   594→    sources_searched: list[str] = []
+   595→    errors: list[dict] = []
+   596→
+   597→    # Determine which sources to search
+   598→    if sources is None:
+   599→        search_registry = True
+   600→        search_civitai = category in ("models", "all")
+   601→        search_hf = category in ("models", "all")
+   602→    else:
+   603→        search_registry = "registry" in sources
+   604→        search_civitai = "civitai" in sources
+   605→        search_hf = "huggingface" in sources
+   606→
+   607→    # 1. Registry nodes (if applicable)
+   608→    if search_registry and category in ("nodes", "all"):
+   609→        node_results = _search_nodes_unified(query, max_results)
+   610→        all_results.extend(node_results)
+   611→        if "registry_nodes" not in sources_searched:
+   612→            sources_searched.append("registry_nodes")
+   613→
+   614→    # 2. Registry models (if applicable)
+   615→    if search_registry and category in ("models", "all"):
+   616→        model_results = _search_models_unified(query, model_type, max_results)
+   617→        all_results.extend(model_results)
+   618→        if "registry_models" not in sources_searched:
+   619→            sources_searched.append("registry_models")
+   620→
+   621→    # 3. CivitAI (models only)
+   622→    if search_civitai and category in ("models", "all"):
+   623→        civitai_results, civitai_err = _search_civitai_unified(
+   624→            query, model_type, base_model, sort, max_results,
+   625→        )
+   626→        all_results.extend(civitai_results)
+   627→        sources_searched.append("civitai")
+   628→        if civitai_err:
+   629→            errors.append({"source": "civitai", "error": civitai_err})
+   630→
+   631→    # 4. HuggingFace (models only)
+   632→    if search_hf and category in ("models", "all"):
+   633→        hf_results, hf_err = _search_hf_unified(query, model_type, max_results)
+   634→        all_results.extend(hf_results)
+   635→        sources_searched.append("huggingface")
+   636→        if hf_err:
+   637→            errors.append({"source": "huggingface", "error": hf_err})
+   638→
+   639→    # Deduplicate and rank
+   640→    deduped = _deduplicate(all_results)
+   641→    ranked = _rank_results(deduped)
+   642→
+   643→    response: dict = {
+   644→        "query": query,
+   645→        "category": category,
+   646→        "results": ranked,
+   647→        "sources_searched": sorted(sources_searched),
+   648→        "total": len(ranked),
+   649→    }
+   650→    if errors:
+   651→        response["errors"] = errors
+   652→
+   653→    return to_json(response)
+   654→
+   655→
+   656→# ---------------------------------------------------------------------------
+   657→# Internal handlers (kept for backward compat with internal callers)
+   658→# ---------------------------------------------------------------------------
+   659→
+   660→def _handle_search_custom_nodes(tool_input: dict) -> str:
+   661→    query = tool_input["query"]
+   662→    by = tool_input.get("by", "name")
+   663→    max_results = tool_input.get("max_results", 10)
+   664→
+   665→    if by == "node_type":
+   666→        return _search_by_node_type(query, max_results)
+   667→    else:
+   668→        return _search_by_name(query, max_results)
+   669→
+   670→
+   671→def _search_by_node_type(query: str, max_results: int) -> str:
+   672→    """Find which pack provides a specific node type."""
+   673→    index = _build_node_to_pack()
+   674→
+   675→    if not index:
+   676→        return to_json({
+   677→            "error": (
+   678→                "ComfyUI Manager not found. Install it from "
+   679→                "https://github.com/ltdrdata/ComfyUI-Manager"
+   680→            ),
+   681→        })
+   682→
+   683→    # Exact match first
+   684→    if query in index:
+   685→        pack = index[query]
+   686→        return to_json({
+   687→            "match": "exact",
+   688→            "node_type": query,
+   689→            "pack": {
+   690→                "title": pack["title"],
+   691→                "url": pack["url"],
+   692→                "node_count": pack["node_count"],
+   693→                "installed": _is_pack_installed(pack["url"]),
+   694→            },
+   695→        })
+   696→
+   697→    # Fuzzy match — case-insensitive substring, sorted for determinism
+   698→    query_lower = query.lower()
+   699→    matches = []
+   700→    seen_packs = set()
+   701→    for nt, pack in sorted(index.items()):
+   702→        if query_lower in nt.lower() and pack["url"] not in seen_packs:
+   703→            seen_packs.add(pack["url"])
+   704→            matches.append({
+   705→                "node_type": nt,
+   706→                "pack_title": pack["title"],
+   707→                "pack_url": pack["url"],
+   708→                "installed": _is_pack_installed(pack["url"]),
+   709→            })
+   710→            if len(matches) >= max_results:
+   711→                break
+   712→
+   713→    if not matches:
+   714→        return to_json({
+   715→            "match": "none",
+   716→            "node_type": query,
+   717→            "message": f"No pack found providing '{query}'. Check the spelling.",
+   718→            "total_known_types": len(index),
+   719→        })
+   720→
+   721→    return to_json({
+   722→        "match": "fuzzy",
+   723→        "query": query,
+   724→        "results": matches,
+   725→        "total_matches": len(matches),
+   726→    })
+   727→
+   728→
+   729→def _search_by_name(query: str, max_results: int) -> str:
+   730→    """Search custom node packs by title/description/author."""
+   731→    packs = _load_custom_nodes()
+   732→
+   733→    if not packs:
+   734→        return to_json({
+   735→            "error": (
+   736→                "ComfyUI Manager not found. Install it from "
+   737→                "https://github.com/ltdrdata/ComfyUI-Manager"
+   738→            ),
+   739→        })
+   740→
+   741→    query_lower = query.lower()
+   742→    query_words = query_lower.split()
+   743→    scored = []
+   744→
+   745→    for pack in packs:
+   746→        title = pack.get("title", "")
+   747→        desc = pack.get("description", "")
+   748→        author = pack.get("author", "")
+   749→        searchable = f"{title} {desc} {author}".lower()
+   750→
+   751→        # Score: all words match > some words match
+   752→        word_hits = sum(1 for w in query_words if w in searchable)
+   753→        if word_hits == 0:
+   754→            continue
+   755→
+   756→        # Boost exact title match
+   757→        score = word_hits
+   758→        if query_lower in title.lower():
+   759→            score += 10
+   760→
+   761→        ref = pack.get("reference", "")
+   762→        scored.append((score, {
+   763→            "title": title,
+   764→            "author": author,
+   765→            "description": desc[:200] if desc else "",
+   766→            "url": ref,
+   767→            "install_type": pack.get("install_type", ""),
+   768→            "installed": _is_pack_installed(ref) if ref else False,
+   769→        }))
+   770→
+   771→    scored.sort(key=lambda x: (-x[0], x[1].get("title", "")))
+   772→    results = [r for _, r in scored[:max_results]]
+   773→
+   774→    return to_json({
+   775→        "query": query,
+   776→        "results": results,
+   777→        "total_matches": len(scored),
+   778→        "showing": len(results),
+   779→    })
+   780→
+   781→
+   782→def _handle_search_models(tool_input: dict) -> str:
+   783→    query = tool_input["query"]
+   784→    model_type = tool_input.get("model_type")
+   785→    source = tool_input.get("source", "registry")
+   786→    max_results = tool_input.get("max_results", 10)
+   787→
+   788→    if source == "huggingface":
+   789→        return _search_huggingface(query, model_type, max_results)
+   790→    else:
+   791→        return _search_model_registry(query, model_type, max_results)
+   792→
+   793→
+   794→def _search_model_registry(query: str, model_type: str | None, max_results: int) -> str:
+   795→    """Search ComfyUI Manager's model-list.json."""
+   796→    models = _load_model_list()
+   797→
+   798→    if not models:
+   799→        return to_json({
+   800→            "error": (
+   801→                "ComfyUI Manager model list not found. Install ComfyUI Manager "
+   802→                "or try source='huggingface' for online search."
+   803→            ),
+   804→        })
+   805→
+   806→    query_lower = query.lower()
+   807→    query_words = query_lower.split()
+   808→    scored = []
+   809→
+   810→    for model in models:
+   811→        name = model.get("name", "")
+   812→        mtype = model.get("type", "")
+   813→        base = model.get("base", "")
+   814→        desc = model.get("description", "")
+   815→        searchable = f"{name} {mtype} {base} {desc}".lower()
+   816→
+   817→        # Apply type filter if given
+   818→        if model_type and model_type.lower() not in mtype.lower():
+   819→            continue
+   820→
+   821→        word_hits = sum(1 for w in query_words if w in searchable)
+   822→        if word_hits == 0:
+   823→            continue
+   824→
+   825→        score = word_hits
+   826→        if query_lower in name.lower():
+   827→            score += 10
+   828→
+   829→        filename = model.get("filename", "")
+   830→        save_path = model.get("save_path", "")
+   831→
+   832→        scored.append((score, {
+   833→            "name": name,
+   834→            "type": mtype,
+   835→            "base": base,
+   836→            "description": desc[:200] if desc else "",
+   837→            "filename": filename,
+   838→            "url": model.get("url", ""),
+   839→            "size": model.get("size", ""),
+   840→            "save_path": save_path,
+   841→            "installed": _is_model_installed(filename, save_path) if filename and save_path else False,
+   842→        }))
+   843→
+   844→    scored.sort(key=lambda x: (-x[0], x[1].get("name", "")))
+   845→    results = [r for _, r in scored[:max_results]]
+   846→
+   847→    return to_json({
+   848→        "source": "registry",
+   849→        "query": query,
+   850→        "type_filter": model_type,
+   851→        "results": results,
+   852→        "total_matches": len(scored),
+   853→        "showing": len(results),
+   854→    })
+   855→
+   856→
+   857→def _search_huggingface(query: str, model_type: str | None, max_results: int) -> str:
+   858→    """Search HuggingFace Hub API for models."""
+   859→    params = {
+   860→        "search": query,
+   861→        "sort": "downloads",
+   862→        "direction": "-1",
+   863→        "limit": max_results,
+   864→    }
+   865→
+   866→    # Map model types to HuggingFace tags
+   867→    if model_type:
+   868→        type_tags = {
+   869→            "checkpoint": "diffusers",
+   870→            "lora": "lora",
+   871→            "vae": "vae",
+   872→            "controlnet": "controlnet",
+   873→            "embedding": "textual-inversion",
+   874→            "3d": "image-to-3d",
+   875→            "image-to-3d": "image-to-3d",
+   876→            "text-to-3d": "text-to-3d",
+   877→            "text-to-speech": "text-to-speech",
+   878→            "tts": "text-to-speech",
+   879→            "audio": "text-to-audio",
+   880→            "text-to-audio": "text-to-audio",
+   881→            "text-to-video": "text-to-video",
+   882→            "video": "text-to-video",
+   883→            "image-to-video": "image-to-video",
+   884→        }
+   885→        tag = type_tags.get(model_type.lower())
+   886→        if tag:
+   887→            params["filter"] = tag
+   888→
+   889→    if not HUGGINGFACE_LIMITER().acquire(timeout=5.0):
+   890→        return to_json({"error": "Rate limited — too many HuggingFace requests. Try again shortly."})
+   891→
+   892→    try:
+   893→        with httpx.Client() as client:
+   894→            resp = client.get(
+   895→                "https://huggingface.co/api/models",
+   896→                params=params,
+   897→                timeout=15.0,
+   898→            )
+   899→            resp.raise_for_status()
+   900→            data = resp.json()
+   901→    except httpx.ConnectError:
+   902→        return to_json({"error": "Could not reach HuggingFace API. Check your internet connection."})
+   903→    except httpx.HTTPStatusError as e:
+   904→        return to_json({"error": f"HuggingFace API returned {e.response.status_code}."})
+   905→    except Exception as e:
+   906→        return to_json({"error": f"HuggingFace search failed: {e}"})
+   907→
+   908→    results = []
+   909→    for item in data:
+   910→        model_id = item.get("modelId", item.get("id", ""))
+   911→        results.append({
+   912→            "name": model_id,
+   913→            "author": model_id.split("/")[0] if "/" in model_id else "",
+   914→            "downloads": item.get("downloads", 0),
+   915→            "likes": item.get("likes", 0),
+   916→            "tags": item.get("tags", [])[:5],
+   917→            "url": f"https://huggingface.co/{model_id}",
+   918→            "last_modified": item.get("lastModified", ""),
+   919→        })
+   920→
+   921→    return to_json({
+   922→        "source": "huggingface",
+   923→        "query": query,
+   924→        "type_filter": model_type,
+   925→        "results": results,
+   926→        "showing": len(results),
+   927→    })
+   928→
+   929→
+   930→def _handle_find_missing_nodes(tool_input: dict) -> str:
+   931→    path_str = tool_input.get("path")
+   932→
+   933→    # Get workflow
+   934→    if path_str:
+   935→        path = Path(path_str)
+   936→        if not path.exists():
+   937→            return to_json({"error": f"File not found: {path_str}"})
+   938→        try:
+   939→            data = json.loads(path.read_text(encoding="utf-8"))
+   940→        except json.JSONDecodeError as e:
+   941→            return to_json({"error": f"Invalid JSON: {e}"})
+   942→
+   943→        # Extract API-format nodes
+   944→        if "nodes" in data and isinstance(data["nodes"], list):
+   945→            prompt_data = data.get("extra", {}).get("prompt")
+   946→            if prompt_data and isinstance(prompt_data, dict):
+   947→                workflow = {
+   948→                    k: v for k, v in prompt_data.items()
+   949→                    if isinstance(v, dict) and "class_type" in v
+   950→                }
+   951→            else:
+   952→                # UI-only: extract class_types from nodes array
+   953→                workflow = {}
+   954→                for node in data["nodes"]:
+   955→                    nid = str(node.get("id", ""))
+   956→                    ntype = node.get("type", "")
+   957→                    if ntype:
+   958→                        workflow[nid] = {"class_type": ntype, "inputs": {}}
+   959→        else:
+   960→            workflow = {
+   961→                k: v for k, v in data.items()
+   962→                if isinstance(v, dict) and "class_type" in v
+   963→            }
+   964→    else:
+   965→        from .workflow_patch import get_current_workflow
+   966→        workflow = get_current_workflow()
+   967→        if workflow is None:
+   968→            return to_json({
+   969→                "error": (
+   970→                    "No workflow loaded. Either provide a 'path' or load one "
+   971→                    "with apply_workflow_patch first."
+   972→                ),
+   973→            })
+   974→
+   975→    # Collect unique class_types
+   976→    class_types = set()
+   977→    for node in workflow.values():
+   978→        ct = node.get("class_type")
+   979→        if ct:
+   980→            class_types.add(ct)
+   981→
+   982→    if not class_types:
+   983→        return to_json({"error": "No nodes found in workflow."})
+   984→
+   985→    # Check which are available in live ComfyUI
+   986→    available = set()
+   987→    try:
+   988→        with httpx.Client() as client:
+   989→            resp = client.get(f"{COMFYUI_URL}/object_info", timeout=15.0)
+   990→            resp.raise_for_status()
+   991→            object_info = resp.json()
+   992→            available = set(object_info.keys())
+   993→    except httpx.ConnectError:
+   994→        return to_json({
+   995→            "error": "ComfyUI not reachable. Start ComfyUI to check node availability.",
+   996→        })
+   997→    except Exception as e:
+   998→        return to_json({"error": f"Could not fetch node info: {e}"})
+   999→
+  1000→    # Classify
+  1001→    installed = sorted(class_types & available)
+  1002→    missing = sorted(class_types - available)
+  1003→
+  1004→    # Look up missing nodes in extension-node-map
+  1005→    index = _build_node_to_pack()
+  1006→    missing_report = []
+  1007→    packs_needed = {}  # url -> {title, nodes}
+  1008→
+  1009→    for node_type in missing:
+  1010→        pack_info = index.get(node_type)
+  1011→        if pack_info:
+  1012→            url = pack_info["url"]
+  1013→            if url not in packs_needed:
+  1014→                packs_needed[url] = {
+  1015→                    "title": pack_info["title"],
+  1016→                    "url": url,
+  1017→                    "installed": _is_pack_installed(url),
+  1018→                    "missing_nodes": [],
+  1019→                }
+  1020→            packs_needed[url]["missing_nodes"].append(node_type)
+  1021→
+  1022→            missing_report.append({
+  1023→                "node_type": node_type,
+  1024→                "pack_title": pack_info["title"],
+  1025→                "pack_url": url,
+  1026→                "pack_installed": _is_pack_installed(url),
+  1027→            })
+  1028→        else:
+  1029→            missing_report.append({
+  1030→                "node_type": node_type,
+  1031→                "pack_title": None,
+  1032→                "pack_url": None,
+  1033→                "message": "Not found in ComfyUI Manager registry.",
+  1034→            })
+  1035→
+  1036→    # Summary
+  1037→    if not missing:
+  1038→        return to_json({
+  1039→            "status": "all_installed",
+  1040→            "total_node_types": len(class_types),
+  1041→            "message": "All node types in this workflow are available.",
+  1042→        })
+  1043→
+  1044→    return to_json({
+  1045→        "status": "missing_nodes",
+  1046→        "total_node_types": len(class_types),
+  1047→        "installed_count": len(installed),
+  1048→        "missing_count": len(missing),
+  1049→        "missing_nodes": missing_report,
+  1050→        "packs_to_install": list(packs_needed.values()),
+  1051→        "install_hint": (
+  1052→            "Install missing packs via ComfyUI Manager or git clone into "
+  1053→            f"{CUSTOM_NODES_DIR}"
+  1054→        ),
+  1055→    })
+  1056→
+  1057→
+  1058→def _handle_get_install_instructions(tool_input: dict) -> str:
+  1059→    """Get install instructions for a node pack or model."""
+  1060→    query = tool_input["query"]
+  1061→    source = tool_input.get("source", "registry")
+  1062→
+  1063→    if source == "civitai":
+  1064→        return to_json({
+  1065→            "source": "civitai",
+  1066→            "query": query,
+  1067→            "instructions": (
+  1068→                f"To install a CivitAI model, use the CivitAI tools to find the "
+  1069→                f"model first (discover), then download the file to the "
+  1070→                f"appropriate directory under {MODELS_DIR}. "
+  1071→                f"CivitAI models are typically .safetensors files."
+  1072→            ),
+  1073→            "steps": [
+  1074→                f"1. Use discover to find '{query}' and get the download URL",
+  1075→                "2. Note the model type (checkpoint, lora, controlnet, etc.)",
+  1076→                f"3. Download to {MODELS_DIR}/<type>/ directory",
+  1077→                "4. Restart ComfyUI or refresh the model list",
+  1078→            ],
+  1079→        })
+  1080→
+  1081→    if source == "huggingface":
+  1082→        return to_json({
+  1083→            "source": "huggingface",
+  1084→            "query": query,
+  1085→            "instructions": (
+  1086→                f"To install a HuggingFace model, download the .safetensors file "
+  1087→                f"to the appropriate directory under {MODELS_DIR}."
+  1088→            ),
+  1089→            "steps": [
+  1090→                f"1. Use discover to find '{query}'",
+  1091→                "2. Note the model type and download the .safetensors file",
+  1092→                f"3. Place in {MODELS_DIR}/<type>/ directory",
+  1093→                "4. Restart ComfyUI or refresh the model list",
+  1094→            ],
+  1095→        })
+  1096→
+  1097→    # Registry source — look up node packs and models
+  1098→    # Try node pack first (by node_type)
+  1099→    index = _build_node_to_pack()
+  1100→    if query in index:
+  1101→        pack = index[query]
+  1102→        url = pack["url"]
+  1103→        installed = _is_pack_installed(url)
+  1104→        folder = url.rstrip("/").split("/")[-1]
+  1105→        if folder.endswith(".git"):
+  1106→            folder = folder[:-4]
+  1107→        return to_json({
+  1108→            "source": "registry",
+  1109→            "type": "node_pack",
+  1110→            "query": query,
+  1111→            "pack_title": pack["title"],
+  1112→            "installed": installed,
+  1113→            "install_commands": [
+  1114→                f"cd {CUSTOM_NODES_DIR}",
+  1115→                f"git clone {url}",
+  1116→                f"pip install -r {CUSTOM_NODES_DIR / folder / 'requirements.txt'} "
+  1117→                f"(if exists)",
+  1118→                "Restart ComfyUI",
+  1119→            ] if not installed else [],
+  1120→            "message": "Already installed." if installed else f"Clone {url} into Custom_Nodes.",
+  1121→        })
+  1122→
+  1123→    # Try node pack by name search
+  1124→    packs = _load_custom_nodes()
+  1125→    query_lower = query.lower()
+  1126→    for pack in packs:
+  1127→        title = pack.get("title", "")
+  1128→        ref = pack.get("reference", "")
+  1129→        if query_lower in title.lower() or query_lower in ref.lower():
+  1130→            installed = _is_pack_installed(ref) if ref else False
+  1131→            folder = ref.rstrip("/").split("/")[-1] if ref else ""
+  1132→            if folder.endswith(".git"):
+  1133→                folder = folder[:-4]
+  1134→            return to_json({
+  1135→                "source": "registry",
+  1136→                "type": "node_pack",
+  1137→                "query": query,
+  1138→                "pack_title": title,
+  1139→                "installed": installed,
+  1140→                "install_commands": [
+  1141→                    f"cd {CUSTOM_NODES_DIR}",
+  1142→                    f"git clone {ref}",
+  1143→                    f"pip install -r {CUSTOM_NODES_DIR / folder / 'requirements.txt'} "
+  1144→                    f"(if exists)",
+  1145→                    "Restart ComfyUI",
+  1146→                ] if not installed and ref else [],
+  1147→                "message": "Already installed." if installed else f"Clone {ref} into Custom_Nodes.",
+  1148→            })
+  1149→
+  1150→    # Try model registry
+  1151→    models = _load_model_list()
+  1152→    for model in models:
+  1153→        name = model.get("name", "")
+  1154→        if query_lower in name.lower():
+  1155→            filename = model.get("filename", "")
+  1156→            save_path = model.get("save_path", "")
+  1157→            url = model.get("url", "")
+  1158→            installed = _is_model_installed(filename, save_path) if filename and save_path else False
+  1159→            return to_json({
+  1160→                "source": "registry",
+  1161→                "type": "model",
+  1162→                "query": query,
+  1163→                "model_name": name,
+  1164→                "installed": installed,
+  1165→                "install_commands": [
+  1166→                    f"Download: {url}",
+  1167→                    f"Save to: {MODELS_DIR / save_path / filename}",
+  1168→                    "Restart ComfyUI or refresh model list",
+  1169→                ] if not installed and url else [],
+  1170→                "message": "Already installed." if installed else f"Download {filename} to {save_path}/.",
+  1171→            })
+  1172→
+  1173→    return to_json({
+  1174→        "source": "registry",
+  1175→        "query": query,
+  1176→        "error": f"Could not find '{query}' in the registry. Try discover first.",
+  1177→    })
+  1178→
+  1179→
+  1180→def _clear_cache():
+  1181→    """Clear all in-memory caches, forcing reload from disk on next access."""
+  1182→    _cache["custom_nodes"] = None
+  1183→    _cache["extension_map"] = None
+  1184→    _cache["node_to_pack"] = None
+  1185→    _cache["model_list"] = None
+  1186→    _freshness["custom_nodes_loaded_at"] = None
+  1187→    _freshness["extension_map_loaded_at"] = None
+  1188→    _freshness["model_list_loaded_at"] = None
+  1189→
+  1190→
+  1191→def _file_age_info(path: Path) -> dict:
+  1192→    """Get age info for a file. Returns dict with exists, modified_at, age_s, age_human."""
+  1193→    if not path.exists():
+  1194→        return {"exists": False, "path": str(path)}
+  1195→
+  1196→    mtime = path.stat().st_mtime
+  1197→    age_s = time.time() - mtime
+  1198→    age_days = age_s / 86400
+  1199→
+  1200→    if age_days < 1:
+  1201→        age_human = f"{age_s / 3600:.1f} hours"
+  1202→    else:
+  1203→        age_human = f"{age_days:.1f} days"
+  1204→
+  1205→    if age_s > _WARN_THRESHOLD:
+  1206→        status = "very_stale"
+  1207→    elif age_s > _STALE_THRESHOLD:
+  1208→        status = "stale"
+  1209→    else:
+  1210→        status = "fresh"
+  1211→
+  1212→    return {
+  1213→        "exists": True,
+  1214→        "path": str(path),
+  1215→        "age_seconds": round(age_s),
+  1216→        "age_human": age_human,
+  1217→        "status": status,
+  1218→    }
+  1219→
+  1220→
+  1221→def _model_dir_stats() -> dict:
+  1222→    """Count model files by type in the models directory."""
+  1223→    if not MODELS_DIR.exists():
+  1224→        return {"exists": False, "path": str(MODELS_DIR)}
+  1225→
+  1226→    types = {}
+  1227→    for subdir in sorted(MODELS_DIR.iterdir()):
+  1228→        if subdir.is_dir():
+  1229→            count = sum(1 for f in subdir.iterdir() if f.is_file() and f.suffix in (
+  1230→                ".safetensors", ".ckpt", ".pt", ".pth", ".bin",
+  1231→            ))
+  1232→            if count > 0:
+  1233→                types[subdir.name] = count
+  1234→
+  1235→    return {
+  1236→        "exists": True,
+  1237→        "path": str(MODELS_DIR),
+  1238→        "types": types,
+  1239→        "total_files": sum(types.values()),
+  1240→    }
+  1241→
+  1242→
+  1243→def _handle_check_freshness(tool_input: dict) -> str:
+  1244→    """Check freshness of registry data and model files."""
+  1245→    if tool_input.get("refresh"):
+  1246→        _clear_cache()
+  1247→
+  1248→    # Check registry files
+  1249→    registry_files = {
+  1250→        "custom_node_list": _MANAGER_DIR / "custom-node-list.json",
+  1251→        "extension_node_map": _MANAGER_DIR / "extension-node-map.json",
+  1252→        "model_list": _MANAGER_DIR / "model-list.json",
+  1253→    }
+  1254→
+  1255→    registries = {}
+  1256→    any_stale = False
+  1257→    any_missing = False
+  1258→    for key, path in sorted(registry_files.items()):
+  1259→        info = _file_age_info(path)
+  1260→        registries[key] = info
+  1261→        if not info.get("exists"):
+  1262→            any_missing = True
+  1263→        elif info.get("status") in ("stale", "very_stale"):
+  1264→            any_stale = True
+  1265→
+  1266→    # Cache status
+  1267→    cache_status = {
+  1268→        "custom_nodes_cached": _cache["custom_nodes"] is not None,
+  1269→        "extension_map_cached": _cache["extension_map"] is not None,
+  1270→        "node_to_pack_cached": _cache["node_to_pack"] is not None,
+  1271→        "model_list_cached": _cache["model_list"] is not None,
+  1272→    }
+  1273→
+  1274→    # Model directory stats
+  1275→    models = _model_dir_stats()
+  1276→
+  1277→    # Build recommendations
+  1278→    recommendations = []
+  1279→    if any_missing:
+  1280→        recommendations.append(
+  1281→            "Install ComfyUI Manager to get registry data: "
+  1282→            "https://github.com/ltdrdata/ComfyUI-Manager"
+  1283→        )
+  1284→    if any_stale:
+  1285→        recommendations.append(
+  1286→            "Registry files are stale. Open ComfyUI Manager in the browser "
+  1287→            "and click 'Update ComfyUI Manager' to refresh."
+  1288→        )
+  1289→    if tool_input.get("refresh"):
+  1290→        recommendations.append("In-memory cache cleared. Next search will reload from disk.")
+  1291→
+  1292→    return to_json({
+  1293→        "registries": registries,
+  1294→        "cache": cache_status,
+  1295→        "models": models,
+  1296→        "manager_installed": _MANAGER_DIR.exists(),
+  1297→        "recommendations": recommendations,
+  1298→        "refreshed": bool(tool_input.get("refresh")),
+  1299→    })
+  1300→
+  1301→
+  1302→# ---------------------------------------------------------------------------
+  1303→# Dispatch
+  1304→# ---------------------------------------------------------------------------
+  1305→
+  1306→def handle(name: str, tool_input: dict) -> str:
+  1307→    """Execute a comfy_discover tool call."""
+  1308→    try:
+  1309→        if name == "discover":
+  1310→            return _handle_discover(tool_input)
+  1311→        elif name == "find_missing_nodes":
+  1312→            return _handle_find_missing_nodes(tool_input)
+  1313→        elif name == "get_install_instructions":
+  1314→            return _handle_get_install_instructions(tool_input)
+  1315→        elif name == "check_registry_freshness":
+  1316→            return _handle_check_freshness(tool_input)
+  1317→        else:
+  1318→            return to_json({"error": f"Unknown tool: {name}"})
+  1319→    except Exception as e:
+  1320→        return to_json({"error": str(e)})
+  1321→

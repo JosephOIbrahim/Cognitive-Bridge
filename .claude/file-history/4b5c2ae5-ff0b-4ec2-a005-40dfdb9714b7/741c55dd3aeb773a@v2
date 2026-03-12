@@ -1,0 +1,28 @@
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      // Squarespace project slugs -> new slugs
+      { source: '/work/glgbrand', destination: '/work/glg-brand', permanent: true },
+      { source: '/work/project-five-748cx-egbkj', destination: '/work/glg-video', permanent: true },
+      { source: '/work/glgexplainer', destination: '/work/glg-explainer', permanent: true },
+      { source: '/work/yearahead', destination: '/work/year-ahead', permanent: true },
+      { source: '/work/tiaa-branding', destination: '/work/tiaa', permanent: true },
+      { source: '/work/product-branding', destination: '/work', permanent: true },
+      { source: '/work/eventbrand', destination: '/work/employee-brand', permanent: true },
+      { source: '/work/opera-video', destination: '/work/opera', permanent: true },
+      // Squarespace pages with no equivalent -> closest match
+      { source: '/contact', destination: '/about', permanent: true },
+      { source: '/alt-work-section', destination: '/work', permanent: true },
+      { source: '/presentation-design', destination: '/work', permanent: true },
+      { source: '/digital-products-3-1', destination: '/work', permanent: true },
+      { source: '/visual-brand', destination: '/work', permanent: true },
+      { source: '/visual-brand-1', destination: '/work', permanent: true },
+      { source: '/store', destination: '/', permanent: true },
+      { source: '/cart', destination: '/', permanent: true },
+    ];
+  },
+};
+
+export default nextConfig;

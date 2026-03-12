@@ -1,0 +1,805 @@
+# SYNAPSE Feature Roadmap — From Co-pilot to Indispensable
+
+> **The Mariana Trench Thesis:** Houdini is the deepest, most powerful DCC
+> in existence. The learning curve isn't a wall — it's an ocean. SYNAPSE
+> doesn't make the ocean shallow. It gives you a submarine, a sonar, and
+> a guide who's been to the bottom and back. The depth is the point.
+> We're here to make artists *fearless* in it.
+
+> **Indispensability Test — every feature must hit at least one:**
+> 1. "It caught something I would have missed." (Safety net)
+> 2. "It taught me something I didn't know." (Knowledge transfer)
+> 3. "It did in 30 seconds what takes me 30 minutes." (Velocity)
+
+---
+
+## Sprint Map
+
+```
+SPRINT 1: TOOL PARITY (current — MOE Plan v2)
+  ├── 102 tool execution from panel
+  ├── Memory rename (flat/structured/composed)
+  ├── Shot Login (context hydration)
+  └── Prompt-to-HDA (/hda)
+
+SPRINT 2: SAFETY NET
+  ├── Scene Doctor (/diagnose)
+  ├── Render Preflight (/preflight)
+  ├── Error Translator
+  └── Session Journal
+
+SPRINT 3: KNOWLEDGE TRANSFER
+  ├── Explain Mode (/explain)
+  ├── Network Trace (/trace)
+  ├── VEX Tutor (/vex)
+  ├── Recipe Book (/recipes)
+  └── First-Time Experience (welcome flow)
+
+SPRINT 4: APEX DEEP DIVE
+  ├── APEX Explainer (/apex explain)
+  ├── APEX Recipes
+  ├── APEX Graph Trace (/apex trace)
+  └── KineFX → APEX Migration
+
+SPRINT 5: UI EVOLUTION
+  ├── Context Bar v2 (breadcrumbs + memory status)
+  ├── Quick Actions (contextual buttons)
+  ├── Command Palette (Ctrl+K)
+  ├── Split View (chat + results)
+  └── Conversation Bookmarks
+
+SPRINT 6: PRODUCTION PIPELINE
+  ├── Dependency Map (/deps)
+  ├── Performance Profiler (/profile)
+  ├── Wedge Analyst (/analyze-wedges)
+  ├── Save Shot (/save-shot with auto-triggers)
+  └── Cross-Scene Context
+```
+
+---
+
+## SPRINT 2: SAFETY NET
+
+**Theme:** "It caught something I would have missed."
+**Why first after tool parity:** These features build trust. Before artists
+rely on SYNAPSE to *build* things, they need to trust it can *catch* things.
+Trust precedes delegation.
+
+---
+
+### SCENE DOCTOR — `/diagnose`
+
+**What it does:** Full health audit of the current scene. Not just listing
+problems — offering to fix them.
+
+**Checks (priority order):**
+
+| Check | Severity | Auto-fixable? |
+|-------|----------|--------------|
+| Missing texture files | Critical | Yes — remap to $JOB paths |
+| Broken node references | Critical | Yes — reconnect or flag |
+| Unconnected required inputs | Error | Yes — suggest connections |
+| Out-of-range parameters | Warning | Yes — clamp to valid range |
+| Infinite cook dependencies | Critical | No — explain the cycle |
+| Missing camera for render | Error | Yes — create default |
+| Zero-area lights | Warning | Yes — set minimum size |
+| Empty merge inputs | Warning | Yes — clean up |
+| Unused nodes (no output path) | Info | No — just flag |
+| Stale cache files | Info | Yes — clear |
+| Non-square textures for tiling | Info | No — flag |
+| Missing display/render flags | Warning | Yes — set on last node |
+
+**Architecture:**
+
+```
+/diagnose
+  → gather all nodes in scene (or current network)
+  → for each node:
+      check inputs connected
+      check for cook errors (node.errors())
+      check parameter values against metadata ranges
+      check file paths exist on disk
+  → for render context:
+      check camera assignment
+      check resolution set
+      check output path writable
+      check materials bound
+  → compile report
+  → display in chat with severity icons
+  → offer batch fix: "Fix 7 auto-fixable issues?"
+```
+
+**Implementation: 2 files**
+
+| File | Agent | Description |
+|------|-------|-------------|
+| `python/synapse/panel/scene_doctor.py` | INDIA | Diagnostic engine — runs checks, returns structured report |
+| Panel integration | JULIET | Wire /diagnose command, display report, handle fix-it flow |
+
+**MOE Prompt — AGENT INDIA (Scene Doctor Engine):**
+
+```
+I need you to create a scene diagnostic engine for SYNAPSE.
+
+CONTEXT:
+- Repo root: C:\Users\User\SYNAPSE
+- SYNAPSE runs inside Houdini 21 with full hou module access
+- The panel can execute tools on the main thread via SynapseHandler
+- Artists need a /diagnose command that finds and fixes scene problems
+
+YOUR TASK:
+Create python/synapse/panel/scene_doctor.py
+
+REQUIREMENTS:
+
+1. Function diagnose_scene(scope: str = "all") -> DiagnosticReport
+   scope: "all" | "current_network" | "render" | "materials"
+
+   Returns a DiagnosticReport dataclass:
+   @dataclass
+   class DiagnosticIssue:
+       severity: str     # "critical", "error", "warning", "info"
+       category: str     # "missing_file", "broken_ref", "bad_parm", etc.
+       node_path: str    # affected node
+       message: str      # human-readable description
+       fix_available: bool
+       fix_description: str  # what the fix would do
+       fix_fn: Optional[Callable]  # function that fixes it (called on main thread)
+
+   @dataclass
+   class DiagnosticReport:
+       issues: List[DiagnosticIssue]
+       nodes_checked: int
+       time_elapsed: float
+       summary: str  # "Found 12 issues: 2 critical, 3 errors, 5 warnings, 2 info"
+
+2. Individual check functions (each returns list of DiagnosticIssue):
+   - check_missing_files(nodes) — textures, alembics, file SOPs
+   - check_broken_inputs(nodes) — unconnected required inputs
+   - check_cook_errors(nodes) — nodes with existing cook errors
+   - check_parameter_ranges(nodes) — values outside metadata min/max
+   - check_render_readiness() — camera, resolution, output path, materials
+   - check_circular_deps(nodes) — infinite cook loops
+   - check_unused_nodes(nodes) — nodes with no downstream consumers
+   - check_display_flags(network) — missing display/render flags
+   - check_empty_merges(nodes) — merge nodes with disconnected inputs
+
+3. Function apply_fixes(issues: List[DiagnosticIssue]) -> dict
+   Applies all auto-fixable issues. Returns {fixed: int, failed: int, skipped: int}.
+   Wraps everything in an undo group.
+
+4. hou import is required but wrapped in try/except at module level.
+   If hou unavailable, diagnose_scene returns empty report.
+
+5. ALL hou calls must be safe for the main thread. Use node.errors(),
+   node.inputs(), node.parms(), parm.eval(), etc.
+   Do NOT cook nodes — just inspect current state.
+
+6. File existence checks should handle $JOB, $HIP, $HOME variable expansion
+   using hou.text.expandString() or hou.expandString().
+
+7. Performance: must complete full scene audit in <5 seconds for 500-node scenes.
+   Short-circuit expensive checks on large scenes.
+
+VERIFY:
+- Read python/synapse/server/handlers.py for patterns of hou.* usage
+- The module will be called from the main thread by the panel
+- Run: python -c "from synapse.panel.scene_doctor import DiagnosticReport; print('OK')"
+  (Will work outside Houdini for import check — actual diagnosis needs hou)
+
+DO NOT modify existing files. Only create python/synapse/panel/scene_doctor.py
+```
+
+---
+
+### RENDER PREFLIGHT — `/preflight`
+
+**What it does:** Pre-render checklist that catches the problems that waste
+overnight farm hours. This is the feature pipeline TDs dream about.
+
+**Checks:**
+
+| Check | What It Catches |
+|-------|----------------|
+| Memory estimation | "This scene will need ~48GB RAM. Your machine has 32GB." |
+| Texture resolution audit | "8K texture on a background element 200px in frame. Suggest 1K." |
+| Light sampling analysis | "Area light with 1 sample — will be noisy. Suggest 4-16." |
+| Motion blur completeness | "Deforming geo on /obj/character but no motion blur enabled." |
+| AOV check | "Missing diffuse_direct AOV — Nuke comp will need it." |
+| Frame range sanity | "Render set to frame 1-1. Scene has animation to frame 240." |
+| Output path | "Output directory doesn't exist / isn't writable." |
+| Camera check | "No camera assigned to ROP / camera has zero resolution." |
+| Material binding | "3 prims with no material assignment — will render default gray." |
+| Subdivision levels | "6 levels of subdivision on background geo. Consider 2-3." |
+
+**Implementation: 1 file**
+
+```
+python/synapse/panel/render_preflight.py
+```
+
+Follows the same pattern as scene_doctor: structured report, severity levels,
+auto-fix where possible. Focused specifically on render pipeline.
+
+---
+
+### ERROR TRANSLATOR
+
+**What it does:** Intercepts Houdini error messages and translates them into
+human-readable explanations with suggested fixes.
+
+**This is invisible infrastructure.** No slash command — it activates
+automatically when the artist encounters an error and asks SYNAPSE about it,
+or when a tool execution returns an error.
+
+**Implementation approach:** A lookup table of common error patterns mapped
+to plain-English explanations, plus a fallback that sends the raw error to
+Claude with node context for interpretation.
+
+```python
+ERROR_PATTERNS = {
+    r"SOP_AttribCreate.*invalid group": {
+        "explain": "The group field references a group that doesn't exist on the incoming geometry.",
+        "suggest": "Check available groups with /inspect on the input node.",
+        "auto_fix": None,  # needs user decision
+    },
+    r"Unable to read file (.+)": {
+        "explain": "Houdini can't find the file at {match_1}.",
+        "suggest": "Check if the file exists. If it moved, update the path.",
+        "auto_fix": "search_for_file",
+    },
+    r"Cook error.*maximum recursion": {
+        "explain": "A node is referencing itself in a loop, causing infinite recursion.",
+        "suggest": "Look for circular channel references or SOP dependencies.",
+        "auto_fix": None,
+    },
+}
+```
+
+**The fallback is the real power:** When no pattern matches, SYNAPSE sends
+the error + node info + network context to Claude and gets a natural language
+explanation. Over time, the pattern table grows from what Claude explains.
+
+---
+
+### SESSION JOURNAL
+
+**What it does:** Automatic, invisible logging of every SYNAPSE action.
+Not the full conversation — just the actions and their results.
+
+**Journal entry format:**
+```
+[14:32:07] Created node /obj/geo1/mountain1 (type: mountain, requested: "add some terrain displacement")
+[14:32:08] Set parm /obj/geo1/mountain1/height = 3.5
+[14:32:08] Connected /obj/geo1/mountain1 output 0 → /obj/geo1/null1 input 0
+[14:33:15] /diagnose: Found 2 warnings (empty merge, missing display flag). Auto-fixed both.
+[14:45:02] /preflight: Scene render-ready. Estimated 12GB RAM, 4min/frame on GPU.
+[14:50:00] Render started: karma_xpu, frames 1-240, output: $HIP/render/beauty.####.exr
+```
+
+**Access via `/journal`** — shows the session log. `/journal search displacement`
+finds relevant entries. Journal entries become part of scene memory on save.
+
+**Implementation:** A simple append-only log writer that hooks into tool
+execution (ToolExecutor logs after each tool completes) and slash commands.
+Stored at `$HIP/claude/journal.log` with ISO timestamps.
+
+---
+
+## SPRINT 3: KNOWLEDGE TRANSFER
+
+**Theme:** "It taught me something I didn't know."
+**Why this sprint:** After trust (Sprint 2), artists start exploring.
+This sprint makes SYNAPSE the best teacher Houdini has ever had.
+
+---
+
+### EXPLAIN MODE — `/explain`
+
+**What it does:** Select any node or network, type `/explain`. SYNAPSE reads
+everything about it and explains in plain English.
+
+**What it reads:**
+- Node type and its documentation
+- Current parameter values (not defaults — what's actually set)
+- Input connections and what data they carry
+- Output data (point count, prim count, attribute list)
+- Cook time
+- Any errors or warnings
+- Position in the network (what's upstream, what's downstream)
+
+**What it produces (example):**
+
+> **mountain1** (Mountain SOP)
+>
+> This node adds procedural noise displacement to the incoming grid.
+> It's pushing vertices up and down based on a noise pattern — think of it
+> like crumpling a sheet of paper, but mathematically controlled.
+>
+> Right now it's set to:
+> - Height: 3.5 (how tall the peaks get)
+> - Element Size: 2.0 (how wide each mountain — bigger = smoother hills)
+> - Roughness: 0.6 (how jagged — 0 is smooth rolling, 1 is sharp peaks)
+> - Offset: animated (it's moving over time — that's why the terrain drifts)
+>
+> It's receiving a 200×200 grid (40,000 points) from grid1 above, and feeding
+> into a color SOP below that's painting based on height.
+>
+> Cook time: 2.3ms — very fast, no concern here.
+
+**The key insight:** This isn't documentation. Documentation tells you what
+a Mountain SOP *can* do. SYNAPSE tells you what *this particular one* is
+*actually doing* in *your scene*.
+
+**Implementation:**
+
+```
+python/synapse/panel/explain_mode.py
+
+Function: explain_node(node_path: str) -> str
+  - Get node type info (hou.nodeType.description())
+  - Get all non-default parameter values
+  - Get input/output geometry stats
+  - Get cook time from performance monitor
+  - Get errors/warnings
+  - Build a structured context dict
+  - Send to Claude with a "explain this node for a Houdini artist" prompt
+  - Return the explanation
+
+Function: explain_network(network_path: str) -> str
+  - List all nodes in order of data flow
+  - For each: type, key parms, connections
+  - Send to Claude with "explain this network as a data flow"
+  - Return the walkthrough
+```
+
+---
+
+### NETWORK TRACE — `/trace`
+
+**What it does:** Follows data from the top of a network to the display node,
+narrating each transformation.
+
+**Output (example):**
+> **Data flow in /obj/geo1:**
+>
+> 1. **grid1** — Creates a 50×50 polygon grid (2,500 points, 2,401 quads)
+> 2. **mountain1** — Displaces Y position with turbulent noise. Peak height: 5.0.
+>    Points: 2,500 → 2,500 (no change). New attribute: none. Time: 1.2ms.
+> 3. **attribwrangle1** — Custom VEX: colors points by height using a ramp.
+>    Reads: @P.y. Writes: @Cd. Points: 2,500. Time: 0.4ms.
+> 4. **scatter1** — Distributes 10,000 random points on the surface.
+>    Points: 2,500 → 10,000. Inherits: @Cd, @N. Time: 3.1ms.
+> 5. **copytopoints1** — Copies tree_geo (input 2: 1,200 pts) onto each scatter point.
+>    Points: 10,000 × 1,200 = 12,000,000. ⚠️ This is heavy. Time: 890ms.
+>
+> **Total: 895ms cook time. Bottleneck: copytopoints1 (99.4%)**
+
+**This is how you learn Houdini.** Not by reading docs — by watching data
+flow through a real network with real numbers.
+
+---
+
+### VEX TUTOR — `/vex`
+
+**Three modes:**
+
+`/vex explain` — Select a wrangle, explains the code line by line with context.
+
+`/vex help {concept}` — Quick reference: `/vex help pcfind` explains the function
+with a practical example using the artist's actual geometry.
+
+`/vex write {description}` — "Color points by distance from the center" →
+writes the VEX snippet AND explains each line as it writes it.
+
+**Key principle:** Never just give code. Always explain *why* this approach.
+"We're using `length(@P)` instead of `distance(@P, {0,0,0})` because
+when measuring from origin, length is faster — it skips the subtraction."
+
+---
+
+### RECIPE BOOK — `/recipes`
+
+**Organized by context, not alphabet:**
+
+```
+/recipes               → show categories
+/recipes scatter       → scatter techniques (uniform, weighted, Poisson, relaxed)
+/recipes volumes       → VDB operations, pyro setups, cloud modeling
+/recipes materials     → common material patterns, layered materials, procedurals
+/recipes rigging       → KineFX chains, constraints, APEX basics
+/recipes rendering     → Karma setups, AOV configs, optimization tricks
+/recipes usd           → composition patterns, variant sets, asset structure
+/recipes vex           → common wrangle patterns by category
+/recipes motion        → motion blur, velocity fields, trail effects
+```
+
+**Each recipe has:**
+- 1-line description
+- Required context (SOPs? LOPs? What inputs?)
+- "Build it" action — SYNAPSE creates the network right there
+- "Explain it" action — walkthrough of why this approach
+
+**Recipes are extensible.** The artist can `/recipes add "my displacement technique"`
+and SYNAPSE saves the current network as a named recipe in project memory.
+
+---
+
+### FIRST-TIME EXPERIENCE
+
+**Trigger:** First time the panel opens (no scene memory exists anywhere).
+
+**Flow:**
+
+```
+┌─────────────────────────────────────────────────┐
+│                                                 │
+│                   SYNAPSE                       │
+│           AI co-pilot for Houdini               │
+│                                                 │
+│  I'm here to help you build, learn, and ship.   │
+│  I can see your scene and use every tool         │
+│  Houdini has — nodes, parameters, VEX,          │
+│  rendering, USD, all of it.                      │
+│                                                 │
+│  Three things to try:                           │
+│                                                 │
+│  💬 Tell me what to build                        │
+│     "create a grid with mountain displacement"  │
+│                                                 │
+│  🔍 Ask me to explain anything                   │
+│     Select a node and type /explain              │
+│                                                 │
+│  🏥 Ask me to check your work                    │
+│     /diagnose scans for problems                │
+│                                                 │
+│  ─────────────────────────────────────────────  │
+│  Type anything to get started.                  │
+│  /help shows commands. I learn as we go.         │
+│                                                 │
+└─────────────────────────────────────────────────┘
+```
+
+**After first interaction:** Welcome disappears, never comes back.
+Replace with standard welcome wordmark.
+
+**Progressive disclosure schedule:**
+
+| After... | SYNAPSE mentions... |
+|----------|-------------------|
+| First tool execution | "That's saved in scene memory. Tomorrow I'll remember what we did." |
+| 3rd session | "/recipes has pre-built techniques you can drop in." |
+| First render | "/preflight catches problems before they waste render time." |
+| First VEX question | "/vex explain works on any wrangle — select one and try it." |
+| 5th session | "/hda can package what we built into a reusable asset." |
+| First complex network | "/trace follows data through your network step by step." |
+| Opening someone else's scene | "This scene has 2 sessions of memory. /journal shows what happened." |
+
+**Never show all features at once.** The Mariana Trench is deep — reveal the
+depth gradually as the artist swims deeper.
+
+---
+
+## SPRINT 4: APEX DEEP DIVE
+
+**Theme:** Make APEX approachable. It's the future of Houdini rigging and
+almost nobody understands it yet. First-mover advantage for SYNAPSE.
+
+---
+
+### APEX EXPLAINER — `/apex explain`
+
+APEX introduces concepts that don't exist anywhere else in Houdini:
+
+| Concept | What Artists Think | What It Actually Is |
+|---------|-------------------|-------------------|
+| APEX Graph | "Some kind of VOP network?" | An execution program stored as geometry |
+| Packed Folder | "Packed geo?" | A container for rig components — like a namespace |
+| Invoke SOP | "Runs something?" | Executes an APEX graph on input geometry |
+| Rig Logic vs Rig Execution | "???" | Logic = how to build the rig. Execution = evaluating it per frame. |
+| APEX Autorig | "Magic?" | A set of pre-built APEX graphs for standard rig tasks |
+| Character Definition | "A rig?" | A structured packed folder hierarchy that defines rig structure |
+
+`/apex explain` on any APEX node gives the Mariana Trench guide explanation:
+
+> **apex::invoke1** (APEX Invoke)
+>
+> Think of this as a "run program" button. The "program" is an APEX graph
+> stored as packed geometry coming in from input 1. That graph describes
+> a sequence of operations — like a VEX wrangle, but visual and graph-based.
+>
+> Right now it's running an FK solver graph on the skeleton coming from
+> input 0. The graph reads joint transforms, applies FK rotations from
+> control channels, and writes the result back to the skeleton.
+>
+> The key mental model: APEX graphs are *programs stored as geometry*.
+> They travel with your scene, they're inspectable, and they compose.
+
+---
+
+### APEX RECIPES
+
+Production-ready APEX setups buildable via /hda or direct execution:
+
+| Recipe | What It Builds |
+|--------|---------------|
+| FK Chain | Curve → joints → FK controls → APEX graph |
+| IK Chain | Curve → joints → IK solver → pole vector control |
+| FK/IK Blend | Combined chain with blend control |
+| Autorig Character | T-pose → APEX Autorig → full character rig |
+| Facial Rig | Points → blend shapes → APEX control graph |
+| Muscle System | Joints → muscle primitives → deform |
+| Custom Deformer | Input geo → APEX deformer graph → output |
+| KineFX Conversion | Existing KineFX rig → equivalent APEX setup |
+
+Each recipe includes:
+- The node network to build
+- An `/explain` walkthrough of each step
+- Key parameter descriptions
+- "What to tweak first" guide
+
+---
+
+### APEX GRAPH TRACE — `/apex trace`
+
+APEX graphs are hard to debug because execution is opaque.
+
+`/apex trace` on an Invoke node:
+1. Reads the APEX graph from packed geometry
+2. Lists all nodes in execution order
+3. For each node: what it computes, what it reads, what it writes
+4. Highlights the critical path (slowest evaluation chain)
+5. Shows data flow between rig components
+
+This is tooling that *doesn't exist yet*. SideFX has basic graph visualization
+but no step-by-step narrated trace. SYNAPSE would be the first.
+
+---
+
+## SPRINT 5: UI EVOLUTION
+
+**Theme:** Make the panel feel native to Houdini, not bolted on.
+
+---
+
+### CONTEXT BAR v2
+
+Current: basic status line.
+New: rich, information-dense bar that communicates at a glance.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ /obj/geo1 › mountain_setup      📋 structured  🟢 Ready │
+│ ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ │
+│ [Explain] [Diagnose] [Profile] [Trace]    frame 24     │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Elements:**
+- **Breadcrumb path** — clickable, navigates Houdini's network pane
+- **Memory badge** — flat/structured/composed with icon
+- **Health dot** — green/yellow/red based on last diagnosis
+- **Quick actions** — contextual buttons that change per network type
+- **Frame indicator** — current frame, clickable to jump
+
+**Quick action sets:**
+
+| Context | Buttons |
+|---------|---------|
+| SOPs (/obj/*) | Explain, Diagnose, Profile, Trace |
+| LOPs (/stage/*) | Stage Info, Materials, Render, Preflight |
+| DOPs (/obj/*/dopnet*) | Sim Status, Cache, Explain |
+| TOPs (/topnet*) | Wedge Status, Analyze, Cook |
+| APEX (/obj/*/apex*) | APEX Explain, Trace, Rig Info |
+| ROPs (/out/*) | Preflight, Render, Status |
+
+---
+
+### COMMAND PALETTE — Ctrl+K
+
+Fuzzy search over all commands, recipes, and recent actions.
+
+```
+┌─────────────────────────────────────────┐
+│ 🔍 scatter                              │
+│ ─────────────────────────────────────── │
+│ /hda scatter points on surface          │
+│ /recipes scatter — 4 scatter techniques │
+│ /vex help scatter — VEX function ref    │
+│ Recent: created scatter1 in /obj/geo1   │
+└─────────────────────────────────────────┘
+```
+
+**Implementation:** QLineEdit popup with fuzzy matching against:
+- All slash commands
+- All recipe names
+- Recent tool executions (from journal)
+- Common node type names
+
+---
+
+### SPLIT VIEW
+
+The panel becomes two zones: conversation (top) and results (bottom).
+A draggable divider between them (same pattern as the input resize grip).
+
+**Chat zone:** Same as current — streaming text, tool indicators.
+
+**Results zone:** Structured output that persists. Switches based on last command:
+
+| Command | Results Zone Shows |
+|---------|--------------------|
+| /diagnose | Issue table: severity, node, message, [Fix] buttons |
+| /preflight | Render checklist with pass/fail indicators |
+| /trace | Node-by-node data flow with cook times |
+| /explain | Formatted explanation (persists while navigating) |
+| /journal | Searchable log entries |
+| /recipes | Recipe cards with [Build] and [Explain] buttons |
+| /deps | Dependency table with status indicators |
+
+**The results zone is optional.** Collapsed by default. Expands when
+a structured result is generated. Can be collapsed back to full-chat mode.
+
+---
+
+### CONVERSATION BOOKMARKS
+
+Long sessions produce valuable exchanges. Bookmarks let artists mark
+and retrieve important moments.
+
+**Add bookmark:** Click 🔖 icon on any message, or type `/bookmark this is the displacement approach`
+
+**Find bookmark:** `/bookmarks` shows all, `/bookmarks displacement` searches.
+
+**Bookmarks persist in scene memory.** When another artist opens the scene:
+"This scene has 3 bookmarks from the last session."
+
+---
+
+## SPRINT 6: PRODUCTION PIPELINE
+
+**Theme:** Features that make SYNAPSE mandatory in a studio pipeline.
+
+---
+
+### DEPENDENCY MAP — `/deps`
+
+Traces every external reference in the scene:
+
+```
+/deps
+
+External Dependencies:
+  ✅ $JOB/textures/hero_diffuse.exr     exists, 4K, 2.1GB
+  ✅ $JOB/textures/hero_normal.exr      exists, 4K, 1.8GB
+  ⚠️ $JOB/textures/env_hdri.exr         exists, MODIFIED since last render
+  ❌ $JOB/geo/rocks_scatter.bgeo.sc     MISSING
+  ✅ $HIP/hda/mountain_tool.hda         exists, v1.2.0
+  ⚠️ $HIP/hda/scatter_tool.hda          exists, OLDER version than project (v1.0 vs v1.3)
+
+3 textures (7.9GB) | 1 geo cache (MISSING) | 2 HDAs (1 outdated)
+```
+
+---
+
+### PERFORMANCE PROFILER — `/profile`
+
+Not just cook times — interpretation and recommendations:
+
+```
+/profile
+
+Network: /obj/geo1 (23 nodes, total cook: 4.2s)
+
+Bottlenecks:
+  1. polyreduce1    — 3.8s (90%) — reducing 18M polys to 500K
+     💡 Move before mountain1 to reduce 2.5K pts instead of 18M
+     Estimated savings: ~3.6s
+
+  2. copytopoints1  — 340ms (8%) — 10K copies of 1.2K pt geo
+     💡 Instance instead of copy (enable "Pack and Instance")
+     Estimated savings: ~280ms, significant memory reduction
+
+  3. Everything else — 62ms (2%) — no action needed
+
+Recommended optimization: 2 changes → estimated 91% faster
+Apply both? [Yes] [Explain more]
+```
+
+---
+
+### SAVE SHOT — `/save-shot`
+
+Complete context snapshot with optional notes:
+
+```
+/save-shot finished displacement lookdev, ready for lighting review
+
+Saved to $HIP/claude/sessions/2026-02-26_1447.md
+  ✅ Conversation highlights (12 exchanges)
+  ✅ Tool actions (8 operations)
+  ✅ Scene state snapshot (42 nodes, frame 24)
+  ✅ Memory updated (scene evolution: structured)
+  ✅ Note: "finished displacement lookdev, ready for lighting review"
+```
+
+**Auto-save triggers (silent):**
+- hou.hipFile save callback → save session context
+- Panel close → save session summary
+- After successful render → save render context
+- After /diagnose with fixes → save diagnostic state
+
+---
+
+### CROSS-SCENE CONTEXT
+
+When shot login loads project memory, surface relevant knowledge:
+
+```
+Shot Login: shot_010 (project: volcano_sequence)
+
+Project context loaded:
+  • Renderer: Karma XPU (decided in shot_003)
+  • Resolution: 2048×1152 (show standard)
+  • shot_008 found displacement scale >0.5 causes silhouette artifacts
+  • shot_012 has approved material library at /mat/hero_materials
+  • 3 wedge runs across project — best displacement: scale 0.3, subdiv 4
+```
+
+This is institutional knowledge that normally lives in Slack, wikis, or
+people's heads. SYNAPSE surfaces it *at the moment of use*.
+
+---
+
+## Implementation Priority Guide
+
+**If you have 1 sprint after tool parity:** Sprint 2 (Safety Net).
+Trust precedes everything.
+
+**If you have 2 sprints:** Sprint 2 + Sprint 3 (Knowledge Transfer).
+Safety + learning = artists who are confident AND growing.
+
+**If you're targeting a demo:** Sprint 2's /diagnose + Sprint 3's /explain +
+Sprint 1's /hda. Those three in a 60-second video tell the whole story:
+"SYNAPSE catches your mistakes, teaches you new things, and builds what you ask for."
+
+**If you're targeting studios:** Sprint 6 (Production Pipeline) becomes
+Sprint 2. Studios care about /deps, /profile, and save-shot more than
+/explain. Reorder based on audience.
+
+**The APEX sprint** is a market differentiator. Nobody is doing AI-assisted
+APEX workflows. Being first here while APEX adoption is still early
+means SYNAPSE becomes *the way* people learn APEX.
+
+---
+
+## The Indispensability Matrix
+
+| Feature | Safety Net | Knowledge | Velocity | Sprint |
+|---------|-----------|-----------|----------|--------|
+| /diagnose | ✅✅✅ | ✅ | ✅✅ | 2 |
+| /preflight | ✅✅✅ | | ✅✅ | 2 |
+| Error Translator | ✅✅ | ✅✅ | ✅ | 2 |
+| Session Journal | ✅ | ✅ | ✅ | 2 |
+| /explain | | ✅✅✅ | ✅ | 3 |
+| /trace | | ✅✅✅ | | 3 |
+| /vex | | ✅✅✅ | ✅✅ | 3 |
+| /recipes | | ✅✅ | ✅✅✅ | 3 |
+| Welcome flow | | ✅✅✅ | | 3 |
+| /apex explain | | ✅✅✅ | | 4 |
+| APEX recipes | | ✅✅ | ✅✅✅ | 4 |
+| Context Bar v2 | ✅ | ✅ | ✅✅ | 5 |
+| Command Palette | | | ✅✅✅ | 5 |
+| Split View | ✅ | ✅ | ✅✅ | 5 |
+| /deps | ✅✅✅ | | ✅ | 6 |
+| /profile | ✅✅ | ✅✅ | ✅✅ | 6 |
+| /save-shot | ✅ | | ✅✅ | 6 |
+| Cross-scene context | ✅ | ✅✅ | ✅✅ | 6 |
+| /hda | | ✅ | ✅✅✅ | 1 |
+
+---
+
+## One-Line Vision
+
+**SYNAPSE doesn't make Houdini simpler. It makes Houdini's depth accessible.**
+**The Mariana Trench is still deep. Now you have sonar.**

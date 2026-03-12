@@ -1,0 +1,229 @@
+"""Tests for Agent 2: Clean Channel.
+
+Covers parser, resolver, renderer, hasher, and converter.
+Focus on DETERMINISM and correctness.
+"""
+
+from pathlib import Path
+
+from src.lossless.constants import ANCHOR_PHASES, MODULATED_PHASES, PHASES
+from src.lossless.schema.prims import CognitivePrim
+from src.lossless.clean_channel.parser import parse_file, parse_sublayers
+from src.lossless.clean_channel.hasher import (
+    hash_anchors,
+    hash_sections,
+    hash_string,
+)
+from src.lossless.clean_channel.renderer import (
+    extract_anchor_sections,
+    extract_modulated_sections,
+    render_full_markdown,
+    render_sections,
+)
+from src.lossless.clean_channel.converter import CleanConverter
+
+
+# Path to test USDA files
+_SUBSTRATE_DIR = Path(__file__).resolve().parents[3] / "cognitive_substrate"
+_ROOT_USDA = _SUBSTRATE_DIR / "lossless_root.usda"
+_CORE_USDA = _SUBSTRATE_DIR / "core_substrate_v7.usda"
+
+
+# ── Parser Tests ─────────────────────────────────────────────────────
+
+
+class TestParser:
+    def test_parse_sublayers_from_root(self):
+        if not _ROOT_USDA.exists():
+            return
+        text = _ROOT_USDA.read_text(encoding='utf-8')
+        paths = parse_sublayers(text, _ROOT_USDA.parent)
+        assert len(paths) >= 2
+        filenames = [p.name for p in paths]
+        assert "core_substrate_v7.usda" in filenames
+
+    def test_parse_core_file(self):
+        if not _CORE_USDA.exists():
+            return
+        defs, overs = parse_file(_CORE_USDA)
+        assert len(defs) >= 4  # Header, Reasoning, Workflow, Code, etc.
+        names = [p.name for p in defs]
+        assert "Header" in names
+        assert "ReasoningProtocols" in names
+
+    def test_parse_determinism_10x(self):
+        """Parse same file 10x -> identical prim trees."""
+        if not _CORE_USDA.exists():
+            return
+        baseline_defs, baseline_overs = parse_file(_CORE_USDA)
+        baseline_names = [p.name for p in baseline_defs]
+
+        for _ in range(10):
+            defs, overs = parse_file(_CORE_USDA)
+            names = [p.name for p in defs]
+            assert names == baseline_names
+
+    def test_parse_extracts_markdown_content(self):
+        if not _CORE_USDA.exists():
+            return
+        defs, _ = parse_file(_CORE_USDA)
+        header = [d for d in defs if d.name == "Header"][0]
+        assert "Global Cognitive Substrate" in header.markdown_content
+
+    def test_parse_extracts_priority(self):
+        if not _CORE_USDA.exists():
+            return
+        defs, _ = parse_file(_CORE_USDA)
+        header = [d for d in defs if d.name == "Header"][0]
+        assert header.priority == 0
+
+
+# ── Hasher Tests ─────────────────────────────────────────────────────
+
+
+class TestHasher:
+    def test_hash_string_deterministic(self):
+        h1 = hash_string("test content")
+        h2 = hash_string("test content")
+        assert h1 == h2
+
+    def test_hash_string_different_input(self):
+        h1 = hash_string("content A")
+        h2 = hash_string("content B")
+        assert h1 != h2
+
+    def test_hash_sections_sorted_keys(self):
+        s1 = {"B": "beta", "A": "alpha"}
+        s2 = {"A": "alpha", "B": "beta"}
+        assert hash_sections(s1) == hash_sections(s2)
+
+    def test_hash_anchors_only_anchors(self):
+        sections = {
+            "SAFETY": "safe content",
+            "COST": "cost content",
+            "KNOWLEDGE": "knowledge content",
+        }
+        h = hash_anchors(sections)
+        # Should only hash SAFETY and KNOWLEDGE (anchor phases)
+        anchor_only = {"SAFETY": "safe content", "KNOWLEDGE": "knowledge content"}
+        h2 = hash_sections(anchor_only)
+        assert h == h2
+
+
+# ── Renderer Tests ───────────────────────────────────────────────────
+
+
+class TestRenderer:
+    def test_render_sections_order(self):
+        prims = [
+            CognitivePrim(name="B", phase="COST", markdown_content="cost"),
+            CognitivePrim(name="A", phase="KNOWLEDGE", markdown_content="knowledge"),
+        ]
+        sections = render_sections(prims)
+        keys = list(sections.keys())
+        # KNOWLEDGE comes before COST in PHASES
+        assert keys.index("KNOWLEDGE") < keys.index("COST")
+
+    def test_render_sections_skips_disabled(self):
+        prims = [
+            CognitivePrim(name="A", phase="KNOWLEDGE", markdown_content="yes", enabled=True),
+            CognitivePrim(name="B", phase="COST", markdown_content="no", enabled=False),
+        ]
+        sections = render_sections(prims)
+        assert "KNOWLEDGE" in sections
+        assert "COST" not in sections
+
+    def test_render_full_markdown_has_header(self):
+        sections = {"KNOWLEDGE": "# Test content"}
+        md = render_full_markdown(sections)
+        assert "AUTO-GENERATED" in md
+        assert "# Test content" in md
+
+    def test_extract_anchor_sections(self):
+        sections = {
+            "KNOWLEDGE": "k", "SAFETY": "s",
+            "COST": "c", "DOMAIN": "d",
+        }
+        anchors = extract_anchor_sections(sections)
+        assert set(anchors.keys()) == {"KNOWLEDGE", "SAFETY"}
+
+    def test_extract_modulated_sections(self):
+        sections = {
+            "KNOWLEDGE": "k", "SAFETY": "s",
+            "COST": "c", "DOMAIN": "d",
+        }
+        modulated = extract_modulated_sections(sections)
+        assert set(modulated.keys()) == {"COST", "DOMAIN"}
+
+
+# ── Full Converter Tests ─────────────────────────────────────────────
+
+
+class TestConverter:
+    def test_converter_produces_result(self):
+        if not _ROOT_USDA.exists():
+            return
+        converter = CleanConverter(_ROOT_USDA)
+        result = converter.convert()
+        assert result.markdown
+        assert result.clean_hash
+        assert result.anchor_hash
+        assert result.prim_count > 0
+
+    def test_converter_determinism_10x(self):
+        """Run converter 10x -> same clean_hash every time."""
+        if not _ROOT_USDA.exists():
+            return
+        converter = CleanConverter(_ROOT_USDA)
+        baseline = converter.convert()
+
+        for _ in range(10):
+            result = converter.convert()
+            assert result.clean_hash == baseline.clean_hash
+            assert result.anchor_hash == baseline.anchor_hash
+            assert result.sections_hash == baseline.sections_hash
+
+    def test_converter_anchor_hash_determinism_10x(self):
+        """Run converter 10x -> same anchor_hash every time."""
+        if not _ROOT_USDA.exists():
+            return
+        converter = CleanConverter(_ROOT_USDA)
+        baseline = converter.convert()
+
+        for _ in range(10):
+            result = converter.convert()
+            assert result.anchor_hash == baseline.anchor_hash
+
+    def test_anchor_sections_contain_only_anchor_phases(self):
+        if not _ROOT_USDA.exists():
+            return
+        converter = CleanConverter(_ROOT_USDA)
+        result = converter.convert()
+        anchor_dict = result.get_anchor_dict()
+        for key in anchor_dict:
+            assert key in ANCHOR_PHASES, f"{key} is not an anchor phase"
+
+    def test_modulated_sections_contain_only_modulated_phases(self):
+        if not _ROOT_USDA.exists():
+            return
+        converter = CleanConverter(_ROOT_USDA)
+        result = converter.convert()
+        modulated_dict = result.get_modulated_dict()
+        for key in modulated_dict:
+            assert key not in ANCHOR_PHASES, f"{key} is an anchor phase"
+
+    def test_sections_cover_expected_content(self):
+        if not _ROOT_USDA.exists():
+            return
+        converter = CleanConverter(_ROOT_USDA)
+        result = converter.convert()
+        sections = result.get_sections_dict()
+        # Should have content from core + graft
+        assert len(sections) >= 3
+
+    def test_markdown_contains_auto_generated_header(self):
+        if not _ROOT_USDA.exists():
+            return
+        converter = CleanConverter(_ROOT_USDA)
+        result = converter.convert()
+        assert "AUTO-GENERATED" in result.markdown

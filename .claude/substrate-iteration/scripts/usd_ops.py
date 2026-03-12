@@ -1,0 +1,505 @@
+"""
+usd_ops.py — USD file read/write/diff primitives for Cognitive Substrate.
+
+Operates on .usda (ASCII USD) files using text parsing.
+Does NOT require OpenUSD/pxr libraries — works with the ASCII format directly.
+This keeps the toolchain dependency-free and Claude Code friendly.
+
+USD prims map to substrate sections. Attributes map to parameters.
+The source of truth is always the .usda files.
+"""
+
+import re
+import json
+from pathlib import Path
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+# ── Data Structures ──────────────────────────────────────────────────────────
+
+@dataclass
+class UsdAttribute:
+    """A single USD attribute (name, type, value)."""
+    name: str
+    type: str  # string, int, float, bool, string[], token
+    value: any
+    custom: bool = True
+    doc: str = ""
+
+    def to_usda(self, indent: int = 8) -> str:
+        pad = " " * indent
+        type_prefix = f"custom " if self.custom else ""
+        
+        if self.type == "string":
+            val = str(self.value)
+            if '\n' in val:
+                # Multi-line: use triple-quoted string
+                return f'{pad}{type_prefix}string {self.name} = """{val}"""'
+            else:
+                escaped = val.replace('"', '\\"')
+                return f'{pad}{type_prefix}string {self.name} = "{escaped}"'
+        elif self.type == "string[]":
+            items = ", ".join(f'"{v}"' for v in self.value)
+            return f'{pad}{type_prefix}string[] {self.name} = [{items}]'
+        elif self.type == "int":
+            return f'{pad}{type_prefix}int {self.name} = {int(self.value)}'
+        elif self.type == "float":
+            return f'{pad}{type_prefix}float {self.name} = {float(self.value)}'
+        elif self.type == "bool":
+            val = "true" if self.value else "false"
+            return f'{pad}{type_prefix}bool {self.name} = {val}'
+        elif self.type == "token":
+            return f'{pad}{type_prefix}token {self.name} = "{self.value}"'
+        elif self.type == "dictionary":
+            # Encode as JSON string for complex nested data
+            escaped = json.dumps(self.value).replace('"', '\\"')
+            return f'{pad}{type_prefix}string {self.name} = "{escaped}"'
+        else:
+            escaped = str(self.value).replace('"', '\\"')
+            return f'{pad}{type_prefix}string {self.name} = "{escaped}"'
+
+
+@dataclass
+class UsdPrim:
+    """A USD prim (node in the hierarchy)."""
+    name: str
+    type: str = "Scope"
+    attributes: dict = field(default_factory=dict)  # name -> UsdAttribute
+    children: dict = field(default_factory=dict)    # name -> UsdPrim
+    doc: str = ""
+    
+    @property
+    def path(self) -> str:
+        """Returns just this prim's name. Full path requires tree context."""
+        return self.name
+
+    def get_attr(self, name: str) -> Optional[UsdAttribute]:
+        return self.attributes.get(name)
+    
+    def set_attr(self, name: str, type: str, value: any, doc: str = ""):
+        self.attributes[name] = UsdAttribute(name=name, type=type, value=value, doc=doc)
+    
+    def get_child(self, name: str) -> Optional['UsdPrim']:
+        return self.children.get(name)
+    
+    def add_child(self, prim: 'UsdPrim'):
+        self.children[prim.name] = prim
+    
+    def to_usda(self, indent: int = 4) -> str:
+        pad = " " * indent
+        lines = []
+        
+        # Prim definition
+        lines.append(f'{pad}def {self.type} "{self.name}"')
+        lines.append(f'{pad}{{')
+        
+        # Doc string
+        if self.doc:
+            lines.append(f'{pad}    # {self.doc}')
+        
+        # Attributes
+        for attr in self.attributes.values():
+            lines.append(attr.to_usda(indent + 4))
+        
+        # Children
+        for child in self.children.values():
+            lines.append("")
+            lines.append(child.to_usda(indent + 4))
+        
+        lines.append(f'{pad}}}')
+        return "\n".join(lines)
+
+
+@dataclass
+class UsdStage:
+    """A complete USD stage (one .usda file)."""
+    root_prims: dict = field(default_factory=dict)  # name -> UsdPrim
+    doc: str = ""
+    sublayers: list = field(default_factory=list)
+    
+    def get_prim(self, path: str) -> Optional[UsdPrim]:
+        """Get a prim by path like '/CognitiveSubstrate/Constitutional'."""
+        parts = [p for p in path.strip("/").split("/") if p]
+        if not parts:
+            return None
+        
+        current = self.root_prims.get(parts[0])
+        for part in parts[1:]:
+            if current is None:
+                return None
+            current = current.children.get(part)
+        return current
+    
+    def set_prim(self, path: str, prim: UsdPrim):
+        """Set a prim at path. Creates intermediate Scope prims as needed."""
+        parts = [p for p in path.strip("/").split("/") if p]
+        if not parts:
+            return
+        
+        if len(parts) == 1:
+            self.root_prims[parts[0]] = prim
+            return
+        
+        # Ensure root exists
+        if parts[0] not in self.root_prims:
+            self.root_prims[parts[0]] = UsdPrim(name=parts[0])
+        
+        current = self.root_prims[parts[0]]
+        for part in parts[1:-1]:
+            if part not in current.children:
+                current.children[part] = UsdPrim(name=part)
+            current = current.children[part]
+        
+        prim.name = parts[-1]
+        current.children[parts[-1]] = prim
+    
+    def to_usda(self) -> str:
+        lines = ['#usda 1.0']
+        lines.append('(')
+        if self.doc:
+            lines.append(f'    doc = "{self.doc}"')
+        if self.sublayers:
+            items = ", ".join(f'@{s}@' for s in self.sublayers)
+            lines.append(f'    subLayers = [{items}]')
+        lines.append(')')
+        lines.append('')
+        
+        for prim in self.root_prims.values():
+            lines.append(prim.to_usda(indent=0))
+            lines.append('')
+        
+        return "\n".join(lines)
+
+
+# ── Parsing ──────────────────────────────────────────────────────────────────
+
+def parse_usda(text: str) -> UsdStage:
+    """
+    Parse a .usda ASCII file into a UsdStage.
+    Handles the subset of USD used by the Cognitive Substrate.
+    """
+    stage = UsdStage()
+    lines = text.split("\n")
+    
+    # Parse header
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith('doc = '):
+            stage.doc = _extract_string(line)
+        elif line.startswith('subLayers'):
+            stage.sublayers = _extract_sublayers(line)
+        elif line.startswith('def '):
+            prim, i = _parse_prim(lines, i)
+            stage.root_prims[prim.name] = prim
+            continue
+        i += 1
+    
+    return stage
+
+
+def _parse_prim(lines: list, start: int) -> tuple:
+    """Parse a prim definition starting at line index."""
+    line = lines[start].strip()
+    
+    # Extract type and name: def Type "Name"
+    match = re.match(r'def\s+(\w+)\s+"([^"]+)"', line)
+    if not match:
+        # Try without type: def "Name"
+        match = re.match(r'def\s+"([^"]+)"', line)
+        if match:
+            prim = UsdPrim(name=match.group(1), type="Scope")
+        else:
+            prim = UsdPrim(name="unknown")
+    else:
+        prim = UsdPrim(name=match.group(2), type=match.group(1))
+    
+    # Find opening brace
+    i = start
+    while i < len(lines) and '{' not in lines[i]:
+        i += 1
+    i += 1  # Skip the brace line
+    
+    # Parse contents until closing brace
+    depth = 1
+    in_triple = False
+    accum_lines = []  # accumulates lines during triple-quoted strings
+
+    while i < len(lines) and depth > 0:
+        raw_line = lines[i]
+        line = raw_line.strip()
+
+        # --- Triple-quote accumulation ---
+        if in_triple:
+            accum_lines.append(raw_line)
+            if '"""' in line:
+                # Closing triple-quote found — join and parse as one attribute
+                full_text = "\n".join(accum_lines)
+                attr = _parse_attribute_multiline(full_text)
+                if attr:
+                    prim.attributes[attr.name] = attr
+                in_triple = False
+                accum_lines = []
+            i += 1
+            continue
+
+        # Check if this line opens a triple-quoted string (but doesn't close it)
+        triple_count = line.count('"""')
+        if triple_count == 1:
+            # Opening triple-quote without close on same line
+            in_triple = True
+            accum_lines = [raw_line]
+            i += 1
+            continue
+        # triple_count >= 2 means open+close on same line — handled by normal parsing
+
+        if line.startswith('#'):
+            # Comment — could be doc
+            if not prim.doc:
+                prim.doc = line.lstrip('# ')
+            i += 1
+            continue
+
+        if line.startswith('def '):
+            child, i = _parse_prim(lines, i)
+            prim.children[child.name] = child
+            continue
+
+        # Attribute parsing
+        attr = _parse_attribute(line)
+        if attr:
+            prim.attributes[attr.name] = attr
+
+        if '{' in line and not line.startswith('def'):
+            depth += line.count('{')
+        depth -= line.count('}')
+
+        i += 1
+
+    return prim, i
+
+
+def _parse_attribute(line: str) -> Optional[UsdAttribute]:
+    """Parse a single attribute line."""
+    line = line.strip()
+    if not line or line.startswith('#') or line.startswith('}') or line.startswith('{'):
+        return None
+    
+    # Strip 'custom' prefix
+    custom = False
+    if line.startswith('custom '):
+        custom = True
+        line = line[7:]
+    
+    # Match: type name = value
+    # string name = "value"
+    match = re.match(r'(string\[\]|string|int|float|bool|token)\s+(\w+)\s*=\s*(.*)', line)
+    if not match:
+        return None
+    
+    attr_type = match.group(1)
+    attr_name = match.group(2)
+    raw_value = match.group(3).strip()
+    
+    if attr_type == "string":
+        # Check for triple-quoted string on a single line
+        triple = re.match(r'"""(.*?)"""', raw_value, re.DOTALL)
+        if triple:
+            value = triple.group(1)
+        else:
+            value = _extract_string(f'= {raw_value}')
+    elif attr_type == "string[]":
+        value = _extract_string_array(raw_value)
+    elif attr_type == "int":
+        value = int(raw_value)
+    elif attr_type == "float":
+        value = float(raw_value)
+    elif attr_type == "bool":
+        value = raw_value.lower() == "true"
+    elif attr_type == "token":
+        value = _extract_string(f'= {raw_value}')
+    else:
+        value = raw_value
+    
+    return UsdAttribute(name=attr_name, type=attr_type, value=value, custom=custom)
+
+
+def _parse_attribute_multiline(text: str) -> Optional[UsdAttribute]:
+    """Parse an attribute that spans multiple lines (triple-quoted string value)."""
+    # Strip 'custom' prefix
+    stripped = text.strip()
+    custom = False
+    if stripped.startswith('custom '):
+        custom = True
+        stripped = stripped[7:]
+
+    # Match: string name = """..."""  (with re.DOTALL for multiline)
+    match = re.match(r'(string)\s+(\w+)\s*=\s*"""(.*?)"""', stripped, re.DOTALL)
+    if match:
+        return UsdAttribute(
+            name=match.group(2),
+            type=match.group(1),
+            value=match.group(3),
+            custom=custom,
+        )
+    return None
+
+
+def _extract_string(text: str) -> str:
+    """Extract a quoted string value (triple-quoted or single-quoted)."""
+    # Try triple-quoted first
+    triple = re.search(r'"""(.*?)"""', text, re.DOTALL)
+    if triple:
+        return triple.group(1)
+    # Fall back to single-quoted
+    match = re.search(r'"((?:[^"\\]|\\.)*)"', text)
+    return match.group(1).replace('\\"', '"') if match else ""
+
+
+def _extract_string_array(text: str) -> list:
+    """Extract a string array value like ["a", "b"]."""
+    return re.findall(r'"((?:[^"\\]|\\.)*)"', text)
+
+
+def _extract_sublayers(text: str) -> list:
+    """Extract sublayer paths."""
+    return re.findall(r'@([^@]+)@', text)
+
+
+# ── Diffing ──────────────────────────────────────────────────────────────────
+
+@dataclass
+class UsdDiff:
+    """A single difference between two USD stages."""
+    path: str           # Prim path
+    attr: str           # Attribute name (empty if prim-level)
+    kind: str           # 'added', 'removed', 'changed'
+    old_value: any = None
+    new_value: any = None
+    
+    def __str__(self):
+        if self.kind == "added":
+            target = f"{self.path}.{self.attr}" if self.attr else self.path
+            return f"+ {target} = {self.new_value}"
+        elif self.kind == "removed":
+            target = f"{self.path}.{self.attr}" if self.attr else self.path
+            return f"- {target} (was: {self.old_value})"
+        else:
+            return f"~ {self.path}.{self.attr}: {self.old_value} → {self.new_value}"
+
+
+def diff_stages(old: UsdStage, new: UsdStage) -> list:
+    """Diff two USD stages. Returns list of UsdDiff."""
+    diffs = []
+    _diff_prim_dict(old.root_prims, new.root_prims, "", diffs)
+    return diffs
+
+
+def _diff_prim_dict(old_prims: dict, new_prims: dict, parent_path: str, diffs: list):
+    """Recursively diff prim dictionaries."""
+    all_keys = set(old_prims.keys()) | set(new_prims.keys())
+    
+    for key in sorted(all_keys):
+        path = f"{parent_path}/{key}"
+        
+        if key not in old_prims:
+            diffs.append(UsdDiff(path=path, attr="", kind="added", new_value=f"[prim: {new_prims[key].type}]"))
+            continue
+        
+        if key not in new_prims:
+            diffs.append(UsdDiff(path=path, attr="", kind="removed", old_value=f"[prim: {old_prims[key].type}]"))
+            continue
+        
+        old_prim = old_prims[key]
+        new_prim = new_prims[key]
+        
+        # Diff attributes
+        all_attrs = set(old_prim.attributes.keys()) | set(new_prim.attributes.keys())
+        for attr_name in sorted(all_attrs):
+            if attr_name not in old_prim.attributes:
+                new_attr = new_prim.attributes[attr_name]
+                diffs.append(UsdDiff(path=path, attr=attr_name, kind="added", new_value=new_attr.value))
+            elif attr_name not in new_prim.attributes:
+                old_attr = old_prim.attributes[attr_name]
+                diffs.append(UsdDiff(path=path, attr=attr_name, kind="removed", old_value=old_attr.value))
+            else:
+                old_val = old_prim.attributes[attr_name].value
+                new_val = new_prim.attributes[attr_name].value
+                if old_val != new_val:
+                    diffs.append(UsdDiff(path=path, attr=attr_name, kind="changed", old_value=old_val, new_value=new_val))
+        
+        # Recurse into children
+        _diff_prim_dict(old_prim.children, new_prim.children, path, diffs)
+
+
+# ── File I/O ─────────────────────────────────────────────────────────────────
+
+def read_stage(filepath: str) -> UsdStage:
+    """Read a .usda file into a UsdStage."""
+    text = Path(filepath).read_text(encoding="utf-8")
+    return parse_usda(text)
+
+
+def write_stage(stage: UsdStage, filepath: str):
+    """Write a UsdStage to a .usda file."""
+    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+    Path(filepath).write_text(stage.to_usda(), encoding="utf-8")
+
+
+def diff_files(old_path: str, new_path: str) -> list:
+    """Diff two .usda files."""
+    old = read_stage(old_path)
+    new = read_stage(new_path)
+    return diff_stages(old, new)
+
+
+# ── Convenience ──────────────────────────────────────────────────────────────
+
+def get_attribute(filepath: str, prim_path: str, attr_name: str) -> Optional[any]:
+    """Quick read: get a single attribute value from a .usda file."""
+    stage = read_stage(filepath)
+    prim = stage.get_prim(prim_path)
+    if prim:
+        attr = prim.get_attr(attr_name)
+        if attr:
+            return attr.value
+    return None
+
+
+def set_attribute(filepath: str, prim_path: str, attr_name: str, attr_type: str, value: any):
+    """Quick write: set a single attribute in a .usda file."""
+    stage = read_stage(filepath)
+    prim = stage.get_prim(prim_path)
+    if prim is None:
+        # Create the prim path
+        stage.set_prim(prim_path, UsdPrim(name=prim_path.split("/")[-1]))
+        prim = stage.get_prim(prim_path)
+    prim.set_attr(attr_name, attr_type, value)
+    write_stage(stage, filepath)
+
+
+if __name__ == "__main__":
+    # Quick test
+    stage = UsdStage(doc="Test stage")
+    root = UsdPrim(name="CognitiveSubstrate", type="Scope", doc="Root prim")
+    root.set_attr("version", "string", "7.2.0")
+    
+    const = UsdPrim(name="Constitutional", type="Scope", doc="Hard constraints")
+    const.set_attr("never_talk_down", "bool", True)
+    const.set_attr("never_imply_already_told", "bool", True)
+    const.set_attr("always_encouraging", "bool", True)
+    const.set_attr("crash_triggers", "string[]", ["unexpected_complexity", "being_wrong", "repeated_failure"])
+    
+    root.add_child(const)
+    stage.root_prims["CognitiveSubstrate"] = root
+    
+    print(stage.to_usda())
+    print("\n--- Round-trip test ---")
+    reparsed = parse_usda(stage.to_usda())
+    print(f"Root prims: {list(reparsed.root_prims.keys())}")
+    cs = reparsed.get_prim("CognitiveSubstrate")
+    print(f"Version: {cs.get_attr('version').value}")
+    print(f"Children: {list(cs.children.keys())}")
+    const2 = reparsed.get_prim("CognitiveSubstrate/Constitutional")
+    print(f"Crash triggers: {const2.get_attr('crash_triggers').value}")

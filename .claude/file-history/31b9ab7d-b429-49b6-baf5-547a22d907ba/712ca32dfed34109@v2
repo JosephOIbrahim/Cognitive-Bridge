@@ -1,0 +1,476 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+
+const ChatBot = dynamic(() => import('./ChatBot').then(mod => ({ default: mod.ChatBot })), {
+  ssr: false,
+});
+
+const ToolsOverlay = dynamic(() => import('./ToolsOverlay').then(mod => ({ default: mod.ToolsOverlay })), {
+  ssr: false,
+});
+
+/**
+ * NAVIGATION - Sagmeister-informed sizing
+ *
+ * Typography hierarchy (responsive clamp):
+ * - Logo: 19px mobile → 22px desktop (uppercase, tracked)
+ * - Nav links: 18px mobile → 21px desktop (uppercase, tracked)
+ * - Generous letter-spacing creates presence
+ * - Medium weight (500) for refined look vs Sagmeister's bold (700)
+ */
+
+export function Navigation() {
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isToolsOpen, setIsToolsOpen] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const pathname = usePathname();
+
+  // Double-click detection for chatbot icon Easter Egg
+  const clickCountRef = useRef(0);
+  const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Double-click detection for chatbot icon
+  // Single click: open chatbot
+  // Double-click: reveal Tools & Downloads overlay (Easter Egg)
+  const handleChatbotClick = useCallback(() => {
+    clickCountRef.current++;
+
+    if (clickCountRef.current === 2) {
+      // Double-click detected - open Tools overlay (Easter Egg)
+      clickCountRef.current = 0;
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      setIsToolsOpen(true);
+    } else {
+      // Wait for potential second click
+      clickTimerRef.current = setTimeout(() => {
+        if (clickCountRef.current === 1) {
+          // Single click - open chatbot normally
+          setIsChatOpen(true);
+        }
+        clickCountRef.current = 0;
+      }, 300);
+    }
+  }, []);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Close menu when route changes
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [pathname]);
+
+  const isHomePage = pathname === '/';
+  const isProjectPage = pathname?.startsWith('/projects/');
+  // Pages with hero reels need transparent navigation
+  const hasHeroReel = isHomePage || isProjectPage;
+
+  // Active state helper - for aria-current accessibility only (no visual change)
+  const isActive = (href: string) => {
+    if (href === '/') return isHomePage || isProjectPage;
+    return pathname?.startsWith(href);
+  };
+
+  // Track scroll for background opacity - MUST match hero reel fade calculations exactly
+  // Navigation background fades in as hero video fades out (synchronized)
+  useEffect(() => {
+    if (!hasHeroReel) return;
+
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      const viewportHeight = window.innerHeight;
+      const heroHeight = viewportHeight * 0.7;
+
+      let fadeStartScroll: number;
+      let fadeRange: number;
+
+      if (isProjectPage) {
+        // ProjectHeroReel calculation: starts at 30% of hero height
+        fadeStartScroll = heroHeight * 0.3;
+        fadeRange = 300;
+      } else {
+        // Homepage HeroReel calculation: tied to intro text position
+        const introPadding = 160;
+        const textStartPosition = heroHeight + introPadding;
+        const oneThirdViewport = viewportHeight / 3;
+        fadeStartScroll = textStartPosition - oneThirdViewport;
+        fadeRange = 200;
+      }
+
+      const progress = Math.max(0, Math.min((scrollY - fadeStartScroll) / fadeRange, 1));
+      setScrollProgress(progress);
+    };
+
+    // Run immediately to sync initial state with hero reel
+    handleScroll();
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [hasHeroReel, isProjectPage]);
+
+  // Navigation text color - uses design system variable
+  const textColor = 'var(--text-primary)';
+
+  return (
+    <>
+    <nav
+      className="fixed top-0 left-0 right-0 w-full"
+      style={{
+        // Hero reel pages: transparent → solid on scroll (NO CSS transition - scroll IS the animation)
+        // Other pages: solid background
+        backgroundColor: hasHeroReel
+          ? `rgba(20, 20, 20, ${scrollProgress})`
+          : '#141414',
+        zIndex: 100,
+        // Exclude from page transition scale - nav should only fade, not move
+        viewTransitionName: 'navigation'
+      }}
+    >
+      {/* Pentagram-style: fixed padding, not dramatic scaling */}
+      <div
+        className="mx-auto"
+        style={{
+          maxWidth: 'var(--max-content-width)',
+          paddingTop: '28px',
+          paddingBottom: '20px'
+        }}
+      >
+        {/* Top row: Name and Nav - baseline aligned */}
+        <div
+          className="flex items-baseline justify-between"
+          style={{
+            paddingLeft: 'var(--side-padding)',
+            paddingRight: 'var(--side-padding)'
+          }}
+        >
+          {/* Logo - Responsive scaling: 19px at 768px → 22px at 1400px+ */}
+          <a
+            href="/"
+            className="nav-link transition-all duration-400"
+            style={{
+              color: textColor,
+              fontFamily: 'var(--font-display)',
+              fontWeight: 500,
+              letterSpacing: '0.16em',
+              fontSize: 'clamp(19px, 0.5vw + 15px, 22px)',
+              textTransform: 'uppercase'
+            }}
+          >
+            Joseph Ibrahim
+          </a>
+
+          {/* Desktop Navigation - responsive scaling maintains spacing ratio */}
+          <div className="hidden md:flex items-baseline" style={{ gap: 'clamp(24px, 2.5vw, 36px)' }}>
+            <ul className="flex items-baseline" style={{ gap: 'clamp(20px, 2vw, 28px)' }}>
+              <li>
+                <Link
+                  href="/"
+                  className="nav-link nav-item-shift transition-all duration-400"
+                  style={{
+                    color: textColor,
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 500,
+                    letterSpacing: '0.10em',
+                    fontSize: 'clamp(18px, 0.5vw + 14px, 21px)',
+                    textTransform: 'uppercase'
+                  }}
+                  aria-current={isActive('/') ? 'page' : undefined}
+                >
+                  Work
+                </Link>
+              </li>
+              {/* GEN AI - temporarily hidden, page still accessible at /gen-ai */}
+              <li>
+                <Link
+                  href="/photo"
+                  className="nav-link nav-item-shift transition-all duration-400"
+                  style={{
+                    color: textColor,
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 500,
+                    letterSpacing: '0.10em',
+                    fontSize: 'clamp(18px, 0.5vw + 14px, 21px)',
+                    textTransform: 'uppercase'
+                  }}
+                  aria-current={isActive('/photo') ? 'page' : undefined}
+                >
+                  Photo
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/process"
+                  className="nav-link nav-item-shift transition-all duration-400"
+                  style={{
+                    color: textColor,
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 500,
+                    letterSpacing: '0.10em',
+                    fontSize: 'clamp(18px, 0.5vw + 14px, 21px)',
+                    textTransform: 'uppercase'
+                  }}
+                  aria-current={isActive('/process') ? 'page' : undefined}
+                >
+                  Process
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/info"
+                  className="nav-link nav-item-shift transition-all duration-400"
+                  style={{
+                    color: textColor,
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 500,
+                    letterSpacing: '0.10em',
+                    fontSize: 'clamp(18px, 0.5vw + 14px, 21px)',
+                    textTransform: 'uppercase'
+                  }}
+                  aria-current={isActive('/info') ? 'page' : undefined}
+                >
+                  About
+                </Link>
+              </li>
+            </ul>
+
+            {/* Chat bubble icon - aligned to top of nav text */}
+            {/* Single-click: open chatbot | Double-click: reveal Tools overlay (Easter Egg) */}
+            {/* Matches nav-link hover behavior exactly (dims to 40% on hover) */}
+            <button
+              onClick={handleChatbotClick}
+              className="nav-link nav-item-shift transition-all duration-400"
+              aria-label="Ask about Joe"
+              style={{
+                alignSelf: 'flex-start',
+                marginTop: '5px',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer'
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                style={{
+                  width: '17px',
+                  height: '17px'
+                }}
+              >
+                <path
+                  d="M20 2H4C2.9 2 2 2.9 2 4v12c0 1.1.9 2 2 2h2v4l5-4h9c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
+                  fill={textColor}
+                />
+              </svg>
+            </button>
+          </div>
+
+          {/* Mobile: Chat + Hamburger - 44px min touch targets */}
+          {/* Single-click: open chatbot | Double-click: reveal Tools overlay (Easter Egg) */}
+          <div className="flex md:hidden items-center gap-3">
+            <button
+              onClick={handleChatbotClick}
+              className="nav-link nav-item-shift transition-all duration-400"
+              aria-label="Ask about Joe"
+              style={{
+                minWidth: '44px',
+                minHeight: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'transparent',
+                border: 'none',
+                padding: '12px',
+                margin: '-8px',
+                cursor: 'pointer'
+              }}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M20 2H4C2.9 2 2 2.9 2 4v12c0 1.1.9 2 2 2h2v4l5-4h9c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
+                  fill={textColor}
+                />
+              </svg>
+            </button>
+
+            {/* Hamburger - 44px min touch target */}
+            <button
+              onClick={() => setIsMenuOpen(true)}
+              className="transition-opacity duration-400 hover:opacity-60 p-3 -m-2"
+              aria-label="Open menu"
+              style={{ minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <svg
+                width="25"
+                height="25"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={textColor}
+                strokeWidth="1"
+                strokeLinecap="round"
+                className="transition-all duration-400"
+              >
+                <line x1="4" y1="8" x2="20" y2="8" />
+                <line x1="4" y1="16" x2="20" y2="16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </nav>
+
+    {/* Mobile Menu - Clean overlay */}
+    {isMenuOpen && (
+      <div
+        className="md:hidden fixed inset-0 flex flex-col justify-center items-center"
+        style={{
+          backgroundColor: '#141414',
+          zIndex: 150,
+          animation: 'fadeIn 350ms ease-out'
+        }}
+        onClick={() => setIsMenuOpen(false)}
+      >
+        {/* Close button - 44px min touch target */}
+        <button
+          onClick={() => setIsMenuOpen(false)}
+          className="absolute top-9 right-6 p-2 transition-opacity duration-400 hover:opacity-60"
+          aria-label="Close menu"
+          style={{ minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <svg
+            width="30"
+            height="30"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--text-primary)"
+            strokeWidth="1"
+            strokeLinecap="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+
+        {/* Navigation Links - Mobile menu (responsive sizing) */}
+        <nav onClick={(e) => e.stopPropagation()}>
+          <ul
+            className="flex flex-col items-center gap-8"
+            style={{
+              fontWeight: 500,
+              fontFamily: 'var(--font-display)',
+              letterSpacing: '0.10em',
+              fontSize: 'clamp(36px, 10vw, 72px)',
+              textTransform: 'uppercase'
+            }}
+          >
+            <li>
+              <Link
+                href="/"
+                className="block py-3 px-8 transition-opacity duration-400 hover:opacity-60"
+                style={{
+                  color: 'var(--text-primary)',
+                  minHeight: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onClick={() => setIsMenuOpen(false)}
+                aria-current={isActive('/') ? 'page' : undefined}
+              >
+                Work
+              </Link>
+            </li>
+            {/* GEN AI - temporarily hidden */}
+            <li>
+              <Link
+                href="/photo"
+                className="block py-3 px-8 transition-opacity duration-400 hover:opacity-60"
+                style={{
+                  color: 'var(--text-primary)',
+                  minHeight: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onClick={() => setIsMenuOpen(false)}
+                aria-current={isActive('/photo') ? 'page' : undefined}
+              >
+                Photo
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/process"
+                className="block py-3 px-8 transition-opacity duration-400 hover:opacity-60"
+                style={{
+                  color: 'var(--text-primary)',
+                  minHeight: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onClick={() => setIsMenuOpen(false)}
+                aria-current={isActive('/process') ? 'page' : undefined}
+              >
+                Process
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/info"
+                className="block py-3 px-8 transition-opacity duration-400 hover:opacity-60"
+                style={{
+                  color: 'var(--text-primary)',
+                  minHeight: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onClick={() => setIsMenuOpen(false)}
+                aria-current={isActive('/info') ? 'page' : undefined}
+              >
+                About
+              </Link>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    )}
+
+    {/* ChatBot Overlay */}
+    <ChatBot isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+
+    {/* Tools & Downloads Overlay (Easter Egg - double-click chat icon) */}
+    <ToolsOverlay isOpen={isToolsOpen} onClose={() => setIsToolsOpen(false)} />
+
+    <style jsx>{`
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    `}</style>
+    </>
+  );
+}

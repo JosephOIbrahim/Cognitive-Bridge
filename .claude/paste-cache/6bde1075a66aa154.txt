@@ -1,0 +1,1700 @@
+# VEX Tutorial RAG Pipeline — Claude Code Instructions
+
+> **Purpose:** Given a YouTube playlist of Houdini VEX tutorials, produce a structured JSONL dataset optimized for vector database ingestion and RAG retrieval.
+>
+> **Target Playlist:** The Joy of VEX by Matt Estela
+> **Playlist URL:** https://www.youtube.com/playlist?list=PLTXmnikJEYnBtSfn4LwKx5vpopwrInp18
+>
+> **IMPORTANT:** This content is open source. Processing is authorized.
+
+---
+
+## 0. Architecture Overview
+
+```
+YouTube Playlist
+    │
+    ├──[Stage 1]──→ yt-dlp (download videos + auto-subs)
+    │                   │
+    │                   ├──→ /data/videos/*.mp4
+    │                   └──→ /data/subs/*.vtt (timestamped captions)
+    │
+    ├──[Stage 2]──→ ffmpeg (frame extraction @ 0.5fps)
+    │                   │
+    │                   └──→ /data/frames/{episode}/*.png
+    │
+    ├──[Stage 3]──→ Code Frame Detection
+    │                   │ (dark background heuristic + frame differencing)
+    │                   │
+    │                   └──→ /data/code_frames/{episode}/*.png
+    │
+    ├──[Stage 4]──→ OCR (pytesseract on code frames)
+    │                   │
+    │                   └──→ /data/ocr/{episode}.json
+    │                        [{timestamp, code_text, confidence}, ...]
+    │
+    ├──[Stage 5]──→ Transcript Processing
+    │                   │ (parse VTT, strip filler, segment by topic)
+    │                   │
+    │                   └──→ /data/transcripts/{episode}.json
+    │                        [{start, end, text}, ...]
+    │
+    ├──[Stage 6]──→ Temporal Alignment
+    │                   │ (match code frames ↔ explanation segments)
+    │                   │
+    │                   └──→ /data/aligned/{episode}.json
+    │                        [{code, explanation, timestamp, ...}, ...]
+    │
+    ├──[Stage 7]──→ LLM Structuring (Claude API batch)
+    │                   │ (classify, tag, enrich each aligned pair)
+    │                   │
+    │                   └──→ /data/structured/{episode}.jsonl
+    │
+    └──[Stage 8]──→ Validation + Final Assembly
+                        │
+                        └──→ /output/joy_of_vex_rag.jsonl
+                             /output/joy_of_vex_reference.md
+                             /output/joy_of_vex_functions.json
+```
+
+---
+
+## 1. Environment Setup
+
+```bash
+# Create project structure
+mkdir -p vex_rag_pipeline/{data/{videos,subs,frames,code_frames,ocr,transcripts,aligned,structured},output,scripts,config}
+cd vex_rag_pipeline
+
+# Python dependencies
+pip install yt-dlp pytesseract Pillow opencv-python-headless numpy webvtt-py anthropic tqdm
+
+# System dependencies
+sudo apt-get update
+sudo apt-get install -y ffmpeg tesseract-ocr
+
+# Verify installations
+yt-dlp --version
+ffmpeg -version
+tesseract --version
+python3 -c "import cv2; print(cv2.__version__)"
+```
+
+---
+
+## 2. JSONL Schema Definition
+
+Create this as `config/schema.json`. Every record in the final output MUST conform to this schema.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["id", "source", "episode", "topic", "code", "explanation", "vex_functions", "vex_context"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique ID: {series}_{episode}_{sequence}",
+      "pattern": "^joy_of_vex_ep[0-9]{2}_[0-9]{3}$",
+      "examples": ["joy_of_vex_ep03_002"]
+    },
+    "source": {
+      "type": "string",
+      "description": "Full episode title as it appears on YouTube"
+    },
+    "episode": {
+      "type": "integer",
+      "description": "Episode number extracted from title"
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "Approximate timestamp in video (MM:SS format)",
+      "pattern": "^[0-9]{1,3}:[0-9]{2}$"
+    },
+    "youtube_url": {
+      "type": "string",
+      "description": "Direct link to video at timestamp",
+      "pattern": "^https://www.youtube.com/watch\\?v=.+&t=[0-9]+s$"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Concise topic label (2-6 words)",
+      "examples": ["Mapping normals to color", "Point cloud radius search", "Ramp-based falloff"]
+    },
+    "code": {
+      "type": "string",
+      "description": "Exact VEX code snippet. Must be syntactically valid VEX."
+    },
+    "explanation": {
+      "type": "string",
+      "description": "1-3 sentence explanation of what the code does and WHY. Written for an intermediate Houdini user."
+    },
+    "vex_functions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "All VEX functions used in the code snippet",
+      "examples": [["length", "fit", "chramp", "@P", "@Cd"]]
+    },
+    "vex_context": {
+      "type": "string",
+      "enum": ["SOP", "DOP", "COP", "CVEX", "unknown"],
+      "description": "VEX execution context"
+    },
+    "node_context": {
+      "type": "string",
+      "description": "Houdini node type where this code runs",
+      "examples": ["Attribute Wrangle", "Point Wrangle", "Volume Wrangle", "Attribute VOP (inline)"]
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["beginner", "intermediate", "advanced"],
+      "description": "Skill level required to understand this snippet"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "attributes",
+        "color",
+        "geometry_creation",
+        "geometry_manipulation",
+        "math_operations",
+        "noise_and_randomness",
+        "point_clouds",
+        "groups_and_selection",
+        "strings",
+        "arrays",
+        "volumes",
+        "simulation",
+        "ui_and_parameters",
+        "flow_control",
+        "debugging",
+        "optimization",
+        "other"
+      ]
+    },
+    "related_concepts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Conceptual tags for semantic search",
+      "examples": [["normals", "color mapping", "visualization", "attribute transfer"]]
+    },
+    "prerequisites": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "IDs of records that should be understood before this one",
+      "examples": [["joy_of_vex_ep01_001"]]
+    },
+    "builds_on": {
+      "type": "string",
+      "description": "ID of the immediately preceding code iteration, if this snippet extends previous code"
+    },
+    "ocr_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "OCR confidence score. Below 0.7 = needs manual review."
+    },
+    "needs_review": {
+      "type": "boolean",
+      "description": "Flagged for human review (low OCR confidence, ambiguous code, etc.)"
+    }
+  }
+}
+```
+
+---
+
+## 3. Stage Scripts
+
+### Stage 1: Download Videos + Subtitles
+
+Create `scripts/01_download.py`:
+
+```python
+"""
+Stage 1: Download videos and auto-generated subtitles from YouTube playlist.
+
+Usage: python scripts/01_download.py <playlist_url>
+
+Output:
+  data/videos/{episode_number}_{sanitized_title}.mp4
+  data/subs/{episode_number}_{sanitized_title}.en.vtt
+  data/metadata/playlist_index.json
+"""
+
+import subprocess
+import json
+import sys
+import os
+import re
+from pathlib import Path
+
+PLAYLIST_URL = sys.argv[1] if len(sys.argv) > 1 else "https://www.youtube.com/playlist?list=PLTXmnikJEYnBtSfn4LwKx5vpopwrInp18"
+
+DATA_DIR = Path("data")
+VIDEO_DIR = DATA_DIR / "videos"
+SUB_DIR = DATA_DIR / "subs"
+META_DIR = DATA_DIR / "metadata"
+
+for d in [VIDEO_DIR, SUB_DIR, META_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
+
+def get_playlist_info():
+    """Extract playlist metadata without downloading."""
+    result = subprocess.run([
+        "yt-dlp",
+        "--flat-playlist",
+        "--dump-json",
+        PLAYLIST_URL
+    ], capture_output=True, text=True)
+    
+    entries = []
+    for line in result.stdout.strip().split('\n'):
+        if line.strip():
+            entries.append(json.loads(line))
+    return entries
+
+def download_episode(entry, index):
+    """Download a single episode's video and subtitles."""
+    video_id = entry.get('id', entry.get('url', ''))
+    title = entry.get('title', f'episode_{index}')
+    safe_title = re.sub(r'[^\w\s-]', '', title).strip().replace(' ', '_')[:60]
+    filename_base = f"{index:02d}_{safe_title}"
+    
+    # Download video (720p max to save space — we only need readable code frames)
+    subprocess.run([
+        "yt-dlp",
+        "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]",
+        "--merge-output-format", "mp4",
+        "-o", str(VIDEO_DIR / f"{filename_base}.mp4"),
+        "--write-auto-sub",
+        "--sub-lang", "en",
+        "--sub-format", "vtt",
+        "-o", f"subtitle:{SUB_DIR / filename_base}",
+        f"https://www.youtube.com/watch?v={video_id}"
+    ], check=True)
+    
+    return {
+        "index": index,
+        "video_id": video_id,
+        "title": title,
+        "filename_base": filename_base,
+        "url": f"https://www.youtube.com/watch?v={video_id}"
+    }
+
+def main():
+    print("Fetching playlist info...")
+    entries = get_playlist_info()
+    print(f"Found {len(entries)} episodes.")
+    
+    index_data = []
+    for i, entry in enumerate(entries, 1):
+        print(f"\n--- Downloading episode {i}/{len(entries)}: {entry.get('title', 'unknown')} ---")
+        try:
+            meta = download_episode(entry, i)
+            index_data.append(meta)
+        except Exception as e:
+            print(f"ERROR downloading episode {i}: {e}")
+            index_data.append({
+                "index": i,
+                "title": entry.get('title', 'unknown'),
+                "error": str(e)
+            })
+    
+    # Save playlist index
+    with open(META_DIR / "playlist_index.json", "w") as f:
+        json.dump(index_data, f, indent=2)
+    
+    print(f"\nDone. Downloaded {len([x for x in index_data if 'error' not in x])}/{len(entries)} episodes.")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Stage 2: Frame Extraction
+
+Create `scripts/02_extract_frames.py`:
+
+```python
+"""
+Stage 2: Extract frames from downloaded videos at 0.5fps.
+We use 0.5fps (1 frame every 2 seconds) because code changes are
+relatively slow in tutorials. This keeps frame count manageable.
+
+Usage: python scripts/02_extract_frames.py
+
+Output: data/frames/{episode}/frame_%05d.png
+"""
+
+import subprocess
+import json
+from pathlib import Path
+from tqdm import tqdm
+
+DATA_DIR = Path("data")
+VIDEO_DIR = DATA_DIR / "videos"
+FRAME_DIR = DATA_DIR / "frames"
+
+def extract_frames(video_path, output_dir, fps=0.5):
+    """Extract frames from video at specified fps."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    subprocess.run([
+        "ffmpeg", "-i", str(video_path),
+        "-vf", f"fps={fps}",
+        "-q:v", "2",  # High quality JPEG
+        str(output_dir / "frame_%05d.png"),
+        "-y"  # Overwrite
+    ], capture_output=True, check=True)
+    
+    return len(list(output_dir.glob("*.png")))
+
+def main():
+    with open(DATA_DIR / "metadata" / "playlist_index.json") as f:
+        playlist = json.load(f)
+    
+    for entry in tqdm(playlist, desc="Extracting frames"):
+        if "error" in entry:
+            continue
+        
+        video_file = VIDEO_DIR / f"{entry['filename_base']}.mp4"
+        if not video_file.exists():
+            print(f"Video not found: {video_file}")
+            continue
+        
+        episode_dir = FRAME_DIR / entry['filename_base']
+        n_frames = extract_frames(video_file, episode_dir)
+        print(f"  {entry['filename_base']}: {n_frames} frames")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Stage 3: Code Frame Detection
+
+Create `scripts/03_detect_code_frames.py`:
+
+```python
+"""
+Stage 3: Detect frames that show VEX code editor.
+
+Heuristic approach:
+1. Houdini's VEX editor has a dark/grey background with light text
+2. Code frames have high text density in specific screen regions
+3. Frame differencing catches when code CHANGES (new typing)
+
+We detect ALL code-visible frames, then deduplicate to keep only
+frames where the code content changed significantly.
+
+Usage: python scripts/03_detect_code_frames.py
+
+Output: data/code_frames/{episode}/ (symlinks or copies of detected frames)
+        data/code_frames/{episode}/detections.json
+"""
+
+import cv2
+import numpy as np
+import json
+from pathlib import Path
+from tqdm import tqdm
+
+DATA_DIR = Path("data")
+FRAME_DIR = DATA_DIR / "frames"
+CODE_DIR = DATA_DIR / "code_frames"
+
+# --- Tunable Parameters ---
+# These may need adjustment depending on the specific tutorial series.
+# Run on 2-3 episodes first and visually verify before batch processing.
+
+DARK_REGION_THRESHOLD = 80       # Pixel intensity below this = "dark"
+DARK_RATIO_MIN = 0.25            # At least 25% of frame should be dark (code editor area)
+TEXT_EDGE_DENSITY_MIN = 0.02     # Minimum edge density in dark regions (text detection)
+FRAME_DIFF_THRESHOLD = 0.015     # Minimum structural difference to count as "code changed"
+# ---------------------------
+
+def is_code_frame(frame):
+    """
+    Detect if a frame likely shows VEX code editor.
+    
+    Returns (is_code: bool, confidence: float, metadata: dict)
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    
+    # Check for dark regions (code editor background)
+    dark_mask = gray < DARK_REGION_THRESHOLD
+    dark_ratio = np.sum(dark_mask) / (h * w)
+    
+    if dark_ratio < DARK_RATIO_MIN:
+        return False, 0.0, {"reason": "insufficient_dark_area", "dark_ratio": dark_ratio}
+    
+    # Check for text-like edges in dark regions
+    edges = cv2.Canny(gray, 50, 150)
+    text_edges = edges & (dark_mask.astype(np.uint8) * 255)
+    edge_density = np.sum(text_edges > 0) / np.sum(dark_mask)
+    
+    if edge_density < TEXT_EDGE_DENSITY_MIN:
+        return False, 0.0, {"reason": "low_text_density", "edge_density": edge_density}
+    
+    # Check for horizontal line patterns (code lines are horizontal)
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
+    horizontal_lines = cv2.morphologyEx(text_edges, cv2.MORPH_OPEN, horizontal_kernel)
+    line_ratio = np.sum(horizontal_lines > 0) / max(np.sum(text_edges > 0), 1)
+    
+    confidence = min(1.0, (dark_ratio * 0.3 + edge_density * 10 * 0.4 + line_ratio * 0.3))
+    
+    return confidence > 0.3, confidence, {
+        "dark_ratio": round(dark_ratio, 3),
+        "edge_density": round(edge_density, 4),
+        "line_ratio": round(line_ratio, 3)
+    }
+
+def frames_differ(frame_a, frame_b, threshold=FRAME_DIFF_THRESHOLD):
+    """Check if two frames have significantly different content."""
+    if frame_a is None or frame_b is None:
+        return True
+    
+    gray_a = cv2.cvtColor(frame_a, cv2.COLOR_BGR2GRAY)
+    gray_b = cv2.cvtColor(frame_b, cv2.COLOR_BGR2GRAY)
+    
+    # Structural Similarity approximation (fast)
+    diff = cv2.absdiff(gray_a, gray_b)
+    change_ratio = np.sum(diff > 30) / diff.size
+    
+    return change_ratio > threshold
+
+def process_episode(episode_dir):
+    """Process all frames in an episode directory."""
+    frames = sorted(episode_dir.glob("frame_*.png"))
+    if not frames:
+        return []
+    
+    output_dir = CODE_DIR / episode_dir.name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    detections = []
+    last_code_frame = None
+    
+    for frame_path in frames:
+        frame = cv2.imread(str(frame_path))
+        if frame is None:
+            continue
+        
+        is_code, confidence, meta = is_code_frame(frame)
+        
+        if is_code:
+            # Only keep if code content actually changed
+            if frames_differ(frame, last_code_frame):
+                # Calculate timestamp from frame number (at 0.5fps = 2 sec per frame)
+                frame_num = int(frame_path.stem.split('_')[1])
+                timestamp_sec = frame_num * 2  # 0.5fps means 1 frame = 2 seconds
+                
+                # Copy frame to code_frames directory
+                import shutil
+                dest = output_dir / frame_path.name
+                shutil.copy2(frame_path, dest)
+                
+                detections.append({
+                    "frame": frame_path.name,
+                    "timestamp_sec": timestamp_sec,
+                    "timestamp_fmt": f"{timestamp_sec // 60}:{timestamp_sec % 60:02d}",
+                    "confidence": round(confidence, 3),
+                    "metadata": meta
+                })
+                
+                last_code_frame = frame.copy()
+    
+    # Save detection metadata
+    with open(output_dir / "detections.json", "w") as f:
+        json.dump(detections, f, indent=2)
+    
+    return detections
+
+def main():
+    episodes = sorted([d for d in FRAME_DIR.iterdir() if d.is_dir()])
+    
+    total_detections = 0
+    for episode_dir in tqdm(episodes, desc="Detecting code frames"):
+        detections = process_episode(episode_dir)
+        print(f"  {episode_dir.name}: {len(detections)} code frames detected")
+        total_detections += len(detections)
+    
+    print(f"\nTotal code frames detected: {total_detections}")
+    print("\n⚠️  IMPORTANT: Visually verify detections for 2-3 episodes before proceeding.")
+    print("   Open data/code_frames/{episode}/ and check that detected frames actually show code.")
+    print("   Adjust parameters in this script if detection is too aggressive or too conservative.")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Stage 4: OCR Code Frames
+
+Create `scripts/04_ocr_code.py`:
+
+```python
+"""
+Stage 4: OCR detected code frames to extract VEX text.
+
+Uses pytesseract with code-optimized settings:
+- PSM 6 (assume uniform block of text)
+- Monospace font hints
+- Custom character whitelist for VEX syntax
+
+Output: data/ocr/{episode}.json
+"""
+
+import pytesseract
+import cv2
+import numpy as np
+import json
+from pathlib import Path
+from tqdm import tqdm
+
+DATA_DIR = Path("data")
+CODE_DIR = DATA_DIR / "code_frames"
+OCR_DIR = DATA_DIR / "ocr"
+OCR_DIR.mkdir(parents=True, exist_ok=True)
+
+# Tesseract config optimized for code
+# PSM 6 = Assume a single uniform block of text
+# OEM 3 = Default (LSTM + legacy)
+TESS_CONFIG = r'--psm 6 --oem 3 -c tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()_+-={}[]|;:,.<>?/~`"\' \n\t'
+
+def preprocess_for_ocr(frame):
+    """
+    Preprocess frame to maximize OCR accuracy on code.
+    
+    Strategy:
+    1. Crop to likely code region (if identifiable)
+    2. Convert to grayscale
+    3. Invert (dark bg → white bg for Tesseract)
+    4. Threshold to clean up
+    5. Scale up for better character recognition
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    # Find the dark code region
+    dark_mask = gray < 100
+    
+    # Find bounding box of dark region
+    coords = np.column_stack(np.where(dark_mask))
+    if len(coords) < 100:
+        # Not enough dark area, process whole frame
+        roi = gray
+    else:
+        y_min, x_min = coords.min(axis=0)
+        y_max, x_max = coords.max(axis=0)
+        # Add small padding
+        pad = 10
+        y_min = max(0, y_min - pad)
+        x_min = max(0, x_min - pad)
+        y_max = min(gray.shape[0], y_max + pad)
+        x_max = min(gray.shape[1], x_max + pad)
+        roi = gray[y_min:y_max, x_min:x_max]
+    
+    # Invert (Tesseract expects dark text on light background)
+    inverted = cv2.bitwise_not(roi)
+    
+    # Adaptive threshold for clean binary image
+    binary = cv2.adaptiveThreshold(
+        inverted, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        blockSize=15, C=8
+    )
+    
+    # Scale up 2x for better OCR
+    h, w = binary.shape
+    scaled = cv2.resize(binary, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+    
+    return scaled
+
+def ocr_frame(frame_path):
+    """OCR a single code frame."""
+    frame = cv2.imread(str(frame_path))
+    if frame is None:
+        return None, 0.0
+    
+    processed = preprocess_for_ocr(frame)
+    
+    # Get detailed OCR data (includes confidence per word)
+    ocr_data = pytesseract.image_to_data(processed, config=TESS_CONFIG, output_type=pytesseract.Output.DICT)
+    
+    # Extract text and calculate mean confidence
+    words = []
+    confidences = []
+    for i, text in enumerate(ocr_data['text']):
+        conf = int(ocr_data['conf'][i])
+        if conf > 0 and text.strip():
+            words.append(text)
+            confidences.append(conf / 100.0)
+    
+    # Also get the full text block (preserves line structure)
+    full_text = pytesseract.image_to_string(processed, config=TESS_CONFIG)
+    
+    mean_conf = np.mean(confidences) if confidences else 0.0
+    
+    return full_text.strip(), round(mean_conf, 3)
+
+def process_episode(episode_dir):
+    """OCR all code frames in an episode."""
+    detections_file = episode_dir / "detections.json"
+    if not detections_file.exists():
+        return []
+    
+    with open(detections_file) as f:
+        detections = json.load(f)
+    
+    results = []
+    for det in detections:
+        frame_path = episode_dir / det['frame']
+        if not frame_path.exists():
+            continue
+        
+        code_text, confidence = ocr_frame(frame_path)
+        if code_text:
+            results.append({
+                "frame": det['frame'],
+                "timestamp_sec": det['timestamp_sec'],
+                "timestamp_fmt": det['timestamp_fmt'],
+                "code_text": code_text,
+                "ocr_confidence": confidence,
+                "detection_confidence": det['confidence'],
+                "needs_review": confidence < 0.7
+            })
+    
+    return results
+
+def main():
+    episodes = sorted([d for d in CODE_DIR.iterdir() if d.is_dir()])
+    
+    for episode_dir in tqdm(episodes, desc="OCR processing"):
+        results = process_episode(episode_dir)
+        
+        output_file = OCR_DIR / f"{episode_dir.name}.json"
+        with open(output_file, "w") as f:
+            json.dump(results, f, indent=2)
+        
+        low_conf = sum(1 for r in results if r['needs_review'])
+        print(f"  {episode_dir.name}: {len(results)} code blocks, {low_conf} need review")
+    
+    print("\n⚠️  Review items flagged with needs_review=true.")
+    print("   Low OCR confidence often means the code was partially visible or had syntax highlighting artifacts.")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Stage 5: Transcript Processing
+
+Create `scripts/05_process_transcripts.py`:
+
+```python
+"""
+Stage 5: Process VTT subtitle files into clean transcript segments.
+
+Operations:
+1. Parse VTT files
+2. Merge fragmented subtitle entries into coherent sentences
+3. Strip filler words and stream chat artifacts
+4. Output timestamped segments
+
+If user provides a separate transcript file (e.g., The_Joy_of_VEX.txt),
+this script can also process that as a fallback.
+
+Usage: python scripts/05_process_transcripts.py [--transcript path/to/transcript.txt]
+
+Output: data/transcripts/{episode}.json
+"""
+
+import re
+import json
+import sys
+from pathlib import Path
+
+DATA_DIR = Path("data")
+SUB_DIR = DATA_DIR / "subs"
+TRANSCRIPT_DIR = DATA_DIR / "transcripts"
+TRANSCRIPT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Filler patterns to strip
+FILLER_PATTERNS = [
+    r'\b(um+|uh+|ah+|er+|hm+|hmm+)\b',
+    r'\b(you know|like I said|basically|sort of|kind of)\b',
+    r'\b(right|okay so|so basically|and uh)\b',
+    r'\[.*?\]',  # [Music], [Laughter], etc.
+    r'\(.*?\)',  # (inaudible), etc.
+]
+
+# Stream/chat artifacts
+STREAM_ARTIFACTS = [
+    r'(thanks for (the )?(sub|follow|donation|bits))',
+    r'(welcome to the stream)',
+    r'(let me check (the )?chat)',
+    r'(someone in chat (said|asked|mentioned))',
+    r'(hello everyone)',
+    r'(can you guys hear me)',
+]
+
+def clean_text(text):
+    """Remove filler words and stream artifacts."""
+    cleaned = text.lower()
+    
+    # Remove stream artifacts first (case insensitive)
+    for pattern in STREAM_ARTIFACTS:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+    
+    # Restore original case but apply filler removal
+    cleaned = text
+    for pattern in FILLER_PATTERNS:
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+    
+    # Clean up whitespace
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    
+    return cleaned
+
+def parse_vtt(vtt_path):
+    """Parse VTT subtitle file into segments."""
+    try:
+        import webvtt
+        segments = []
+        for caption in webvtt.read(str(vtt_path)):
+            text = clean_text(caption.text)
+            if text and len(text) > 5:  # Skip very short fragments
+                segments.append({
+                    "start": caption.start,
+                    "end": caption.end,
+                    "start_sec": time_to_seconds(caption.start),
+                    "end_sec": time_to_seconds(caption.end),
+                    "text": text
+                })
+        return segments
+    except Exception as e:
+        print(f"  Error parsing {vtt_path}: {e}")
+        return []
+
+def time_to_seconds(time_str):
+    """Convert VTT timestamp to seconds."""
+    parts = time_str.replace(',', '.').split(':')
+    if len(parts) == 3:
+        h, m, s = parts
+        return int(h) * 3600 + int(m) * 60 + float(s)
+    elif len(parts) == 2:
+        m, s = parts
+        return int(m) * 60 + float(s)
+    return 0
+
+def merge_segments(segments, gap_threshold=2.0):
+    """
+    Merge subtitle fragments that are close in time into coherent blocks.
+    Auto-subs often split mid-sentence; this reconstitutes them.
+    """
+    if not segments:
+        return []
+    
+    merged = [segments[0].copy()]
+    
+    for seg in segments[1:]:
+        last = merged[-1]
+        gap = seg['start_sec'] - last['end_sec']
+        
+        # Merge if gap is small and combined text isn't too long
+        if gap < gap_threshold and len(last['text']) + len(seg['text']) < 500:
+            last['end'] = seg['end']
+            last['end_sec'] = seg['end_sec']
+            last['text'] = last['text'] + ' ' + seg['text']
+        else:
+            merged.append(seg.copy())
+    
+    return merged
+
+def parse_bulk_transcript(transcript_path):
+    """
+    Parse a single large transcript file (fallback if VTT not available).
+    Attempts to split by episode markers.
+    """
+    with open(transcript_path, 'r', encoding='utf-8') as f:
+        text = f.read()
+    
+    # Try to find episode boundaries
+    # Common patterns: "Episode X", "Part X", timestamps, long pauses
+    episode_splits = re.split(
+        r'(?:^|\n)(?:Episode|Part|Session|Chapter)\s*[\d#:]+',
+        text, flags=re.IGNORECASE
+    )
+    
+    if len(episode_splits) <= 1:
+        # No clear episode markers — return as single block
+        return {"full_transcript": clean_text(text)}
+    
+    episodes = {}
+    for i, chunk in enumerate(episode_splits):
+        if chunk.strip():
+            episodes[f"episode_{i:02d}"] = clean_text(chunk)
+    
+    return episodes
+
+def main():
+    # Check for bulk transcript argument
+    bulk_transcript = None
+    if "--transcript" in sys.argv:
+        idx = sys.argv.index("--transcript")
+        if idx + 1 < len(sys.argv):
+            bulk_transcript = Path(sys.argv[idx + 1])
+    
+    # Process VTT files
+    vtt_files = sorted(SUB_DIR.glob("*.vtt"))
+    
+    if vtt_files:
+        for vtt_path in vtt_files:
+            episode_name = vtt_path.stem.replace('.en', '')
+            segments = parse_vtt(vtt_path)
+            merged = merge_segments(segments)
+            
+            output_file = TRANSCRIPT_DIR / f"{episode_name}.json"
+            with open(output_file, "w") as f:
+                json.dump(merged, f, indent=2)
+            
+            print(f"  {episode_name}: {len(merged)} segments")
+    
+    elif bulk_transcript and bulk_transcript.exists():
+        print(f"No VTT files found. Processing bulk transcript: {bulk_transcript}")
+        episodes = parse_bulk_transcript(bulk_transcript)
+        
+        if "full_transcript" in episodes:
+            output_file = TRANSCRIPT_DIR / "full_transcript.json"
+            with open(output_file, "w") as f:
+                json.dump([{"text": episodes["full_transcript"], "start_sec": 0}], f, indent=2)
+            print("  Saved as single file (no episode markers found)")
+        else:
+            for name, text in episodes.items():
+                output_file = TRANSCRIPT_DIR / f"{name}.json"
+                with open(output_file, "w") as f:
+                    json.dump([{"text": text, "start_sec": 0}], f, indent=2)
+            print(f"  Split into {len(episodes)} episodes")
+    else:
+        print("ERROR: No VTT files in data/subs/ and no --transcript provided.")
+        print("Run Stage 1 first, or provide: python scripts/05_process_transcripts.py --transcript /path/to/transcript.txt")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Stage 6: Temporal Alignment
+
+Create `scripts/06_align.py`:
+
+```python
+"""
+Stage 6: Align OCR'd code blocks with transcript explanations.
+
+For each code block (from OCR), find the surrounding transcript text
+that explains what that code does. The explanation typically comes
+in the 10-30 seconds BEFORE and AFTER the code appears.
+
+Output: data/aligned/{episode}.json
+"""
+
+import json
+from pathlib import Path
+from tqdm import tqdm
+
+DATA_DIR = Path("data")
+OCR_DIR = DATA_DIR / "ocr"
+TRANSCRIPT_DIR = DATA_DIR / "transcripts"
+ALIGNED_DIR = DATA_DIR / "aligned"
+META_DIR = DATA_DIR / "metadata"
+ALIGNED_DIR.mkdir(parents=True, exist_ok=True)
+
+# How many seconds before/after a code frame to search for explanation
+CONTEXT_WINDOW_BEFORE = 30  # seconds
+CONTEXT_WINDOW_AFTER = 15   # seconds
+
+def find_explanation(code_timestamp_sec, transcript_segments):
+    """
+    Find transcript segments that overlap with the context window
+    around a code frame timestamp.
+    """
+    window_start = code_timestamp_sec - CONTEXT_WINDOW_BEFORE
+    window_end = code_timestamp_sec + CONTEXT_WINDOW_AFTER
+    
+    matching_segments = []
+    for seg in transcript_segments:
+        seg_start = seg.get('start_sec', 0)
+        seg_end = seg.get('end_sec', seg_start + 5)
+        
+        # Check overlap
+        if seg_start <= window_end and seg_end >= window_start:
+            matching_segments.append(seg['text'])
+    
+    return ' '.join(matching_segments) if matching_segments else ""
+
+def align_episode(episode_name, ocr_data, transcript_data, playlist_entry=None):
+    """Align OCR results with transcript for one episode."""
+    aligned = []
+    
+    for i, code_block in enumerate(ocr_data):
+        explanation = find_explanation(
+            code_block['timestamp_sec'],
+            transcript_data
+        )
+        
+        video_url = ""
+        if playlist_entry:
+            video_id = playlist_entry.get('video_id', '')
+            t = code_block['timestamp_sec']
+            video_url = f"https://www.youtube.com/watch?v={video_id}&t={int(t)}s"
+        
+        aligned.append({
+            "sequence": i + 1,
+            "episode_name": episode_name,
+            "timestamp_sec": code_block['timestamp_sec'],
+            "timestamp_fmt": code_block['timestamp_fmt'],
+            "youtube_url": video_url,
+            "code_text": code_block['code_text'],
+            "explanation_raw": explanation,
+            "ocr_confidence": code_block['ocr_confidence'],
+            "needs_review": code_block.get('needs_review', False)
+        })
+    
+    return aligned
+
+def main():
+    # Load playlist index for video URLs
+    playlist_index = {}
+    index_file = META_DIR / "playlist_index.json"
+    if index_file.exists():
+        with open(index_file) as f:
+            for entry in json.load(f):
+                playlist_index[entry['filename_base']] = entry
+    
+    ocr_files = sorted(OCR_DIR.glob("*.json"))
+    
+    for ocr_file in tqdm(ocr_files, desc="Aligning"):
+        episode_name = ocr_file.stem
+        
+        with open(ocr_file) as f:
+            ocr_data = json.load(f)
+        
+        # Find matching transcript
+        transcript_file = TRANSCRIPT_DIR / f"{episode_name}.json"
+        if not transcript_file.exists():
+            # Try without .en suffix or other variants
+            candidates = list(TRANSCRIPT_DIR.glob(f"{episode_name.split('.')[0]}*"))
+            if candidates:
+                transcript_file = candidates[0]
+            else:
+                print(f"  No transcript found for {episode_name}, skipping alignment")
+                continue
+        
+        with open(transcript_file) as f:
+            transcript_data = json.load(f)
+        
+        playlist_entry = playlist_index.get(episode_name)
+        aligned = align_episode(episode_name, ocr_data, transcript_data, playlist_entry)
+        
+        output_file = ALIGNED_DIR / f"{episode_name}.json"
+        with open(output_file, "w") as f:
+            json.dump(aligned, f, indent=2)
+        
+        print(f"  {episode_name}: {len(aligned)} aligned pairs")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Stage 7: LLM Structuring
+
+Create `scripts/07_structure_jsonl.py`:
+
+```python
+"""
+Stage 7: Use Claude API to structure aligned code-explanation pairs
+into the final JSONL schema.
+
+The LLM receives verified code (from OCR) and verified explanation 
+(from transcript). Its job is to:
+- Clean up OCR artifacts in code
+- Write a polished explanation
+- Classify and tag the snippet
+- Extract VEX function names
+- Assign difficulty and category
+
+Usage: python scripts/07_structure_jsonl.py [--api-key KEY]
+
+Set ANTHROPIC_API_KEY environment variable or pass --api-key.
+
+Output: data/structured/{episode}.jsonl
+"""
+
+import json
+import os
+import sys
+import time
+from pathlib import Path
+from anthropic import Anthropic
+
+DATA_DIR = Path("data")
+ALIGNED_DIR = DATA_DIR / "aligned"
+STRUCTURED_DIR = DATA_DIR / "structured"
+META_DIR = DATA_DIR / "metadata"
+STRUCTURED_DIR.mkdir(parents=True, exist_ok=True)
+
+# Initialize Anthropic client
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+if "--api-key" in sys.argv:
+    idx = sys.argv.index("--api-key")
+    api_key = sys.argv[idx + 1]
+
+if not api_key:
+    print("ERROR: Set ANTHROPIC_API_KEY or pass --api-key")
+    sys.exit(1)
+
+client = Anthropic(api_key=api_key)
+
+SYSTEM_PROMPT = """You are a Houdini VEX expert structuring tutorial content for a RAG database.
+
+You will receive:
+1. OCR'd VEX code (may have OCR artifacts — clean it up)
+2. Transcript explanation (conversational — distill it)
+3. Episode context
+
+Your job: Produce a structured JSON record for each code-explanation pair.
+
+RULES:
+- Fix obvious OCR errors in code (e.g., "0" vs "O", "@Cd" not "@cd")
+- Ensure code is syntactically valid VEX
+- Write explanation in clear technical prose (1-3 sentences)
+- Extract ALL VEX functions used (built-in functions AND attribute bindings like @P, @Cd)
+- Attribute bindings (@P, @N, @Cd, etc.) should be listed in vex_functions
+- If code is incomplete or clearly truncated, set needs_review=true
+- If code is a trivial modification of the previous snippet, note it in builds_on
+- Be conservative with difficulty ratings:
+  - beginner: basic attributes, simple expressions, @P/@Cd type work
+  - intermediate: point clouds, loops, channel references, groups
+  - advanced: matrices, quaternions, custom solvers, compiled blocks
+
+OUTPUT: A single JSON object (not wrapped in markdown code blocks). Must conform exactly to the schema."""
+
+SCHEMA_SUMMARY = """Required fields:
+- id: string, format "joy_of_vex_ep{NN}_{NNN}"
+- source: string, full episode title
+- episode: integer
+- timestamp: string, "MM:SS"
+- youtube_url: string
+- topic: string, 2-6 words
+- code: string, cleaned VEX code
+- explanation: string, 1-3 sentences
+- vex_functions: array of strings
+- vex_context: "SOP" | "DOP" | "COP" | "CVEX" | "unknown"
+- node_context: string (e.g., "Attribute Wrangle")
+- difficulty: "beginner" | "intermediate" | "advanced"
+- category: one of [attributes, color, geometry_creation, geometry_manipulation, math_operations, noise_and_randomness, point_clouds, groups_and_selection, strings, arrays, volumes, simulation, ui_and_parameters, flow_control, debugging, optimization, other]
+- related_concepts: array of strings
+- prerequisites: array of IDs (can be empty)
+- builds_on: string ID or null
+- ocr_confidence: number 0-1
+- needs_review: boolean"""
+
+def structure_record(aligned_pair, episode_num, episode_title):
+    """Send one aligned pair to Claude for structuring."""
+    
+    prompt = f"""Structure this VEX tutorial content into a JSON record.
+
+Episode: {episode_title} (Episode {episode_num})
+Timestamp: {aligned_pair['timestamp_fmt']}
+YouTube URL: {aligned_pair['youtube_url']}
+Sequence in episode: {aligned_pair['sequence']}
+
+OCR'd Code (may have artifacts):
+```
+{aligned_pair['code_text']}
+```
+
+Transcript explanation (conversational):
+{aligned_pair['explanation_raw']}
+
+OCR Confidence: {aligned_pair['ocr_confidence']}
+
+{SCHEMA_SUMMARY}
+
+Output the JSON record only, no markdown wrapping."""
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=2000,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        text = response.content[0].text.strip()
+        
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        
+        record = json.loads(text)
+        return record
+    
+    except json.JSONDecodeError as e:
+        print(f"    JSON parse error: {e}")
+        return None
+    except Exception as e:
+        print(f"    API error: {e}")
+        time.sleep(5)  # Rate limit backoff
+        return None
+
+def process_episode(aligned_file, playlist_entry):
+    """Process all aligned pairs in an episode."""
+    with open(aligned_file) as f:
+        aligned_pairs = json.load(f)
+    
+    episode_title = playlist_entry.get('title', aligned_file.stem) if playlist_entry else aligned_file.stem
+    
+    # Extract episode number from filename or index
+    episode_num = playlist_entry.get('index', 0) if playlist_entry else 0
+    
+    records = []
+    for pair in aligned_pairs:
+        print(f"    Processing sequence {pair['sequence']}...")
+        record = structure_record(pair, episode_num, episode_title)
+        
+        if record:
+            records.append(record)
+        
+        # Rate limiting: ~50 requests/minute for Sonnet
+        time.sleep(1.5)
+    
+    return records
+
+def main():
+    # Load playlist index
+    playlist_index = {}
+    index_file = META_DIR / "playlist_index.json"
+    if index_file.exists():
+        with open(index_file) as f:
+            for entry in json.load(f):
+                playlist_index[entry['filename_base']] = entry
+    
+    aligned_files = sorted(ALIGNED_DIR.glob("*.json"))
+    
+    total_records = 0
+    total_review = 0
+    
+    for aligned_file in aligned_files:
+        episode_name = aligned_file.stem
+        playlist_entry = playlist_index.get(episode_name)
+        
+        print(f"\n--- Processing {episode_name} ---")
+        records = process_episode(aligned_file, playlist_entry)
+        
+        # Write JSONL
+        output_file = STRUCTURED_DIR / f"{episode_name}.jsonl"
+        with open(output_file, "w") as f:
+            for record in records:
+                f.write(json.dumps(record) + "\n")
+        
+        review_count = sum(1 for r in records if r.get('needs_review', False))
+        print(f"  {episode_name}: {len(records)} records, {review_count} need review")
+        total_records += len(records)
+        total_review += review_count
+    
+    print(f"\n{'='*50}")
+    print(f"Total records: {total_records}")
+    print(f"Need review: {total_review}")
+    print(f"Output: {STRUCTURED_DIR}/")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Stage 8: Validation + Final Assembly
+
+Create `scripts/08_validate_and_assemble.py`:
+
+```python
+"""
+Stage 8: Validate all structured JSONL records and assemble final output.
+
+Validation checks:
+1. Schema conformance (required fields, types, enums)
+2. VEX syntax sanity (basic checks — NOT full compilation)
+3. Duplicate detection
+4. ID uniqueness
+5. Cross-reference integrity (prerequisites, builds_on)
+
+Output:
+  output/joy_of_vex_rag.jsonl          — Final dataset
+  output/joy_of_vex_reference.md       — Human-readable reference
+  output/joy_of_vex_functions.json     — Function index
+  output/validation_report.json        — Validation results
+"""
+
+import json
+import re
+from pathlib import Path
+from collections import Counter, defaultdict
+
+DATA_DIR = Path("data")
+STRUCTURED_DIR = DATA_DIR / "structured"
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Valid enum values from schema
+VALID_CONTEXTS = {"SOP", "DOP", "COP", "CVEX", "unknown"}
+VALID_DIFFICULTY = {"beginner", "intermediate", "advanced"}
+VALID_CATEGORIES = {
+    "attributes", "color", "geometry_creation", "geometry_manipulation",
+    "math_operations", "noise_and_randomness", "point_clouds",
+    "groups_and_selection", "strings", "arrays", "volumes", "simulation",
+    "ui_and_parameters", "flow_control", "debugging", "optimization", "other"
+}
+
+def validate_record(record, all_ids):
+    """Validate a single JSONL record. Returns list of issues."""
+    issues = []
+    
+    # Required fields
+    required = ["id", "source", "episode", "topic", "code", "explanation",
+                "vex_functions", "vex_context"]
+    for field in required:
+        if field not in record:
+            issues.append(f"Missing required field: {field}")
+    
+    # Type checks
+    if "id" in record and not isinstance(record["id"], str):
+        issues.append(f"id must be string, got {type(record['id'])}")
+    
+    if "episode" in record and not isinstance(record["episode"], int):
+        issues.append(f"episode must be int, got {type(record['episode'])}")
+    
+    if "vex_functions" in record and not isinstance(record["vex_functions"], list):
+        issues.append(f"vex_functions must be array, got {type(record['vex_functions'])}")
+    
+    # Enum checks
+    if record.get("vex_context") not in VALID_CONTEXTS:
+        issues.append(f"Invalid vex_context: {record.get('vex_context')}")
+    
+    if record.get("difficulty") not in VALID_DIFFICULTY:
+        issues.append(f"Invalid difficulty: {record.get('difficulty')}")
+    
+    if record.get("category") and record["category"] not in VALID_CATEGORIES:
+        issues.append(f"Invalid category: {record.get('category')}")
+    
+    # VEX syntax basic checks
+    code = record.get("code", "")
+    if code:
+        # Check for common OCR artifacts that indicate bad extraction
+        if re.search(r'[^\x00-\x7F]', code):
+            issues.append("Code contains non-ASCII characters (possible OCR artifact)")
+        
+        # Check for balanced braces
+        if code.count('{') != code.count('}'):
+            issues.append("Unbalanced braces in code")
+        
+        # Check for balanced parentheses
+        if code.count('(') != code.count(')'):
+            issues.append("Unbalanced parentheses in code")
+    
+    # Empty content checks
+    if not record.get("code", "").strip():
+        issues.append("Empty code field")
+    
+    if not record.get("explanation", "").strip():
+        issues.append("Empty explanation field")
+    
+    if not record.get("vex_functions"):
+        issues.append("Empty vex_functions (every VEX snippet should use at least one function or binding)")
+    
+    # Cross-reference checks
+    if record.get("builds_on") and record["builds_on"] not in all_ids:
+        issues.append(f"builds_on references unknown ID: {record['builds_on']}")
+    
+    for prereq in record.get("prerequisites", []):
+        if prereq not in all_ids:
+            issues.append(f"prerequisite references unknown ID: {prereq}")
+    
+    return issues
+
+def build_function_index(records):
+    """Build an index of all VEX functions encountered."""
+    func_index = defaultdict(lambda: {"count": 0, "episodes": set(), "example_ids": []})
+    
+    for record in records:
+        for func in record.get("vex_functions", []):
+            entry = func_index[func]
+            entry["count"] += 1
+            entry["episodes"].add(record.get("episode", 0))
+            if len(entry["example_ids"]) < 3:
+                entry["example_ids"].append(record["id"])
+    
+    # Convert sets to sorted lists for JSON serialization
+    result = {}
+    for func, data in sorted(func_index.items()):
+        result[func] = {
+            "count": data["count"],
+            "episodes": sorted(data["episodes"]),
+            "example_ids": data["example_ids"]
+        }
+    
+    return result
+
+def build_reference_markdown(records):
+    """Build human-readable markdown reference."""
+    lines = ["# The Joy of VEX — Technical Reference\n"]
+    lines.append(f"> Auto-generated from {len(records)} code snippets\n")
+    lines.append("> Source: Matt Estela — The Joy of VEX (YouTube)\n\n---\n")
+    
+    # Group by episode
+    by_episode = defaultdict(list)
+    for record in records:
+        by_episode[record.get("episode", 0)].append(record)
+    
+    for ep_num in sorted(by_episode.keys()):
+        ep_records = by_episode[ep_num]
+        ep_title = ep_records[0].get("source", f"Episode {ep_num}")
+        
+        lines.append(f"\n## {ep_title}\n")
+        
+        for record in ep_records:
+            lines.append(f"\n### {record.get('topic', 'Untitled')} [{record.get('timestamp', '')}]\n")
+            lines.append(f"*{record.get('difficulty', 'unknown')} | {record.get('category', 'other')} | {record.get('node_context', 'unknown')}*\n")
+            lines.append(f"\n```c\n{record.get('code', '')}\n```\n")
+            lines.append(f"\n{record.get('explanation', '')}\n")
+            
+            funcs = record.get("vex_functions", [])
+            if funcs:
+                lines.append(f"\n**Functions:** `{'`, `'.join(funcs)}`\n")
+            
+            concepts = record.get("related_concepts", [])
+            if concepts:
+                lines.append(f"\n**Concepts:** {', '.join(concepts)}\n")
+            
+            if record.get("youtube_url"):
+                lines.append(f"\n[Watch in video]({record['youtube_url']})\n")
+            
+            lines.append("\n---\n")
+    
+    return '\n'.join(lines)
+
+def main():
+    # Collect all records
+    all_records = []
+    jsonl_files = sorted(STRUCTURED_DIR.glob("*.jsonl"))
+    
+    for jsonl_file in jsonl_files:
+        with open(jsonl_file) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        all_records.append(json.loads(line))
+                    except json.JSONDecodeError as e:
+                        print(f"  JSON error in {jsonl_file.name}: {e}")
+    
+    print(f"Loaded {len(all_records)} records from {len(jsonl_files)} files")
+    
+    # Collect all IDs for cross-reference validation
+    all_ids = {r.get("id") for r in all_records if r.get("id")}
+    
+    # Check ID uniqueness
+    id_counts = Counter(r.get("id") for r in all_records)
+    duplicates = {k: v for k, v in id_counts.items() if v > 1}
+    if duplicates:
+        print(f"\n⚠️  Duplicate IDs found: {duplicates}")
+    
+    # Validate all records
+    validation_report = {
+        "total_records": len(all_records),
+        "valid": 0,
+        "warnings": 0,
+        "errors": 0,
+        "issues": []
+    }
+    
+    valid_records = []
+    for record in all_records:
+        issues = validate_record(record, all_ids)
+        
+        if not issues:
+            validation_report["valid"] += 1
+            valid_records.append(record)
+        else:
+            has_errors = any("Missing" in i or "Empty code" in i for i in issues)
+            if has_errors:
+                validation_report["errors"] += 1
+            else:
+                validation_report["warnings"] += 1
+                valid_records.append(record)  # Warnings still pass
+            
+            validation_report["issues"].append({
+                "id": record.get("id", "unknown"),
+                "issues": issues,
+                "severity": "error" if has_errors else "warning"
+            })
+    
+    # --- Output 1: Final JSONL ---
+    output_jsonl = OUTPUT_DIR / "joy_of_vex_rag.jsonl"
+    with open(output_jsonl, "w") as f:
+        for record in valid_records:
+            f.write(json.dumps(record) + "\n")
+    print(f"\n✅ Final JSONL: {output_jsonl} ({len(valid_records)} records)")
+    
+    # --- Output 2: Function Index ---
+    func_index = build_function_index(valid_records)
+    output_funcs = OUTPUT_DIR / "joy_of_vex_functions.json"
+    with open(output_funcs, "w") as f:
+        json.dump(func_index, f, indent=2)
+    print(f"✅ Function index: {output_funcs} ({len(func_index)} unique functions)")
+    
+    # --- Output 3: Human Reference ---
+    reference_md = build_reference_markdown(valid_records)
+    output_ref = OUTPUT_DIR / "joy_of_vex_reference.md"
+    with open(output_ref, "w") as f:
+        f.write(reference_md)
+    print(f"✅ Reference doc: {output_ref}")
+    
+    # --- Output 4: Validation Report ---
+    output_report = OUTPUT_DIR / "validation_report.json"
+    with open(output_report, "w") as f:
+        json.dump(validation_report, f, indent=2)
+    print(f"✅ Validation: {output_report}")
+    
+    # Summary
+    print(f"\n{'='*50}")
+    print(f"  Records: {validation_report['total_records']}")
+    print(f"  Valid:   {validation_report['valid']}")
+    print(f"  Warnings:{validation_report['warnings']}")
+    print(f"  Errors:  {validation_report['errors']}")
+    print(f"  Functions: {len(func_index)} unique")
+    
+    need_review = sum(1 for r in valid_records if r.get('needs_review'))
+    if need_review:
+        print(f"\n⚠️  {need_review} records flagged for manual review (low OCR confidence)")
+        print("   Search for 'needs_review: true' in the JSONL to find them.")
+    
+    print(f"\nDone. Final dataset: {output_jsonl}")
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## 4. Master Runner Script
+
+Create `scripts/run_pipeline.sh`:
+
+```bash
+#!/bin/bash
+set -e
+
+echo "============================================"
+echo " VEX Tutorial RAG Pipeline"
+echo " Target: The Joy of VEX by Matt Estela"
+echo "============================================"
+echo ""
+
+PLAYLIST_URL="${1:-https://www.youtube.com/playlist?list=PLTXmnikJEYnBtSfn4LwKx5vpopwrInp18}"
+TRANSCRIPT_FILE="${2:-}"  # Optional: path to bulk transcript file
+
+echo "Playlist: $PLAYLIST_URL"
+[ -n "$TRANSCRIPT_FILE" ] && echo "Transcript: $TRANSCRIPT_FILE"
+echo ""
+
+# Stage 1: Download
+echo "=== STAGE 1: Downloading videos + subtitles ==="
+python scripts/01_download.py "$PLAYLIST_URL"
+echo ""
+
+# Stage 2: Extract frames
+echo "=== STAGE 2: Extracting frames ==="
+python scripts/02_extract_frames.py
+echo ""
+
+# Stage 3: Detect code frames
+echo "=== STAGE 3: Detecting code frames ==="
+python scripts/03_detect_code_frames.py
+echo ""
+
+# CHECKPOINT: Pause for human verification
+echo ""
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║  CHECKPOINT: Verify code frame detection                 ║"
+echo "║                                                          ║"
+echo "║  Open data/code_frames/ and visually check that the      ║"
+echo "║  detected frames actually show VEX code.                 ║"
+echo "║                                                          ║"
+echo "║  If detection is off, adjust parameters in               ║"
+echo "║  scripts/03_detect_code_frames.py and re-run Stage 3.    ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo ""
+read -p "Press Enter to continue (or Ctrl+C to stop and adjust)..."
+echo ""
+
+# Stage 4: OCR
+echo "=== STAGE 4: OCR on code frames ==="
+python scripts/04_ocr_code.py
+echo ""
+
+# Stage 5: Process transcripts
+echo "=== STAGE 5: Processing transcripts ==="
+if [ -n "$TRANSCRIPT_FILE" ]; then
+    python scripts/05_process_transcripts.py --transcript "$TRANSCRIPT_FILE"
+else
+    python scripts/05_process_transcripts.py
+fi
+echo ""
+
+# Stage 6: Align
+echo "=== STAGE 6: Temporal alignment ==="
+python scripts/06_align.py
+echo ""
+
+# Stage 7: LLM Structuring
+echo "=== STAGE 7: LLM structuring (requires ANTHROPIC_API_KEY) ==="
+if [ -z "$ANTHROPIC_API_KEY" ]; then
+    echo "ERROR: ANTHROPIC_API_KEY not set."
+    echo "Export it: export ANTHROPIC_API_KEY=sk-ant-..."
+    exit 1
+fi
+python scripts/07_structure_jsonl.py
+echo ""
+
+# Stage 8: Validate + Assemble
+echo "=== STAGE 8: Validation + final assembly ==="
+python scripts/08_validate_and_assemble.py
+echo ""
+
+echo "============================================"
+echo " Pipeline complete!"
+echo ""
+echo " Outputs:"
+echo "   output/joy_of_vex_rag.jsonl         ← RAG dataset"
+echo "   output/joy_of_vex_reference.md      ← Human reference"
+echo "   output/joy_of_vex_functions.json    ← Function index"
+echo "   output/validation_report.json       ← QA report"
+echo "============================================"
+```
+
+---
+
+## 5. Running the Pipeline
+
+### Quick Start (Claude Code execution)
+
+```bash
+# 1. Set up
+cd vex_rag_pipeline
+chmod +x scripts/run_pipeline.sh
+
+# 2. Set API key
+export ANTHROPIC_API_KEY="sk-ant-your-key-here"
+
+# 3. Run full pipeline
+./scripts/run_pipeline.sh
+
+# OR with a user-provided transcript:
+./scripts/run_pipeline.sh \
+  "https://www.youtube.com/playlist?list=PLTXmnikJEYnBtSfn4LwKx5vpopwrInp18" \
+  "/path/to/The_Joy_of_VEX.txt"
+```
+
+### Running Individual Stages
+
+```bash
+# If a stage fails, fix it and re-run from that stage:
+python scripts/04_ocr_code.py          # Re-run OCR only
+python scripts/06_align.py             # Re-run alignment only
+python scripts/08_validate_and_assemble.py  # Re-run validation only
+```
+
+### Single Episode Test (Recommended First)
+
+```bash
+# Download just one video to test the pipeline
+yt-dlp -o "data/videos/test.mp4" "https://www.youtube.com/watch?v=FIRST_VIDEO_ID"
+# Then run stages 2-8 on just that one file
+```
+
+---
+
+## 6. Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| OCR returns garbage | Screen recording quality too low | Try higher resolution download (`-f bestvideo+bestaudio`) |
+| No code frames detected | Threshold too strict | Lower `DARK_RATIO_MIN` in Stage 3 |
+| Too many code frames | Threshold too loose | Raise `FRAME_DIFF_THRESHOLD` in Stage 3 |
+| Transcript has no timestamps | Bulk transcript file used | VTT subtitles are preferred; re-run Stage 1 |
+| API rate limited | Too many requests | Increase `time.sleep()` in Stage 7 |
+| Unbalanced braces in validation | OCR truncated code | Flag for manual review; check frame quality |
+
+---
+
+## 7. Scaling to Other Tutorial Series
+
+This pipeline is designed to be reusable. To process a different VEX tutorial series:
+
+1. Change the `PLAYLIST_URL` in `run_pipeline.sh`
+2. Update the `id` prefix pattern in the schema (e.g., `entagma_ep01_001`)
+3. Adjust code frame detection parameters if the UI looks different
+4. Re-run
+
+Compatible series:
+- **Entagma** — Similar Houdini UI, should work with minimal tuning
+- **Junichiro Horikawa** — May need different frame detection (uses custom layouts)
+- **SideFX official tutorials** — Standard Houdini UI
+- **Houdini Hangouts** — Screen sharing format, may need detection adjustment
+
+---
+
+## 8. Post-Pipeline: Loading into Vector DB
+
+The output JSONL is designed for direct ingestion into common vector databases:
+
+```python
+# Example: Loading into ChromaDB
+import chromadb
+import json
+
+client = chromadb.PersistentClient(path="./vex_rag_db")
+collection = client.get_or_create_collection(
+    name="vex_tutorials",
+    metadata={"hnsw:space": "cosine"}
+)
+
+with open("output/joy_of_vex_rag.jsonl") as f:
+    for line in f:
+        record = json.loads(line)
+        
+        # Compose the embedding text from multiple fields
+        # This gives the embedding model rich search surface
+        embed_text = f"""
+        Topic: {record['topic']}
+        Code: {record['code']}
+        Explanation: {record['explanation']}
+        Functions: {', '.join(record['vex_functions'])}
+        Concepts: {', '.join(record.get('related_concepts', []))}
+        Category: {record.get('category', '')}
+        """
+        
+        collection.add(
+            ids=[record['id']],
+            documents=[embed_text],
+            metadatas=[{
+                "episode": record['episode'],
+                "difficulty": record['difficulty'],
+                "category": record.get('category', 'other'),
+                "vex_context": record['vex_context'],
+                "source": record['source'],
+                "youtube_url": record.get('youtube_url', '')
+            }]
+        )
+```

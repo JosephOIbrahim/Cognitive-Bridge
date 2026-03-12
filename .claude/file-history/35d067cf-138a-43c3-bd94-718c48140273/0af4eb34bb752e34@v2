@@ -1,0 +1,70 @@
+"""Expert execution orchestrator.
+
+Coordinates expert selection, bleeding, and execution
+with full provenance tracking.
+"""
+
+from dataclasses import dataclass
+
+from src.lossless.constants import EXPERTS, PHASES, PROFILES
+from src.lossless.injection.state import InjectionState
+from src.lossless.experts.bleeding import apply_bleeding
+from src.lossless.experts.registry import Expert, get_expert_registry
+from src.lossless.experts.selector import select_expert
+from src.lossless.routing.cascade import CascadeResult
+
+
+@dataclass(frozen=True)
+class ExpertResult:
+    """Result of expert execution.
+
+    Attributes:
+        selected_expert: The expert that was selected.
+        expert_scores: All expert contribution scores.
+        bleeding_applied: Whether cross-expert bleeding was applied.
+        profile_name: Injection profile active during execution.
+    """
+
+    selected_expert: Expert
+    expert_scores: tuple  # tuple of (phase, score) pairs
+    bleeding_applied: bool
+    profile_name: str
+
+
+def execute_expert(
+    cascade_result: CascadeResult,
+    injection_state: InjectionState,
+) -> ExpertResult:
+    """Execute expert selection and contribution calculation.
+
+    Args:
+        cascade_result: Routing cascade result.
+        injection_state: Current injection state.
+
+    Returns:
+        ExpertResult with selected expert and scores.
+    """
+    profile_name = injection_state.profile
+    cross_expert = PROFILES[profile_name]["cross_expert"]
+
+    # Select primary expert
+    expert = select_expert(cascade_result)
+
+    # Compute expert contributions per phase
+    contributions = {}
+    phase_scores = cascade_result.get_scores_dict()
+    for phase in PHASES:
+        contributions[phase] = phase_scores.get(phase, 0.0)
+
+    # Apply bleeding if cross-expert coefficient is non-zero
+    bleeding_applied = False
+    if cross_expert > 0.0 and injection_state.active:
+        contributions = apply_bleeding(contributions, injection_state)
+        bleeding_applied = True
+
+    return ExpertResult(
+        selected_expert=expert,
+        expert_scores=tuple(sorted(contributions.items())),
+        bleeding_applied=bleeding_applied,
+        profile_name=profile_name,
+    )

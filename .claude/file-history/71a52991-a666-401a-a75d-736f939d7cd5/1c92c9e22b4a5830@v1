@@ -1,0 +1,87 @@
+---
+title: "MPM Surface Tension"
+category: tutorials
+subcategory: workflow_guides
+keywords: ["mpm", "surface_tension", "fluid_sim", "droplets", "mpm_solver", "viscosity"]
+agent_relevance:
+  Librarian: 0.90
+  GraphTracer: 0.75
+  VexAuditor: 0.45
+related_documents:
+  - path: "tutorials/workflow_guides/mpm_overview.md"
+    reason: "Previous in series: MPM H21 Masterclass Overview"
+  - path: "tutorials/workflow_guides/mpm_auto_sleep.md"
+    reason: "Next in series: MPM Auto Sleep"
+common_queries:
+  - "How does surface tension work in MPM?"
+  - "MPM surface tension tutorial"
+  - "Houdini 21 surface tension setup"
+source:
+  type: youtube_video
+  url: "https://www.youtube.com/watch?v=HAv1t7q7VRk"
+  series: "SideFX MPM H21 Masterclass"
+  part: 1
+  total_parts: 18
+  presenter: "Alex Wevinger"
+---
+
+# MPM Surface Tension
+
+**Source:** [SideFX MPM H21 Masterclass - Part 1](https://www.youtube.com/watch?v=HAv1t7q7VRk)
+**Presenter:** Alex Wevinger
+
+## Overview
+
+So let's first take a look at our new features. Let's jump in Houdini. So this is the HIP file that you have access to and you can follow along as I'm doing these demonstration. So this is the subnet containing the new features and the first thing we're going to take a look at is this surface tension feature. Key topics include surface tension, collision, material.
+
+## Key Concepts
+
+### Surface Tension
+
+So let's first take a look at our new features. Let's jump in Houdini. So this is the HIP file that you have access to and you can follow along as I'm doing these demonstration. So this is the subnet containing the new features and the first thing we're going to take a look at is this surface tension feature. Okay.
+
+### Collision
+
+This is something that we're going to use a lot. So it gives us the that And then our collider is going to be the leaves. So we can just remove this box. And then the source is going to be this And then first thing we can see is that our collider is lacking a lot of resolution. We don't see the leaves at all.
+
+### Material
+
+resolution here on the MPM collider. And so right now, right now we're at this amount of resolution. So maybe I so. Oh, and here you can see that we have a probably resolved the collider. So, this is good.
+
+### Meshing
+
+So let's first take a look at our new features. Let's jump in Houdini. So this is the HIP file that you have access to and you can follow along as I'm doing these demonstration. So this is the subnet containing the new features and the first thing we're going to take a look at is this surface tension feature. Okay.
+
+## Nodes & Parameters
+
+| Node | Purpose | Key Parameters |
+|------|---------|----------------|
+| MPM Solver | Referenced 3x in transcript |  |
+| MPM Configure | Referenced 2x in transcript |  |
+| MPM Collider | Referenced 2x in transcript |  |
+| MPM Source | Referenced 2x in transcript |  |
+| Merge | Referenced 1x in transcript |  |
+| Trail | Referenced 1x in transcript |  |
+
+## Workflow Steps
+
+1. first take a look at our new features.
+2. first thing we're going to take a look at is this surface tension feature.
+3. First thing just MPM configure.
+4. first thing we can see is that our collider is lacking a lot of resolution.
+5. And then our collider is going to be the leaves.
+6. And then the source is going to be this And then first thing we can see is that our collider is lacking a lot of resolution.
+7. And then if we take a look at our collider, still not properly resolved.
+8. And then if we look at our MPM solver, everything looks fine.
+9. first frame and we hit play.
+10. and then as it's detaching from from the leaf it's creating another another droplet midair.
+
+## Tips & Insights
+
+- make sure that oh no in fact this is on the MPM solver under the collision tab and we can just enable particle level collision and this default of velocity base move move outside collider will be perfectly fine.
+- be aware of all of its neighbors.
+- tiply that by a crazy number so we can actually see something.
+- tiplier on top of what is coming from this mpm source in terms of surface tension here.
+
+---
+*Full transcript: [01_surface_tension.md](../../_raw_documentation/mpm_masterclass/01_surface_tension.md)*

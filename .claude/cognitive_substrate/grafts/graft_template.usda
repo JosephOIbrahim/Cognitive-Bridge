@@ -1,0 +1,47 @@
+#usda 1.0
+(
+    doc = """Research Graft: [PAPER NAME]
+    Source: [arxiv link]
+    Date grafted: [date]
+    Author: Joe
+
+    Patterns transferred:
+    - [Pattern 1 name]
+    - [Pattern 2 name]
+
+    Integration points:
+    - [What this modifies in the core substrate]
+    """
+)
+
+def "Preamble" (
+    doc = "Graft metadata"
+)
+{
+    string paper_title = "[Paper Title]"
+    string arxiv_id = "[arxiv ID]"
+    string date_grafted = "[YYYY-MM-DD]"
+    string[] patterns = ["pattern_1", "pattern_2"]
+    string[] integration_targets = ["RoutingCascade", "MomentumEngine"]
+}
+
+# --- NEW SECTIONS (def = additive) ---
+
+# def "NewCapability" (
+#     doc = "## New Section Title"
+# )
+# {
+#     string markdown_content = """New content added by this research graft."""
+#     int priority = 60
+#     bool enabled = true
+# }
+
+# --- MODIFICATIONS TO EXISTING SECTIONS (over = modify) ---
+
+# over "ExistingCoreSectionName" {
+#     string markdown_append = """
+#
+#     ### [Graft Name] Enhancement
+#     Additional content from this research graft.
+#     """
+# }

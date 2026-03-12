@@ -1,0 +1,263 @@
+/**
+ * Process Posts Data
+ *
+ * Blog-style content for the PROCESS page.
+ * Categories: case-studies, tools, experiments
+ *
+ * Tools include download URLs for direct access from the PROCESS page.
+ * Easter Egg (ToolsOverlay) remains as a secondary discovery path.
+ */
+
+export type ProcessCategory = 'case-studies' | 'tools' | 'research' | 'experiments';
+
+// Display sections for the Process page (merged categories)
+export type ProcessSection = 'tools' | 'explorations';
+
+export const sectionLabels: Record<ProcessSection, string> = {
+  'tools': 'Tools',
+  'explorations': 'Explorations'
+};
+
+export const sectionDescriptions: Record<ProcessSection, string> = {
+  'tools': 'Open-source tools built from production frustration. Each one solves a problem I hit more than twice.',
+  'explorations': 'The thinking behind the work. Case studies, research, and the technical decisions that shaped the final frame.'
+};
+
+/** Get posts grouped by display section (Tools first, then Explorations = case-studies + research) */
+export function getProcessPostsBySection(section: ProcessSection): ProcessPost[] {
+  if (section === 'tools') {
+    return processPosts.filter(p => p.category === 'tools');
+  }
+  // Explorations = case-studies + research
+  return processPosts.filter(p => p.category === 'case-studies' || p.category === 'research');
+}
+
+export interface ProcessPost {
+  id: string;
+  slug: string;
+  title: string;
+  category: ProcessCategory;
+  excerpt: string;
+  content: string;
+  date: string;
+  thumbnail?: string;
+  tags?: string[];
+  projectSlug?: string;  // Link to related project (case studies)
+  version?: string;      // Tool version (tools category)
+  downloadUrl?: string;  // Download path for tools (local file)
+  fileSize?: string;     // File size display for tools
+  githubUrl?: string;    // GitHub repo URL (preferred over downloadUrl)
+  breakdownVideoId?: string;   // Vimeo video ID for case study breakdowns
+  breakdownVideoHash?: string; // Privacy hash for private Vimeo videos
+}
+
+export const processPosts: ProcessPost[] = [
+  // Case Studies
+  {
+    id: 'cs-1',
+    slug: 'cinderella-mice-breakdown',
+    title: 'Cinderella: Lighting CG Mice for Live-Action',
+    category: 'case-studies',
+    thumbnail: 'https://vumbnail.com/1132142159.jpg',
+    excerpt: 'Fifteen rounds of director notes on fur creatures that had to feel real enough to share frames with live actors.',
+    content: `About 95% of my work on Disney's Cinderella was lighting the mice. These tiny CG creatures needed to feel real enough to share the frame with live-action actors, but also carry that Disney warmth — furry, expressive, loveable.
+
+**The Challenge**
+Fifteen-plus rounds of director notes on CG mice that had to integrate seamlessly with live-action plates. Fur is unforgiving under harsh light, and any mismatch in color temperature or shadow direction would break the illusion. This was also my first real experience with deep compositing — learning to think about lighting as part of a larger pipeline, not just pretty pictures.
+
+**Technical Approach**
+Built modular lighting rigs in Katana with Renderman handling the fur rendering. The deep compositing workflow through Nuke was a revelation — being able to finesse integration at the end without re-rendering changed how I thought about flexibility in lighting.
+
+**Fur Rendering**
+Fur responds to light in complex ways — it's not a surface, it's millions of tiny cylinders that scatter, absorb, and transmit light. Getting the mice to feel soft and tactile required careful attention to:
+- Rim lighting that gave the fur that halo-like glow
+- Fill ratios that kept shadows readable without going muddy
+- Color temperature matching to the live-action plates
+
+**The Real Lesson**
+The biggest lesson wasn't technical. It was learning the value of being on a team of VFX artists who genuinely had each other's backs. When you're on round 15 of notes, that support matters more than any render optimization.
+
+**Reference**
+The original animated Cinderella mice — Gus and Jaq have this specific charm. Round, soft, warm. Our lighting needed to honor that while making them feel physically present in a live-action world.`,
+    date: '2015-03-13',
+    tags: ['Feature Film', 'Creature Lighting', 'Fur', 'Katana', 'Renderman', 'Deep Compositing'],
+    projectSlug: 'cinderella-film-reel',
+    breakdownVideoId: '665345862',
+    breakdownVideoHash: 'a4656bed71'
+  },
+
+  // Tools
+  {
+    id: 'tool-1',
+    slug: 'hyphae',
+    title: 'Hyphae',
+    category: 'tools',
+    thumbnail: '/thumbnails/hyphae-thumb.svg',
+    excerpt: 'The neural filaments between AI and Houdini — WebSocket bridge with persistent project memory.',
+    content: `Every Houdini MCP I found on GitHub had the same problems: unstable connections, shallow understanding of Houdini's node graph, and a tendency to break at the worst moments. Hyphae is what grew out of that frustration.
+
+**Synapse — The Bridge**
+Direct WebSocket communication between Claude Code and Houdini. No MCP middleware, no connection drops. The protocol understands Houdini's node hierarchy, parameter types, and USD stage structure natively.
+
+**Engram — The Memory**
+Persistent project memory that lives alongside your .hip file. Decisions, context, and workflows accumulate over time. Human-readable markdown + structured JSON for AI retrieval.
+
+**Core — The Foundation**
+Deterministic operations, tamper-evident audit logging, and human-in-the-loop approval gates. The infrastructure that makes AI assistance trustworthy.
+
+**Philosophy**
+I wanted an assistant, not a replacement. Hyphae doesn't try to "do Houdini for you." It watches, learns, and helps when asked — but you're still the artist driving the session.`,
+    date: '2025-01-27',
+    tags: ['Houdini', 'Claude Code', 'AI Integration', 'WebSocket', 'Pipeline'],
+    version: '1.0.0',
+    githubUrl: 'https://github.com/JosephOIbrahim/Hyphae'
+  },
+  {
+    id: 'tool-2',
+    slug: 'radiant-suite',
+    title: 'Radiant Suite',
+    category: 'tools',
+    thumbnail: '/thumbnails/radiant-thumb.svg',
+    excerpt: 'Lighting, texturing, and compositing workflows for Houdini — Aurora, Spectrum, and Prism.',
+    content: `Production tools built over years of lighting work. Radiant Suite handles the repetitive setup tasks that eat into creative time.
+
+**Aurora — Lighting Workflow**
+Light groups with automatic LPE/AOV generation. Visual light linking. Character-aware setups. The lighting decisions encoded, not the lighting itself.
+
+**Spectrum — Materials & Texturing**
+MaterialX-native material management. HDRI and dome light setup. Texture pipeline with UDIM support. Environment workflows that just work.
+
+**Prism — Compositing (Coming Soon)**
+COPs-based layer management and image operations. Connecting the lighting workflow to the comp.
+
+**Production Tested**
+Used on 12+ commercial projects. Stable with Houdini 21+, Karma XPU, and Renderman.`,
+    date: '2024-11-20',
+    tags: ['Houdini', 'Lighting', 'Materials', 'Pipeline', 'Karma'],
+    version: '2.0.0',
+    githubUrl: 'https://github.com/JosephOIbrahim/RadiantSuite'
+  },
+  {
+    id: 'tool-3',
+    slug: 'jetblock-optimizer',
+    title: 'JetBlock Optimizer',
+    category: 'tools',
+    thumbnail: '/thumbnails/jetblock-thumb.svg',
+    excerpt: 'Deterministic inference for Nemotron 3 in ComfyUI — same seed, same output, every time.',
+    content: `Most LLM inference is nondeterministic — run the same prompt twice, get different results. JetBlock fixes that for Nemotron 3's hybrid architecture in ComfyUI.
+
+**The Problem**
+Batch-size variance (not temperature) causes nondeterminism. When server load changes, batch sizes change, and outputs drift.
+
+**What JetBlock Does**
+- Forces batch-invariant operations across Mamba-2, MoE, and attention layers
+- Three modes: strict (1.6x slower), standard (1.2x slower), relaxed (full speed)
+- Cascade control for reasoning budget between /think and /no_think modes
+
+**Why It Matters**
+Reproducible outputs enable real on-policy reinforcement learning and consistent creative iteration.`,
+    date: '2025-01-15',
+    tags: ['ComfyUI', 'Determinism', 'Nemotron', 'ThinkingMachines'],
+    version: '4.0',
+    githubUrl: 'https://github.com/JosephOIbrahim/comfyui-jetblock-optimizer'
+  },
+  {
+    id: 'tool-4',
+    slug: 'lighting-setups',
+    title: 'Houdini Lighting Setups',
+    category: 'tools',
+    thumbnail: '/thumbnails/lighting-thumb.svg',
+    excerpt: 'Template scenes for common lighting scenarios: product, portrait, automotive, architectural. Coming soon.',
+    content: `Starting from scratch every time is slow. These template scenes encode proven lighting setups that can be adapted to any project.
+
+**Included Setups**
+- **Product**: Three configurations - soft diffuse, dramatic rim, catalog neutral
+- **Portrait**: Rembrandt, butterfly, split, broad/short
+- **Automotive**: Studio HDRI + accent lights, outdoor natural, showroom
+- **Architectural**: Golden hour exterior, overcast soft, interior daylight
+
+**Usage**
+Import as sublayer, adjust to taste. All lights are parameterized for easy modification.
+
+**Status**
+Coming soon — currently being packaged for public release.`,
+    date: '2024-06-10',
+    tags: ['Houdini', 'Lighting', 'Templates']
+  },
+
+  {
+    id: 'tool-5',
+    slug: 'unreal-axon',
+    title: 'Unreal AXON',
+    category: 'tools',
+    thumbnail: '/thumbnails/axon-thumb.svg',
+    excerpt: 'A bridge from Claude Code to Unreal Engine without MCP — stability over hype.',
+    content: `Same frustration, different DCC. I was working on a small game project and wanted Claude Code as a coding partner. Every integration I tried was unstable, and Unreal's built-in AI chat can't be extended or customized.
+
+**The Problem**
+Unreal Engine's plugin ecosystem is vast, but AI integrations are either locked to specific providers, unstable under load, or require MCP setups that break between sessions. I needed something that just worked.
+
+**AXON Approach**
+Like SYNAPSE for Houdini, AXON uses direct port communication — Python on the Claude Code side talking to Unreal's Python API. No MCP middleware, no connection drops, no mysterious timeouts.
+
+**What It Does**
+- Blueprint assistance (explains nodes, suggests connections)
+- C++ code review for gameplay systems
+- Asset organization suggestions based on project structure
+- Build error interpretation (Unreal's errors can be cryptic)
+
+**Philosophy**
+The in-engine AI chat is a black box you can't modify. AXON is transparent — I can see exactly what context is being sent, adjust the prompts, and extend it when I need new capabilities. An assistant I control, not a feature I'm locked into.
+
+**Current State**
+Working for personal game dev projects. Pairs conceptually with SYNAPSE — same architecture philosophy, different target application.`,
+    date: '2025-01-22',
+    tags: ['Unreal Engine', 'Claude Code', 'Python', 'Game Dev', 'AI Integration']
+  },
+  {
+    id: 'res-1',
+    slug: 'lighting-aware-generation',
+    title: 'Lighting-Aware Image Generation',
+    category: 'research',
+    thumbnail: '/thumbnails/lighting-aware-thumb.svg',
+    excerpt: 'Experiments in conditioning generative AI on explicit lighting direction and quality.',
+    content: `Most AI-generated images have flat, ambient lighting. This project explores whether we can teach models to respect lighting intent.
+
+**Approach**
+Using ControlNet with custom-trained lighting detection, we condition Stable Diffusion on:
+- Key light direction (spherical coordinates)
+- Fill ratio
+- Color temperature
+- Specular intensity
+
+**Current State**
+Promising results on portraits. Architectural scenes need more training data. The model definitely understands "light from upper left" now.
+
+**Next Steps**
+Training on VFX-supervised data where ground truth lighting is known from the 3D setup.`,
+    date: '2025-01-10',
+    tags: ['AI', 'Lighting', 'ControlNet', 'Research']
+  }
+];
+
+export function getProcessPost(slug: string): ProcessPost | undefined {
+  return processPosts.find(p => p.slug === slug);
+}
+
+export function getProcessPostsByCategory(category: ProcessCategory): ProcessPost[] {
+  return processPosts.filter(p => p.category === category);
+}
+
+export const categoryLabels: Record<ProcessCategory, string> = {
+  'case-studies': 'Case Studies',
+  'tools': 'Tools',
+  'research': 'Research',
+  'experiments': 'Experiments'
+};
+
+export const categoryDescriptions: Record<ProcessCategory, string> = {
+  'case-studies': 'Deep dives into project workflows and problem-solving approaches.',
+  'tools': 'Production tools built to solve real pipeline challenges.',
+  'research': 'Blog-style posts exploring methodologies and technical approaches.',
+  'experiments': 'Visual scenes, prototypes, and working explorations.'
+};

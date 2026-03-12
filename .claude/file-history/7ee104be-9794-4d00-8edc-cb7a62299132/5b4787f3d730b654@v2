@@ -1,0 +1,29 @@
+"""Thin WebSocket helper -- send execute_python to Synapse, print result."""
+import asyncio, json, sys, time, websockets
+
+async def main():
+    code = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read()
+    async with websockets.connect(
+        "ws://localhost:9999/synapse", open_timeout=5, close_timeout=5,
+        ping_interval=None, compression=None,
+    ) as ws:
+        msg = {
+            "type": "execute_python",
+            "id": f"exec_{int(time.time()*1000)}",
+            "payload": {"content": code},
+            "sequence": 0,
+            "protocol_version": "4.0.0",
+        }
+        await ws.send(json.dumps(msg, sort_keys=True))
+        raw = await asyncio.wait_for(ws.recv(), timeout=120)
+        resp = json.loads(raw)
+        if resp.get("success"):
+            r = resp.get("data", resp.get("result", ""))
+            if isinstance(r, dict) and "result" in r:
+                r = r["result"]
+            print(r if isinstance(r, str) else json.dumps(r, indent=2))
+        else:
+            print(f"ERROR: {resp.get('error', resp)}", file=sys.stderr)
+            sys.exit(1)
+
+asyncio.run(main())

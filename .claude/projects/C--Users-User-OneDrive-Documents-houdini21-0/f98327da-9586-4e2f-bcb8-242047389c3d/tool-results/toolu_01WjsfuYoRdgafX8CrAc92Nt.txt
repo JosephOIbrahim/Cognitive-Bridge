@@ -1,0 +1,1169 @@
+     1→# Cinema Camera Rig v4.0 — SYNAPSE REFACTOR
+     2→
+     3→## Agent δ HDA Creation via Synapse Bridge
+     4→
+     5→**Supersedes:** Pillar C (§C.2–C.3), Pillar G (§G.2–G.4) of v4.0 Physical Architecture spec
+     6→**Reason:** Agent δ's 4 HDAs require live `hou` session. Claude Code creates them through Synapse command port.
+     7→**Unchanged:** Pillars A, B, D, E, F — file-based or `hython`/`pxr`-only. No Synapse dependency.
+     8→
+     9→---
+    10→
+    11→## SYNAPSE EXECUTION CONTRACT
+    12→
+    13→### Prerequisites
+    14→
+    15→Before ANY Agent δ builder script runs, Synapse must verify:
+    16→
+    17→```python
+    18→# File: python/cinema_camera/synapse_preflight.py
+    19→"""
+    20→Synapse preflight check. Runs once per session.
+    21→Claude Code calls this through the bridge before Agent δ tasks begin.
+    22→"""
+    23→
+    24→def synapse_preflight() -> dict:
+    25→    """
+    26→    Verify live Houdini session is ready for HDA construction.
+    27→    Returns dict of verified conditions. Raises RuntimeError on failure.
+    28→    """
+    29→    import hou
+    30→    import os
+    31→
+    32→    result = {}
+    33→
+    34→    # 1. Houdini version
+    35→    major, minor, patch = hou.applicationVersion()
+    36→    assert major >= 21, f"Requires Houdini 21+, got {major}.{minor}.{patch}"
+    37→    result["houdini_version"] = f"{major}.{minor}.{patch}"
+    38→
+    39→    # 2. Cinema camera path
+    40→    cinema_path = os.environ.get("CINEMA_CAMERA_PATH")
+    41→    assert cinema_path, "CINEMA_CAMERA_PATH not set in session environment"
+    42→    assert os.path.isdir(cinema_path), f"CINEMA_CAMERA_PATH does not exist: {cinema_path}"
+    43→    result["cinema_camera_path"] = cinema_path
+    44→
+    45→    # 3. VEX include path — libcinema_optics.h must be findable
+    46→    vex_dir = os.path.join(cinema_path, "vex")
+    47→    houdini_path = os.environ.get("HOUDINI_PATH", "")
+    48→    if cinema_path not in houdini_path:
+    49→        # Append so VEX #include <libcinema_optics.h> resolves
+    50→        os.environ["HOUDINI_PATH"] = f"{cinema_path};{houdini_path}"
+    51→        hou.hscript(f'setenv HOUDINI_PATH = "{cinema_path};{houdini_path}"')
+    52→    result["vex_include_path"] = vex_dir
+    53→
+    54→    # 4. HDA output directories exist
+    55→    for subdir in ["hda/chops", "hda/post"]:
+    56→        full = os.path.join(cinema_path, subdir)
+    57→        os.makedirs(full, exist_ok=True)
+    58→    result["hda_dirs_ready"] = True
+    59→
+    60→    # 5. Copernicus available
+    61→    try:
+    62→        hou.nodeType(hou.copNodeTypeCategory(), "vopcop2gen")
+    63→        result["copernicus_available"] = True
+    64→    except:
+    65→        result["copernicus_available"] = False
+    66→
+    67→    return result
+    68→```
+    69→
+    70→### Session Protocol
+    71→
+    72→```
+    73→SYNAPSE EXECUTION ORDER:
+    74→  1. Claude Code calls synapse_preflight() through bridge
+    75→  2. If preflight passes → proceed with builder scripts
+    76→  3. Each builder script is a standalone function
+    77→  4. Each function creates the HDA, saves it, returns the .hda path
+    78→  5. Claude Code verifies the .hda file exists on disk after each call
+    79→  6. If any builder fails → Claude Code gets the traceback through bridge
+    80→     and can retry or escalate
+    81→```
+    82→
+    83→---
+    84→
+    85→## PILLAR C: Operator Biomechanics — Synapse Builder
+    86→
+    87→### C.2 Builder Script (Replaces abstract HDA description)
+    88→
+    89→```python
+    90→# File: python/cinema_camera/builders/build_chops_biomechanics.py
+    91→"""
+    92→Synapse builder: cinema::chops_biomechanics::1.0
+    93→
+    94→Execution: Claude Code sends this to live Houdini via Synapse bridge.
+    95→Creates the CHOPs HDA, configures internal solvers, saves to disk.
+    96→
+    97→Dependencies:
+    98→  - synapse_preflight() must have passed
+    99→  - biomechanics.py must exist at $CINEMA_CAMERA_PATH/python/cinema_camera/
+   100→"""
+   101→
+   102→import hou
+   103→import os
+   104→
+   105→
+   106→def build_chops_biomechanics_hda(
+   107→    save_dir: str = None,
+   108→    hda_name: str = "cinema_chops_biomechanics_1.0.hda",
+   109→) -> str:
+   110→    """
+   111→    Build cinema::chops_biomechanics::1.0 HDA in live Houdini session.
+   112→
+   113→    Creates a CHOP-level HDA containing:
+   114→      - Inertia Calculator (Python SOP reading USD weight attribute)
+   115→      - Spring Solver (hou.chopNodeTypeCategory spring node)
+   116→      - Lag Solver (hou.chopNodeTypeCategory lag node)
+   117→      - Handheld Noise Generator (optional, toggle-controlled)
+   118→      - Export target: FluidHead xformOp:rotateXYZ
+   119→
+   120→    Returns: Absolute path to saved .hda file.
+   121→    """
+   122→    if save_dir is None:
+   123→        save_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "hda", "chops")
+   124→
+   125→    hda_path = os.path.join(save_dir, hda_name)
+   126→
+   127→    # ── 1. Create temporary container ────────────────────
+   128→    obj = hou.node("/obj")
+   129→    temp_geo = obj.createNode("geo", "__cinema_biomech_builder")
+   130→    temp_geo.moveToGoodPosition()
+   131→
+   132→    # Create the CHOP network that will become the HDA
+   133→    chop_net = temp_geo.createNode("chopnet", "cinema_biomechanics")
+   134→
+   135→    # ── 2. Input: Channel source ─────────────────────────
+   136→    # Raw pan/tilt/roll channels from animator or mocap
+   137→    ch_input = chop_net.createNode("fetch", "raw_camera_input")
+   138→    ch_input.parm("nodepath").set("")  # User wires this at HDA level
+   139→    ch_input.setComment("INPUT: Pan/Tilt/Roll channels\nConnect to animation source")
+   140→    ch_input.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   141→
+   142→    # ── 3. Constant node: solver parameters ──────────────
+   143→    # These parms get promoted to HDA interface
+   144→    ch_params = chop_net.createNode("constant", "solver_params")
+   145→    ch_params.parm("name0").set("spring_k")
+   146→    ch_params.parm("value0").set(15.0)
+   147→    ch_params.parm("name1").set("damping")
+   148→    ch_params.parm("value1").set(0.5)
+   149→    ch_params.parm("name2").set("lag_frames")
+   150→    ch_params.parm("value2").set(2.25)
+   151→    ch_params.parm("name3").set("shake_amp")
+   152→    ch_params.parm("value3").set(0.2)
+   153→    ch_params.parm("name4").set("shake_freq")
+   154→    ch_params.parm("value4").set(5.5)
+   155→
+   156→    # ── 4. Spring Solver ─────────────────────────────────
+   157→    ch_spring = chop_net.createNode("spring", "inertia_solver")
+   158→    ch_spring.setInput(0, ch_input)
+   159→    ch_spring.parm("springk").setExpression('ch("../solver_params/value0")')
+   160→    ch_spring.parm("springdamp").setExpression('ch("../solver_params/value1")')
+   161→    ch_spring.setComment("Spring solver\nDamping driven by rig weight")
+   162→    ch_spring.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   163→
+   164→    # ── 5. Lag Solver ────────────────────────────────────
+   165→    ch_lag = chop_net.createNode("lag", "operator_delay")
+   166→    ch_lag.setInput(0, ch_spring)
+   167→    ch_lag.parm("lagmethod").set(1)  # Lag by frames
+   168→    ch_lag.parm("lag").setExpression('ch("../solver_params/value2")')
+   169→    ch_lag.setComment("Operator reaction time\nHeavier rig = more lag")
+   170→    ch_lag.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   171→
+   172→    # ── 6. Handheld Noise (Optional) ─────────────────────
+   173→    ch_noise = chop_net.createNode("noise", "handheld_shake")
+   174→    ch_noise.parm("amp").setExpression('ch("../solver_params/value3")')
+   175→    ch_noise.parm("freq").setExpression('ch("../solver_params/value4")')
+   176→    ch_noise.parm("type").set(4)  # Sparse noise — more natural than Perlin
+   177→    ch_noise.parm("seed").setExpression("$F * 0.1")
+   178→    ch_noise.setComment("Handheld camera shake\nAmplitude inversely proportional to weight")
+   179→    ch_noise.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   180→
+   181→    # ── 7. Enable toggle for noise ───────────────────────
+   182→    ch_switch = chop_net.createNode("switch", "handheld_enable")
+   183→    ch_switch.setInput(0, ch_lag)      # Off: just spring + lag
+   184→    ch_switch.setInput(1, ch_noise)    # On: adds noise
+   185→    ch_switch.parm("index").set(0)     # Default: off
+   186→
+   187→    # ── 8. Math: combine lag output + noise ──────────────
+   188→    ch_math = chop_net.createNode("math", "combine_motion")
+   189→    ch_math.setInput(0, ch_lag)
+   190→    ch_math.setInput(1, ch_switch)
+   191→    ch_math.parm("chopop").set(1)  # Add
+   192→    ch_math.setComment("Combine spring/lag with optional shake")
+   193→    ch_math.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   194→
+   195→    # ── 9. Output ────────────────────────────────────────
+   196→    ch_output = chop_net.createNode("null", "OUT_biomechanics")
+   197→    ch_output.setInput(0, ch_math)
+   198→    ch_output.setDisplayFlag(True)
+   199→    ch_output.setRenderFlag(True)
+   200→    ch_output.setComment("OUTPUT: Physical camera motion\nExport to FluidHead rotateXYZ")
+   201→    ch_output.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   202→
+   203→    # ── 10. Layout ───────────────────────────────────────
+   204→    chop_net.layoutChildren()
+   205→
+   206→    # ── 11. Create HDA from CHOP network ─────────────────
+   207→    hda_def = chop_net.createDigitalAsset(
+   208→        name="cinema::chops_biomechanics",
+   209→        hda_file_name=hda_path,
+   210→        description="Cinema Camera Biomechanics v1.0",
+   211→        min_num_inputs=1,
+   212→        max_num_inputs=1,
+   213→        version="1.0",
+   214→    )
+   215→
+   216→    hda_node = chop_net
+   217→    hda_type = hda_node.type()
+   218→    hda_def = hda_type.definition()
+   219→
+   220→    # ── 12. Promote parameters to HDA interface ──────────
+   221→    ptg = hda_node.parmTemplateGroup()
+   222→
+   223→    # Weight-driven folder
+   224→    weight_folder = hou.FolderParmTemplate(
+   225→        "weight_folder", "Rig Weight",
+   226→        folder_type=hou.folderType.Tabs,
+   227→    )
+   228→    weight_folder.addParmTemplate(hou.FloatParmTemplate(
+   229→        "combined_weight_kg", "Combined Weight (kg)", 1,
+   230→        default_value=(7.5,),
+   231→        min=1.0, max=30.0,
+   232→        help="Total rig weight. Reads from USD cinema:rig:combinedWeightKg if available.",
+   233→    ))
+   234→    weight_folder.addParmTemplate(hou.FloatParmTemplate(
+   235→        "moment_arm_cm", "Moment Arm (cm)", 1,
+   236→        default_value=(18.0,),
+   237→        min=5.0, max=50.0,
+   238→        help="Distance from tripod pivot to center of mass. Computed from sensor offset + half lens length.",
+   239→    ))
+   240→    ptg.append(weight_folder)
+   241→
+   242→    # Solver folder
+   243→    solver_folder = hou.FolderParmTemplate(
+   244→        "solver_folder", "Solver",
+   245→        folder_type=hou.folderType.Tabs,
+   246→    )
+   247→    solver_folder.addParmTemplate(hou.FloatParmTemplate(
+   248→        "spring_constant", "Spring Constant", 1,
+   249→        default_value=(15.0,),
+   250→        min=1.0, max=30.0,
+   251→        help="Higher = snappier response. Auto-derived from weight if 'Auto Derive' is on.",
+   252→    ))
+   253→    solver_folder.addParmTemplate(hou.FloatParmTemplate(
+   254→        "damping_ratio", "Damping Ratio", 1,
+   255→        default_value=(0.5,),
+   256→        min=0.0, max=1.0,
+   257→        help="0 = undamped oscillation, 1 = critically damped. Heavier rigs need more damping.",
+   258→    ))
+   259→    solver_folder.addParmTemplate(hou.FloatParmTemplate(
+   260→        "lag_frames", "Lag (frames)", 1,
+   261→        default_value=(2.25,),
+   262→        min=0.0, max=10.0,
+   263→        help="Operator reaction delay. Heavy rig = slower response.",
+   264→    ))
+   265→    solver_folder.addParmTemplate(hou.ToggleParmTemplate(
+   266→        "auto_derive", "Auto Derive from Weight",
+   267→        default_value=True,
+   268→        help="When on, spring/damping/lag auto-compute from combined_weight_kg using biomechanics.py derivation.",
+   269→    ))
+   270→    ptg.append(solver_folder)
+   271→
+   272→    # Handheld folder
+   273→    shake_folder = hou.FolderParmTemplate(
+   274→        "shake_folder", "Handheld Shake",
+   275→        folder_type=hou.folderType.Tabs,
+   276→    )
+   277→    shake_folder.addParmTemplate(hou.ToggleParmTemplate(
+   278→        "enable_handheld", "Enable Handheld Shake",
+   279→        default_value=False,
+   280→    ))
+   281→    shake_folder.addParmTemplate(hou.FloatParmTemplate(
+   282→        "shake_amplitude_deg", "Amplitude (deg)", 1,
+   283→        default_value=(0.2,),
+   284→        min=0.0, max=2.0,
+   285→        help="Peak random rotation. Inversely proportional to weight.",
+   286→    ))
+   287→    shake_folder.addParmTemplate(hou.FloatParmTemplate(
+   288→        "shake_frequency_hz", "Frequency (Hz)", 1,
+   289→        default_value=(5.5,),
+   290→        min=1.0, max=15.0,
+   291→        help="Dominant shake frequency. Lighter rigs shake faster.",
+   292→    ))
+   293→    ptg.append(shake_folder)
+   294→
+   295→    hda_def.setParmTemplateGroup(ptg)
+   296→
+   297→    # ── 13. Python auto-derive callback ──────────────────
+   298→    auto_derive_script = '''
+   299→import hou
+   300→import sys
+   301→import os
+   302→
+   303→# Ensure cinema_camera package is importable
+   304→cinema_path = os.environ.get("CINEMA_CAMERA_PATH", "")
+   305→python_path = os.path.join(cinema_path, "python")
+   306→if python_path not in sys.path:
+   307→    sys.path.insert(0, python_path)
+   308→
+   309→node = kwargs["node"]
+   310→
+   311→if node.parm("auto_derive").eval():
+   312→    weight = node.parm("combined_weight_kg").eval()
+   313→    arm = node.parm("moment_arm_cm").eval()
+   314→
+   315→    # Inline derivation (mirrors biomechanics.py logic)
+   316→    inertia = weight * (arm ** 2)
+   317→    spring_k = max(5.0, 25.0 - inertia * 0.012)
+   318→    damping = min(0.95, 0.6 + weight * 0.025)
+   319→    lag = weight * 0.3
+   320→    shake_amp = max(0.05, 1.5 / weight)
+   321→    shake_freq = max(2.0, 8.0 - weight * 0.3)
+   322→
+   323→    node.parm("spring_constant").set(spring_k)
+   324→    node.parm("damping_ratio").set(damping)
+   325→    node.parm("lag_frames").set(lag)
+   326→    node.parm("shake_amplitude_deg").set(shake_amp)
+   327→    node.parm("shake_frequency_hz").set(shake_freq)
+   328→'''
+   329→    # Attach callback to weight and moment_arm parms
+   330→    hda_def.addParmCallback(auto_derive_script, ("combined_weight_kg", "moment_arm_cm", "auto_derive"))
+   331→
+   332→    # ── 14. Wire internal channel references ─────────────
+   333→    # Connect promoted parms to internal solver_params constants
+   334→    solver_params = hda_node.node("solver_params")
+   335→    solver_params.parm("value0").setExpression('ch("../spring_constant")')
+   336→    solver_params.parm("value1").setExpression('ch("../damping_ratio")')
+   337→    solver_params.parm("value2").setExpression('ch("../lag_frames")')
+   338→    solver_params.parm("value3").setExpression('ch("../shake_amplitude_deg")')
+   339→    solver_params.parm("value4").setExpression('ch("../shake_frequency_hz")')
+   340→
+   341→    # Wire handheld enable toggle
+   342→    switch_node = hda_node.node("handheld_enable")
+   343→    switch_node.parm("index").setExpression('ch("../enable_handheld")')
+   344→
+   345→    # ── 15. Set HDA metadata ─────────────────────────────
+   346→    hda_def.setIcon("CHOP_spring")
+   347→    hda_def.setComment("Operator biomechanics: physically-based camera inertia")
+   348→    hda_def.setExtraInfo(
+   349→        "Cinema Camera Rig v4.0 — Biomechanics CHOPs\n"
+   350→        "Converts raw pan/tilt/roll into weight-realistic camera motion.\n"
+   351→        "Heavy rigs: high damping, slow ease-in/ease-out, less shake.\n"
+   352→        "Light rigs: low damping, snappy response, more shake."
+   353→    )
+   354→
+   355→    # ── 16. Save and clean up ────────────────────────────
+   356→    hda_def.save(hda_path)
+   357→    hda_node.matchCurrentDefinition()
+   358→
+   359→    # Remove temporary container (the HDA is saved to disk)
+   360→    temp_geo.destroy()
+   361→
+   362→    return hda_path
+   363→```
+   364→
+   365→### C.3 Biomechanics Parameter Derivation (Unchanged)
+   366→
+   367→`biomechanics.py` is a pure Python file — Agent α writes it directly. No Synapse dependency. The builder script above mirrors its derivation logic in the auto-derive callback so the HDA is self-contained at runtime.
+   368→
+   369→```
+   370→File unchanged: python/cinema_camera/biomechanics.py
+   371→See v4.0 spec §C.3 — BiomechanicsParams dataclass + derive_biomechanics()
+   372→```
+   373→
+   374→### C.4 Acceptance Criteria (Updated for Synapse)
+   375→
+   376→```
+   377→AGENT δ DELIVERABLES (Pillar C — via Synapse):
+   378→  [ ] build_chops_biomechanics_hda() executes through Synapse without error
+   379→  [ ] .hda file written to $CINEMA_CAMERA_PATH/hda/chops/
+   380→  [ ] HDA loads in fresh Houdini session (no builder dependency)
+   381→  [ ] HDA interface has 3 tab folders: Rig Weight, Solver, Handheld Shake
+   382→  [ ] Auto Derive toggle computes spring/damping/lag from weight
+   383→  [ ] Spring solver internal wiring reads promoted parms via ch() expressions
+   384→  [ ] Handheld noise enable/disable switch works
+   385→  [ ] CHOP output node named OUT_biomechanics for export targeting
+   386→
+   387→TESTS (executed by Claude Code through Synapse after build):
+   388→  [ ] test_hda_loads — hou.hda.installFile(hda_path); assert type exists
+   389→  [ ] test_auto_derive_50mm — set weight=7.5, verify spring_k≈15, damping≈0.5
+   390→  [ ] test_auto_derive_300mm — set weight=13.3, verify spring_k≈8, damping≈0.9
+   391→  [ ] test_output_channels — wire test input, cook, verify output has rx/ry/rz
+   392→  [ ] test_handheld_toggle — enable=0: output matches spring+lag; enable=1: differs
+   393→```
+   394→
+   395→---
+   396→
+   397→## PILLAR G: Copernicus 2.0 Effects — Synapse Builders
+   398→
+   399→### G.2 FFT Convolution Flare Builder
+   400→
+   401→```python
+   402→# File: python/cinema_camera/builders/build_cop_anamorphic_flare.py
+   403→"""
+   404→Synapse builder: cinema::cop_anamorphic_flare::2.0
+   405→
+   406→Creates Copernicus HDA with FFT convolution flare pipeline.
+   407→Replaces cinema::cop_anamorphic_streak::1.0 from v3.0.
+   408→"""
+   409→
+   410→import hou
+   411→import os
+   412→
+   413→
+   414→def build_cop_anamorphic_flare_hda(
+   415→    save_dir: str = None,
+   416→    hda_name: str = "cinema_cop_anamorphic_flare_2.0.hda",
+   417→) -> str:
+   418→    """
+   419→    Build cinema::cop_anamorphic_flare::2.0 HDA in live Houdini session.
+   420→
+   421→    Internal pipeline:
+   422→      1. Threshold → extract bright pixels
+   423→      2. Generate iris kernel (11-sided polygon × squeeze)
+   424→      3. FFT convolution of bright pixels × iris kernel
+   425→      4. Horizontal streak (anamorphic Gaussian)
+   426→      5. Chromatic fringing on ghosts
+   427→      6. Composite over original
+   428→
+   429→    Returns: Absolute path to saved .hda file.
+   430→    """
+   431→    if save_dir is None:
+   432→        save_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "hda", "post")
+   433→
+   434→    hda_path = os.path.join(save_dir, hda_name)
+   435→
+   436→    # ── 1. Create temporary COP network ──────────────────
+   437→    obj = hou.node("/obj")
+   438→    temp_geo = obj.createNode("geo", "__cinema_flare_builder")
+   439→    cop_net = temp_geo.createNode("copnet", "cinema_flare_build")
+   440→
+   441→    # ── 2. Input ─────────────────────────────────────────
+   442→    cop_input = cop_net.createNode("null", "IN_image")
+   443→    cop_input.setComment("INPUT: RGBA image from render or upstream COP")
+   444→    cop_input.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   445→
+   446→    # ── 3. Threshold: extract bright pixels ──────────────
+   447→    cop_thresh = cop_net.createNode("vopcop2gen", "bright_extract")
+   448→    # VEX snippet for thresholding
+   449→    thresh_vex = '''
+   450→// Threshold bright pixels for flare source
+   451→float lum = luminance(set(R, G, B));
+   452→float threshold = ch("../threshold");
+   453→float mask = smooth(threshold - 0.1, threshold + 0.1, lum);
+   454→R *= mask;
+   455→G *= mask;
+   456→B *= mask;
+   457→'''
+   458→    cop_thresh.setInput(0, cop_input)
+   459→
+   460→    # ── 4. Iris kernel generator ─────────────────────────
+   461→    cop_kernel = cop_net.createNode("vopcop2gen", "iris_kernel")
+   462→    # Generates polygonal iris shape using co_generate_bokeh_kernel pattern
+   463→    kernel_vex = '''
+   464→// Generate iris kernel for FFT convolution
+   465→// Uses iris_blades to create polygonal pattern
+   466→// Squeeze ratio stretches horizontally for anamorphic
+   467→int blades = chi("../iris_blades");
+   468→float squeeze = ch("../squeeze_ratio");
+   469→float intensity = ch("../intensity");
+   470→
+   471→// Polar coordinates from pixel center
+   472→float cx = (float(X) / float(XRES)) * 2.0 - 1.0;
+   473→float cy = (float(Y) / float(YRES)) * 2.0 - 1.0;
+   474→cx /= max(squeeze, 0.01);  // Stretch for anamorphic
+   475→
+   476→float r = sqrt(cx*cx + cy*cy);
+   477→float theta = atan2(cy, cx);
+   478→
+   479→// Polygonal iris shape
+   480→float blade_angle = M_TWO_PI / (float)blades;
+   481→float sector = theta - blade_angle * floor(theta / blade_angle + 0.5);
+   482→float edge = cos(M_PI / (float)blades) / cos(sector);
+   483→
+   484→float kernel_val = smooth(edge - 0.02, edge + 0.02, r);
+   485→kernel_val = 1.0 - kernel_val;
+   486→kernel_val *= intensity;
+   487→
+   488→R = kernel_val;
+   489→G = kernel_val;
+   490→B = kernel_val;
+   491→'''
+   492→    # kernel_vex is set as the VEX snippet on cop_kernel
+   493→
+   494→    # ── 5. FFT Convolution ───────────────────────────────
+   495→    cop_convolve = cop_net.createNode("convolve", "fft_convolve")
+   496→    cop_convolve.setInput(0, cop_thresh)   # Bright pixels
+   497→    cop_convolve.setInput(1, cop_kernel)   # Iris kernel
+   498→    cop_convolve.setComment("FFT convolution\nPhysically accurate iris diffraction")
+   499→    cop_convolve.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   500→
+   501→    # ── 6. Anamorphic streak ─────────────────────────────
+   502→    cop_streak = cop_net.createNode("blur", "anamorphic_streak")
+   503→    cop_streak.setInput(0, cop_convolve)
+   504→    cop_streak.parm("sizex").set(50)  # Heavy horizontal blur
+   505→    cop_streak.parm("sizey").set(2)   # Minimal vertical
+   506→    cop_streak.setComment("Anamorphic horizontal streak\nStretch from front element diameter")
+   507→    cop_streak.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+   508→
+   509→    # ── 7. Chromatic fringing ────────────────────────────
+   510→    cop_chroma = cop_net.createNode("chromakey", "chromatic_fringe")
+   511→    cop_chroma.setInput(0, cop_streak)
+   512→    # R/G/B channel offsets for ghost chromatic aberration
+   513→    # Detailed VEX handles per-channel radial offset
+   514→
+   515→    # ── 8. Composite over original ───────────────────────
+   516→    cop_comp = cop_net.createNode("composite", "flare_over")
+   517→    cop_comp.setInput(0, cop_input)     # Original image
+   518→    cop_comp.setInput(1, cop_chroma)    # Flare layer
+   519→    cop_comp.parm("operation").set(0)   # Add (screen blend)
+   520→
+   521→    # ── 9. Enable switch ─────────────────────────────────
+   522→    cop_switch = cop_net.createNode("switch", "enable_switch")
+   523→    cop_switch.setInput(0, cop_input)    # Bypass: passthrough
+   524→    cop_switch.setInput(1, cop_comp)     # Enabled: flare applied
+   525→    cop_switch.parm("index").set(1)
+   526→
+   527→    # ── 10. Output ───────────────────────────────────────
+   528→    cop_output = cop_net.createNode("null", "OUT_flare")
+   529→    cop_output.setInput(0, cop_switch)
+   530→    cop_output.setDisplayFlag(True)
+   531→    cop_output.setRenderFlag(True)
+   532→
+   533→    # ── 11. Layout ───────────────────────────────────────
+   534→    cop_net.layoutChildren()
+   535→
+   536→    # ── 12. Create HDA ───────────────────────────────────
+   537→    hda_def = cop_net.createDigitalAsset(
+   538→        name="cinema::cop_anamorphic_flare",
+   539→        hda_file_name=hda_path,
+   540→        description="Cinema Anamorphic Flare v2.0 (FFT)",
+   541→        min_num_inputs=1,
+   542→        max_num_inputs=1,
+   543→        version="2.0",
+   544→    )
+   545→
+   546→    hda_node = cop_net
+   547→    hda_type = hda_node.type()
+   548→    hda_def = hda_type.definition()
+   549→
+   550→    # ── 13. HDA Interface ────────────────────────────────
+   551→    ptg = hda_node.parmTemplateGroup()
+   552→
+   553→    ptg.append(hou.ToggleParmTemplate(
+   554→        "enable", "Enable Flare", default_value=True,
+   555→    ))
+   556→
+   557→    lens_folder = hou.FolderParmTemplate("lens_folder", "Lens Properties")
+   558→    lens_folder.addParmTemplate(hou.IntParmTemplate(
+   559→        "iris_blades", "Iris Blades", 1,
+   560→        default_value=(11,), min=3, max=18,
+   561→        help="Number of iris diaphragm blades. Cooke: 11. Determines ghost polygon shape.",
+   562→    ))
+   563→    lens_folder.addParmTemplate(hou.FloatParmTemplate(
+   564→        "front_diameter_mm", "Front Diameter (mm)", 1,
+   565→        default_value=(110.0,), min=30.0, max=200.0,
+   566→        help="Front element diameter from MechanicalSpec. Controls ghost-to-streak ratio.",
+   567→    ))
+   568→    lens_folder.addParmTemplate(hou.FloatParmTemplate(
+   569→        "squeeze_ratio", "Squeeze Ratio", 1,
+   570→        default_value=(2.0,), min=1.0, max=2.0,
+   571→        help="Effective anamorphic squeeze at current focus. Reads from cinema:rig:effectiveSqueeze.",
+   572→    ))
+   573→    ptg.append(lens_folder)
+   574→
+   575→    flare_folder = hou.FolderParmTemplate("flare_folder", "Flare Controls")
+   576→    flare_folder.addParmTemplate(hou.FloatParmTemplate(
+   577→        "threshold", "Brightness Threshold", 1,
+   578→        default_value=(3.0,), min=0.5, max=20.0,
+   579→        help="Minimum pixel luminance to trigger flare. Lower = more flare sources.",
+   580→    ))
+   581→    flare_folder.addParmTemplate(hou.FloatParmTemplate(
+   582→        "intensity", "Flare Intensity", 1,
+   583→        default_value=(0.3,), min=0.0, max=2.0,
+   584→        help="Global flare strength multiplier.",
+   585→    ))
+   586→    flare_folder.addParmTemplate(hou.IntParmTemplate(
+   587→        "ghosting_rings", "Ghost Rings", 1,
+   588→        default_value=(3,), min=0, max=8,
+   589→        help="Number of internal reflection ghost images.",
+   590→    ))
+   591→    flare_folder.addParmTemplate(hou.FloatParmTemplate(
+   592→        "streak_asymmetry", "Streak Asymmetry", 1,
+   593→        default_value=(0.8,), min=0.0, max=1.0,
+   594→        help="0 = symmetric flare, 1 = full anamorphic horizontal bias.",
+   595→    ))
+   596→    ptg.append(flare_folder)
+   597→
+   598→    hda_def.setParmTemplateGroup(ptg)
+   599→
+   600→    # Wire enable toggle
+   601→    hda_node.node("enable_switch").parm("index").setExpression('ch("../enable")')
+   602→
+   603→    # ── 14. Set VEX snippets on vopcop2gen nodes ─────────
+   604→    # In production, these would be full VEX with #include <libcinema_optics.h>
+   605→    bright_node = hda_node.node("bright_extract")
+   606→    if bright_node.parm("vexsrc") is not None:
+   607→        bright_node.parm("vexsrc").set(1)  # Inline VEX
+   608→    # Note: Full VEX code injection depends on exact COP node type
+   609→    # The kernel_vex and thresh_vex strings above define the algorithms
+   610→
+   611→    # ── 15. Save ─────────────────────────────────────────
+   612→    hda_def.setIcon("COP2_contrast")
+   613→    hda_def.setComment("FFT convolution lens flare with physically accurate iris patterns")
+   614→    hda_def.save(hda_path)
+   615→    hda_node.matchCurrentDefinition()
+   616→
+   617→    temp_geo.destroy()
+   618→    return hda_path
+   619→```
+   620→
+   621→### G.3 Sensor Noise Builder
+   622→
+   623→```python
+   624→# File: python/cinema_camera/builders/build_cop_sensor_noise.py
+   625→"""
+   626→Synapse builder: cinema::cop_sensor_noise::1.0
+   627→
+   628→Creates Copernicus HDA with dual-gain sensor noise model.
+   629→Replaces cinema::cop_film_grain::1.0 from v3.0.
+   630→"""
+   631→
+   632→import hou
+   633→import os
+   634→
+   635→
+   636→def build_cop_sensor_noise_hda(
+   637→    save_dir: str = None,
+   638→    hda_name: str = "cinema_cop_sensor_noise_1.0.hda",
+   639→) -> str:
+   640→    """
+   641→    Build cinema::cop_sensor_noise::1.0 HDA in live Houdini session.
+   642→
+   643→    Internal pipeline:
+   644→      1. Luminance extraction (per-pixel signal level)
+   645→      2. Photon noise: sqrt(luminance) × random (shot noise)
+   646→      3. Read noise: constant × (EI / native_iso) (electronic noise)
+   647→      4. Per-channel Bayer-pattern awareness
+   648→      5. Temporal coherence control
+   649→      6. Composite noise onto image
+   650→
+   651→    Returns: Absolute path to saved .hda file.
+   652→    """
+   653→    if save_dir is None:
+   654→        save_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "hda", "post")
+   655→
+   656→    hda_path = os.path.join(save_dir, hda_name)
+   657→
+   658→    obj = hou.node("/obj")
+   659→    temp_geo = obj.createNode("geo", "__cinema_noise_builder")
+   660→    cop_net = temp_geo.createNode("copnet", "cinema_noise_build")
+   661→
+   662→    # ── Input ────────────────────────────────────────────
+   663→    cop_input = cop_net.createNode("null", "IN_image")
+   664→
+   665→    # ── Noise generator (vopcop2gen with dual-gain VEX) ──
+   666→    cop_noise_gen = cop_net.createNode("vopcop2gen", "dual_gain_noise")
+   667→    cop_noise_gen.setInput(0, cop_input)
+   668→
+   669→    noise_vex = '''
+   670→// Dual-gain sensor noise model
+   671→// Physically: shot noise + read noise amplified by gain
+   672→float ei = ch("../exposure_index");
+   673→float native = ch("../native_iso");
+   674→float photon_amt = ch("../photon_noise_amount");
+   675→float read_amt = ch("../read_noise_amount");
+   676→float temporal = ch("../temporal_coherence");
+   677→
+   678→// Gain ratio: how far above native ISO
+   679→float gain = ei / max(native, 1.0);
+   680→
+   681→// Signal level (luminance of current pixel)
+   682→float signal = luminance(set(R, G, B));
+   683→
+   684→// Shot noise: scales with sqrt of signal (Poisson statistics)
+   685→float shot_noise = sqrt(max(signal, 0.0)) * photon_amt;
+   686→
+   687→// Read noise: constant floor amplified by gain
+   688→float read_noise = read_amt * gain * 0.01;
+   689→
+   690→// Combined noise sigma
+   691→float sigma = sqrt(shot_noise * shot_noise + read_noise * read_noise);
+   692→
+   693→// Per-channel noise (Bayer-pattern: green gets sqrt(2) less noise)
+   694→float seed_r = random(set(X, Y, $F * 1.0));
+   695→float seed_g = random(set(X, Y, $F * 2.0));
+   696→float seed_b = random(set(X, Y, $F * 3.0));
+   697→
+   698→// Temporal coherence: blend between per-frame and static
+   699→float static_r = random(set(X, Y, 0.0));
+   700→float static_g = random(set(X, Y, 1.0));
+   701→float static_b = random(set(X, Y, 2.0));
+   702→
+   703→float nr = fit01(lerp(seed_r, static_r, temporal), -1, 1) * sigma;
+   704→float ng = fit01(lerp(seed_g, static_g, temporal), -1, 1) * sigma * 0.707;
+   705→float nb = fit01(lerp(seed_b, static_b, temporal), -1, 1) * sigma;
+   706→
+   707→// Grain size: 1px at native, 2px at 2x, etc.
+   708→// (handled by upstream blur if needed — this generates per-pixel noise)
+   709→
+   710→R += nr;
+   711→G += ng;
+   712→B += nb;
+   713→'''
+   714→
+   715→    # ── Enable switch ────────────────────────────────────
+   716→    cop_switch = cop_net.createNode("switch", "enable_switch")
+   717→    cop_switch.setInput(0, cop_input)       # Bypass
+   718→    cop_switch.setInput(1, cop_noise_gen)   # Noise applied
+   719→    cop_switch.parm("index").set(1)
+   720→
+   721→    # ── Output ───────────────────────────────────────────
+   722→    cop_output = cop_net.createNode("null", "OUT_noise")
+   723→    cop_output.setInput(0, cop_switch)
+   724→    cop_output.setDisplayFlag(True)
+   725→    cop_output.setRenderFlag(True)
+   726→
+   727→    cop_net.layoutChildren()
+   728→
+   729→    # ── Create HDA ───────────────────────────────────────
+   730→    hda_def = cop_net.createDigitalAsset(
+   731→        name="cinema::cop_sensor_noise",
+   732→        hda_file_name=hda_path,
+   733→        description="Cinema Sensor Noise v1.0 (Dual Gain)",
+   734→        min_num_inputs=1,
+   735→        max_num_inputs=1,
+   736→        version="1.0",
+   737→    )
+   738→
+   739→    hda_node = cop_net
+   740→    hda_type = hda_node.type()
+   741→    hda_def = hda_type.definition()
+   742→
+   743→    # ── HDA Interface ────────────────────────────────────
+   744→    ptg = hda_node.parmTemplateGroup()
+   745→
+   746→    ptg.append(hou.ToggleParmTemplate(
+   747→        "enable", "Enable Sensor Noise", default_value=True,
+   748→    ))
+   749→
+   750→    sensor_folder = hou.FolderParmTemplate("sensor_folder", "Sensor Model")
+   751→    sensor_folder.addParmTemplate(hou.MenuParmTemplate(
+   752→        "sensor_model", "Sensor Model",
+   753→        menu_items=["alexa35_dual", "generic_cmos", "custom"],
+   754→        menu_labels=["ALEXA 35 Dual Gain", "Generic CMOS", "Custom"],
+   755→        default_value=0,
+   756→        help="Preset sensor noise profiles. Custom allows manual control of all parameters.",
+   757→    ))
+   758→    sensor_folder.addParmTemplate(hou.IntParmTemplate(
+   759→        "exposure_index", "Exposure Index (EI)", 1,
+   760→        default_value=(800,), min=100, max=12800,
+   761→        help="Camera EI setting. From CameraState.exposure_index. Higher = more noise.",
+   762→    ))
+   763→    sensor_folder.addParmTemplate(hou.IntParmTemplate(
+   764→        "native_iso", "Native ISO", 1,
+   765→        default_value=(800,), min=100, max=3200,
+   766→        help="Sensor native sensitivity. ALEXA 35: 800. EI above this amplifies read noise.",
+   767→    ))
+   768→    ptg.append(sensor_folder)
+   769→
+   770→    noise_folder = hou.FolderParmTemplate("noise_folder", "Noise Controls")
+   771→    noise_folder.addParmTemplate(hou.FloatParmTemplate(
+   772→        "photon_noise_amount", "Photon Noise (Shot)", 1,
+   773→        default_value=(1.0,), min=0.0, max=3.0,
+   774→        help="Shot noise multiplier. Scales with sqrt(signal). Set to 0 to isolate read noise.",
+   775→    ))
+   776→    noise_folder.addParmTemplate(hou.FloatParmTemplate(
+   777→        "read_noise_amount", "Read Noise (Electronic)", 1,
+   778→        default_value=(1.0,), min=0.0, max=5.0,
+   779→        help="Electronic noise floor. Amplified by EI/native_iso ratio. Visible in shadows.",
+   780→    ))
+   781→    noise_folder.addParmTemplate(hou.FloatParmTemplate(
+   782→        "temporal_coherence", "Temporal Coherence", 1,
+   783→        default_value=(0.0,), min=0.0, max=1.0,
+   784→        help="0 = fully random per frame (video noise). 1 = static pattern (photo grain). "
+   785→             "0.3 is typical for cinema cameras.",
+   786→    ))
+   787→    ptg.append(noise_folder)
+   788→
+   789→    hda_def.setParmTemplateGroup(ptg)
+   790→
+   791→    # Wire enable
+   792→    hda_node.node("enable_switch").parm("index").setExpression('ch("../enable")')
+   793→
+   794→    # ── Save ─────────────────────────────────────────────
+   795→    hda_def.setIcon("COP2_grain")
+   796→    hda_def.setComment("Physically-based dual-gain sensor noise model")
+   797→    hda_def.save(hda_path)
+   798→    hda_node.matchCurrentDefinition()
+   799→
+   800→    temp_geo.destroy()
+   801→    return hda_path
+   802→```
+   803→
+   804→### G.4 STMap AOV Builder
+   805→
+   806→```python
+   807→# File: python/cinema_camera/builders/build_cop_stmap_aov.py
+   808→"""
+   809→Synapse builder: cinema::cop_stmap_aov::1.0
+   810→
+   811→Creates Copernicus HDA that generates Nuke-ready STMap.
+   812→Uses libcinema_optics.h distortion functions directly.
+   813→"""
+   814→
+   815→import hou
+   816→import os
+   817→
+   818→
+   819→def build_cop_stmap_aov_hda(
+   820→    save_dir: str = None,
+   821→    hda_name: str = "cinema_cop_stmap_aov_1.0.hda",
+   822→) -> str:
+   823→    """
+   824→    Build cinema::cop_stmap_aov::1.0 HDA in live Houdini session.
+   825→
+   826→    Generates a 2-channel (RG float) STMap where:
+   827→      Red  = distorted U coordinate (normalized 0-1)
+   828→      Green = distorted V coordinate (normalized 0-1)
+   829→
+   830→    Nuke plugs this directly into an STMap node to
+   831→    undistort or redistort rendered plates.
+   832→
+   833→    Returns: Absolute path to saved .hda file.
+   834→    """
+   835→    if save_dir is None:
+   836→        save_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "hda", "post")
+   837→
+   838→    hda_path = os.path.join(save_dir, hda_name)
+   839→
+   840→    obj = hou.node("/obj")
+   841→    temp_geo = obj.createNode("geo", "__cinema_stmap_builder")
+   842→    cop_net = temp_geo.createNode("copnet", "cinema_stmap_build")
+   843→
+   844→    # ── Resolution reference input ───────────────────────
+   845→    cop_input = cop_net.createNode("null", "IN_resolution_ref")
+   846→
+   847→    # ── STMap generator ──────────────────────────────────
+   848→    cop_stmap = cop_net.createNode("vopcop2gen", "stmap_generator")
+   849→    cop_stmap.setInput(0, cop_input)
+   850→
+   851→    stmap_vex = '''
+   852→// STMap AOV Generator
+   853→// Uses libcinema_optics.h distortion model
+   854→// Output: R=U, G=V (normalized 0-1)
+   855→
+   856→#include <libcinema_optics.h>
+   857→
+   858→float res_x = ch("../resolution_x");
+   859→float res_y = ch("../resolution_y");
+   860→
+   861→// Normalized UV (0-1)
+   862→float u = (float(X) + 0.5) / res_x;
+   863→float v = (float(Y) + 0.5) / res_y;
+   864→
+   865→// Center to -1..1 range for distortion math
+   866→float cx = u * 2.0 - 1.0;
+   867→float cy = v * 2.0 - 1.0;
+   868→
+   869→// Build distortion coefficients from parameters
+   870→CO_DistortionCoeffs coeffs;
+   871→coeffs.k1 = ch("../dist_k1");
+   872→coeffs.k2 = ch("../dist_k2");
+   873→coeffs.k3 = ch("../dist_k3");
+   874→coeffs.p1 = ch("../dist_p1");
+   875→coeffs.p2 = ch("../dist_p2");
+   876→coeffs.squeeze_uniformity = ch("../dist_sq_uniformity");
+   877→
+   878→vector2 uv_in = set(cx, cy);
+   879→vector2 uv_out;
+   880→
+   881→int mode = chi("../mode");  // 0=Undistort, 1=Redistort
+   882→float squeeze = ch("../effective_squeeze");
+   883→
+   884→if (mode == 0) {
+   885→    // Undistort: map distorted coords to clean coords
+   886→    if (squeeze > 1.01) {
+   887→        uv_out = co_apply_anamorphic_distortion(uv_in, coeffs, squeeze);
+   888→    } else {
+   889→        uv_out = co_apply_distortion(uv_in, coeffs);
+   890→    }
+   891→} else {
+   892→    // Redistort: map clean coords to distorted coords
+   893→    // Uses iterative inverse (Newton-Raphson)
+   894→    uv_out = co_undistort(uv_in, coeffs);
+   895→}
+   896→
+   897→// Back to 0-1 range
+   898→R = uv_out.x * 0.5 + 0.5;
+   899→G = uv_out.y * 0.5 + 0.5;
+   900→B = 0.0;  // Unused channel
+   901→'''
+   902→
+   903→    # ── Output ───────────────────────────────────────────
+   904→    cop_output = cop_net.createNode("null", "OUT_stmap")
+   905→    cop_output.setInput(0, cop_stmap)
+   906→    cop_output.setDisplayFlag(True)
+   907→    cop_output.setRenderFlag(True)
+   908→
+   909→    cop_net.layoutChildren()
+   910→
+   911→    # ── Create HDA ───────────────────────────────────────
+   912→    hda_def = cop_net.createDigitalAsset(
+   913→        name="cinema::cop_stmap_aov",
+   914→        hda_file_name=hda_path,
+   915→        description="Cinema STMap AOV v1.0",
+   916→        min_num_inputs=0,
+   917→        max_num_inputs=1,
+   918→        version="1.0",
+   919→    )
+   920→
+   921→    hda_node = cop_net
+   922→    hda_type = hda_node.type()
+   923→    hda_def = hda_type.definition()
+   924→
+   925→    # ── HDA Interface ────────────────────────────────────
+   926→    ptg = hda_node.parmTemplateGroup()
+   927→
+   928→    res_folder = hou.FolderParmTemplate("res_folder", "Resolution")
+   929→    res_folder.addParmTemplate(hou.IntParmTemplate(
+   930→        "resolution_x", "Width", 1,
+   931→        default_value=(4608,), min=256, max=8192,
+   932→        help="Output STMap width. Match render resolution.",
+   933→    ))
+   934→    res_folder.addParmTemplate(hou.IntParmTemplate(
+   935→        "resolution_y", "Height", 1,
+   936→        default_value=(3164,), min=256, max=8192,
+   937→        help="Output STMap height. Match render resolution.",
+   938→    ))
+   939→    res_folder.addParmTemplate(hou.MenuParmTemplate(
+   940→        "mode", "Mode",
+   941→        menu_items=["undistort", "redistort"],
+   942→        menu_labels=["Undistort", "Redistort"],
+   943→        default_value=0,
+   944→        help="Undistort: map distorted plate to clean. Redistort: map clean CG to distorted.",
+   945→    ))
+   946→    ptg.append(res_folder)
+   947→
+   948→    dist_folder = hou.FolderParmTemplate("dist_folder", "Distortion Coefficients")
+   949→    for parm_name, label, default in [
+   950→        ("dist_k1", "K1 (Radial)", 0.0),
+   951→        ("dist_k2", "K2 (Radial)", 0.0),
+   952→        ("dist_k3", "K3 (Radial)", 0.0),
+   953→        ("dist_p1", "P1 (Tangential)", 0.0),
+   954→        ("dist_p2", "P2 (Tangential)", 0.0),
+   955→        ("dist_sq_uniformity", "Squeeze Uniformity", 1.0),
+   956→        ("effective_squeeze", "Effective Squeeze", 2.0),
+   957→    ]:
+   958→        dist_folder.addParmTemplate(hou.FloatParmTemplate(
+   959→            parm_name, label, 1,
+   960→            default_value=(default,),
+   961→            help=f"From LensSpec.distortion. Maps to libcinema_optics.h CO_DistortionCoeffs.",
+   962→        ))
+   963→    ptg.append(dist_folder)
+   964→
+   965→    hda_def.setParmTemplateGroup(ptg)
+   966→
+   967→    # ── Save ─────────────────────────────────────────────
+   968→    hda_def.setIcon("COP2_fetch")
+   969→    hda_def.setComment("Nuke-ready STMap using libcinema_optics.h distortion model")
+   970→    hda_def.save(hda_path)
+   971→    hda_node.matchCurrentDefinition()
+   972→
+   973→    temp_geo.destroy()
+   974→    return hda_path
+   975→```
+   976→
+   977→### G.5 Acceptance Criteria (Updated for Synapse)
+   978→
+   979→```
+   980→AGENT δ DELIVERABLES (Pillar G — via Synapse):
+   981→
+   982→  cinema::cop_anamorphic_flare::2.0:
+   983→    [ ] build_cop_anamorphic_flare_hda() executes through Synapse without error
+   984→    [ ] .hda file written to $CINEMA_CAMERA_PATH/hda/post/
+   985→    [ ] HDA loads in fresh session
+   986→    [ ] 3 parameter groups: Enable, Lens Properties, Flare Controls
+   987→    [ ] iris_blades drives FFT kernel polygon count
+   988→    [ ] squeeze_ratio stretches kernel horizontally
+   989→    [ ] front_diameter_mm controls ghost-to-streak ratio
+   990→
+   991→  cinema::cop_sensor_noise::1.0:
+   992→    [ ] build_cop_sensor_noise_hda() executes through Synapse without error
+   993→    [ ] .hda file written to $CINEMA_CAMERA_PATH/hda/post/
+   994→    [ ] HDA loads in fresh session
+   995→    [ ] Sensor model presets: ALEXA 35 Dual Gain, Generic CMOS, Custom
+   996→    [ ] Photon noise scales with sqrt(luminance)
+   997→    [ ] Read noise amplified by EI/native_iso ratio
+   998→    [ ] Temporal coherence blends static vs per-frame noise
+   999→
+  1000→  cinema::cop_stmap_aov::1.0:
+  1001→    [ ] build_cop_stmap_aov_hda() executes through Synapse without error
+  1002→    [ ] .hda file written to $CINEMA_CAMERA_PATH/hda/post/
+  1003→    [ ] HDA loads in fresh session
+  1004→    [ ] Undistort and Redistort modes
+  1005→    [ ] Uses #include <libcinema_optics.h> in VEX
+  1006→    [ ] Output is RG float (R=U, G=V, normalized 0-1)
+  1007→
+  1008→TESTS (executed by Claude Code through Synapse after build):
+  1009→    [ ] test_flare_hda_loads — installFile, assert type exists
+  1010→    [ ] test_flare_11_blade — set iris_blades=11, cook, verify non-zero output
+  1011→    [ ] test_noise_at_native_iso — EI=800, native=800: minimal noise delta
+  1012→    [ ] test_noise_at_3200 — EI=3200, native=800: noise delta increases
+  1013→    [ ] test_stmap_identity — zero distortion coefficients: R≈U, G≈V (identity map)
+  1014→    [ ] test_stmap_roundtrip — distort→STMap→undistort: <0.5px error
+  1015→```
+  1016→
+  1017→---
+  1018→
+  1019→## UPDATED EXECUTION PLAN
+  1020→
+  1021→### Phase 1: Foundation (Day 1-2) — AGENT α solo (NO CHANGE)
+  1022→
+  1023→```
+  1024→Same as v4.0 spec.
+  1025→All Python file creation — no Synapse dependency.
+  1026→Gate: v3.0 + v4.0 protocol tests pass.
+  1027→```
+  1028→
+  1029→### Phase 2: Parallel Build (Day 3-5)
+  1030→
+  1031→```
+  1032→AGENT β (USD) — NO CHANGE:
+  1033→  TASK 2.1-2.4: build_usd_camera_rig(), EXR metadata, tests
+  1034→  Execution: hython (no live session needed)
+  1035→
+  1036→AGENT γ (VEX/CVEX) — NO CHANGE:
+  1037→  TASK 2.5-2.9: libcinema_optics.h extensions, CVEX shader, binding
+  1038→  Execution: file write + vcc compilation
+  1039→
+  1040→AGENT δ (CHOPs/COP) — REFACTORED FOR SYNAPSE:
+  1041→  TASK 2.10: BiomechanicsParams + derive_biomechanics() → file write (no Synapse)
+  1042→  TASK 2.11: build_chops_biomechanics_hda() → SYNAPSE EXECUTION
+  1043→  TASK 2.12: build_cop_anamorphic_flare_hda() → SYNAPSE EXECUTION
+  1044→  TASK 2.13: build_cop_sensor_noise_hda() → SYNAPSE EXECUTION
+  1045→  TASK 2.14: build_cop_stmap_aov_hda() → SYNAPSE EXECUTION
+  1046→
+  1047→  SYNAPSE SEQUENCE FOR AGENT δ:
+  1048→    Step 1: Claude Code writes builder scripts to $CINEMA_CAMERA_PATH/python/cinema_camera/builders/
+  1049→    Step 2: Claude Code calls synapse_preflight() through bridge
+  1050→    Step 3: Claude Code calls each build_*_hda() through bridge (sequential, not parallel)
+  1051→    Step 4: After each call, verify .hda file exists on disk
+  1052→    Step 5: Run HDA load tests through bridge: hou.hda.installFile() + type check
+  1053→    Step 6: If any builder fails, Claude Code gets traceback and retries
+  1054→
+  1055→GATE: Each agent's tests pass independently
+  1056→```
+  1057→
+  1058→### Phase 3: Integration (Day 6-7) — ORCHESTRATOR
+  1059→
+  1060→```
+  1061→TASK 3.1: Wire top-level HDA → SYNAPSE EXECUTION
+  1062→          (creates the master cinema::camera_rig::2.0 HDA that
+  1063→           references all sub-HDAs including the 4 new ones)
+  1064→TASK 3.2-3.5: Cross-HDA wiring tests → SYNAPSE EXECUTION
+  1065→TASK 3.6: Full regression → hybrid (pytest for Python, Synapse for HDA tests)
+  1066→TASK 3.7: Performance benchmarks → SYNAPSE EXECUTION
+  1067→
+  1068→GATE: Full pipeline functional, benchmarks met
+  1069→```
+  1070→
+  1071→### Phase 4: Polish (Day 8) — All agents (MINOR CHANGE)
+  1072→
+  1073→```
+  1074→TASK 4.1: HDA parameter UI polish → SYNAPSE EXECUTION
+  1075→          (adjusting labels, tooltips, folder organization on live HDAs)
+  1076→TASK 4.2: Viewport overlay for entrance pupil → SYNAPSE EXECUTION
+  1077→TASK 4.3: Documentation → file write (no Synapse)
+  1078→TASK 4.4: Example .hip → SYNAPSE EXECUTION
+  1079→```
+  1080→
+  1081→---
+  1082→
+  1083→## UPDATED PROJECT STRUCTURE
+  1084→
+  1085→```
+  1086→$CINEMA_CAMERA_PATH/
+  1087→├── python/
+  1088→│   └── cinema_camera/
+  1089→│       ├── ...existing files unchanged...
+  1090→│       ├── synapse_preflight.py          ← NEW: session verification
+  1091→│       └── builders/                     ← NEW: Synapse builder scripts
+  1092→│           ├── __init__.py
+  1093→│           ├── build_chops_biomechanics.py
+  1094→│           ├── build_cop_anamorphic_flare.py
+  1095→│           ├── build_cop_sensor_noise.py
+  1096→│           └── build_cop_stmap_aov.py
+  1097→├── hda/
+  1098→│   ├── chops/
+  1099→│   │   └── cinema_chops_biomechanics_1.0.hda   ← CREATED BY SYNAPSE
+  1100→│   └── post/
+  1101→│       ├── cinema_cop_anamorphic_flare_2.0.hda  ← CREATED BY SYNAPSE
+  1102→│       ├── cinema_cop_sensor_noise_1.0.hda      ← CREATED BY SYNAPSE
+  1103→│       ├── cinema_cop_stmap_aov_1.0.hda         ← CREATED BY SYNAPSE
+  1104→│       └── ...v3.0 HDAs unchanged...
+  1105→└── ...rest unchanged...
+  1106→```
+  1107→
+  1108→---
+  1109→
+  1110→## SYNAPSE-SPECIFIC FAILURE MODES
+  1111→
+  1112→| Failure | Detection | Recovery |
+  1113→|---------|-----------|----------|
+  1114→| Session not running | `synapse_preflight()` raises ConnectionRefused | Prompt user to open Houdini and enable command port |
+  1115→| CINEMA_CAMERA_PATH unset | `synapse_preflight()` assertion fails | Claude Code sets env var via `hou.hscript("setenv ...")` |
+  1116→| VEX #include fails | `build_cop_stmap_aov_hda()` cook error on stmap_generator | Verify HOUDINI_PATH includes $CINEMA_CAMERA_PATH |
+  1117→| HDA save permission | `hda_def.save()` raises PermissionError | Check disk permissions on hda/ directories |
+  1118→| Node type conflict | `createDigitalAsset()` raises if type already installed | `hou.hda.uninstallFile()` first, then rebuild |
+  1119→| COP node missing | vopcop2gen not found (Copernicus not licensed) | Fallback to classic COP2 nodes (degraded but functional) |
+  1120→
+  1121→### Retry Protocol
+  1122→
+  1123→```python
+  1124→def synapse_build_with_retry(builder_fn, max_retries=3, **kwargs):
+  1125→    """
+  1126→    Claude Code wraps each builder call with this retry logic.
+  1127→    Executed through Synapse bridge.
+  1128→    """
+  1129→    import traceback
+  1130→
+  1131→    for attempt in range(max_retries):
+  1132→        try:
+  1133→            hda_path = builder_fn(**kwargs)
+  1134→            # Verify file exists
+  1135→            if not os.path.exists(hda_path):
+  1136→                raise FileNotFoundError(f"Builder returned but file missing: {hda_path}")
+  1137→            # Verify HDA loads
+  1138→            hou.hda.installFile(hda_path)
+  1139→            return hda_path
+  1140→        except Exception as e:
+  1141→            tb = traceback.format_exc()
+  1142→            if attempt < max_retries - 1:
+  1143→                # Clean up any partial state
+  1144→                for node in hou.node("/obj").children():
+  1145→                    if node.name().startswith("__cinema_"):
+  1146→                        node.destroy()
+  1147→                continue
+  1148→            else:
+  1149→                raise RuntimeError(
+  1150→                    f"Builder {builder_fn.__name__} failed after {max_retries} attempts.\n"
+  1151→                    f"Last error:\n{tb}"
+  1152→                )
+  1153→```
+  1154→
+  1155→---
+  1156→
+  1157→## WHAT DIDN'T CHANGE
+  1158→
+  1159→Everything outside Agent δ's HDA construction is identical to the v4.0 spec:
+  1160→
+  1161→- **Pillar A** (Protocols): Pure Python dataclasses — file write only
+  1162→- **Pillar B** (USD Hierarchy): `pxr` API — runs in hython, no live session needed
+  1163→- **Pillar D** (CVEX Lens Shader): VEX text files + vcc compilation — no live session
+  1164→- **Pillar E** (EXR Metadata): `pxr` API on RenderProduct — hython only
+  1165→- **Pillar F** (Dynamic Mumps): Pure math in protocols + VEX — no live session
+  1166→- **biomechanics.py**: Pure Python derivation — file write only
+  1167→- **All cross-agent interface contracts**: Unchanged
+  1168→- **All performance/accuracy targets**: Unchanged
+  1169→

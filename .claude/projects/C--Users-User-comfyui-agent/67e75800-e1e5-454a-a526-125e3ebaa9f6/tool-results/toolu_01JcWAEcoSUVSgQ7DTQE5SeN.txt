@@ -1,0 +1,466 @@
+C:\Users\User\comfyui-agent\agent\mcp_server.py-93-            )
+C:\Users\User\comfyui-agent\agent\mcp_server.py-94-            result = await loop.run_in_executor(None, handler)
+C:\Users\User\comfyui-agent\agent\mcp_server.py:95:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\mcp_server.py-96-            log.error("Tool %s failed: %s", name, e, exc_info=True)
+C:\Users\User\comfyui-agent\agent\mcp_server.py-97-            return [types.TextContent(
+--
+C:\Users\User\comfyui-agent\agent\cli.py-105-                if "saved" in save_result:
+C:\Users\User\comfyui-agent\agent\cli.py-106-                    console.print(f"\n[dim]Session '{session}' saved.[/dim]")
+C:\Users\User\comfyui-agent\agent\cli.py:107:            except Exception:
+C:\Users\User\comfyui-agent\agent\cli.py-108-                pass
+C:\Users\User\comfyui-agent\agent\cli.py-109-
+--
+C:\Users\User\comfyui-agent\agent\agents\router.py-308-                        f"'{agent_name}'. Available: {available}"
+C:\Users\User\comfyui-agent\agent\agents\router.py-309-                    )
+C:\Users\User\comfyui-agent\agent\agents\router.py:310:            except Exception:
+C:\Users\User\comfyui-agent\agent\agents\router.py-311-                # If the agent directory doesn't exist, that's fine for
+C:\Users\User\comfyui-agent\agent\agents\router.py-312-                # agents that don't have schemas yet (e.g., execution)
+--
+C:\Users\User\comfyui-agent\agent\agents\router.py-539-                    result["status"] = "planned"
+C:\Users\User\comfyui-agent\agent\agents\router.py-540-
+C:\Users\User\comfyui-agent\agent\agents\router.py:541:        except Exception as exc:
+C:\Users\User\comfyui-agent\agent\agents\router.py-542-            result["status"] = "error"
+C:\Users\User\comfyui-agent\agent\agents\router.py-543-            result["precondition_warnings"].append(
+--
+C:\Users\User\comfyui-agent\agent\main.py-100-                        if path:
+C:\Users\User\comfyui-agent\agent\main.py-101-                            sections["workflow_info"] = path
+C:\Users\User\comfyui-agent\agent\main.py:102:                    except Exception:
+C:\Users\User\comfyui-agent\agent\main.py-103-                        pass
+C:\Users\User\comfyui-agent\agent\main.py-104-
+--
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-114-        from ..tools._util import to_json
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-115-        return to_json(obj)
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py:116:    except Exception:
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-117-        import json
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-118-        return json.dumps(obj, sort_keys=True)
+--
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-182-            status, model_id, quality_score,
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-183-        )
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py:184:    except Exception as exc:
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-185-        log.warning("Failed to record MoE outcome to memory (non-fatal): %s", exc)
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-186-
+--
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-278-            schemas_used=schemas_used,
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-279-        )
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py:280:    except Exception as exc:
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-281-        log.error("MoE pipeline error: %s", exc, exc_info=True)
+C:\Users\User\comfyui-agent\agent\brain\iterative_refine.py-282-        return _safe_to_json({
+--
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-167-                    "elapsed_s": round(elapsed, 2),
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-168-                })
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py:169:            except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-170-                results.append({
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-171-                    "tool": tool_name,
+--
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-243-                    self._active_tasks[task_id]["status"] = "timeout"
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-244-                    self._active_tasks[task_id]["error"] = f"Timed out after {_SUBTASK_TIMEOUT_S}s"
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py:245:            except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-246-                with self._tasks_lock:
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-247-                    self._active_tasks[task_id]["status"] = "error"
+--
+C:\Users\User\comfyui-agent\agent\brain\__init__.py-61-    try:
+C:\Users\User\comfyui-agent\agent\brain\__init__.py-62-        return mod.handle(name, tool_input)
+C:\Users\User\comfyui-agent\agent\brain\__init__.py:63:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\__init__.py-64-        log.error("Unhandled error in brain tool %s", name, exc_info=True)
+C:\Users\User\comfyui-agent\agent\brain\__init__.py-65-        from ..tools._util import to_json
+--
+C:\Users\User\comfyui-agent\agent\brain\_protocol.py-80-        else:
+C:\Users\User\comfyui-agent\agent\brain\_protocol.py-81-            _log.debug("No dispatch route for %s->%s, skipping", source, target)
+C:\Users\User\comfyui-agent\agent\brain\_protocol.py:82:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\_protocol.py-83-        _log.warning("dispatch_brain_message failed (non-fatal): %s", e)
+--
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-255-                "sweet_spots": {},
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-256-            }
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py:257:    except Exception:
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-258-        pass
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-259-
+--
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-479-                        "description": opt["description"],
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-480-                    })
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py:481:            except Exception:
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-482-                continue
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-483-
+--
+C:\Users\User\comfyui-agent\agent\system_prompt.py-212-                    )
+C:\Users\User\comfyui-agent\agent\system_prompt.py-213-                parts.append("")
+C:\Users\User\comfyui-agent\agent\system_prompt.py:214:        except Exception:
+C:\Users\User\comfyui-agent\agent\system_prompt.py-215-            pass  # Memory unavailable — skip silently
+C:\Users\User\comfyui-agent\agent\system_prompt.py-216-
+--
+C:\Users\User\comfyui-agent\agent\system_prompt.py-227-                    content = md_file.read_text(encoding="utf-8")
+C:\Users\User\comfyui-agent\agent\system_prompt.py-228-                    parts.append(f"\n--- {stem} ---\n{content}\n")
+C:\Users\User\comfyui-agent\agent\system_prompt.py:229:                except Exception:
+C:\Users\User\comfyui-agent\agent\system_prompt.py-230-                    pass
+C:\Users\User\comfyui-agent\agent\system_prompt.py-231-
+--
+C:\Users\User\comfyui-agent\agent\brain\vision.py-194-            log.error("Vision API error: %s", e)
+C:\Users\User\comfyui-agent\agent\brain\vision.py-195-            return self.to_json({"error": f"Vision API error: {e}"})
+C:\Users\User\comfyui-agent\agent\brain\vision.py:196:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-197-            log.error("Vision API transport error: %s", e)
+C:\Users\User\comfyui-agent\agent\brain\vision.py-198-            return self.to_json({"error": f"Vision API timeout or transport error: {e}"})
+--
+C:\Users\User\comfyui-agent\agent\brain\vision.py-220-        except FileNotFoundError as e:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-221-            return self.to_json({"error": str(e)})
+C:\Users\User\comfyui-agent\agent\brain\vision.py:222:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-223-            return self.to_json({"error": f"Failed to read image: {e}"})
+C:\Users\User\comfyui-agent\agent\brain\vision.py-224-
+--
+C:\Users\User\comfyui-agent\agent\brain\vision.py-287-        except FileNotFoundError as e:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-288-            return self.to_json({"error": str(e)})
+C:\Users\User\comfyui-agent\agent\brain\vision.py:289:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-290-            return self.to_json({"error": f"Failed to read images: {e}"})
+C:\Users\User\comfyui-agent\agent\brain\vision.py-291-
+--
+C:\Users\User\comfyui-agent\agent\brain\vision.py-354-        except FileNotFoundError as e:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-355-            return self.to_json({"error": str(e)})
+C:\Users\User\comfyui-agent\agent\brain\vision.py:356:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-357-            return self.to_json({"error": f"Failed to read image: {e}"})
+C:\Users\User\comfyui-agent\agent\brain\vision.py-358-
+--
+C:\Users\User\comfyui-agent\agent\brain\vision.py-418-            img_a = Image.open(path_a)
+C:\Users\User\comfyui-agent\agent\brain\vision.py-419-            img_b = Image.open(path_b)
+C:\Users\User\comfyui-agent\agent\brain\vision.py:420:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-421-            return self.to_json({"error": f"Failed to open images: {e}"})
+C:\Users\User\comfyui-agent\agent\brain\vision.py-422-
+--
+C:\Users\User\comfyui-agent\agent\brain\planner.py-329-        try:
+C:\Users\User\comfyui-agent\agent\brain\planner.py-330-            return json.loads(path.read_text(encoding="utf-8"))
+C:\Users\User\comfyui-agent\agent\brain\planner.py:331:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\brain\planner.py-332-            log.error("Failed to load plan for session %s: %s", session, e)
+C:\Users\User\comfyui-agent\agent\brain\planner.py-333-            return None
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-180-            "python": py_ver,
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-181-        })
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py:182:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-183-        return to_json({
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-184-            "running": False,
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-361-            "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-362-        })
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py:363:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_api.py-364-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\memory\session.py-56-        _atomic_write(path, content)
+C:\Users\User\comfyui-agent\agent\memory\session.py-57-        return {"saved": str(path), "size_bytes": len(content)}
+C:\Users\User\comfyui-agent\agent\memory\session.py:58:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\memory\session.py-59-        return {"error": f"Failed to save session: {e}"}
+C:\Users\User\comfyui-agent\agent\memory\session.py-60-
+--
+C:\Users\User\comfyui-agent\agent\memory\session.py-84-    except json.JSONDecodeError as e:
+C:\Users\User\comfyui-agent\agent\memory\session.py-85-        return {"error": f"Corrupt session file: {e}"}
+C:\Users\User\comfyui-agent\agent\memory\session.py:86:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\memory\session.py-87-        return {"error": f"Failed to load session: {e}"}
+C:\Users\User\comfyui-agent\agent\memory\session.py-88-
+--
+C:\Users\User\comfyui-agent\agent\memory\session.py-106-                "file": str(path),
+C:\Users\User\comfyui-agent\agent\memory\session.py-107-            })
+C:\Users\User\comfyui-agent\agent\memory\session.py:108:        except Exception:
+C:\Users\User\comfyui-agent\agent\memory\session.py-109-            sessions.append({
+C:\Users\User\comfyui-agent\agent\memory\session.py-110-                "name": path.stem,
+--
+C:\Users\User\comfyui-agent\agent\memory\session.py-133-        try:
+C:\Users\User\comfyui-agent\agent\memory\session.py-134-            data = json.loads(path.read_text(encoding="utf-8"))
+C:\Users\User\comfyui-agent\agent\memory\session.py:135:        except Exception:
+C:\Users\User\comfyui-agent\agent\memory\session.py-136-            data = _empty_session(name)
+C:\Users\User\comfyui-agent\agent\memory\session.py-137-    else:
+--
+C:\Users\User\comfyui-agent\agent\memory\session.py-151-        _atomic_write(path, content)
+C:\Users\User\comfyui-agent\agent\memory\session.py-152-        return {"added": True, "total_notes": len(data["notes"])}
+C:\Users\User\comfyui-agent\agent\memory\session.py:153:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\memory\session.py-154-        return {"error": f"Failed to save note: {e}"}
+C:\Users\User\comfyui-agent\agent\memory\session.py-155-
+--
+C:\Users\User\comfyui-agent\agent\memory\session.py-198-        fd.close()
+C:\Users\User\comfyui-agent\agent\memory\session.py-199-        shutil.move(fd.name, str(path))
+C:\Users\User\comfyui-agent\agent\memory\session.py:200:    except Exception:
+C:\Users\User\comfyui-agent\agent\memory\session.py-201-        # Clean up temp file on failure
+C:\Users\User\comfyui-agent\agent\memory\session.py-202-        try:
+C:\Users\User\comfyui-agent\agent\memory\session.py-203-            Path(fd.name).unlink(missing_ok=True)
+C:\Users\User\comfyui-agent\agent\memory\session.py:204:        except Exception:
+C:\Users\User\comfyui-agent\agent\memory\session.py-205-            pass
+C:\Users\User\comfyui-agent\agent\memory\session.py-206-        raise
+--
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-299-    except httpx.HTTPStatusError as e:
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-300-        return to_json({"error": f"CivitAI API returned {e.response.status_code}."})
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py:301:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-302-        return to_json({"error": f"CivitAI search failed: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-303-
+--
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-339-            return to_json({"error": f"Model {model_id} not found on CivitAI."})
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-340-        return to_json({"error": f"CivitAI API returned {e.response.status_code}."})
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py:341:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-342-        return to_json({"error": f"CivitAI request failed: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-343-
+--
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-384-    except httpx.HTTPStatusError as e:
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-385-        return to_json({"error": f"CivitAI API returned {e.response.status_code}."})
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py:386:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-387-        return to_json({"error": f"CivitAI trending request failed: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-388-
+--
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-413-        else:
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-414-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py:415:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\civitai_api.py-416-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\github_releases.py-281-        else:
+C:\Users\User\comfyui-agent\agent\tools\github_releases.py-282-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\github_releases.py:283:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\github_releases.py-284-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-218-                return None, "Validation errors:\n" + "\n".join(msgs)
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-219-            return None, err_data.get("error", str(err_data))
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:220:        except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-221-            return None, f"HTTP {e.response.status_code}: {e.response.text[:300]}"
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:222:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-223-        return None, str(e)
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-224-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-241-                resp.raise_for_status()
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-242-                history = resp.json()
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:243:        except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-244-            time.sleep(poll_interval)
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-245-            continue
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-406-                        }
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-407-
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:408:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-409-        log.warning("WebSocket monitoring failed, falling back to polling: %s", e)
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-410-        result = _poll_completion(prompt_id, timeout=max(timeout - (time.monotonic() - start_time), 10))
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-436-                for vid in node_out.get("gifs", []):
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-437-                    outputs.append({"type": "video", "filename": vid.get("filename"), "subfolder": vid.get("subfolder", "")})
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:438:    except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-439-        pass
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-440-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-495-    except httpx.ConnectError:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-496-        return to_json({"error": f"ComfyUI not reachable at {COMFYUI_URL}. Is it running?"})
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:497:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-498-        return to_json({"error": f"Could not fetch node info: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-499-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-630-            )
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-631-            result["verification"] = verification
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:632:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-633-            log.warning("Auto-verify failed: %s", e)
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-634-            result["verification"] = {"error": str(e)}
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-650-    except httpx.ConnectError:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-651-        return to_json({"error": f"ComfyUI not reachable at {COMFYUI_URL}."})
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:652:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-653-        return to_json({"error": str(e)})
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-654-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-676-                    "message": "Prompt not found in history or queue.",
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-677-                })
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:678:        except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-679-            return to_json({
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-680-                "status": "unknown",
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-727-        else:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-728-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:729:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-730-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-167-                if "NODE_CLASS_MAPPINGS" in content:
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-168-                    info["registers_nodes"] = True
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py:169:            except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-170-                pass
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-171-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-287-        truncated = len(lines) > max_lines
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-288-        source = "\n".join(lines[:max_lines])
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py:289:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-290-        return to_json({"error": f"Could not read file: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-291-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-316-        else:
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-317-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py:318:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_inspect.py-319-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-298-        try:
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-299-            data = json.loads(path.read_text(encoding="utf-8"))
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:300:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-301-            return to_json({"error": f"Failed to parse workflow: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-302-
+--
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-360-        else:
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-361-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:362:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-363-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py-42-        if data is None:
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py-43-            return {}
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py:44:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py-45-        log.warning("Failed to fetch node replacements: %s", e)
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py-46-        return {}
+--
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py-155-            "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py-156-        })
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py:157:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py-158-        return to_json({"error": str(e)})
+C:\Users\User\comfyui-agent\agent\tools\node_replacement.py-159-
+--
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-241-    try:
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-242-        _write_png_metadata(image_path, metadata)
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py:243:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-244-        return to_json({"error": f"Failed to write metadata: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-245-
+--
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-264-    try:
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-265-        our_data, all_chunks = _read_png_metadata(image_path)
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py:266:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-267-        return to_json({"error": f"Failed to read metadata: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-268-
+--
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-291-    try:
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-292-        our_data, all_chunks = _read_png_metadata(image_path)
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py:293:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-294-        return to_json({"error": f"Failed to read metadata: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-295-
+--
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-387-        else:
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-388-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py:389:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\image_metadata.py-390-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\session_tools.py-180-        else:
+C:\Users\User\comfyui-agent\agent\tools\session_tools.py-181-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\session_tools.py:182:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\session_tools.py-183-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-38-                    "all_replacements": [r.get("new_node_id") for r in reps],
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-39-                }
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:40:    except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-41-        pass
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-42-    return None
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-293-        _cache["custom_nodes"] = data.get("custom_nodes", [])
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-294-        _freshness["custom_nodes_loaded_at"] = time.time()
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:295:    except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-296-        _cache["custom_nodes"] = []
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-297-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-311-        _cache["extension_map"] = json.loads(path.read_text(encoding="utf-8"))
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-312-        _freshness["extension_map_loaded_at"] = time.time()
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:313:    except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-314-        _cache["extension_map"] = {}
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-315-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-352-        _cache["model_list"] = data.get("models", [])
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-353-        _freshness["model_list_loaded_at"] = time.time()
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:354:    except Exception:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-355-        _cache["model_list"] = []
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-356-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-935-    except httpx.HTTPStatusError as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-936-        return to_json({"error": f"HuggingFace API returned {e.response.status_code}."})
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:937:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-938-        return to_json({"error": f"HuggingFace search failed: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-939-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-1027-            "error": "ComfyUI not reachable. Start ComfyUI to check node availability.",
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-1028-        })
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:1029:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-1030-        return to_json({"error": f"Could not fetch node info: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-1031-
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-1359-        else:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-1360-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py:1361:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\comfy_discover.py-1362-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-304-    except httpx.ConnectError:
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-305-        return {"error": f"ComfyUI not reachable at {COMFYUI_URL}. Is it running?"}
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:306:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-307-        return {"error": str(e)}
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-308-
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-523-        else:
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-524-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:525:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-526-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-339-        jp = jsonpatch.JsonPatch(patches)
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-340-        _state["current_workflow"] = jp.apply(_state["current_workflow"])
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py:341:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-342-        # Rollback on failure
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-343-        _state["current_workflow"] = _state["history"].pop()
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-377-        jp = jsonpatch.JsonPatch(patches)
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-378-        jp.apply(copy.deepcopy(_state["current_workflow"]))
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py:379:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-380-        return to_json({"error": f"Patch would fail: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-381-
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-448-            encoding="utf-8",
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-449-        )
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py:450:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-451-        return to_json({"error": f"Failed to save: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-452-
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-614-            else:
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-615-                return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py:616:        except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-617-            return to_json({"error": str(e)})
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-618-
+--
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py-766-        })
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py-767-        outcome_recorded = True
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py:768:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py-769-        log.warning("Failed to record pipeline outcome: %s", e)
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py-770-
+--
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py-857-        else:
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py-858-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py:859:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py-860-        log.error(
+C:\Users\User\comfyui-agent\agent\tools\pipeline.py-861-            "Unhandled error in pipeline tool %s",
+--
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-212-            "outcome_recorded": False,
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-213-        }
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py:214:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-215-        return {
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-216-            "prompt_id": prompt_id,
+--
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-272-            key_params = _extract_key_params(wf)
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-273-            workflow_hash = _workflow_hash(wf)
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py:274:    except Exception:
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-275-        pass
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-276-
+--
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-288-                )
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-289-                vision_analysis = json.loads(raw_result)
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py:290:            except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-291-                log.warning("Vision analysis failed: %s", e)
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-292-                vision_analysis = {"error": str(e)}
+--
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-322-        dispatch_tool("record_outcome", outcome_input)
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-323-        outcome_recorded = True
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py:324:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-325-        log.warning("Failed to record outcome: %s", e)
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-326-
+--
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-396-        else:
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-397-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py:398:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\verify_execution.py-399-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-115-    try:
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-116-        data = json.loads(path.read_text(encoding="utf-8"))
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py:117:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-118-        return to_json({"error": f"Failed to read template: {e}"})
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-119-
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-167-        else:
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-168-            return to_json({"error": f"Unknown tool: {name}"})
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py:169:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\workflow_templates.py-170-        return to_json({"error": str(e)})
+--
+C:\Users\User\comfyui-agent\agent\tools\__init__.py-105-    try:
+C:\Users\User\comfyui-agent\agent\tools\__init__.py-106-        return mod.handle(name, tool_input)
+C:\Users\User\comfyui-agent\agent\tools\__init__.py:107:    except Exception as e:
+C:\Users\User\comfyui-agent\agent\tools\__init__.py-108-        log.error("Unhandled error in tool %s", name, exc_info=True)
+C:\Users\User\comfyui-agent\agent\tools\__init__.py-109-        from ._util import to_json

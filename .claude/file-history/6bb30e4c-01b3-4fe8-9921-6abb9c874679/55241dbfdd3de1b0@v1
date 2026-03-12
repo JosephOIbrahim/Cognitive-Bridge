@@ -1,0 +1,212 @@
+# SYNAPSE 5-Step Sprint: Test Fix + TOPS Phase 2-3 + MCP Polish + E2E
+
+## Context
+
+TOPS Phase 1 is complete (5 core tools, 45 tests, He2025-compliant). This plan implements the 5 next steps: fix a pre-existing cross-test failure, add TOPS Phase 2 (scheduler/control) + Phase 3 (advanced), MCP Phase 3 polish (auth + resources), and an E2E smoke test. Every step enforces He2025 determinism.
+
+**Execution order:** Step 1 -> Step 2 -> Step 3 -> Step 5 -> Step 4 (E2E last, exercises everything)
+
+---
+
+## Step 1: Fix hdefereval Lambda Pollution
+
+**Root cause:** `test_capture.py` creates `lambda fn: fn()` in `sys.modules["hdefereval"]` — only accepts 1 arg. But `mcp/server.py:230` calls `hdefereval.executeInMainThreadWithResult(dispatch_tool, handler, tool_name, arguments)` with 4 args. Cross-test pollution causes `test_mcp_protocol.py` to fail in full suite.
+
+**Fix:** Change all 4 broken lambdas to `lambda fn, *args, **kwargs: fn(*args, **kwargs)`:
+
+| File | Line |
+|------|------|
+| `tests/test_capture.py` | 21 |
+| `tests/test_render.py` | 171 |
+| `tests/test_tops.py` | 38 |
+| `tests/test_tops.py` | 43 |
+
+**Verify:** `python -m pytest tests/ -v` — the pre-existing failure should now pass.
+
+---
+
+## Step 2: TOPS Phase 2 — Scheduler & Control + MCP Resources
+
+### 2a. Three New Handlers in `handlers_render.py`
+
+**`_handle_tops_configure_scheduler(payload)`**
+- Resolve: `topnet_path` (req), `scheduler_type` (default "local"), `max_concurrent` (opt), `working_dir` (opt)
+- Find scheduler child node in topnet, set `maxprocsmenu`/`maxprocs` and `pdg_workingdir`
+- Return: `{topnet, scheduler_node, scheduler_type, status: "configured", ...}`
+- He2025: no floats — clean
+
+**`_handle_tops_cancel_cook(payload)`**
+- Resolve: `node` (req)
+- If TopNet: `getPDGGraphContext().cancelCook()`. If single node: `getPDGNode().dirty(False)`
+- Return: `{node, status: "cancelled", note: "Currently cooking items may finish..."}`
+
+**`_handle_tops_dirty_node(payload)`**
+- Resolve: `node` (req), `dirty_upstream` (default False)
+- `getPDGNode().dirty(bool(dirty_upstream))`, fallback `node.dirtyAllTasks(False)`
+- Return: `{node, status: "dirtied", dirty_upstream}`
+
+### 2b. Registration (6 files)
+
+| File | Change |
+|------|--------|
+| `core/protocol.py` | 3 enums: `TOPS_CONFIGURE_SCHEDULER`, `TOPS_CANCEL_COOK`, `TOPS_DIRTY_NODE` |
+| `core/aliases.py` | 4 new: `scheduler_type`, `max_concurrent`, `working_dir`, `dirty_upstream` |
+| `server/handlers.py` | 3 registrations + 3 audit categories (PIPELINE). None read-only. |
+| `mcp/tools.py` | 3 tool defs with inputSchema + annotations |
+| `mcp_server.py` | 3 Tool() entries, 3 TOOL_DISPATCH, 2 slow commands (configure_scheduler: 30s, cancel_cook: 30s) |
+
+### 2c. NEW FILE: `mcp/resources.py`
+
+Resource registry mapping URIs to existing handlers:
+
+**Static resources (3):**
+- `houdini://scene/info` -> `get_scene_info`
+- `houdini://scene/tree` -> `inspect_scene`
+- `houdini://stage/info` -> `get_stage_info`
+
+**Resource templates (7):**
+- `houdini://node/{path}/parameters` -> `inspect_node`
+- `houdini://node/{path}/attributes` -> `inspect_node`
+- `houdini://node/{path}/cook-stats` -> `get_metrics`
+- `houdini://tops/{topnet_path}/graph` -> `tops_get_dependency_graph`
+- `houdini://tops/{topnet_path}/scheduler` -> `tops_configure_scheduler` (read mode)
+- `houdini://tops/{node_path}/items` -> `tops_get_work_items`
+- `houdini://tops/{node_path}/cook-log` -> `tops_get_cook_stats`
+
+Functions: `get_resources()` (He2025: sorted by URI), `read_resource(uri, handler)` (dispatches to handler)
+
+### 2d. Wire Resources into `mcp/server.py`
+
+- Import `get_resources`, `read_resource` from `.resources`
+- Add `resources/list` and `resources/read` to `_route_method()`
+- `_handle_resources_read` uses `hdefereval.executeInMainThreadWithResult(read_resource, uri, handler)` (same main-thread pattern as tools/call)
+- Update capabilities: `"resources": {"subscribe": False, "listChanged": False}`
+
+### 2e. Fix Existing Test
+
+`test_mcp_protocol.py:452` — `TestMethodNotFound.test_unknown_method` currently uses `"resources/list"` as the unknown method. Change to `"prompts/list"` (not yet implemented).
+
+### 2f. Tests
+
+Add to `test_tops.py`: `TestConfigureScheduler` (3 tests), `TestCancelCook` (3 tests), `TestDirtyNode` (3 tests)
+Add to `test_mcp_protocol.py`: `TestResourcesList` (2 tests: list returns resources, He2025 sorted)
+
+---
+
+## Step 3: TOPS Phase 3 — Advanced (3 New Tools)
+
+### 3a. Three New Handlers in `handlers_render.py`
+
+**`_handle_tops_setup_wedge(payload)`**
+- Resolve: `topnet_path` (req), `wedge_name` (default "wedge1"), `attributes` (req — list of {name, type, start, end, steps})
+- Create Wedge TOP node, configure multiparm attributes
+- He2025: `round_float()` on start/end in output, attributes sorted by name
+- Return: `{topnet, wedge_node, attributes, total_variations}`
+
+**`_handle_tops_batch_cook(payload)`**
+- Resolve: `node_paths` (req — list), `blocking` (default True), `stop_on_error` (default True)
+- Cook each node in sequence, collect per-node results
+- He2025: `kahan_sum()` for total_cook_time, `round_float()` for per-node cook_time, `dict(sorted())` for by_state
+- Uses `time.monotonic()` for elapsed measurement (not `time.time()` — He2025)
+- Return: `{nodes: [...], total_cook_time, by_state, summary}`
+
+**`_handle_tops_query_items(payload)`**
+- Resolve: `node` (req), `attribute_name` (req), `filter_op` (default "eq"), `filter_value` (req)
+- Operators: eq, gt, lt, gte, lte, contains, regex
+- He2025: `round_float()` on float attribute values in output
+- Return: `{node, attribute, operator, value, matched_count, total_count, items}`
+
+**Alias conflict note:** `attribute_name` is already an alias for `usd_attribute`. Use distinct canonical `"query_attribute"` for TOPS query, with aliases `["query_attribute", "attribute_name", "attr_name", "attrib"]`.
+
+### 3b. Registration (6 files, same pattern as Step 2)
+
+| File | Change |
+|------|--------|
+| `core/protocol.py` | 3 enums: `TOPS_SETUP_WEDGE`, `TOPS_BATCH_COOK`, `TOPS_QUERY_ITEMS` |
+| `core/aliases.py` | ~6 new aliases (wedge_name, node_paths, stop_on_error, query_attribute, filter_op, filter_value) |
+| `server/handlers.py` | 3 registrations + 3 categories. `tops_query_items` added to `_READ_ONLY_COMMANDS` |
+| `mcp/tools.py` | 3 tool defs |
+| `mcp_server.py` | 3 Tool() + dispatch + slow: batch_cook 300s, setup_wedge 30s |
+
+### 3c. Tests
+
+Add to `test_tops.py`: `TestSetupWedge` (3 tests), `TestBatchCook` (4 tests), `TestQueryItems` (4 tests)
+
+---
+
+## Step 5: MCP Phase 3 Polish (executed before Step 4)
+
+### 5a. Bearer Token Auth in `mcp/server.py`
+
+In `_mcp_url_handler()`, before routing:
+- Import `get_auth_key`, `authenticate` from `..server.auth`
+- If `get_auth_key()` returns a key: check `Authorization: Bearer <token>` header
+- Missing/invalid: return 401 Unauthorized
+- No key configured: skip auth (backward compat — existing behavior)
+- Uses existing `hmac.compare_digest` constant-time comparison
+
+### 5b. SSE Streaming — Deferred
+
+hwebserver uses C++ request-response model, doesn't support streaming. Document limitation in `docs/mcp/SETUP.md`: "SSE streaming not yet supported. Use resources/read polling."
+
+### 5c. Tests
+
+Add to `test_mcp_protocol.py`:
+- `TestAuthIntegration` (4 tests: module exists, disabled passes, bad token rejects, good token passes)
+- Update `TestInitialize` to verify `"resources"` in capabilities
+
+---
+
+## Step 4: E2E Smoke Test
+
+### NEW FILE: `tests/test_e2e_tops.py`
+
+Marked `@pytest.mark.integration` (CI-excluded). Requires live Houdini + SYNAPSE.
+
+Test sequence via WebSocket:
+1. Create topnet with genericgenerator via `execute_python`
+2. `tops_generate_items` -> verify status
+3. `tops_cook_node` (blocking) -> verify cooked
+4. `tops_get_work_items` -> verify items returned
+5. `tops_get_cook_stats` -> verify stats
+6. `tops_get_dependency_graph` -> verify structure
+7. `tops_dirty_node` -> verify dirtied
+8. Cleanup: `delete_node`
+
+---
+
+## He2025 Checklist (All Steps)
+
+| Pattern | Applied In |
+|---------|-----------|
+| `round_float()` | setup_wedge (start/end), batch_cook (cook_time), query_items (float attrs) |
+| `kahan_sum()` | batch_cook (total_cook_time) |
+| `dict(sorted())` | batch_cook (by_state), resources.py (sorted by URI) |
+| `sort_keys=True` | Protocol-level enforcement (orjson OPT_SORT_KEYS / json.dumps) |
+| Sequential IDs | Existing `_next_call_id()`, `_next_session_id()` — preserved |
+| No uuid4() | No new uuid4 introduced |
+| `time.monotonic()` | batch_cook elapsed timing (not time.time()) |
+
+## Files Modified
+
+| # | File | Steps |
+|---|------|-------|
+| 1 | `tests/test_capture.py` | 1 |
+| 2 | `tests/test_render.py` | 1 |
+| 3 | `tests/test_tops.py` | 1,2,3 |
+| 4 | `python/synapse/core/protocol.py` | 2,3 |
+| 5 | `python/synapse/core/aliases.py` | 2,3 |
+| 6 | `python/synapse/server/handlers_render.py` | 2,3 |
+| 7 | `python/synapse/server/handlers.py` | 2,3 |
+| 8 | `python/synapse/mcp/tools.py` | 2,3 |
+| 9 | `mcp_server.py` | 2,3 |
+| 10 | `python/synapse/mcp/resources.py` | 2 (NEW) |
+| 11 | `python/synapse/mcp/server.py` | 2,5 |
+| 12 | `tests/test_mcp_protocol.py` | 2,5 |
+| 13 | `tests/test_e2e_tops.py` | 4 (NEW) |
+| 14 | `docs/mcp/SETUP.md` | 5 |
+
+## Verification
+
+After each step: `python -m pytest tests/ -v` (full suite, ~1000+ tests, 0 failures)
+After Step 4: `python -m pytest tests/test_e2e_tops.py -v -m integration` (requires live Houdini)

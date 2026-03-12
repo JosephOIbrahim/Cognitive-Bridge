@@ -1,0 +1,384 @@
+# Synapse Codebase Analysis
+**Repo:** `github.com/JosephOIbrahim/Synapse` | **Version:** 5.3.0 | **Protocol:** 4.0.0
+**Analyzed:** 2026-02-13 | **Scope:** Full architectural analysis + TOPS Blueprint mapping
+
+---
+
+## 1. Executive Assessment
+
+Synapse is a **remarkably mature single-developer project**. The codebase demonstrates professional-grade engineering discipline that I rarely see even in small-team open source projects:
+
+| Metric | Value | Assessment |
+|--------|-------|------------|
+| Source files | 58 Python modules | Well-factored, not monolithic |
+| Lines of code | ~22,000+ | Substantial but not bloated |
+| Test coverage | 890 tests, all pass without Houdini | Exceptional for a solo project |
+| Type checking | mypy clean (0 errors, 58 files) | Production-grade |
+| Zero dependencies | Core has zero required deps | Perfect for DCC plugin distribution |
+| Protocol maturity | v4.0.0 with backwards compat to v1.x | Shows real iteration history |
+| CI | GitHub Actions, Python 3.11 + 3.14 | Forward-looking runtime support |
+
+**Bottom line:** This is a ship-ready product foundation, not a prototype. The architecture is thoughtfully layered, the safety patterns are real (not aspirational), and the test coverage means you can refactor confidently.
+
+---
+
+## 2. Architecture Map
+
+### 2.1 Layer Cake (Bottom → Top)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  MCP Server (mcp_server.py)                                 │
+│  43 tools • stdio/JSON-RPC • concurrent dispatch            │
+│  TONE.md loaded as server instructions                      │
+├─────────────────────────────────────────────────────────────┤
+│  Agent SDK (agent/)                                         │
+│  synapse_agent.py • synapse_tools.py • synapse_ws.py        │
+│  synapse_hooks.py • synapse_tone.py                         │
+│  Opus 4.6 • prepare/propose/execute/learn                   │
+├─────────────────────────────────────────────────────────────┤
+│  Server Layer (server/)                                     │
+│  WebSocket server • 39 handlers (4 mixin files)             │
+│  Resilience: rate limiter, circuit breaker, watchdog,       │
+│  backpressure, port failover, health monitor                │
+│  Introspection • Guards • Auth • Metrics                    │
+├─────────────────────────────────────────────────────────────┤
+│  Routing Layer (routing/)                                   │
+│  Cache→Recipe→Planner→Regex→Knowledge→LLM→Agent cascade     │
+│  Tier pinning (He2025) • Speculative T0+T1 parallelism     │
+│  323 routing tests • Epoch-based adaptation                 │
+├─────────────────────────────────────────────────────────────┤
+│  Memory Layer (memory/)                                     │
+│  JSONL store + SQLite store (switchable)                    │
+│  Scene memory (living memory) • Evolution system            │
+│  Charmander (MD) → Charmeleon (USD) → Charizard (composed)  │
+│  Agent state USD • Cross-scene search                       │
+├─────────────────────────────────────────────────────────────┤
+│  Session Layer (session/)                                   │
+│  SynapseBridge singleton • Session summaries                │
+│  Lifecycle tracking • Action logging                        │
+├─────────────────────────────────────────────────────────────┤
+│  Core Layer (core/)                                         │
+│  Protocol v4.0.0 • Command queue • Aliases (38+)            │
+│  Determinism (He2025) • Audit (hash-chain) • Gates (4-level)│
+│  Crypto (Fernet AES-128-CBC) • Error taxonomy               │
+│  Backwards compat: Nexus/Engram/Hyphae → Synapse            │
+├─────────────────────────────────────────────────────────────┤
+│  Houdini (hou.* API)                                        │
+│  USD Stage / Solaris / Karma / PDG/TOPs                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 Data Flow
+
+```
+Claude Desktop/Code                     Agent SDK
+     │ stdio/JSON-RPC                       │ anthropic SDK
+     ▼                                      ▼
+mcp_server.py ──WebSocket──▶ SynapseServer (daemon thread in Houdini)
+     │                            │
+     │                     CommandHandlerRegistry
+     │                       ┌────┼────┐────────┐
+     │                       ▼    ▼    ▼        ▼
+     │                    Node  USD  Render  Memory
+     │                   handlers  handlers handlers
+     │                       │    │    │        │
+     │                       ▼    ▼    ▼        ▼
+     │                    hou.* API / pxr API / $HIP/.synapse/
+     │
+     └──────────▶ Routing Cascade (for natural language input)
+                  Cache → Recipe → Planner → Regex → Knowledge → LLM → Agent
+```
+
+### 2.3 Transport Architecture
+
+| Backend | Module | Latency | Notes |
+|---------|--------|---------|-------|
+| websockets | `server/websocket.py` | ~0.2ms warm | Primary. Daemon thread. |
+| hwebserver | `server/hwebserver_adapter.py` | ~2s floor | Optional. Main event loop bottleneck. |
+| REST/API | `server/api_adapter.py` | Variable | Alternative HTTP transport |
+
+Smart decision: websockets as primary with hwebserver as fallback only for mutations that absolutely require main-thread execution.
+
+---
+
+## 3. Strengths (What's Working Well)
+
+### 3.1 Safety Architecture — Actually Implemented, Not Aspirational
+
+The three-layer safety system from our blueprint discussions already exists:
+
+**Layer 1 — Atomic Scripts:**
+- `execute_python` compiles code first (catches SyntaxError before execution)
+- `atomic=True` (default) wraps execution in `hou.undos.group()`
+- Smart rollback: coding bugs (NameError, TypeError, AttributeError) → auto-undo; operational errors (RuntimeError) → keep mutations
+
+**Layer 2 — Idempotent Guards:**
+- `guards.py` with `ensure_node()`, `ensure_connection()`, `ensure_parm()`, `ensure_parm_tuple()`
+- Guards are auto-injected into `execute_python` namespace (artists don't need to import them)
+- `deduplicate_inputs()` for merge node cleanup
+
+**Layer 3 — Error Taxonomy:**
+- `SynapseUserError` (bad input) vs `SynapseServiceError` (Houdini down)
+- User errors don't trip circuit breaker; service errors do
+- `_ROLLBACK_ERRORS` tuple precisely defines what triggers auto-undo
+
+This is production-quality safety. The TOPS blueprint's Phase 1 safety requirements are largely met by the existing foundation.
+
+### 3.2 Memory System — Sophisticated and Layered
+
+The memory architecture is the most impressive part of the codebase:
+
+- **Dual backends:** JSONL (default, zero deps) + SQLite (opt-in via `SYNAPSE_MEMORY_BACKEND=sqlite`)
+- **Living Memory:** Scene-level markdown journals that grow with work
+- **Evolution system:** Organic triggers (structured data count, asset references, session count, file size) drive Charmander→Charmeleon→Charizard upgrades
+- **Cross-scene search:** `memory_query` handler searches across all scene memory files in `$JOB`
+- **Thread-safe:** `ReadWriteLock` (writer-priority), `_ProcessFileLock` with filelock fallback
+- **Agent state:** USD-based agent state tracking (`agent_state.py`)
+
+The `write_parameter_experiment()` and `write_wedge_result()` functions in `scene_memory.py` are exactly what the TOPS blueprint needs for Render Memory (Phase 3).
+
+### 3.3 Determinism (He2025) — Correctly Scoped
+
+The He2025 determinism layer is applied with precision:
+- `round_float()` uses Decimal ROUND_HALF_UP for output only (never internal timing)
+- `sort_keys=True` in all JSON serialization (both orjson and stdlib)
+- Content-based UUIDs via `deterministic_uuid()` (same input → same ID)
+- Kahan compensated summation for stable aggregation
+- Epoch-based adaptation uses fixed epoch size (not time-based)
+- Resilience layer explicitly notes why it doesn't use `round_float()` for timing
+
+### 3.4 Tone System — Validated
+
+The tone system is the rare case where "engineering for user experience" is actually implemented:
+- `TONE.md` loaded as MCP server instructions
+- `agent/CLAUDE.md` defines the "validation test" (would this make an artist having a rough day keep going?)
+- Error messages consistently use "Couldn't find" instead of "Not found"
+- `_suggest_parms()` offers substring-matched alternatives on parameter errors
+- USD alias fallback: tries human-readable name, then encoded `xn__` name
+
+### 3.5 Test Architecture — Impressive
+
+- 890 tests run without Houdini (mock-based testing)
+- Careful `hou` stub management with save/restore teardown
+- Handler tests capture `_handlers_hou` reference to patch the correct object
+- Live tests (viewport capture, hwebserver) documented separately
+- Windows encoding awareness (`encoding="utf-8"` for special chars)
+
+---
+
+## 4. Areas for Improvement
+
+### 4.1 MCP Server Size (mcp_server.py = 1,513 lines)
+
+This is the single largest file in the project and handles:
+- WebSocket client (connection, recv loop, retry logic)
+- Authentication handshake
+- 43 tool definitions (all in one `list_tools()` function)
+- Tool dispatch (one large `call_tool()` switch)
+- Image handling (base64 encoding for viewport captures)
+
+**Recommendation:** Split into modules:
+- `mcp/client.py` — WebSocket client
+- `mcp/tools.py` — Tool definitions
+- `mcp/dispatch.py` — Call dispatch
+- `mcp/server.py` — Entry point
+
+This will matter when adding TOPS tools (Phase 2 of the blueprint adds ~5-8 new tools).
+
+### 4.2 Wedge Handler is Thin
+
+The current `_handle_wedge()` in `handlers_render.py` is a minimal implementation:
+- Finds or cooks a wedge TOP node
+- No parameter injection (the `wedge_parm` and `values` args are accepted but not used for dynamic wedge creation)
+- No result collection (returns `{"status": "cooked"}` without work item results)
+- No PDG event listener integration
+
+This is the primary gap the TOPS Blueprint needs to fill. The handler framework is there, but the PDG integration layer doesn't exist yet.
+
+### 4.3 Agent Executor is Untethered from Live Houdini
+
+The `agent/executor.py` prepare→propose→execute→learn loop is well-designed but currently runs in "planning mode" most of the time:
+- `command_fn` is optional (None = dry-run)
+- No built-in connection to the WebSocket client
+- The Agent SDK (`agent/synapse_agent.py`) has its own separate WebSocket client and tool definitions
+
+**Implication for TOPS Blueprint:** The Decision Engine (Phase 4) needs to bridge the `AgentExecutor` with live PDG callbacks. The existing executor has the right shape but needs a `command_fn` that maps to the MCP `send_command()` pattern.
+
+### 4.4 No PDG Event System
+
+The codebase has no PDG event listener infrastructure. The `_handle_wedge()` blocks with `node.cook(block=True)`, which is fine for simple wedges but won't work for the feedback loop architecture.
+
+**Missing pieces for TOPS Blueprint Phase 2:**
+- PDG event registration (`pdg.EventHandler`)
+- Work item status tracking
+- Event transport (file polling → WebSocket upgrade)
+- Async cook management
+
+### 4.5 Memory Models Don't Have Render-Specific Types
+
+The `MemoryType` enum in `models.py` and the `write_memory_entry()` dispatcher support:
+- `decision`, `parameter_experiment`, `blocker`, `asset_reference`, `wedge_result`, `note`
+
+But the TOPS Blueprint's Render Memory (Phase 3) needs richer types:
+- `render_result` with structured metrics (exposure, contrast, noise, duration)
+- `render_intent` with quality spec definitions
+- `exploration_plan` with wedge strategy records
+- `convergence_metric` for tracking system improvement
+
+The existing `write_parameter_experiment()` format is close but not structured enough for automated querying.
+
+---
+
+## 5. TOPS Blueprint → Codebase Mapping
+
+### Phase 1: Frame Validator
+| Blueprint Need | Existing Code | Gap |
+|---|---|---|
+| OpenImageIO pixel checks | None | New `tops/processors/frame_validator.py` |
+| Post-render validation | `_handle_render()` returns basic info | Need to hook validator after render completion |
+| Black frame detection | None | New code needed |
+| File existence check | `os.path.exists` patterns everywhere | Pattern exists, needs OIIO integration |
+
+**Integration point:** Add validation as a step after `_handle_render()` completes, or as a PDG Python Processor downstream of ROP Fetch.
+
+### Phase 2: Synapse ↔ TOPS Callbacks
+| Blueprint Need | Existing Code | Gap |
+|---|---|---|
+| PDG event listeners | None | Need `tops/listeners/pdg_events.py` |
+| Event transport | WebSocket server exists | Need new message types for PDG events |
+| Work item tracking | None | New state management needed |
+| `_handle_wedge()` | Exists, cooks TOPs | Needs upgrade to return work item results |
+
+**Integration point:** New handler registrations in `_register_handlers()` for PDG-specific commands. New `CommandType` variants in `protocol.py`.
+
+### Phase 3: Render Memory (USD)
+| Blueprint Need | Existing Code | Gap |
+|---|---|---|
+| USD memory schema | `scene_memory.py` + evolution system | Schema exists for MD→USD; need render-specific schema |
+| Parameter recording | `write_parameter_experiment()` | Close but needs structured metrics |
+| Intent matching | None | New code: tag-based Jaccard matching |
+| Query functions | `search_memory()` text search | Need structured queries for render params |
+
+**Integration point:** Extends the existing memory system. `write_memory_entry()` dispatcher gets new entry types. Evolution triggers get render-specific criteria.
+
+### Phase 4: Decision Engine
+| Blueprint Need | Existing Code | Gap |
+|---|---|---|
+| Technical validation | None (Frame Validator is new) | Phase 1 must land first |
+| Quality evaluation | None | New quality metrics code |
+| Intent matching | None | New matching code |
+| Accept/Retry/Escalate | `AgentExecutor.execute()` has basic flow | Needs render-specific decision logic |
+| Safety cap (5 iterations) | `MAX_AGENT_TURNS = 30` in agent SDK | Reduce to 5 for render loop |
+
+**Integration point:** New module that composes Frame Validator + Render Memory + quality heuristics into a decision function. Wraps the existing `AgentExecutor` pattern.
+
+### Phase 5: Adaptive Wedge Generator
+| Blueprint Need | Existing Code | Gap |
+|---|---|---|
+| Memory-informed exploration | Render Memory (Phase 3) | Phase 3 must land first |
+| Dynamic wedge creation | `_handle_wedge()` accepts params but doesn't use them | Upgrade handler to dynamically create wedge nodes |
+| Strategy selection | None | New `WIDE_WEDGE → NARROW_WEDGE → SINGLE_RENDER` logic |
+| PDG wedge generation | Houdini TOPs API | New code using existing Houdini module |
+
+### Phase 6: Convergence Tracking
+| Blueprint Need | Existing Code | Gap |
+|---|---|---|
+| Metrics collection | `server/metrics.py` (Prometheus format) | Extend with render-specific metrics |
+| Trend analysis | None | New rolling average / regression |
+| Dashboard | `ui/panel.py` has 5 tabs | Could add "Render Health" tab |
+
+### Phase 7: Intent Embedding (Future)
+| Blueprint Need | Existing Code | Gap |
+|---|---|---|
+| Embedding model | None | External dependency (sentence-transformers or API) |
+| Cosine similarity | None | New code |
+| Caching | `routing/cache.py` has LRU+TTL | Reuse pattern |
+
+---
+
+## 6. Recommended Implementation Order
+
+Based on the codebase analysis, here's the adjusted implementation sequence:
+
+### Phase 0: Preparation (Before Writing TOPS Code)
+
+1. **Split `mcp_server.py`** into modules (client, tools, dispatch). This makes adding TOPS tools clean.
+2. **Add `CommandType` variants** for PDG operations in `protocol.py`:
+   - `PDG_COOK`, `PDG_STATUS`, `PDG_CANCEL`
+   - `VALIDATE_FRAME`, `EVALUATE_QUALITY`
+3. **Add render-specific memory types** to `scene_memory.py`:
+   - `render_result`, `render_intent`, `exploration_plan`
+
+### Phase 1: Frame Validator (Standalone, No PDG)
+- Uses only OpenImageIO (ships with Houdini)
+- Can be called manually via `houdini_execute_python`
+- Add as new MCP tool: `synapse_validate_frame`
+- Test: generate known-bad images, verify detection
+
+### Phase 2: PDG Event Bridge
+- Register PDG event handlers via `hou.pdg` API
+- File polling transport initially (simplest, proven)
+- New handler: `_handle_pdg_status()` returns work item state
+- Upgrade `_handle_wedge()` to return work item results
+
+### Phase 3: Render Memory
+- Extends existing scene memory with render-specific schema
+- Uses existing `_ProcessFileLock` for thread safety
+- USD schema under `/RenderMemory/Intents/` when evolved
+- Query functions for parameter→quality mappings
+
+### Phase 4-7: Progressive (As Designed in Blueprint)
+
+---
+
+## 7. Code Quality Observations
+
+### Patterns Worth Preserving
+- **Mixin architecture** for handlers (NodeHandlerMixin, UsdHandlerMixin, RenderHandlerMixin, MemoryHandlerMixin) — clean separation
+- **Lazy loading** via `__getattr__` in `__init__.py` — keeps Houdini startup fast
+- **Fire-and-forget logging** via `ThreadPoolExecutor(max_workers=2)` — never blocks the response path
+- **Guard injection** into `exec_globals` — guards available without imports in `execute_python`
+- **Error enrichment** via `_suggest_parms()` — shows similar parameter names on typos
+
+### Patterns to Watch
+- **Singleton access** (`audit_log()`, `human_gate()`, `get_bridge()`) — works but can mask state in tests
+- **Module-level `hou` import** with `HOU_AVAILABLE` flag — duplicated across every handler mixin
+- **Thread executor at module level** (`_log_executor`) — no shutdown hook besides atexit
+
+### Naming Conventions (Consistent)
+- Public API: `SynapseMemory`, `SynapseServer`, `AgentExecutor`
+- Internal: `_handle_*`, `_suggest_parms`, `_find_render_rop`
+- Constants: `PROTOCOL_VERSION`, `MAX_RETRIES`, `_ROLLBACK_ERRORS`
+- Legacy aliases: `NexusServer`, `EngramMemory`, `HyphaeAuditLog` all preserved
+
+---
+
+## 8. Competitive Position
+
+### vs. Houdini AI Assistant (SideFX)
+Synapse's advantage is clear: **execution, not just suggestion**. The existing codebase already has 43 MCP tools for real scene manipulation, while Houdini AI Assistant is read-only with suggestions. The TOPS Blueprint amplifies this gap — learning from render results is something no competitor can currently do.
+
+### vs. Generic MCP Servers
+Synapse's domain depth is the moat. The parameter alias system (38+ mappings including USD encoded names), the coaching tone, the RAG knowledge base (21 recipes, 26 reference files), and the Houdini-specific safety patterns (matlib cook, undo groups, encoded parm fallback) represent accumulated domain knowledge that generic tools can't replicate.
+
+### What Could Threaten This
+- SideFX adding native AI execution capabilities to Houdini
+- A well-funded competitor building a similar bridge with more resources
+- The Agent SDK pattern becoming standardized (making the custom bridge less differentiated)
+
+The TOPS Blueprint's learning system is the best defense against all three: even if competitors build bridges, they won't have the accumulated render memory and convergence data that makes Synapse progressively smarter.
+
+---
+
+## 9. Open Questions for You
+
+1. **Memory scope for Render Memory:** Per-project (current `$JOB/.synapse/`) or global (`~/.synapse/render_memory/`)? Per-project is safer; global enables cross-project transfer learning.
+
+2. **MCP server split priority:** Should we split `mcp_server.py` before adding TOPS tools, or add them to the monolith first and refactor later?
+
+3. **PDG event transport:** File polling is simplest but adds latency. Since the WebSocket server is already there, should Phase 2 go straight to WebSocket events?
+
+4. **Agent SDK integration:** The agent SDK has its own WebSocket client separate from `mcp_server.py`. Should the TOPS Decision Engine use the MCP path or the agent SDK path?
+
+5. **Test strategy for PDG:** The existing test suite mocks `hou` perfectly. PDG mocking is harder (event callbacks, work item state machines). Should we build a `pdg_mock` test utility as part of Phase 2?

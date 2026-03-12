@@ -1,0 +1,46 @@
+---
+type: protocol
+---
+# Weekly Review Protocol
+
+## Timer: START NOW (15 min)
+
+### Tangent Triage (0:00 - 5:00)
+
+```dataview
+TABLE WITHOUT ID
+  file.link AS "Tangent",
+  status AS "Status",
+  source_project AS "Source",
+  created AS "Captured"
+FROM "_tangents"
+WHERE status = "parked"
+SORT created DESC
+LIMIT 10
+```
+
+For each: change status to `exploring`, `integrated`, or `dead`.
+
+### Graph Check (5:00 - 10:00)
+
+Open graph (Ctrl+G). Look for:
+- [ ] New clusters forming?
+- [ ] Any tangent connecting to current FOCUS project?
+- [ ] Anything surprising?
+
+Close graph.
+
+### Framework Scan (10:00 - 15:00)
+
+```dataview
+TABLE WITHOUT ID
+  file.link AS "Framework",
+  file.ctime AS "Created"
+FROM "_frameworks"
+SORT file.ctime ASC
+LIMIT 5
+```
+
+Any of these relevant to current work? If yes, create a companion note in `_research/`.
+
+### DONE. CLOSE OBSIDIAN.

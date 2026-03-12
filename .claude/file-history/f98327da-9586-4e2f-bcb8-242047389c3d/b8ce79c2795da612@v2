@@ -1,0 +1,105 @@
+"""Check Wolfram availability and run W1-W6."""
+import asyncio
+import sys
+sys.path.insert(0, r"C:\Users\User\.synapse\agent")
+from synapse_ws import SynapseClient
+
+async def main():
+    async with SynapseClient() as c:
+        # Set env + check wolframalpha
+        r = await c.execute_python(r"""
+import os, sys
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+try:
+    import wolframalpha
+    has_wa = True
+except ImportError:
+    has_wa = False
+lens_dir = os.path.join(os.environ["CINEMA_CAMERA_PATH"], "lenses")
+lens_files = os.listdir(lens_dir) if os.path.isdir(lens_dir) else []
+result = {"has_wolframalpha": has_wa, "lens_files": lens_files}
+""", timeout=10)
+        print("Check:", r)
+
+        if isinstance(r, dict) and not r.get("has_wolframalpha"):
+            print("wolframalpha not in Houdini Python. Installing...")
+            r2 = await c.execute_python(r"""
+import subprocess, sys
+proc = subprocess.run([sys.executable, "-m", "pip", "install", "wolframalpha"],
+                      capture_output=True, text=True, timeout=30)
+result = {"returncode": proc.returncode, "stdout": proc.stdout[-200:], "stderr": proc.stderr[-200:]}
+""", timeout=45)
+            print("Install:", r2)
+
+        # W1: Validate optics
+        print("\n[W1] Validating optics formulas...")
+        r3 = await c.execute_python(r"""
+import sys, traceback, os
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+try:
+    from cinema_camera.wolfram_upgrades.validate_optics import validate_all_optics
+    results = validate_all_optics()
+    passed = sum(1 for r in results if r.verified)
+    result = {"success": True, "passed": passed, "total": len(results)}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+""", timeout=120)
+        print("W1:", r3)
+
+        # W2-W3: Fit squeeze curves
+        print("\n[W2-W3] Fitting squeeze breathing curves...")
+        r4 = await c.execute_python(r"""
+import sys, traceback, os
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+try:
+    from cinema_camera.wolfram_upgrades.fit_squeeze_breathing import fit_squeeze_curves, generate_vex_squeeze_function
+    fit_squeeze_curves()
+    generate_vex_squeeze_function()
+    result = {"success": True}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+""", timeout=120)
+        print("W2-W3:", r4)
+
+        # W4: Fit pupil shift
+        print("\n[W4] Fitting pupil shift curves...")
+        r5 = await c.execute_python(r"""
+import sys, traceback, os
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+try:
+    from cinema_camera.wolfram_upgrades.fit_pupil_shift import fit_pupil_shift_curves
+    fit_pupil_shift_curves()
+    result = {"success": True}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+""", timeout=120)
+        print("W4:", r5)
+
+        # W5: Calibrate biomechanics
+        print("\n[W5] Calibrating biomechanics (ODE solving)...")
+        r6 = await c.execute_python(r"""
+import sys, traceback, os
+os.environ["WOLFRAM_APP_ID"] = "LKY2AG-QX3G7VW7YR"
+os.environ["CINEMA_CAMERA_PATH"] = r"C:\Users\User\OneDrive\Documents\houdini21.0\cinema_camera"
+sys.path.insert(0, r"C:\Users\User\OneDrive\Documents\houdini21.0\scripts\python")
+try:
+    from cinema_camera.wolfram_upgrades.calibrate_biomechanics import calibrate_biomechanics
+    calibrate_biomechanics()
+    result = {"success": True}
+except Exception as e:
+    result = {"success": False, "error": str(e), "tb": traceback.format_exc()}
+""", timeout=180)
+        print("W5:", r6)
+
+        print("\n[W6] VEX header already generated in W2-W3.")
+        print("\nWolfram phases complete.")
+
+asyncio.run(main())

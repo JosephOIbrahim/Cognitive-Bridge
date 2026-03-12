@@ -1,0 +1,159 @@
+"""
+Stage 3: Detect frames that show VEX code editor.
+
+Heuristic approach:
+1. Houdini's VEX editor has a dark/grey background with light text
+2. Code frames have high text density in specific screen regions
+3. Frame differencing catches when code CHANGES (new typing)
+
+We detect ALL code-visible frames, then deduplicate to keep only
+frames where the code content changed significantly.
+
+Usage: python scripts/03_detect_code_frames.py
+
+Output: data/code_frames/{episode}/ (copies of detected frames)
+        data/code_frames/{episode}/detections.json
+"""
+
+import shutil
+
+import cv2
+import numpy as np
+import json
+from pathlib import Path
+from tqdm import tqdm
+
+DATA_DIR = Path("data")
+FRAME_DIR = DATA_DIR / "frames"
+CODE_DIR = DATA_DIR / "code_frames"
+
+# --- Tunable Parameters ---
+# These may need adjustment depending on the specific tutorial series.
+# Run on 2-3 episodes first and visually verify before batch processing.
+
+DARK_REGION_THRESHOLD = 80       # Pixel intensity below this = "dark"
+DARK_RATIO_MIN = 0.25            # At least 25% of frame should be dark (code editor area)
+TEXT_EDGE_DENSITY_MIN = 0.02     # Minimum edge density in dark regions (text detection)
+FRAME_DIFF_THRESHOLD = 0.015    # Minimum structural difference to count as "code changed"
+# ---------------------------
+
+
+def is_code_frame(frame):
+    """
+    Detect if a frame likely shows VEX code editor.
+
+    Returns (is_code: bool, confidence: float, metadata: dict)
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+
+    # Check for dark regions (code editor background)
+    dark_mask = gray < DARK_REGION_THRESHOLD
+    dark_ratio = np.sum(dark_mask) / (h * w)
+
+    if dark_ratio < DARK_RATIO_MIN:
+        return False, 0.0, {"reason": "insufficient_dark_area", "dark_ratio": float(dark_ratio)}
+
+    # Check for text-like edges in dark regions
+    edges = cv2.Canny(gray, 50, 150)
+    text_edges = edges & (dark_mask.astype(np.uint8) * 255)
+    edge_density = np.sum(text_edges > 0) / max(np.sum(dark_mask), 1)
+
+    if edge_density < TEXT_EDGE_DENSITY_MIN:
+        return False, 0.0, {"reason": "low_text_density", "edge_density": float(edge_density)}
+
+    # Check for horizontal line patterns (code lines are horizontal)
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
+    horizontal_lines = cv2.morphologyEx(text_edges, cv2.MORPH_OPEN, horizontal_kernel)
+    line_ratio = np.sum(horizontal_lines > 0) / max(np.sum(text_edges > 0), 1)
+
+    confidence = min(1.0, (dark_ratio * 0.3 + edge_density * 10 * 0.4 + line_ratio * 0.3))
+
+    return confidence > 0.3, confidence, {
+        "dark_ratio": round(float(dark_ratio), 3),
+        "edge_density": round(float(edge_density), 4),
+        "line_ratio": round(float(line_ratio), 3),
+    }
+
+
+def frames_differ(frame_a, frame_b, threshold=FRAME_DIFF_THRESHOLD):
+    """Check if two frames have significantly different content."""
+    if frame_a is None or frame_b is None:
+        return True
+
+    gray_a = cv2.cvtColor(frame_a, cv2.COLOR_BGR2GRAY)
+    gray_b = cv2.cvtColor(frame_b, cv2.COLOR_BGR2GRAY)
+
+    # Structural Similarity approximation (fast)
+    diff = cv2.absdiff(gray_a, gray_b)
+    change_ratio = np.sum(diff > 30) / diff.size
+
+    return change_ratio > threshold
+
+
+def process_episode(episode_dir):
+    """Process all frames in an episode directory."""
+    frames = sorted(episode_dir.glob("frame_*.png"))
+    if not frames:
+        return []
+
+    output_dir = CODE_DIR / episode_dir.name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    detections = []
+    last_code_frame = None
+
+    for frame_path in frames:
+        frame = cv2.imread(str(frame_path))
+        if frame is None:
+            continue
+
+        is_code, confidence, meta = is_code_frame(frame)
+
+        if is_code:
+            # Only keep if code content actually changed
+            if frames_differ(frame, last_code_frame):
+                # Calculate timestamp from frame number (at 0.5fps = 2 sec per frame)
+                frame_num = int(frame_path.stem.split("_")[1])
+                timestamp_sec = frame_num * 2  # 0.5fps means 1 frame = 2 seconds
+
+                # Copy frame to code_frames directory
+                dest = output_dir / frame_path.name
+                shutil.copy2(frame_path, dest)
+
+                detections.append({
+                    "frame": frame_path.name,
+                    "timestamp_sec": timestamp_sec,
+                    "timestamp_fmt": f"{timestamp_sec // 60}:{timestamp_sec % 60:02d}",
+                    "confidence": round(float(confidence), 3),
+                    "metadata": meta,
+                })
+
+                last_code_frame = frame.copy()
+
+    # Save detection metadata
+    with open(output_dir / "detections.json", "w") as f:
+        json.dump(detections, f, indent=2, sort_keys=False)
+
+    return detections
+
+
+def main():
+    episodes = sorted([d for d in FRAME_DIR.iterdir() if d.is_dir()])
+
+    total_detections = 0
+    for episode_dir in tqdm(episodes, desc="Detecting code frames"):
+        detections = process_episode(episode_dir)
+        print(f"  {episode_dir.name}: {len(detections)} code frames detected")
+        total_detections += len(detections)
+
+    print(f"\nTotal code frames detected: {total_detections}")
+    print(
+        "\nIMPORTANT: Visually verify detections for 2-3 episodes before proceeding.\n"
+        "  Open data/code_frames/{episode}/ and check that detected frames actually show code.\n"
+        "  Adjust parameters in this script if detection is too aggressive or too conservative."
+    )
+
+
+if __name__ == "__main__":
+    main()

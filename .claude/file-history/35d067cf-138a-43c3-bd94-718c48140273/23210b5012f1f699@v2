@@ -1,0 +1,61 @@
+"""Cross-expert information bleeding.
+
+Tracked via the MixingTracker from Agent 3.
+Bleeding only occurs between modulated phases.
+Anchor phases are NEVER involved in bleeding.
+"""
+
+from src.lossless.constants import ANCHOR_PHASES, MODULATED_PHASES, PROFILES
+from src.lossless.injection.mixing import MixingTracker
+from src.lossless.injection.state import InjectionState
+
+
+def apply_bleeding(
+    expert_contributions: dict,
+    injection_state: InjectionState,
+) -> dict:
+    """Apply cross-expert bleeding to expert contributions.
+
+    Args:
+        expert_contributions: Phase-name -> contribution score mapping.
+        injection_state: Current injection state (has mixing_tracker).
+
+    Returns:
+        New dict with bleeding applied to modulated phases only.
+        Anchor phase contributions are UNCHANGED.
+    """
+    result = {}
+
+    # Copy anchor phases unchanged
+    for phase in sorted(expert_contributions.keys()):
+        if phase in ANCHOR_PHASES:
+            result[phase] = expert_contributions[phase]
+
+    # Get modulated phase contributions as a vector
+    mod_phases = sorted(MODULATED_PHASES)
+    signal = []
+    for phase in mod_phases:
+        signal.append(expert_contributions.get(phase, 0.0))
+
+    # Apply mixing if there's cross-expert bleeding
+    mixed = injection_state.mixing_tracker.mix(signal)
+
+    # Write back
+    for i, phase in enumerate(mod_phases):
+        result[phase] = mixed[i]
+
+    return result
+
+
+def get_bleeding_coefficient(profile_name: str) -> float:
+    """Get the cross-expert bleeding coefficient for a profile.
+
+    Args:
+        profile_name: Profile name.
+
+    Returns:
+        Bleeding coefficient in [0.0, 1.0).
+    """
+    if profile_name not in PROFILES:
+        return 0.0
+    return PROFILES[profile_name]["cross_expert"]

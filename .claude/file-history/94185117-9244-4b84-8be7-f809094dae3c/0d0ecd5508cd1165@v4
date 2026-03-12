@@ -1,0 +1,288 @@
+'use client';
+
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { HeroReel } from '@/components/HeroReel';
+import { LadderGrid } from '@/components/LadderGrid';
+import { usePerception } from '@/lib/perception/context';
+import { projects, projectsBySlug } from '@/lib/projects';
+import { ProjectAdapter } from '@/lib/perception/adapter';
+import { useIsMobile } from '@/lib/hooks/useIsMobile';
+import { usePrefersReducedMotion } from '@/lib/hooks/usePrefersReducedMotion';
+
+// Hoisted static styles — avoids creating new objects on every render
+const scrollIndicatorTextStyle = {
+  color: '#8a8a8a',
+  fontFamily: 'var(--font-display)',
+  fontSize: '11px',
+  fontWeight: 600,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase' as const,
+  marginTop: '8px'
+};
+
+const gradientOverlayStyle = {
+  height: '250px',
+  background: 'linear-gradient(to bottom, #141414 0%, transparent 100%)',
+  zIndex: 95,
+  opacity: 0
+};
+
+const heroSectionStyle = {
+  maxWidth: 'var(--max-content-width)',
+  paddingLeft: 'var(--side-padding)',
+  paddingRight: 'var(--side-padding)',
+  paddingTop: 'clamp(102px, 10.2vw + 34px, 170px)',
+  paddingBottom: 'clamp(102px, 10.2vw + 34px, 170px)',
+};
+
+const heroTextWrapperStyle = { maxWidth: '900px' };
+
+const gridSectionStyle = {
+  maxWidth: 'var(--max-content-width)',
+  paddingLeft: 'var(--side-padding)',
+  paddingRight: 'var(--side-padding)',
+  paddingBottom: 'var(--space-lg)',
+};
+
+type FilterKey = 'all' | 'film' | 'product' | 'musicvideo';
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'film', label: 'Film' },
+  { key: 'product', label: 'Commercial' },
+  { key: 'musicvideo', label: 'Music Video' },
+];
+
+export default function HomePage() {
+  // Get perception state from context (sensor runs in PerceptionLayer)
+  const { archetype, confidence } = usePerception();
+
+  const { isMobile } = useIsMobile();
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  const [introVisible, setIntroVisible] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+
+  // Refs for scroll-driven DOM updates (no re-renders on scroll)
+  const scrollIndicatorRef = useRef<HTMLDivElement>(null);
+  const introTextRef = useRef<HTMLElement>(null);
+  const gradientOverlayRef = useRef<HTMLDivElement>(null);
+
+  // Hero height based on device - matches HeroReel component
+  const heroHeight = isMobile ? '50vh' : '70vh';
+  const heroHeightMultiplier = isMobile ? 0.5 : 0.7;
+
+  // Trigger intro animation on mount
+  useEffect(() => {
+    const timer = setTimeout(() => setIntroVisible(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Listen for chatbot open/close via custom event (replaces MutationObserver)
+  useEffect(() => {
+    const scrollIndicator = scrollIndicatorRef.current;
+    if (!scrollIndicator) return;
+
+    const observer = new MutationObserver(() => {
+      const isOpen = document.body.hasAttribute('data-chatbot-open');
+      if (scrollIndicator) {
+        scrollIndicator.style.opacity = isOpen ? '0' : scrollIndicator.dataset.scrollOpacity || '1';
+        scrollIndicator.style.pointerEvents = isOpen ? 'none' : 'auto';
+      }
+    });
+
+    observer.observe(document.body, { attributes: true, attributeFilter: ['data-chatbot-open'] });
+    return () => observer.disconnect();
+  }, []);
+
+  // Scroll-driven opacity updates via direct DOM manipulation (no React re-renders)
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+
+      // Fade out scroll indicator between 0-300px scroll
+      const scrollIndicatorOp = Math.max(0, 1 - (scrollY / 300));
+      if (scrollIndicatorRef.current) {
+        scrollIndicatorRef.current.dataset.scrollOpacity = String(scrollIndicatorOp);
+        // Only update DOM if chatbot isn't overriding
+        if (!document.body.hasAttribute('data-chatbot-open')) {
+          scrollIndicatorRef.current.style.opacity = String(scrollIndicatorOp);
+          scrollIndicatorRef.current.style.pointerEvents = scrollIndicatorOp === 0 ? 'none' : 'auto';
+        }
+      }
+
+      // Fade out intro text right before it overlaps navigation
+      const fadeStart = 600;
+      const fadeEnd = 800;
+      let introOp = 1;
+      if (scrollY > fadeStart) {
+        introOp = Math.max(0, 1 - ((scrollY - fadeStart) / (fadeEnd - fadeStart)));
+      }
+      if (introTextRef.current) {
+        introTextRef.current.style.opacity = String(introOp);
+      }
+
+      // Fade gradient overlay for content scrolling under navigation
+      const currentHeroHeight = window.innerHeight * heroHeightMultiplier;
+      const contentTopPosition = currentHeroHeight - scrollY;
+      const navHeight = 200;
+      let mainTopOp = 1;
+      if (contentTopPosition < navHeight) {
+        const fadeDistance = 150;
+        const distanceIntoNav = navHeight - contentTopPosition;
+        mainTopOp = Math.max(0, 1 - (distanceIntoNav / fadeDistance));
+      }
+      if (gradientOverlayRef.current) {
+        gradientOverlayRef.current.style.opacity = mainTopOp < 1 ? String((1 - mainTopOp) * 0.95) : '0';
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [heroHeightMultiplier]);
+
+  // Find General Reel for hero (O(1) Map lookup)
+  const heroProject = projectsBySlug.get('general-reel');
+
+  // Hero statement - authentic, consistent regardless of mode
+  const heroStatement = "Sixteen years. Feature films, commercials, real-time engines—each frame a problem of light solved in pixels. This is the work.";
+
+  // Adapt project order based on visitor archetype, then apply filter
+  const adaptedProjects = useMemo(() => {
+    let gridProjects = projects;
+
+    // Confidence threshold: don't adapt on weak signal
+    if (confidence >= 0.5 && archetype) {
+      gridProjects = ProjectAdapter.adaptProjectOrder(gridProjects, archetype);
+    }
+
+    // Apply work type filter
+    if (activeFilter !== 'all') {
+      gridProjects = gridProjects.filter(p =>
+        p.workTypes?.includes(activeFilter)
+      );
+    }
+
+    return gridProjects;
+  }, [archetype, confidence, activeFilter]);
+
+  return (
+    <>
+      {/* Hero Reel - Fixed position, crossfades on scroll, below navigation */}
+      {heroProject && (
+        <HeroReel
+          videoId={heroProject.videoId}
+          videoHash={heroProject.videoHash}
+          startTime={heroProject.startTime}
+          thumbnail={heroProject.thumbnail}
+        />
+      )}
+
+      {/* Scroll indicator - positioned right below hero reel, hidden when chatbot is open */}
+      <div
+        ref={scrollIndicatorRef}
+        aria-hidden="true"
+        className="fixed left-0 right-0 flex flex-col items-center"
+        style={{
+          top: `calc(${heroHeight} - 60px)`,
+          zIndex: 90,
+          opacity: 1,
+          transition: 'opacity 0.3s ease-out'
+        }}
+      >
+        <svg
+          className="scroll-chevron"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#8a8a8a"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+        <p style={scrollIndicatorTextStyle}>
+          Scroll
+        </p>
+      </div>
+
+      {/* Gradient fade overlay for content scrolling under navigation */}
+      <div
+        ref={gradientOverlayRef}
+        className="fixed top-0 left-0 right-0 pointer-events-none"
+        style={gradientOverlayStyle}
+      />
+
+      {/* Main content - starts below viewport, scrolls up */}
+      <div className="min-h-screen relative" style={{ marginTop: heroHeight, zIndex: 50, backgroundColor: '#141414' }}>
+        {/* Hero Statement - Isolated quote with generous whitespace (Pentagram style) */}
+        <section
+          ref={introTextRef}
+          className="mx-auto"
+          style={heroSectionStyle}
+        >
+          <div style={heroTextWrapperStyle}>
+            {/* Hero Statement - Editorial serif quote style, Pentagram-tight heading */}
+            <h1
+              style={{
+                color: '#a0a0a0',
+                fontFamily: 'var(--font-lora)',
+                fontWeight: 400,
+                fontStyle: 'italic',
+                fontSize: 'clamp(22px, 3.5vw, 38px)',
+                lineHeight: 1.2,
+                letterSpacing: '0.005em',
+                opacity: introVisible ? 1 : 0,
+                transform: introVisible ? 'translateY(0)' : `translateY(${isMobile ? 20 : 30}px)`,
+                transition: prefersReducedMotion ? 'none' : 'opacity 550ms cubic-bezier(0.25, 0.1, 0.25, 1), transform 550ms cubic-bezier(0.25, 0.1, 0.25, 1)'
+              }}
+            >
+              {heroStatement}
+            </h1>
+          </div>
+        </section>
+
+        {/* Filter Bar + Ladder Grid */}
+        <section
+          className="mx-auto"
+          style={gridSectionStyle}
+        >
+          {/* Discipline Filters */}
+          <div
+            className="flex flex-wrap items-center"
+            style={{
+              gap: 'clamp(16px, 2vw, 32px)',
+              marginBottom: 'var(--space-sm)'
+            }}
+          >
+            {FILTERS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveFilter(key)}
+                style={{
+                  color: activeFilter === key ? 'var(--text-primary)' : 'var(--text-dim)',
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 500,
+                  fontSize: '11px',
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  background: 'none',
+                  padding: '4px 0',
+                  borderBottom: activeFilter === key ? '1px solid var(--text-primary)' : '1px solid transparent',
+                  transition: 'color var(--transition-base), border-color var(--transition-base)',
+                  cursor: 'pointer'
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <LadderGrid projects={adaptedProjects} />
+        </section>
+      </div>
+    </>
+  );
+}

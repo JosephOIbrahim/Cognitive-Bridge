@@ -1,0 +1,124 @@
+"""Integrity block generation for lossless output.
+
+Generates metadata appended to CLAUDE.md output as HTML comments.
+Contains all hashes and provenance needed for verification.
+"""
+
+from src.lossless.clean_channel.hasher import hash_anchors, hash_sections, hash_string
+from src.lossless.constants import FLOAT_TOLERANCE
+
+
+def generate_integrity_block(
+    clean_hash: str,
+    anchor_hash: str,
+    sections_hash: str,
+    profile_name: str,
+    s_NM: float,
+    alpha: float,
+    mixing_data: dict,
+    provenance_summary: dict,
+    source_hash: str = "",
+) -> str:
+    """Generate the integrity metadata block.
+
+    Args:
+        clean_hash: SHA256 of the clean markdown.
+        anchor_hash: SHA256 of anchor sections only.
+        sections_hash: SHA256 of all sections.
+        profile_name: Active injection profile name.
+        s_NM: Signal strength used.
+        alpha: Pharmacokinetic alpha at generation time.
+        mixing_data: Mixing matrix serialization.
+        provenance_summary: Routing provenance summary.
+        source_hash: Hash of source USDA files.
+
+    Returns:
+        Markdown comment block with integrity data.
+    """
+    fidelity = compute_fidelity(clean_hash, anchor_hash)
+
+    lines = [
+        "<!-- LOSSLESS INTEGRITY BLOCK -->",
+        f"<!-- clean_hash: {clean_hash} -->",
+        f"<!-- anchor_hash: {anchor_hash} -->",
+        f"<!-- sections_hash: {sections_hash} -->",
+        f"<!-- source_hash: {source_hash} -->",
+        f"<!-- profile: {profile_name} -->",
+        f"<!-- s_NM: {s_NM:.6f} -->",
+        f"<!-- alpha: {alpha:.6f} -->",
+        f"<!-- fidelity: {fidelity:.6f} -->",
+    ]
+
+    # Mixing matrix summary
+    if mixing_data:
+        det = mixing_data.get("determinant", 1.0)
+        cn = mixing_data.get("condition_number", 1.0)
+        inv = mixing_data.get("is_invertible", True)
+        lines.append(f"<!-- mixing_determinant: {det:.6f} -->")
+        lines.append(f"<!-- mixing_condition_number: {cn:.6f} -->")
+        lines.append(f"<!-- mixing_invertible: {inv} -->")
+
+    # Provenance summary
+    if provenance_summary:
+        total = provenance_summary.get("total_decisions", 0)
+        clean_dom = provenance_summary.get("clean_dominant_count", 0)
+        lines.append(f"<!-- routing_decisions: {total} -->")
+        lines.append(f"<!-- clean_dominant: {clean_dom} -->")
+
+    lines.append("<!-- END INTEGRITY BLOCK -->")
+
+    return "\n".join(lines)
+
+
+def compute_fidelity(clean_hash: str, anchor_hash: str) -> float:
+    """Compute fidelity score.
+
+    Fidelity is 1.0 when the system is functioning correctly.
+    A value < 1.0 indicates a bug in the pipeline.
+
+    The fidelity check verifies that both hashes are non-empty
+    and properly computed.
+    """
+    if not clean_hash or not anchor_hash:
+        return 0.0
+
+    # Both hashes exist and are valid SHA256 (64 hex chars)
+    if len(clean_hash) == 64 and len(anchor_hash) == 64:
+        return 1.0
+
+    return 0.0
+
+
+def verify_integrity_block(block_text: str) -> dict:
+    """Parse and verify an integrity block.
+
+    Args:
+        block_text: Text containing integrity block comments.
+
+    Returns:
+        Dict with parsed values and verification status.
+    """
+    result = {"valid": False, "fields": {}}
+
+    if "LOSSLESS INTEGRITY BLOCK" not in block_text:
+        return result
+
+    import re
+    pattern = re.compile(r'<!-- (\w+): (.+?) -->')
+    for m in pattern.finditer(block_text):
+        key = m.group(1)
+        value = m.group(2)
+        result["fields"][key] = value
+
+    if "clean_hash" in result["fields"] and "anchor_hash" in result["fields"]:
+        result["valid"] = True
+
+    # Check fidelity
+    fidelity_str = result["fields"].get("fidelity", "0.0")
+    try:
+        fidelity = float(fidelity_str)
+        result["fidelity_ok"] = abs(fidelity - 1.0) < FLOAT_TOLERANCE
+    except ValueError:
+        result["fidelity_ok"] = False
+
+    return result

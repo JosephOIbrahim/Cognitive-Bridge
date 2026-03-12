@@ -1,0 +1,218 @@
+# Phase 2: Unified Discovery
+
+## Context
+
+Phase 1 (MCP-first, session isolation, He2025 compliance) is complete. The DISCOVER layer is the agent's primary differentiator, but its search capability is fragmented across 3 tools in 2 modules: `search_custom_nodes` and `search_models` in `comfy_discover.py`, plus `search_civitai` in `civitai_api.py`. An artist asking "find me an anime LoRA for SDXL" currently requires the LLM to choose between 3 tools and potentially make 3 calls. Phase 2 merges these into a single `discover` tool with cross-source search, deduplication, and ranking.
+
+**Net effect:** 62 -> 60 tools. Simpler tool selection. Better results through cross-source merging.
+
+---
+
+## Design Decisions
+
+1. **Remove old tools entirely** (not deprecate). Pre-1.0 project, no public API contract. Keeping deprecated tools bloats the manifest and confuses tool selection.
+
+2. **Unified tool lives in `comfy_discover.py`**. It already has 2 of 3 search tools and all registry infrastructure. CivitAI search is called cross-module (sibling import, no circular dependency).
+
+3. **CivitAI-specific fields (sort, period, base_model) are optional top-level params.** Forwarded when CivitAI is searched, silently ignored otherwise. Flat schema avoids nested source-config objects that confuse LLMs.
+
+4. **Dedup by normalized name.** Same model from multiple sources -> keep highest-scored, note `also_found_on`. Simple approach for the 90% case.
+
+5. **Ranking:** Installed items first, then by relevance score, then alphabetical tiebreaker (He2025).
+
+---
+
+## Changes
+
+### 1. `agent/tools/comfy_discover.py` (core change)
+
+**Remove** from TOOLS list:
+- `search_custom_nodes` schema (lines ~28-62)
+- `search_models` schema (lines ~64-105)
+
+**Add** to TOOLS list: `discover` schema with:
+- `query` (required) — what to search for
+- `category` — "nodes"|"models"|"all" (default "all")
+- `sources` — list of "registry"|"civitai"|"huggingface" (default: all applicable)
+- `model_type` — optional filter (checkpoint, lora, controlnet, etc.)
+- `base_model` — optional filter (sd15, sdxl, flux, sd3)
+- `sort` — CivitAI sort order (default "most_downloaded")
+- `max_results` — per source, default 5
+
+**Add** new functions:
+- `_normalize_result(name, result_type, source, relevance_score, installed, url, **extra)` — common result schema
+- `_search_nodes_unified(query, max_results)` — wraps existing `_search_by_name` logic, returns normalized results
+- `_search_models_unified(query, model_type, max_results)` — wraps existing registry model search, returns normalized
+- `_search_civitai_unified(query, model_type, base_model, sort, max_results)` — calls `civitai_api._handle_search_civitai`, normalizes results. Returns `(results, error_or_None)`.
+- `_search_hf_unified(query, model_type, max_results)` — wraps existing HuggingFace search, returns normalized. Returns `(results, error_or_None)`.
+- `_deduplicate(results)` — by lowercased name, merge sources, keep highest score
+- `_rank_results(results)` — installed boost, relevance score, name tiebreaker
+- `_handle_discover(tool_input)` — orchestrates all of the above
+
+**Keep** internal handlers `_handle_search_custom_nodes` and `_handle_search_models` as private functions (existing tests exercise them, and they're used internally). Just remove them from TOOLS and handle() dispatch.
+
+**Update** `handle()` dispatch: remove `search_custom_nodes`/`search_models` branches, add `discover`.
+
+**Update** error messages in `get_install_instructions` handler (lines 710, 715, 731, 817): replace old tool names with `discover`.
+
+### 2. `agent/tools/civitai_api.py`
+
+- Remove `search_civitai` from TOOLS list (keep `get_civitai_model`, `get_trending_models`)
+- Remove `search_civitai` branch from `handle()` dispatch
+- Keep `_handle_search_civitai` as callable internal function
+- Update `get_civitai_model` description reference (line 135): "Use after discover" instead of "Use after search_civitai"
+
+### 3. `agent/brain/planner.py` (6 references)
+
+Replace in GOAL_PATTERNS:
+- Line 28: `"search_models"` -> `"discover"`
+- Line 34: `"search_custom_nodes"` -> `"discover"`
+- Line 81: `"search_models"` -> `"discover"`
+- Line 94: `"search_custom_nodes"` -> `"discover"`
+- Line 96: `"search_models"` -> `"discover"`
+- Line 113: `"search_custom_nodes", "search_models"` -> `"discover"`
+
+### 4. `agent/brain/orchestrator.py` (1 reference)
+
+Line 35: Replace `"search_custom_nodes", "search_models"` with `"discover"` in researcher allowed_tools.
+
+### 5. `agent/brain/demo.py` (2 references)
+
+- Line 49: `"search_models"` -> `"discover"`
+- Line 151: `"search_custom_nodes"` -> `"discover"`
+
+### 6. `agent/system_prompt.py` (2 lines)
+
+Lines 46-47: Replace:
+```
+search_custom_nodes (by name or node_type, ComfyUI Manager registry),
+search_models (local registry or HuggingFace Hub),
+```
+With:
+```
+discover (unified search across registry, CivitAI, HuggingFace for nodes and models),
+```
+
+### 7. `agent/cli.py` (2 call sites)
+
+Lines 317-352: Update `search` CLI command to call `handle("discover", ...)` with mapped params:
+- `--nodes`/`--node-type` flags -> `category="nodes"`
+- `--hf` flag -> `sources=["huggingface"]`
+- `--type` flag -> `model_type=...`
+
+### 8. `CLAUDE.md` (6 references)
+
+- Line 89: `search_models`, `search_custom_nodes` -> `discover`
+- Line 114: Tool overview table — merge discovery row
+- Line 115: CivitAI row — remove `search_civitai`
+- Lines 185-186: Tool redundancy notes — update
+- Lines 288, 547: Remove "Unified discovery" from NEXT (it's now done)
+
+### 9. Tests
+
+**`tests/test_comfy_discover.py`:**
+- Keep existing `TestSearchCustomNodes` and `TestSearchModels` classes but **retarget** them to call internal handlers directly (`_handle_search_custom_nodes`, `_handle_search_models`) instead of going through `handle()`. This preserves internal function coverage.
+- Add `TestDiscover` class (~15-18 tests): nodes-only, models-only, all, per-source, dedup, installed boost, filters, error handling, common schema, He2025 ordering, old-tools-removed assertion.
+- Update `TestRegistration`: `"discover"` replaces `"search_custom_nodes"` and `"search_models"`.
+
+**`tests/test_civitai_api.py`:**
+- Keep `TestSearchCivitai` tests but retarget to call `_handle_search_civitai` directly.
+- Update `TestRegistration`: remove `"search_civitai"` from expected names.
+
+**`tests/test_tools_registry.py`:**
+- Tool count: 62 -> 60
+- Expected names: remove `search_custom_nodes`, `search_models`, `search_civitai`. Add `discover`.
+
+**`tests/test_mcp_server.py`:**
+- Tool count: 62 -> 60
+
+**`tests/test_brain_orchestrator.py`:**
+- Line 115: `"search_custom_nodes"` -> `"discover"`
+
+---
+
+## Common Result Schema
+
+Every result from `discover` has this shape:
+
+```python
+{
+    "name": str,                # display name
+    "type": "node_pack"|"model",
+    "source": "registry"|"civitai"|"huggingface",
+    "relevance_score": float,   # 0.0-1.0 normalized
+    "installed": bool,
+    "url": str,
+    # Optional extras (He2025: sorted keys):
+    "author": str,              # node packs
+    "description": str,         # truncated
+    "downloads": int,           # CivitAI/HF
+    "rating": float,            # CivitAI
+    "base_model": str,          # if known
+    "model_type": str,          # checkpoint/lora/etc
+    "also_found_on": [str],     # dedup merge
+}
+```
+
+## Implementation Order
+
+1. Add helper functions to `comfy_discover.py` (`_normalize_result`, adapters, dedup, rank, `_handle_discover`)
+2. Add `discover` schema to TOOLS, remove old schemas
+3. Update `handle()` dispatch in both `comfy_discover.py` and `civitai_api.py`
+4. Update all references: planner, orchestrator, demo, system_prompt, cli
+5. Update CLAUDE.md
+6. Update tests: retarget old tests, add TestDiscover, update counts
+7. Run full suite, lint
+
+## Verification
+
+```bash
+# All tests pass (target ~475: 459 existing - ~5 retargeted + ~18 new)
+python -m pytest tests/ -v
+
+# Lint clean
+python -m ruff check agent/ tests/
+
+# Unified tool works
+python -c "
+from agent.tools.comfy_discover import handle
+import json
+# Node search
+r = json.loads(handle('discover', {'query': 'IPAdapter', 'category': 'nodes'}))
+print(f'Nodes: {r[\"total\"]} results from {r[\"sources_searched\"]}')
+# This will fail without registries, but verifies the handler exists
+"
+
+# Tool count
+python -c "from agent.tools import ALL_TOOLS; print(f'Tools: {len(ALL_TOOLS)}')"
+# Expected: 60
+
+# Old tools gone
+python -c "
+from agent.tools import ALL_TOOLS
+names = {t['name'] for t in ALL_TOOLS}
+assert 'discover' in names
+assert 'search_custom_nodes' not in names
+assert 'search_models' not in names
+assert 'search_civitai' not in names
+print('OK: old tools removed, discover present')
+"
+```
+
+## Critical Files
+
+| File | Change Type | Scope |
+|------|-------------|-------|
+| `agent/tools/comfy_discover.py` | Major edit | Add ~200 lines (unified handler + helpers), remove 2 TOOLS entries |
+| `agent/tools/civitai_api.py` | Minor edit | Remove 1 TOOLS entry + 1 dispatch branch, update 1 description |
+| `agent/brain/planner.py` | Minor edit | 6 string replacements |
+| `agent/brain/orchestrator.py` | Minor edit | 1 set update |
+| `agent/brain/demo.py` | Minor edit | 2 string replacements |
+| `agent/system_prompt.py` | Minor edit | 2 lines |
+| `agent/cli.py` | Medium edit | Remap search command to unified tool |
+| `CLAUDE.md` | Medium edit | 6 reference updates |
+| `tests/test_comfy_discover.py` | Major edit | Add ~18 tests, retarget ~18 existing tests |
+| `tests/test_civitai_api.py` | Minor edit | Retarget 7 tests, update registration |
+| `tests/test_tools_registry.py` | Minor edit | Count + names |
+| `tests/test_mcp_server.py` | Minor edit | Count |
+| `tests/test_brain_orchestrator.py` | Minor edit | 1 assertion |

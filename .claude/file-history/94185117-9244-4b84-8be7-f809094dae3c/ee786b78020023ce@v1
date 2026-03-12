@@ -1,0 +1,111 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { LadderGrid } from '@/components/LadderGrid';
+import { genAiProjects } from '@/lib/gen-ai-projects';
+
+/**
+ * Gen AI Portfolio Page
+ *
+ * Showcases generative AI and cognitive systems work.
+ * Publicly accessible - no longer gated behind awareness mode.
+ */
+export default function GenAiPage() {
+  const [introVisible, setIntroVisible] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile and reduced motion preference
+  useEffect(() => {
+    const checkMobile = () => {
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isNarrowViewport = window.innerWidth < 768;
+      setIsMobile(isTouchDevice || isNarrowViewport);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(motionQuery.matches);
+    const handleMotionChange = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    motionQuery.addEventListener('change', handleMotionChange);
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      motionQuery.removeEventListener('change', handleMotionChange);
+    };
+  }, []);
+
+  // Trigger intro animation on mount
+  useEffect(() => {
+    const timer = setTimeout(() => setIntroVisible(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <main className="min-h-screen relative" style={{ paddingTop: '120px', zIndex: 50, backgroundColor: '#141414' }}>
+      {/* Hero Statement - Gen AI specific */}
+      <section
+        className="mx-auto"
+        style={{
+          maxWidth: 'var(--max-content-width)',
+          paddingLeft: 'var(--side-padding)',
+          paddingRight: 'var(--side-padding)',
+          paddingTop: 'clamp(60px, 6vw + 20px, 100px)',
+          paddingBottom: 'clamp(80px, 8vw + 27px, 140px)',
+        }}
+      >
+        <div style={{ maxWidth: '900px' }}>
+          {/* Hero Statement */}
+          <h1
+            style={{
+              color: '#a0a0a0',
+              fontFamily: 'var(--font-lora)',
+              fontWeight: 400,
+              fontStyle: 'italic',
+              fontSize: 'clamp(22px, 3.5vw, 38px)',
+              lineHeight: 1.3,
+              letterSpacing: '0.01em',
+              opacity: introVisible ? 1 : 0,
+              transform: introVisible ? 'translateY(0)' : `translateY(${isMobile ? 20 : 30}px)`,
+              transition: prefersReducedMotion ? 'none' : 'opacity 550ms cubic-bezier(0.25, 0.1, 0.25, 1) 100ms, transform 550ms cubic-bezier(0.25, 0.1, 0.25, 1) 100ms'
+            }}
+          >
+            Where sixteen years of lighting craft meets generative systems. These projects explore how AI can serve creative practice — not replace it.
+          </h1>
+
+          {/* Subtext */}
+          <p
+            style={{
+              color: '#666',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 400,
+              fontSize: 'clamp(14px, 1vw + 10px, 16px)',
+              lineHeight: 1.6,
+              marginTop: '32px',
+              maxWidth: '700px',
+              opacity: introVisible ? 1 : 0,
+              transform: introVisible ? 'translateY(0)' : 'translateY(20px)',
+              transition: prefersReducedMotion ? 'none' : 'opacity 550ms ease 200ms, transform 550ms ease 200ms'
+            }}
+          >
+            The same generative thinking that shapes your experience here powers these projects.
+          </p>
+        </div>
+      </section>
+
+      {/* Project Grid */}
+      <section
+        className="mx-auto"
+        style={{
+          maxWidth: 'var(--max-content-width)',
+          paddingLeft: 'var(--side-padding)',
+          paddingRight: 'var(--side-padding)',
+          paddingBottom: 'var(--space-lg)'
+        }}
+      >
+        <LadderGrid projects={genAiProjects} />
+      </section>
+    </main>
+  );
+}

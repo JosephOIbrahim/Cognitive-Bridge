@@ -1,0 +1,72 @@
+# Session Handover
+**Date:** 2026-02-27 17:30
+**Project:** Cinema Camera Rig v4.0 (Houdini 21)
+**Working directory:** C:\Users\User\OneDrive\Documents\houdini21.0
+
+## W1-W6 Results (PARTIAL)
+- **W1 FAILED**: `asyncio.run() cannot be called from a running event loop` — wolframalpha lib uses asyncio.run() internally but Houdini/Synapse already has an event loop
+- **W2-W3 FAILED**: `KeyError: 0` in fit_squeeze_breathing.py line 35 — squeeze_breathing data in lens JSONs uses dict keys not list indices. Code does `p[0]` but `p` is a dict, not a list/tuple
+- **W4 PASSED**: fit_pupil_shift_curves() succeeded
+- **W5 FAILED**: Same asyncio.run() error as W1
+- **W6**: VEX header generation was part of W2-W3 (failed)
+
+## FIXES NEEDED
+
+### Fix 1: asyncio event loop conflict (W1, W5)
+In `wolfram_oracle.py` line 136: `self.client.query()` calls `asyncio.run()` internally.
+Fix: patch the `_query` method to use `nest_asyncio` or use `asyncio.get_event_loop().run_until_complete()` instead, or better — use the wolframalpha client's `aquery()` method directly with the existing loop.
+
+**Simplest fix** in wolfram_oracle.py `_query()` method (~line 136):
+```python
+# Replace: res = self.client.query(query_str)
+# With:
+import asyncio
+loop = asyncio.get_event_loop()
+if loop.is_running():
+    import nest_asyncio
+    nest_asyncio.apply()
+res = self.client.query(query_str)
+```
+Or install `nest_asyncio` in Houdini Python: `hython -m pip install nest_asyncio`
+Or rewrite `_query` to use `aquery`:
+```python
+loop = asyncio.get_event_loop()
+if loop.is_running():
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        res = loop.run_in_executor(pool, self.client.query, query_str)
+```
+**Best approach**: Run wolfram queries in a thread to avoid event loop conflict:
+```python
+import concurrent.futures
+def _query_sync(client, query_str):
+    return client.query(query_str)
+with concurrent.futures.ThreadPoolExecutor() as pool:
+    future = pool.submit(_query_sync, self.client, query_str)
+    res = future.result(timeout=30)
+```
+
+### Fix 2: squeeze_breathing data format (W2-W3)
+In `fit_squeeze_breathing.py` line 35: `x_data = [p[0] for p in points]`
+The `squeeze_breathing` field in lens JSONs is probably a dict like `{"0.3": 1.98, "1.0": 1.95}` not a list of tuples.
+Read the actual lens JSON to check format:
+```bash
+cat cinema_camera/lenses/cooke_ana_i_s35_50mm.json | python -m json.tool | grep -A5 squeeze
+```
+Then fix the list comprehension to handle dict format: `x_data = [float(k) for k in points.keys()]`
+
+### Fix 3: generate VEX header (W6)
+After W2-W3 is fixed, `generate_vex_squeeze_function()` should work — it just writes a static .h file.
+
+## Remaining Steps After Wolfram Fixes
+3. Rebuild 4 HDAs: `python run_steps_8_10.py`
+4. Integration tests via Synapse
+5. Build cinema::camera_rig::2.0 orchestrator HDA
+6. Step 11 integration testing
+
+## Environment (ALL CONFIRMED WORKING)
+- Synapse: ws://localhost:9999/synapse, protocol 4.0.0
+- wolframalpha: installed in Houdini Python 3.11
+- WOLFRAM_APP_ID: LKY2AG-QX3G7VW7YR
+- Git: f00edb4, pushed. packages/ has real API key (don't commit)
+- 4 HDAs in otls/ from previous build

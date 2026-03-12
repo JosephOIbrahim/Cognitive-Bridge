@@ -1,0 +1,38 @@
+'use client';
+
+import { useState, useEffect, ReactNode } from 'react';
+
+interface ProjectContentWrapperProps {
+  children: ReactNode;
+}
+
+export function ProjectContentWrapper({ children }: ProjectContentWrapperProps) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isNarrowViewport = window.innerWidth < 768;
+      setIsMobile(isTouchDevice || isNarrowViewport);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const heroHeight = isMobile ? '50vh' : '70vh';
+
+  return (
+    <div
+      className="min-h-screen relative"
+      style={{
+        marginTop: heroHeight,
+        zIndex: 50,
+        backgroundColor: '#141414'
+      }}
+    >
+      {children}
+    </div>
+  );
+}

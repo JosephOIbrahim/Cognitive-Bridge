@@ -1,0 +1,122 @@
+"""
+Stage 6: Align OCR'd code blocks with transcript explanations.
+
+For each code block (from OCR), find the surrounding transcript text
+that explains what that code does. The explanation typically comes
+in the 10-30 seconds BEFORE and AFTER the code appears.
+
+Usage: python scripts/06_align.py
+
+Output: data/aligned/{episode}.json
+"""
+
+import json
+from pathlib import Path
+from tqdm import tqdm
+
+DATA_DIR = Path("data")
+OCR_DIR = DATA_DIR / "ocr"
+TRANSCRIPT_DIR = DATA_DIR / "transcripts"
+ALIGNED_DIR = DATA_DIR / "aligned"
+META_DIR = DATA_DIR / "metadata"
+ALIGNED_DIR.mkdir(parents=True, exist_ok=True)
+
+# How many seconds before/after a code frame to search for explanation
+CONTEXT_WINDOW_BEFORE = 30  # seconds
+CONTEXT_WINDOW_AFTER = 15   # seconds
+
+
+def find_explanation(code_timestamp_sec, transcript_segments):
+    """
+    Find transcript segments that overlap with the context window
+    around a code frame timestamp.
+    """
+    window_start = code_timestamp_sec - CONTEXT_WINDOW_BEFORE
+    window_end = code_timestamp_sec + CONTEXT_WINDOW_AFTER
+
+    matching_segments = []
+    for seg in transcript_segments:
+        seg_start = seg.get("start_sec", 0)
+        seg_end = seg.get("end_sec", seg_start + 5)
+
+        # Check overlap
+        if seg_start <= window_end and seg_end >= window_start:
+            matching_segments.append(seg["text"])
+
+    return " ".join(matching_segments) if matching_segments else ""
+
+
+def align_episode(episode_name, ocr_data, transcript_data, playlist_entry=None):
+    """Align OCR results with transcript for one episode."""
+    aligned = []
+
+    for i, code_block in enumerate(ocr_data):
+        explanation = find_explanation(
+            code_block["timestamp_sec"],
+            transcript_data,
+        )
+
+        video_url = ""
+        if playlist_entry:
+            video_id = playlist_entry.get("video_id", "")
+            t = code_block["timestamp_sec"]
+            video_url = f"https://www.youtube.com/watch?v={video_id}&t={int(t)}s"
+
+        aligned.append({
+            "sequence": i + 1,
+            "episode_name": episode_name,
+            "timestamp_sec": code_block["timestamp_sec"],
+            "timestamp_fmt": code_block["timestamp_fmt"],
+            "youtube_url": video_url,
+            "code_text": code_block["code_text"],
+            "explanation_raw": explanation,
+            "ocr_confidence": code_block["ocr_confidence"],
+            "needs_review": code_block.get("needs_review", False),
+        })
+
+    return aligned
+
+
+def main():
+    # Load playlist index for video URLs
+    playlist_index = {}
+    index_file = META_DIR / "playlist_index.json"
+    if index_file.exists():
+        with open(index_file) as f:
+            for entry in json.load(f):
+                playlist_index[entry["filename_base"]] = entry
+
+    ocr_files = sorted(OCR_DIR.glob("*.json"))
+
+    for ocr_file in tqdm(ocr_files, desc="Aligning"):
+        episode_name = ocr_file.stem
+
+        with open(ocr_file) as f:
+            ocr_data = json.load(f)
+
+        # Find matching transcript
+        transcript_file = TRANSCRIPT_DIR / f"{episode_name}.json"
+        if not transcript_file.exists():
+            # Try without .en suffix or other variants
+            candidates = list(TRANSCRIPT_DIR.glob(f"{episode_name.split('.')[0]}*"))
+            if candidates:
+                transcript_file = candidates[0]
+            else:
+                print(f"  No transcript found for {episode_name}, skipping alignment")
+                continue
+
+        with open(transcript_file) as f:
+            transcript_data = json.load(f)
+
+        playlist_entry = playlist_index.get(episode_name)
+        aligned = align_episode(episode_name, ocr_data, transcript_data, playlist_entry)
+
+        output_file = ALIGNED_DIR / f"{episode_name}.json"
+        with open(output_file, "w") as f:
+            json.dump(aligned, f, indent=2, sort_keys=False)
+
+        print(f"  {episode_name}: {len(aligned)} aligned pairs")
+
+
+if __name__ == "__main__":
+    main()

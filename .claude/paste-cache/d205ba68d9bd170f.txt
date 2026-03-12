@@ -1,0 +1,81 @@
+Read C:\Users\User\SYNAPSE\CLAUDE.md for full project context.
+
+SPRINT: HDA-from-Prompt Enhancement
+
+## Context
+The HDA pipeline already has 4 handlers in handlers_hda.py (hda_create, hda_promote_parm, hda_set_help, hda_package), fully registered across protocol.py, handlers.py, mcp_server.py, and mcp/tools.py. 524 lines of tests exist in test_hda.py. The hda_scaffold recipe in recipes.py is SOP-only.
+
+## The Gap
+_handle_hda_package creates an EMPTY subnet then tries to promote parameters from internal nodes that were never created. It needs a "nodes" + "connections" spec to build the internal network before HDA conversion.
+
+Read these files first:
+- python/synapse/server/handlers_hda.py (the 4 existing handlers)
+- python/synapse/routing/recipes.py (search for "hda_scaffold" at ~line 1270)
+- python/synapse/mcp/tools.py (search for "hda" at ~line 771)
+- tests/test_hda.py (existing test patterns)
+
+## Task 1: Extend _handle_hda_package (handlers_hda.py)
+
+Add two new optional payload fields: "nodes" (list of {type, name, parms} dicts) and "connections" (list of [src_name, dst_name, dst_input_idx] triples).
+
+After creating the subnet but BEFORE createDigitalAsset(), iterate "nodes" to createNode() each entry, set its parms, then wire "connections" (use "__input0" convention for subnet.indirectInputs()[0]). Set display/render flag on last created node. Call subnet.layoutChildren().
+
+This block is already inside the hou.undos.group — rollback safety is inherited.
+
+After HDA creation and param promotion, add validation:
+- Force cook the HDA node, capture any hou.OperationFailed as warnings
+- Verify each promoted parm name exists on the HDA interface
+- Verify each internal node referenced by promoted_parms exists
+- Add "warnings": [] to the return dict
+
+Update inputSchema in mcp/tools.py AND tool definition in mcp_server.py to include the new "nodes" and "connections" fields.
+
+## Task 2: Add lop_hda_scaffold recipe (recipes.py)
+
+New recipe triggered by "create solaris hda", "make lop hda", "build usd digital asset".
+
+Use the existing /stage-or-create-lopnet pattern (search recipes.py for "hou.node('/stage')" — used in 10+ recipes). Create LOP subnet with stage passthrough via indirectInputs. Create editproperties::2.0 + configureprimitive nodes inside. Wire indirect_input → editproperties → configureprimitive. Convert to HDA with category Lop. Promote primpath from editproperties. Save to $HIP/otls/synapse/ (create directory with os.makedirs exist_ok=True).
+
+Follow existing recipe format exactly: Recipe with regex triggers, RecipeStep with action="execute_python", GateLevel.REVIEW, output_var.
+
+## Task 3: Add karma_quality_hda recipe (recipes.py)
+
+Triggered by "create karma quality hda", "make render quality preset", "build render settings hda".
+
+Create LOP subnet in /stage. Add karmarenderproperties node + editproperties::2.0 for resolution. Add menu parameter quality_tier (draft=0, medium=1, final=2). Use HScript expressions to switch samples: if(ch("../quality_tier")==0, 16, if(ch("../quality_tier")==1, 64, 256)). Promote quality_tier + resolution. Save to $HIP/otls/synapse/.
+
+## Task 4: Add _handle_hda_list (handlers_hda.py)
+
+Read-only handler that scans hou.hda.loadedFiles() → hou.hda.definitionsInFile() → checks definition.extraInfo() for "author=synapse". Returns list of {name, label, version, category, file_path, created}.
+
+Full registration checklist:
+1. core/protocol.py: HDA_LIST = "hda_list"
+2. server/handlers.py: _COMMAND_AUDIT_MAP as AuditCategory.PIPELINE + register in _register_handlers
+3. mcp_server.py: tool definition + dispatch entry
+4. mcp/tools.py: inputSchema + annotations (readOnlyHint=True, destructiveHint=False)
+
+## Task 5: Tests (test_hda.py)
+
+Extend the existing file. Follow its exact patterns: mock hou inline, import via importlib, patch _handlers_hou not sys.modules["hou"].
+
+Add tests for:
+- hda_package with nodes spec creates internal nodes
+- hda_package with connections spec wires inputs
+- hda_package with nodes sets parameters on created nodes
+- hda_package with invalid node type triggers rollback
+- hda_package validation catches cook errors
+- hda_package validation catches missing promoted parm references
+- hda_package validation catches missing internal node references
+- hda_package in Lop context uses /stage parent
+- hda_list finds synapse-authored HDAs
+- hda_list excludes non-synapse HDAs
+- hda_list returns empty list for clean scene
+
+## Rules
+- All mutations through existing safety middleware (hou.undos.group, run_on_main, rollback)
+- Coaching tone in error messages ("Couldn't find..." not "not found")
+- Idempotent where possible (re-running produces same result)
+- Zero regressions on existing tests — run pytest tests/test_hda.py after changes
+- UTF-8 encoding on all file writes (Windows cp1252 breaks)
+
+When done, run pytest tests/test_hda.py -v and report results.

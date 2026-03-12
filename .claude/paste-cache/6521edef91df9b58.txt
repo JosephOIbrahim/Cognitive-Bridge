@@ -1,0 +1,66 @@
+Make these changes to connect the chat and canvas visually:
+
+FILE 1: ui/web/js/sidebar.js
+
+Find where agent_status events are handled. When an agent_status event includes a "nodes_touched" array (which _extract_nodes_touched in routes.py already produces), dispatch a custom DOM event so node_fx.js can pick it up:
+
+if (data.nodes_touched && data.nodes_touched.length > 0) {
+  for (const nodeId of data.nodes_touched) {
+    document.dispatchEvent(new CustomEvent("superduper:node_touch", {
+      detail: {
+        nodeId: nodeId,
+        agentColor: {
+          router: "#00BB81",
+          intent: "#FFD500",
+          execution: "#64B5F6",
+          verify: "#FF6E6E",
+          doctor: "#B39DDB"
+        }[data.agent_key] || "#00BB81"
+      }
+    }));
+  }
+}
+
+Also — when a node pill is rendered in a chat message (the existing createNodePill function), make clicking it do TWO things:
+a) Keep the existing behavior (select node on canvas)
+b) NEW: Also briefly flash the node. Dispatch the same superduper:node_touch event with agentColor "#00BB81" so the node gets a jade accent bar for a few seconds. This creates a visual "ping" linking chat to canvas.
+
+FILE 2: ui/web/js/node_fx.js
+
+Find the "executing" event listener. When a node starts executing, dispatch an event that the sidebar can listen for:
+
+document.dispatchEvent(new CustomEvent("superduper:node_executing", {
+  detail: { nodeId: detail, nodeName: node ? node.title || node.type : "Unknown" }
+}));
+
+Find the "executed" event listener. Similarly dispatch:
+
+document.dispatchEvent(new CustomEvent("superduper:node_executed", {
+  detail: { nodeId: detail }
+}));
+
+Also add: when a node starts executing, auto-pan the canvas to center on that node if it's off-screen. Use this pattern:
+
+const node = app.graph.getNodeById(nodeId);
+if (node) {
+  const canvas = app.canvas;
+  const [nx, ny] = [node.pos[0] + node.size[0]/2, node.pos[1] + node.size[1]/2];
+  const visible = canvas.visible_area;
+  // Only pan if node is outside visible area
+  if (nx < visible[0] || nx > visible[0]+visible[2] || ny < visible[1] || ny > visible[1]+visible[3]) {
+    canvas.centerOnNode(node);
+  }
+}
+
+FILE 3: ui/web/js/sidebar.js (continued)
+
+Listen for the node_executing/node_executed events from node_fx. When a node starts executing, add a small status line to the chat area:
+
+document.addEventListener("superduper:node_executing", (e) => {
+  // Only show if we have an active progress panel
+  if (!progressPanel) return;
+  // Update progress panel with current node name
+  updateProgress(progressPanel, { currentNode: e.detail.nodeName });
+});
+
+This closes the loop: chat actions highlight nodes, node execution updates the chat. The two panels stay in sync.

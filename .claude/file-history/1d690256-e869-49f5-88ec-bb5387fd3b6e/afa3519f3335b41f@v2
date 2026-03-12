@@ -1,0 +1,30 @@
+"""Build a TOPS render farm network in Houdini. Run via execute_python."""
+import hou
+import os
+import tempfile
+
+# Get the topnet
+topnet = hou.node("/obj/renderfarm")
+for c in topnet.children():
+    if c.type().name() != "localscheduler":
+        c.destroy()
+
+# Configure the ROP for frame range
+rop = hou.node("/out/test_render")
+rop.parm("trange").set(1)  # Render specific range
+rop.parm("f1").set(1)
+rop.parm("f2").set(3)
+rop.parm("f3").set(1)
+
+# Output with frame number
+outdir = os.path.join(tempfile.gettempdir(), "synapse_farm")
+os.makedirs(outdir, exist_ok=True)
+outdir_fwd = outdir.replace("\\", "/")
+rop.parm("outputimage").set(outdir_fwd + "/frame_$F4.jpg")
+
+# Create ROP Fetch TOP
+ropfetch = topnet.createNode("ropfetch", "render_frames")
+ropfetch.parm("roppath").set("/out/test_render")
+
+topnet.layoutChildren()
+result = "TOPS ready: " + ropfetch.path() + " | frames 1-3 | output: " + outdir_fwd

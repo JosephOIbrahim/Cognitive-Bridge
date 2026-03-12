@@ -1,0 +1,1717 @@
+     1→# Cinema Camera Rig v4.0 — Physical Architecture
+     2→## Houdini 21 • USD/Solaris • Karma XPU • CVEX Lens Shaders • CHOPs Biomechanics • Copernicus 2.0
+     3→
+     4→---
+     5→
+     6→## Preamble: v3.0 → v4.0 Thesis
+     7→
+     8→v3.0 established the **Software Architecture**: typed protocols, validated data flow,
+     9→registry-based extensibility, standalone optics library, HDA-wrapped Copernicus kernels.
+    10→
+    11→v4.0 adds the **Physical Architecture**. The camera rig stops being a "3D camera" and
+    12→becomes a **Virtual Cinematography Simulator** where every compositor, lighter, and layout
+    13→artist speaks the exact same language as a physical camera department.
+    14→
+    15→### What v4.0 Adds
+    16→
+    17→| Pillar | Problem v3.0 Doesn't Solve | v4.0 Solution |
+    18→|--------|---------------------------|---------------|
+    19→| **A. MechanicalSpec** | LensSpec has no physical dimensions | New `MechanicalSpec` dataclass + JSON schema evolution |
+    20→| **B. Nodal Parallax** | CG camera pivots at sensor plane | Nested USD Xform hierarchy with entrance pupil offset |
+    21→| **C. Operator Biomechanics** | Digital cameras have zero mass | CHOPs spring/lag solver driven by combined rig weight |
+    22→| **D. CVEX Lens Shader** | Post-process distortion ruins DOF/mblur | Karma CVEX shader warps rays before scene sampling |
+    23→| **E. Pipeline Bridge** | No downstream metadata for comp | Cooke /i + ASWF standard EXR header authoring |
+    24→| **F. Dynamic Mumps** | Static squeeze_ratio = 2.0 at all distances | Focus-dependent squeeze curve (SqueezeBreathingCurve) |
+    25→| **G. Copernicus 2.0** | Basic grain/flare effects | FFT convolution flares, sensor noise model, STMap AOV |
+    26→
+    27→### Dependency Chain
+    28→
+    29→```
+    30→MechanicalSpec (A)
+    31→    ├─→ Nodal Parallax (B)     — reads entrance_pupil_offset_mm
+    32→    ├─→ Biomechanics (C)       — reads weight_kg, length_mm
+    33→    └─→ CVEX Lens Shader (D)   — reads entrance_pupil_offset_mm
+    34→Dynamic Mumps (F)
+    35→    └─→ CVEX Lens Shader (D)   — reads dynamic squeeze at focus distance
+    36→Pipeline Bridge (E)
+    37→    └─→ depends on all above being authored to USD
+    38→Copernicus 2.0 (G)
+    39→    └─→ reads MechanicalSpec for FFT flare geometry
+    40→```
+    41→
+    42→---
+    43→
+    44→## Claude Code Agent Team — MOE Role Definitions
+    45→
+    46→### Team Structure
+    47→
+    48→```
+    49→┌─────────────────────────────────────────────────────────┐
+    50→│                    ORCHESTRATOR                          │
+    51→│  Owns: task sequencing, dependency resolution,          │
+    52→│        integration testing, v3.0 compatibility          │
+    53→├─────────────┬──────────────┬──────────────┬─────────────┤
+    54→│  AGENT α    │  AGENT β     │  AGENT γ     │  AGENT δ    │
+    55→│  PROTOCOLS  │  USD/SOLARIS │  VEX/CVEX    │  CHOPs/COP  │
+    56→│             │              │              │             │
+    57→│  Python     │  USD Schema  │  VEX Library │  CHOPs Net  │
+    58→│  Dataclass  │  Xform Hier  │  CVEX Shader │  Copernicus │
+    59→│  Registry   │  EXR Metadata│  STMap Gen   │  Biomech    │
+    60→│  JSON Schema│  Render Prod │  Distortion  │  Flare FFT  │
+    61→└─────────────┴──────────────┴──────────────┴─────────────┘
+    62→```
+    63→
+    64→### Role Specifications
+    65→
+    66→**ORCHESTRATOR** — Integration & Sequencing
+    67→- Resolves dependency chain: A → B,C,D → E → G
+    68→- Runs v3.0 regression suite after each agent completes
+    69→- Validates cross-agent interface contracts
+    70→- Owns final integration HDA wiring
+    71→
+    72→**AGENT α (Protocols)** — Python Type System
+    73→- Extends `protocols.py` with new dataclasses
+    74→- Evolves JSON schema for mechanical data ingestion
+    75→- Updates registry for new provider capabilities
+    76→- Writes protocol conformance tests
+    77→- **Expertise:** Python 3.10+ dataclasses, frozen validation, Protocol typing
+    78→
+    79→**AGENT β (USD/Solaris)** — Scene Description & Metadata
+    80→- Refactors `usd_builder.py` → nested Xform rig hierarchy
+    81→- Authors Cooke /i + ASWF EXR metadata on RenderProduct
+    82→- Designs USD attribute namespace evolution (`cinema:rig:*`)
+    83→- **Expertise:** pxr USD API, UsdGeom, UsdRender, Sdf, composition arcs
+    84→
+    85→**AGENT γ (VEX/CVEX)** — Optical Engine & Render-Time Shaders
+    86→- Extends `libcinema_optics.h` with dynamic squeeze functions
+    87→- Implements Karma CVEX lens shader (ray-warping, not post-process)
+    88→- Builds STMap AOV generator using existing library
+    89→- **Expertise:** VEX/CVEX, Karma XPU shader pipeline, HDA VEX generators
+    90→
+    91→**AGENT δ (CHOPs/Copernicus)** — Dynamics & Post-Processing
+    92→- Builds operator biomechanics CHOPs constraint layer
+    93→- Upgrades Copernicus effects: FFT flare, sensor noise, STMap output
+    94→- **Expertise:** CHOPs spring/lag solvers, Copernicus GPU kernels, FFT convolution
+    95→
+    96→---
+    97→
+    98→## PILLAR A: MechanicalSpec Protocol
+    99→
+   100→**Owner:** AGENT α (Protocols)
+   101→**Depends on:** Nothing (foundation layer)
+   102→**Consumed by:** Pillars B, C, D, G
+   103→
+   104→### A.1 New Dataclasses
+   105→
+   106→```python
+   107→# File: python/cinema_camera/protocols.py  (ADDITIONS to v3.0)
+   108→# ════════════════════════════════════════════════════════════
+   109→# v4.0 MECHANICAL VALUE TYPES
+   110→# ════════════════════════════════════════════════════════════
+   111→
+   112→@dataclass(frozen=True)
+   113→class GearRingSpec:
+   114→    """Physical gear ring on a cinema lens barrel."""
+   115→    rotation_deg: float         # Total rotation travel
+   116→    gear_teeth: int             # Tooth count for follow-focus motors
+   117→    gear_module: float = 0.8   # Standard cine gear module (0.8mm pitch)
+   118→
+   119→    def __post_init__(self):
+   120→        if self.rotation_deg <= 0 or self.rotation_deg > 360:
+   121→            raise ValueError(f"Invalid gear rotation: {self.rotation_deg}°")
+   122→        if self.gear_teeth <= 0:
+   123→            raise ValueError(f"Invalid gear tooth count: {self.gear_teeth}")
+   124→        if self.gear_module <= 0:
+   125→            raise ValueError(f"Invalid gear module: {self.gear_module}")
+   126→
+   127→    @property
+   128→    def pitch_circle_diameter_mm(self) -> float:
+   129→        """PCD = module × teeth. Used for follow-focus motor compatibility."""
+   130→        return self.gear_module * self.gear_teeth
+   131→
+   132→    @property
+   133→    def degrees_per_tooth(self) -> float:
+   134→        """Angular resolution of the gear ring."""
+   135→        return self.rotation_deg / self.gear_teeth
+   136→
+   137→
+   138→@dataclass(frozen=True)
+   139→class MechanicalSpec:
+   140→    """
+   141→    Physical dimensions and mechanics of a cinema lens.
+   142→    Required for biomechanics simulation and nodal parallax.
+   143→    """
+   144→    weight_kg: float
+   145→    length_mm: float
+   146→    front_diameter_mm: float
+   147→    filter_thread: str                              # e.g. "M105x0.75"
+   148→    focus_ring: GearRingSpec
+   149→    iris_ring: GearRingSpec
+   150→    entrance_pupil_offset_mm: float                 # Distance from sensor plane
+   151→                                                    # to nodal point. CRITICAL for
+   152→                                                    # parallax-correct panning.
+   153→
+   154→    def __post_init__(self):
+   155→        if self.weight_kg <= 0:
+   156→            raise ValueError(f"Invalid weight: {self.weight_kg}kg")
+   157→        if self.length_mm <= 0:
+   158→            raise ValueError(f"Invalid length: {self.length_mm}mm")
+   159→        if self.front_diameter_mm <= 0:
+   160→            raise ValueError(f"Invalid front diameter: {self.front_diameter_mm}mm")
+   161→        if self.entrance_pupil_offset_mm < 0:
+   162→            raise ValueError(
+   163→                f"Invalid entrance pupil offset: {self.entrance_pupil_offset_mm}mm"
+   164→            )
+   165→
+   166→    @property
+   167→    def weight_lbs(self) -> float:
+   168→        return self.weight_kg * 2.20462
+   169→
+   170→    @property
+   171→    def entrance_pupil_offset_cm(self) -> float:
+   172→        """USD uses centimeters for transforms."""
+   173→        return self.entrance_pupil_offset_mm / 10.0
+   174→```
+   175→
+   176→### A.2 SqueezeBreathingCurve (Dynamic Mumps — Pillar F)
+   177→
+   178→```python
+   179→@dataclass(frozen=True)
+   180→class SqueezeBreathingCurve:
+   181→    """
+   182→    Focus-dependent anamorphic squeeze variation ("Mumps").
+   183→
+   184→    Front-anamorphic lenses like Cooke Anamorphic/i only achieve their
+   185→    nominal squeeze ratio at infinity focus. As focus distance decreases
+   186→    toward MOD (Minimum Object Distance), the effective squeeze drops.
+   187→
+   188→    This creates the characteristic "mumps" effect — actors' faces appear
+   189→    wider at close focus distances.
+   190→
+   191→    Points: ((focus_m, effective_squeeze), ...) sorted by focus_m ascending.
+   192→    """
+   193→    points: tuple[tuple[float, float], ...]  # ((focus_m, squeeze), ...)
+   194→    nominal_squeeze: float = 2.0
+   195→
+   196→    def __post_init__(self):
+   197→        sorted_pts = tuple(sorted(self.points, key=lambda p: p[0]))
+   198→        object.__setattr__(self, 'points', sorted_pts)
+   199→        # Validate squeeze values are physically reasonable
+   200→        for focus_m, squeeze in self.points:
+   201→            if squeeze < 1.0 or squeeze > self.nominal_squeeze + 0.1:
+   202→                raise ValueError(
+   203→                    f"Invalid squeeze {squeeze} at {focus_m}m "
+   204→                    f"(nominal: {self.nominal_squeeze})"
+   205→                )
+   206→
+   207→    def evaluate(self, focus_m: float) -> float:
+   208→        """
+   209→        Linear interpolation of effective squeeze at given focus distance.
+   210→        Returns nominal_squeeze if no curve data or beyond curve range.
+   211→        """
+   212→        if not self.points:
+   213→            return self.nominal_squeeze
+   214→        if focus_m <= self.points[0][0]:
+   215→            return self.points[0][1]
+   216→        if focus_m >= self.points[-1][0]:
+   217→            return self.points[-1][1]
+   218→        for i in range(len(self.points) - 1):
+   219→            f0, s0 = self.points[i]
+   220→            f1, s1 = self.points[i + 1]
+   221→            if f0 <= focus_m <= f1:
+   222→                t = (focus_m - f0) / (f1 - f0) if f1 != f0 else 0
+   223→                return s0 + t * (s1 - s0)
+   224→        return self.nominal_squeeze
+   225→```
+   226→
+   227→### A.3 Extended LensSpec (v4.0)
+   228→
+   229→```python
+   230→@dataclass(frozen=True)
+   231→class LensSpec:
+   232→    """
+   233→    Complete lens specification — v4.0 with mechanical data.
+   234→    BACKWARDS COMPATIBLE: mechanics and squeeze_breathing are Optional
+   235→    with sensible defaults so v3.0 JSON files still load.
+   236→    """
+   237→    # ── v3.0 fields (unchanged) ──────────────────────────
+   238→    lens_id: str
+   239→    manufacturer: str
+   240→    series: str
+   241→    focal_length_mm: float
+   242→    t_stop_min: float
+   243→    t_stop_max: float
+   244→    iris_blades: int
+   245→    close_focus_m: float
+   246→    image_circle_mm: float
+   247→    squeeze_ratio: float          # Nominal squeeze (1.0 spherical, 2.0 anamorphic)
+   248→    distortion: DistortionModel
+   249→    breathing: BreathingCurve
+   250→    lateral_ca_px_per_mm: float = 0.0
+   251→    longitudinal_ca_stops: float = 0.0
+   252→
+   253→    # ── v3.0 physical fields (now superseded by MechanicalSpec) ──
+   254→    weight_kg: float = 0.0
+   255→    length_mm: float = 0.0
+   256→    front_diameter_mm: float = 0.0
+   257→
+   258→    # ── v4.0 additions ───────────────────────────────────
+   259→    mechanics: Optional[MechanicalSpec] = None
+   260→    squeeze_breathing: Optional[SqueezeBreathingCurve] = None
+   261→
+   262→    def __post_init__(self):
+   263→        if self.focal_length_mm <= 0:
+   264→            raise ValueError(f"Invalid focal length: {self.focal_length_mm}mm")
+   265→        if self.t_stop_min <= 0 or self.t_stop_max <= self.t_stop_min:
+   266→            raise ValueError(f"Invalid T-stop range: {self.t_stop_min}-{self.t_stop_max}")
+   267→        if self.squeeze_ratio < 1.0:
+   268→            raise ValueError(f"Invalid squeeze ratio: {self.squeeze_ratio}")
+   269→        # Backfill v3.0 physical fields from MechanicalSpec if available
+   270→        if self.mechanics and self.weight_kg == 0.0:
+   271→            object.__setattr__(self, 'weight_kg', self.mechanics.weight_kg)
+   272→            object.__setattr__(self, 'length_mm', self.mechanics.length_mm)
+   273→            object.__setattr__(self, 'front_diameter_mm', self.mechanics.front_diameter_mm)
+   274→
+   275→    @property
+   276→    def is_anamorphic(self) -> bool:
+   277→        return self.squeeze_ratio > 1.01
+   278→
+   279→    @property
+   280→    def has_mechanics(self) -> bool:
+   281→        return self.mechanics is not None
+   282→
+   283→    @property
+   284→    def entrance_pupil_offset_mm(self) -> float:
+   285→        """Returns entrance pupil offset, or 0 if no mechanical data."""
+   286→        return self.mechanics.entrance_pupil_offset_mm if self.mechanics else 0.0
+   287→
+   288→    def effective_squeeze(self, focus_distance_m: float) -> float:
+   289→        """
+   290→        Dynamic squeeze at given focus distance.
+   291→        Returns nominal squeeze_ratio if no breathing curve.
+   292→        """
+   293→        if self.squeeze_breathing:
+   294→            return self.squeeze_breathing.evaluate(focus_distance_m)
+   295→        return self.squeeze_ratio
+   296→```
+   297→
+   298→### A.4 Extended LensState (v4.0)
+   299→
+   300→```python
+   301→@dataclass(frozen=True)
+   302→class LensState:
+   303→    """Lens state at a single frame — v4.0 with dynamic squeeze."""
+   304→    spec: LensSpec
+   305→    t_stop: float
+   306→    focus_distance_m: float
+   307→
+   308→    def __post_init__(self):
+   309→        if self.t_stop < self.spec.t_stop_min or self.t_stop > self.spec.t_stop_max:
+   310→            raise ValueError(
+   311→                f"T-stop {self.t_stop} outside range "
+   312→                f"[{self.spec.t_stop_min}, {self.spec.t_stop_max}]"
+   313→            )
+   314→        if self.focus_distance_m < self.spec.close_focus_m:
+   315→            raise ValueError(
+   316→                f"Focus {self.focus_distance_m}m below close focus {self.spec.close_focus_m}m"
+   317→            )
+   318→
+   319→    @property
+   320→    def breathing_shift_pct(self) -> float:
+   321→        return self.spec.breathing.evaluate(self.focus_distance_m)
+   322→
+   323→    @property
+   324→    def effective_squeeze(self) -> float:
+   325→        """Dynamic squeeze ratio at current focus distance (Mumps)."""
+   326→        return self.spec.effective_squeeze(self.focus_distance_m)
+   327→
+   328→    @property
+   329→    def entrance_pupil_offset_cm(self) -> float:
+   330→        """Entrance pupil offset in USD centimeters."""
+   331→        return self.spec.entrance_pupil_offset_mm / 10.0
+   332→
+   333→    @property
+   334→    def rig_weight_kg(self) -> float:
+   335→        """Total lens weight (body weight added at assembly level)."""
+   336→        return self.spec.weight_kg
+   337→
+   338→    def to_usd_dict(self) -> dict[str, tuple[str, Any]]:
+   339→        """Flat dictionary for USD attribute authoring — v4.0 extended."""
+   340→        prefix = "cinema:lens"
+   341→        d = self.spec.distortion
+   342→        result = {
+   343→            f"{prefix}:manufacturer":        ("String", self.spec.manufacturer),
+   344→            f"{prefix}:series":              ("String", self.spec.series),
+   345→            f"{prefix}:focalLengthMm":       ("Float",  self.spec.focal_length_mm),
+   346→            f"{prefix}:squeezeRatioNominal": ("Float",  self.spec.squeeze_ratio),
+   347→            f"{prefix}:squeezeRatioEffective": ("Float", self.effective_squeeze),
+   348→            f"{prefix}:tStop":               ("Float",  self.t_stop),
+   349→            f"{prefix}:focusDistanceM":      ("Float",  self.focus_distance_m),
+   350→            f"{prefix}:irisBlades":          ("Int",    self.spec.iris_blades),
+   351→            f"{prefix}:distortion:k1":       ("Float",  d.k1),
+   352→            f"{prefix}:distortion:k2":       ("Float",  d.k2),
+   353→            f"{prefix}:distortion:k3":       ("Float",  d.k3),
+   354→            f"{prefix}:distortion:p1":       ("Float",  d.p1),
+   355→            f"{prefix}:distortion:p2":       ("Float",  d.p2),
+   356→            f"{prefix}:distortion:sqUniformity": ("Float", d.squeeze_uniformity),
+   357→        }
+   358→        # v4.0 mechanical attributes
+   359→        if self.spec.has_mechanics:
+   360→            m = self.spec.mechanics
+   361→            result.update({
+   362→                f"{prefix}:weightKg":            ("Float", m.weight_kg),
+   363→                f"{prefix}:lengthMm":            ("Float", m.length_mm),
+   364→                f"{prefix}:frontDiameterMm":     ("Float", m.front_diameter_mm),
+   365→                f"{prefix}:entrancePupilOffsetMm": ("Float", m.entrance_pupil_offset_mm),
+   366→                f"{prefix}:focusRingRotationDeg":  ("Float", m.focus_ring.rotation_deg),
+   367→                f"{prefix}:irisRingRotationDeg":   ("Float", m.iris_ring.rotation_deg),
+   368→            })
+   369→        return result
+   370→```
+   371→
+   372→### A.5 Evolved JSON Schema
+   373→
+   374→```json
+   375→{
+   376→  "$schema": "http://json-schema.org/draft-07/schema#",
+   377→  "$id": "cinema_lens_v4.schema.json",
+   378→  "title": "Cinema Lens Specification v4.0",
+   379→  "type": "object",
+   380→  "required": [
+   381→    "lens_id", "manufacturer", "series", "focal_length_mm",
+   382→    "t_stop_range", "iris_blades", "close_focus_m",
+   383→    "image_circle_mm", "squeeze_ratio"
+   384→  ],
+   385→  "properties": {
+   386→    "lens_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+   387→    "manufacturer": { "type": "string" },
+   388→    "series": { "type": "string" },
+   389→    "focal_length_mm": { "type": "number", "exclusiveMinimum": 0 },
+   390→    "t_stop_range": {
+   391→      "type": "array", "items": { "type": "number" },
+   392→      "minItems": 2, "maxItems": 2
+   393→    },
+   394→    "iris_blades": { "type": "integer", "minimum": 3 },
+   395→    "close_focus_m": { "type": "number", "exclusiveMinimum": 0 },
+   396→    "image_circle_mm": { "type": "number", "exclusiveMinimum": 0 },
+   397→    "squeeze_ratio": { "type": "number", "minimum": 1.0 },
+   398→    "mechanics": {
+   399→      "type": "object",
+   400→      "required": ["weight_kg", "length_mm", "front_diameter_mm", "entrance_pupil_offset_mm"],
+   401→      "properties": {
+   402→        "weight_kg": { "type": "number", "exclusiveMinimum": 0 },
+   403→        "length_mm": { "type": "number", "exclusiveMinimum": 0 },
+   404→        "front_diameter_mm": { "type": "number", "exclusiveMinimum": 0 },
+   405→        "filter_thread": { "type": "string", "pattern": "^M[0-9]+x[0-9.]+" },
+   406→        "focus_ring": {
+   407→          "type": "object",
+   408→          "required": ["rotation_deg", "gear_teeth"],
+   409→          "properties": {
+   410→            "rotation_deg": { "type": "number", "exclusiveMinimum": 0, "maximum": 360 },
+   411→            "gear_teeth": { "type": "integer", "minimum": 1 },
+   412→            "gear_module": { "type": "number", "default": 0.8 }
+   413→          }
+   414→        },
+   415→        "iris_ring": {
+   416→          "type": "object",
+   417→          "required": ["rotation_deg", "gear_teeth"],
+   418→          "properties": {
+   419→            "rotation_deg": { "type": "number", "exclusiveMinimum": 0, "maximum": 360 },
+   420→            "gear_teeth": { "type": "integer", "minimum": 1 },
+   421→            "gear_module": { "type": "number", "default": 0.8 }
+   422→          }
+   423→        },
+   424→        "entrance_pupil_offset_mm": { "type": "number", "minimum": 0 }
+   425→      }
+   426→    },
+   427→    "squeeze_breathing": {
+   428→      "type": "array",
+   429→      "items": {
+   430→        "type": "object",
+   431→        "required": ["focus_m", "effective_squeeze"],
+   432→        "properties": {
+   433→          "focus_m": { "oneOf": [
+   434→            { "type": "number", "exclusiveMinimum": 0 },
+   435→            { "type": "string", "enum": ["infinity"] }
+   436→          ]},
+   437→          "effective_squeeze": { "type": "number", "minimum": 1.0 }
+   438→        }
+   439→      }
+   440→    },
+   441→    "distortion": {
+   442→      "type": "object",
+   443→      "properties": {
+   444→        "k1": { "type": "number" },
+   445→        "k2": { "type": "number" },
+   446→        "k3": { "type": "number" },
+   447→        "p1": { "type": "number" },
+   448→        "p2": { "type": "number" },
+   449→        "squeeze_uniformity": { "type": "number", "minimum": 0.8, "maximum": 1.0 }
+   450→      }
+   451→    },
+   452→    "breathing": {
+   453→      "type": "array",
+   454→      "items": {
+   455→        "type": "object",
+   456→        "required": ["focus_m", "fov_shift_pct"],
+   457→        "properties": {
+   458→          "focus_m": { "oneOf": [
+   459→            { "type": "number", "exclusiveMinimum": 0 },
+   460→            { "type": "string", "enum": ["infinity"] }
+   461→          ]},
+   462→          "fov_shift_pct": { "type": "number" }
+   463→        }
+   464→      }
+   465→    }
+   466→  }
+   467→}
+   468→```
+   469→
+   470→### A.6 Example: Cooke Anamorphic/i 50mm (Complete v4.0 JSON)
+   471→
+   472→```json
+   473→{
+   474→  "lens_id": "cooke_ana_i_s35_50mm",
+   475→  "manufacturer": "Cooke",
+   476→  "series": "Anamorphic/i S35",
+   477→  "focal_length_mm": 50.0,
+   478→  "t_stop_range": [2.3, 22.0],
+   479→  "iris_blades": 11,
+   480→  "close_focus_m": 0.85,
+   481→  "image_circle_mm": 31.1,
+   482→  "squeeze_ratio": 2.0,
+   483→  "mechanics": {
+   484→    "weight_kg": 3.6,
+   485→    "length_mm": 205.0,
+   486→    "front_diameter_mm": 110.0,
+   487→    "filter_thread": "M105x0.75",
+   488→    "focus_ring": {
+   489→      "rotation_deg": 300.0,
+   490→      "gear_teeth": 140,
+   491→      "gear_module": 0.8
+   492→    },
+   493→    "iris_ring": {
+   494→      "rotation_deg": 90.0,
+   495→      "gear_teeth": 134,
+   496→      "gear_module": 0.8
+   497→    },
+   498→    "entrance_pupil_offset_mm": 125.0
+   499→  },
+   500→  "squeeze_breathing": [
+   501→    { "focus_m": 0.85, "effective_squeeze": 1.85 },
+   502→    { "focus_m": 1.5,  "effective_squeeze": 1.92 },
+   503→    { "focus_m": 3.0,  "effective_squeeze": 1.97 },
+   504→    { "focus_m": 10.0, "effective_squeeze": 1.99 },
+   505→    { "focus_m": "infinity", "effective_squeeze": 2.0 }
+   506→  ],
+   507→  "distortion": {
+   508→    "k1": -0.015,
+   509→    "k2": 0.002,
+   510→    "squeeze_uniformity": 0.94
+   511→  },
+   512→  "breathing": [
+   513→    { "focus_m": 0.85, "fov_shift_pct": 3.2 },
+   514→    { "focus_m": 2.0,  "fov_shift_pct": 1.1 },
+   515→    { "focus_m": "infinity", "fov_shift_pct": 0.0 }
+   516→  ]
+   517→}
+   518→```
+   519→
+   520→### A.7 JSON Parser Update (from_json Factory)
+   521→
+   522→```python
+   523→# File: python/cinema_camera/lenses/cooke_anamorphic.py (UPDATED from_json)
+   524→
+   525→@classmethod
+   526→def from_json(cls, json_path: Path, node: Optional[hou.Node] = None) -> CookeAnamorphicLens:
+   527→    """Factory: load from v4.0 JSON with full validation. Backwards-compatible with v3.0 JSON."""
+   528→    with open(json_path, "r") as f:
+   529→        data = json.load(f)
+   530→
+   531→    # ── Parse breathing curve (v3.0) ─────────────────────
+   532→    breathing_points = []
+   533→    for bp in data.get("breathing", []):
+   534→        focus = bp["focus_m"]
+   535→        if isinstance(focus, str) and focus.lower() == "infinity":
+   536→            focus = 1e10
+   537→        breathing_points.append((float(focus), bp["fov_shift_pct"]))
+   538→
+   539→    # ── Parse distortion (v3.0) ──────────────────────────
+   540→    dist_data = data.get("distortion", {})
+   541→
+   542→    # ── Parse mechanical spec (v4.0 — optional) ─────────
+   543→    mechanics = None
+   544→    mech_data = data.get("mechanics")
+   545→    if mech_data:
+   546→        focus_ring_data = mech_data.get("focus_ring", {})
+   547→        iris_ring_data = mech_data.get("iris_ring", {})
+   548→        mechanics = MechanicalSpec(
+   549→            weight_kg=mech_data["weight_kg"],
+   550→            length_mm=mech_data["length_mm"],
+   551→            front_diameter_mm=mech_data["front_diameter_mm"],
+   552→            filter_thread=mech_data.get("filter_thread", ""),
+   553→            focus_ring=GearRingSpec(
+   554→                rotation_deg=focus_ring_data.get("rotation_deg", 300.0),
+   555→                gear_teeth=focus_ring_data.get("gear_teeth", 140),
+   556→                gear_module=focus_ring_data.get("gear_module", 0.8),
+   557→            ),
+   558→            iris_ring=GearRingSpec(
+   559→                rotation_deg=iris_ring_data.get("rotation_deg", 90.0),
+   560→                gear_teeth=iris_ring_data.get("gear_teeth", 134),
+   561→                gear_module=iris_ring_data.get("gear_module", 0.8),
+   562→            ),
+   563→            entrance_pupil_offset_mm=mech_data.get("entrance_pupil_offset_mm", 0.0),
+   564→        )
+   565→
+   566→    # ── Parse squeeze breathing (v4.0 — optional) ───────
+   567→    squeeze_breathing = None
+   568→    squeeze_data = data.get("squeeze_breathing")
+   569→    if squeeze_data:
+   570→        sq_points = []
+   571→        for sp in squeeze_data:
+   572→            focus = sp["focus_m"]
+   573→            if isinstance(focus, str) and focus.lower() == "infinity":
+   574→                focus = 1e10
+   575→            sq_points.append((float(focus), sp["effective_squeeze"]))
+   576→        squeeze_breathing = SqueezeBreathingCurve(
+   577→            tuple(sq_points),
+   578→            nominal_squeeze=data.get("squeeze_ratio", 2.0),
+   579→        )
+   580→
+   581→    spec = LensSpec(
+   582→        lens_id=data["lens_id"],
+   583→        manufacturer=data["manufacturer"],
+   584→        series=data["series"],
+   585→        focal_length_mm=data["focal_length_mm"],
+   586→        t_stop_min=data["t_stop_range"][0],
+   587→        t_stop_max=data["t_stop_range"][1],
+   588→        iris_blades=data["iris_blades"],
+   589→        close_focus_m=data["close_focus_m"],
+   590→        image_circle_mm=data.get("image_circle_mm", 31.1),
+   591→        squeeze_ratio=data["squeeze_ratio"],
+   592→        distortion=DistortionModel(
+   593→            k1=dist_data.get("k1", 0),
+   594→            k2=dist_data.get("k2", 0),
+   595→            k3=dist_data.get("k3", 0),
+   596→            p1=dist_data.get("p1", 0),
+   597→            p2=dist_data.get("p2", 0),
+   598→            squeeze_uniformity=dist_data.get("squeeze_uniformity", 1.0),
+   599→        ),
+   600→        breathing=BreathingCurve(tuple(breathing_points)),
+   601→        lateral_ca_px_per_mm=data.get("chromatic_aberration", {}).get("lateral_ca_px_per_mm", 0),
+   602→        longitudinal_ca_stops=data.get("chromatic_aberration", {}).get("longitudinal_ca_stops", 0),
+   603→        # v4.0: MechanicalSpec handles these; backfill via __post_init__
+   604→        mechanics=mechanics,
+   605→        squeeze_breathing=squeeze_breathing,
+   606→    )
+   607→
+   608→    return cls(spec, node)
+   609→```
+   610→
+   611→### A.8 Acceptance Criteria
+   612→
+   613→```
+   614→AGENT α DELIVERABLES:
+   615→  [ ] GearRingSpec frozen dataclass with validation + pitch_circle_diameter_mm
+   616→  [ ] MechanicalSpec frozen dataclass with entrance_pupil_offset_cm property
+   617→  [ ] SqueezeBreathingCurve frozen dataclass with evaluate() interpolation
+   618→  [ ] LensSpec extended with mechanics + squeeze_breathing (Optional, backwards-compat)
+   619→  [ ] LensState extended with effective_squeeze + entrance_pupil_offset_cm
+   620→  [ ] to_usd_dict() includes all v4.0 mechanical attributes
+   621→  [ ] JSON schema v4.0 validates both v3.0 and v4.0 JSON files
+   622→  [ ] from_json() parses v3.0 JSON without error (mechanics=None)
+   623→  [ ] from_json() parses v4.0 JSON with full mechanical + squeeze data
+   624→  [ ] Cooke 50mm and 300mm JSON data files created and validated
+   625→
+   626→TESTS:
+   627→  [ ] test_mechanical_spec_validation — rejects weight_kg=0, negative offsets
+   628→  [ ] test_squeeze_breathing_interpolation — exact values at MOD, mid, infinity
+   629→  [ ] test_lens_spec_backwards_compat — v3.0 JSON loads into v4.0 LensSpec
+   630→  [ ] test_effective_squeeze_at_focus — 50mm: 1.85 at 0.85m, 2.0 at infinity
+   631→  [ ] test_gear_ring_pitch_circle — 140 teeth × 0.8 module = 112mm PCD
+   632→```
+   633→
+   634→---
+   635→
+   636→## PILLAR B: Nodal Parallax (USD Transform Hierarchy)
+   637→
+   638→**Owner:** AGENT β (USD/Solaris)
+   639→**Depends on:** Pillar A (MechanicalSpec)
+   640→**Consumed by:** Pillar D (CVEX shader reads entrance pupil), Pillar E (metadata)
+   641→
+   642→### B.1 The Problem
+   643→
+   644→A CG camera rotates around its sensor plane origin. A physical camera on a tripod
+   645→rotates around the fluid head pivot point, while the entrance pupil (nodal point) sits
+   646→far ahead in the lens barrel. This mismatch causes CG elements to "slip" against
+   647→live-action plates during pan/tilt operations or heavy focus pulls.
+   648→
+   649→### B.2 USD Xform Hierarchy
+   650→
+   651→```
+   652→/World/CameraRig                              ← RIG ROOT (user transforms this)
+   653→  └─/World/CameraRig/FluidHead                ← PIVOT POINT (pan/tilt origin)
+   654→      ├─ xformOp:rotateXYZ = (tilt, pan, 0)
+   655→      │
+   656→      └─/World/CameraRig/FluidHead/Body       ← CAMERA BODY (sensor plane)
+   657→          ├─ xformOp:translate = (0, body_offset_y, -sensor_offset_z)
+   658→          │   body_offset_y: height from head baseplate to sensor center
+   659→          │   sensor_offset_z: distance from mounting face to sensor plane
+   660→          │
+   661→          └─/World/CameraRig/FluidHead/Body/Sensor  ← UsdGeom.Camera
+   662→              ├─ horizontalAperture, verticalAperture, focalLength ...
+   663→              ├─ cinema:rig:entrancePupilOffsetCm  (authored from MechanicalSpec)
+   664→              ├─ cinema:rig:combinedWeightKg       (body + lens)
+   665→              ├─ cinema:rig:fluidHeadModel         (e.g. "OConnor 2575")
+   666→              │
+   667→              └─/World/CameraRig/FluidHead/Body/Sensor/EntrancePupil  ← NODAL POINT
+   668→                  ├─ xformOp:translate = (0, 0, entrance_pupil_offset_cm)
+   669→                  └─ purpose = "guide"  (viewport visualization only)
+   670→```
+   671→
+   672→### B.3 Refactored USD Builder
+   673→
+   674→```python
+   675→# File: python/cinema_camera/usd_builder.py (v4.0 — REPLACES v3.0 build_usd_camera)
+   676→
+   677→from __future__ import annotations
+   678→from pxr import Usd, UsdGeom, UsdRender, Sdf, Gf
+   679→from .protocols import CameraState, LensState, OpticalResult
+   680→
+   681→
+   682→# ── Attribute type mapping ────────────────────────────────
+   683→_USD_TYPE_MAP = {
+   684→    "String": Sdf.ValueTypeNames.String,
+   685→    "Float":  Sdf.ValueTypeNames.Float,
+   686→    "Int":    Sdf.ValueTypeNames.Int,
+   687→    "Bool":   Sdf.ValueTypeNames.Bool,
+   688→}
+   689→
+   690→
+   691→def _author_attributes(prim: Usd.Prim, attrs: dict[str, tuple[str, object]]) -> None:
+   692→    """Author a dict of {name: (type_str, value)} onto a USD prim."""
+   693→    for attr_name, (type_str, value) in attrs.items():
+   694→        sdf_type = _USD_TYPE_MAP.get(type_str)
+   695→        if sdf_type is None:
+   696→            continue
+   697→        attr = prim.GetAttribute(attr_name)
+   698→        if not attr:
+   699→            attr = prim.CreateAttribute(attr_name, sdf_type)
+   700→        attr.Set(value)
+   701→
+   702→
+   703→# ── Body offset constants (mm → cm) ─────────────────────
+   704→# Distance from tripod quick-release plate to sensor center
+   705→_BODY_OFFSETS_CM = {
+   706→    "ARRI ALEXA 35":   {"y": 5.0, "z": -8.0},   # 80mm mount-face to sensor
+   707→    "RED KOMODO":      {"y": 3.5, "z": -5.0},
+   708→    "SONY VENICE 2":   {"y": 5.5, "z": -9.0},
+   709→}
+   710→_DEFAULT_BODY_OFFSET = {"y": 4.0, "z": -7.0}
+   711→
+   712→
+   713→def build_usd_camera_rig(
+   714→    stage: Usd.Stage,
+   715→    rig_path: str,
+   716→    camera_state: CameraState,
+   717→    lens_state: LensState,
+   718→    optical_result: OpticalResult,
+   719→    fluid_head_model: str = "OConnor 2575",
+   720→) -> UsdGeom.Camera:
+   721→    """
+   722→    Build a physically-nested USD camera rig from typed state objects.
+   723→
+   724→    Hierarchy:
+   725→      {rig_path}/FluidHead/Body/Sensor/EntrancePupil
+   726→
+   727→    The FluidHead prim is the pan/tilt pivot.
+   728→    The Sensor prim is the UsdGeom.Camera.
+   729→    The EntrancePupil is a guide Xform for parallax visualization.
+   730→
+   731→    Returns the UsdGeom.Camera (Sensor prim).
+   732→    """
+   733→
+   734→    # ── 1. Rig Root ──────────────────────────────────────
+   735→    rig_root = UsdGeom.Xform.Define(stage, rig_path)
+   736→
+   737→    # ── 2. Fluid Head (Pan/Tilt Pivot) ───────────────────
+   738→    head_path = f"{rig_path}/FluidHead"
+   739→    head = UsdGeom.Xform.Define(stage, head_path)
+   740→    head.GetPrim().CreateAttribute(
+   741→        "cinema:rig:fluidHeadModel", Sdf.ValueTypeNames.String
+   742→    ).Set(fluid_head_model)
+   743→
+   744→    # ── 3. Camera Body (Offset from Head) ────────────────
+   745→    body_path = f"{head_path}/Body"
+   746→    body = UsdGeom.Xform.Define(stage, body_path)
+   747→    offsets = _BODY_OFFSETS_CM.get(camera_state.model, _DEFAULT_BODY_OFFSET)
+   748→    UsdGeom.XformCommonAPI(body).SetTranslate(
+   749→        Gf.Vec3d(0, offsets["y"], offsets["z"])
+   750→    )
+   751→
+   752→    # ── 4. Sensor (UsdGeom.Camera) ───────────────────────
+   753→    sensor_path = f"{body_path}/Sensor"
+   754→    camera = UsdGeom.Camera.Define(stage, sensor_path)
+   755→
+   756→    # Core USD camera attributes
+   757→    camera.CreateProjectionAttr().Set(UsdGeom.Tokens.perspective)
+   758→    camera.CreateHorizontalApertureAttr().Set(camera_state.active_width_mm)
+   759→    camera.CreateVerticalApertureAttr().Set(camera_state.active_height_mm)
+   760→    camera.CreateFocalLengthAttr().Set(lens_state.spec.focal_length_mm)
+   761→    camera.CreateFocusDistanceAttr().Set(lens_state.focus_distance_m * 100)  # m → cm
+   762→    camera.CreateFStopAttr().Set(lens_state.t_stop)
+   763→    camera.CreateClippingRangeAttr().Set(Gf.Vec2f(0.01, 100000.0))
+   764→
+   765→    # Custom cinema attributes on camera prim
+   766→    prim = camera.GetPrim()
+   767→    _author_attributes(prim, camera_state.to_usd_dict())
+   768→    _author_attributes(prim, lens_state.to_usd_dict())
+   769→    _author_attributes(prim, {
+   770→        "cinema:optics:hfovDeg":     ("Float", optical_result.hfov_deg),
+   771→        "cinema:optics:vfovDeg":     ("Float", optical_result.vfov_deg),
+   772→        "cinema:optics:dofNearM":    ("Float", optical_result.dof_near_m),
+   773→        "cinema:optics:dofFarM":     ("Float", optical_result.dof_far_m),
+   774→        "cinema:optics:hyperfocalM": ("Float", optical_result.hyperfocal_m),
+   775→        "cinema:optics:cocMm":       ("Float", optical_result.coc_mm),
+   776→    })
+   777→
+   778→    # Rig-level metadata on camera prim
+   779→    combined_weight = lens_state.rig_weight_kg
+   780→    # If camera body weight is known (could be added to CameraState in future)
+   781→    _author_attributes(prim, {
+   782→        "cinema:rig:entrancePupilOffsetCm": ("Float", lens_state.entrance_pupil_offset_cm),
+   783→        "cinema:rig:combinedWeightKg":      ("Float", combined_weight),
+   784→        "cinema:rig:effectiveSqueeze":       ("Float", lens_state.effective_squeeze),
+   785→    })
+   786→
+   787→    # ── 5. Entrance Pupil (Guide Visualization) ──────────
+   788→    pupil_path = f"{sensor_path}/EntrancePupil"
+   789→    pupil = UsdGeom.Xform.Define(stage, pupil_path)
+   790→    UsdGeom.XformCommonAPI(pupil).SetTranslate(
+   791→        Gf.Vec3d(0, 0, lens_state.entrance_pupil_offset_cm)
+   792→    )
+   793→    pupil.GetPrim().CreateAttribute(
+   794→        "purpose", Sdf.ValueTypeNames.Token
+   795→    ).Set("guide")
+   796→
+   797→    return camera
+   798→
+   799→
+   800→# ── Backwards-compatible wrapper ─────────────────────────
+   801→def build_usd_camera(
+   802→    stage: Usd.Stage,
+   803→    camera_path: str,
+   804→    camera_state: CameraState,
+   805→    lens_state: LensState,
+   806→    optical_result: OpticalResult,
+   807→) -> UsdGeom.Camera:
+   808→    """
+   809→    v3.0 compatible entry point. Delegates to build_usd_camera_rig
+   810→    with the camera_path as rig root. Returns UsdGeom.Camera.
+   811→    """
+   812→    return build_usd_camera_rig(
+   813→        stage, camera_path, camera_state, lens_state, optical_result
+   814→    )
+   815→```
+   816→
+   817→### B.4 Acceptance Criteria
+   818→
+   819→```
+   820→AGENT β DELIVERABLES (Pillar B):
+   821→  [ ] USD Xform hierarchy: FluidHead → Body → Sensor → EntrancePupil
+   822→  [ ] FluidHead is the pan/tilt pivot (pan/tilt keys applied here)
+   823→  [ ] Body offset from _BODY_OFFSETS_CM lookup (per-camera model)
+   824→  [ ] cinema:rig:entrancePupilOffsetCm authored from MechanicalSpec
+   825→  [ ] cinema:rig:combinedWeightKg authored for biomechanics CHOPs
+   826→  [ ] cinema:rig:effectiveSqueeze authored for dynamic mumps
+   827→  [ ] EntrancePupil Xform has purpose="guide" (viewport only)
+   828→  [ ] build_usd_camera() backwards-compatible wrapper preserved
+   829→  [ ] usdchecker validates generated stage with no errors
+   830→
+   831→TESTS:
+   832→  [ ] test_rig_hierarchy_structure — validate all prim paths exist
+   833→  [ ] test_entrance_pupil_offset — 50mm: 12.5cm, 300mm: different value
+   834→  [ ] test_body_offset_per_model — ALEXA 35 vs RED KOMODO offsets differ
+   835→  [ ] test_backwards_compat — build_usd_camera() still works
+   836→```
+   837→
+   838→---
+   839→
+   840→## PILLAR C: Operator Biomechanics Engine (CHOPs)
+   841→
+   842→**Owner:** AGENT δ (CHOPs/Copernicus)
+   843→**Depends on:** Pillar A (weight_kg), Pillar B (USD rig hierarchy)
+   844→
+   845→### C.1 The Problem
+   846→
+   847→A 50mm Cooke at 3.6kg on an Alexa 35 (3.9kg) = 7.5kg rig. A 300mm at 9.4kg = 13.3kg.
+   848→The 13.3kg rig has massive rotational inertia — pans ease in slowly and coast to a stop.
+   849→The 7.5kg rig is snappy and jittery. Digital cameras have none of this.
+   850→
+   851→### C.2 CHOPs Constraint Architecture
+   852→
+   853→```
+   854→cinema::chops_biomechanics::1.0  [CHOP Network inside top-level HDA]
+   855→
+   856→    ┌───────────────┐
+   857→    │ Input: Raw     │ ← Pan/Tilt/Roll animation channels
+   858→    │ Camera Motion  │   from animator or mocap
+   859→    └───────┬───────┘
+   860→            │
+   861→    ┌───────▼───────────────┐
+   862→    │ Inertia Calculator    │ ← Reads cinema:rig:combinedWeightKg
+   863→    │                       │   from USD attribute via spare parm
+   864→    │ moment_of_inertia =   │
+   865→    │   weight_kg *         │
+   866→    │   (arm_length_cm)^2   │   arm_length = sensor_offset + pupil_offset
+   867→    └───────┬───────────────┘
+   868→            │
+   869→    ┌───────▼───────────────┐
+   870→    │ CHOP Spring Solver    │ ← spring_constant = fn(head_friction)
+   871→    │                       │   damping = fn(moment_of_inertia)
+   872→    │ Heavy rig:            │   = high damping, slow response
+   873→    │   spring_k = 8.0      │   
+   874→    │   damping = 0.85      │   
+   875→    │ Light rig:            │   = low damping, snappy
+   876→    │   spring_k = 15.0     │   
+   877→    │   damping = 0.4       │   
+   878→    └───────┬───────────────┘
+   879→            │
+   880→    ┌───────▼───────────────┐
+   881→    │ CHOP Lag Solver       │ ← Simulates operator reaction time
+   882→    │                       │   lag_frames = weight_kg * 0.3
+   883→    │ Adds onset delay      │   
+   884→    └───────┬───────────────┘
+   885→            │
+   886→    ┌───────▼───────────────┐
+   887→    │ High-Freq Noise       │ ← Handheld camera shake
+   888→    │ (Optional)            │   amplitude = fn(1/weight_kg)
+   889→    │                       │   Heavy rig = less shake
+   890→    │                       │   Light rig = more shake
+   891→    └───────┬───────────────┘
+   892→            │
+   893→    ┌───────▼───────┐
+   894→    │ Output: Phys   │ → Drives FluidHead xformOp:rotateXYZ
+   895→    │ Camera Motion  │   via CHOP export or LOP wrangle
+   896→    └───────────────┘
+   897→```
+   898→
+   899→### C.3 Biomechanics Parameter Derivation
+   900→
+   901→```python
+   902→# File: python/cinema_camera/biomechanics.py
+   903→"""
+   904→Operator biomechanics parameter derivation.
+   905→Converts physical rig properties into CHOPs solver parameters.
+   906→"""
+   907→
+   908→from __future__ import annotations
+   909→from dataclasses import dataclass
+   910→from .protocols import CameraState, LensState
+   911→
+   912→
+   913→@dataclass(frozen=True)
+   914→class BiomechanicsParams:
+   915→    """CHOPs solver parameters derived from physical rig properties."""
+   916→    # Spring solver
+   917→    spring_constant: float      # Higher = snappier response
+   918→    damping_ratio: float        # 0-1: 0=undamped, 1=critically damped
+   919→
+   920→    # Lag solver
+   921→    lag_frames: float           # Operator reaction delay
+   922→
+   923→    # Noise (handheld)
+   924→    handheld_amplitude_deg: float  # Peak random rotation
+   925→    handheld_frequency_hz: float   # Dominant shake frequency
+   926→
+   927→    # Derived
+   928→    moment_of_inertia: float    # kg·cm² (for reference)
+   929→    combined_weight_kg: float
+   930→
+   931→
+   932→def derive_biomechanics(
+   933→    camera_state: CameraState,
+   934→    lens_state: LensState,
+   935→    body_weight_kg: float = 3.9,             # ARRI Alexa 35 body
+   936→    sensor_to_mounting_face_cm: float = 8.0,  # Distance sensor to mount
+   937→    fluid_head_damping_base: float = 0.6,     # OConnor 2575 baseline
+   938→) -> BiomechanicsParams:
+   939→    """
+   940→    Derive CHOPs parameters from physical rig properties.
+   941→
+   942→    The key insight: rotational inertia scales with mass × distance².
+   943→    A heavy lens pushes the center of mass forward, increasing the
+   944→    moment arm and dramatically increasing rotational inertia.
+   945→    """
+   946→    lens_weight = lens_state.rig_weight_kg
+   947→    combined_weight = body_weight_kg + lens_weight
+   948→
+   949→    # Moment arm: distance from tripod pivot to center of mass
+   950→    # Approximate: sensor offset + half lens length
+   951→    lens_half_length_cm = 0.0
+   952→    if lens_state.spec.has_mechanics:
+   953→        lens_half_length_cm = lens_state.spec.mechanics.length_mm / 20.0  # mm→cm/2
+   954→
+   955→    moment_arm_cm = sensor_to_mounting_face_cm + lens_half_length_cm
+   956→    moment_of_inertia = combined_weight * (moment_arm_cm ** 2)
+   957→
+   958→    # Spring constant: inversely proportional to inertia
+   959→    # Calibrated so 7kg rig ≈ 15.0, 15kg rig ≈ 8.0
+   960→    spring_k = max(5.0, 25.0 - moment_of_inertia * 0.012)
+   961→
+   962→    # Damping: heavier rigs are more critically damped
+   963→    damping = min(0.95, fluid_head_damping_base + combined_weight * 0.025)
+   964→
+   965→    # Lag: heavier rigs have slower operator response
+   966→    lag_frames = combined_weight * 0.3
+   967→
+   968→    # Handheld shake: inversely proportional to weight
+   969→    handheld_amp = max(0.05, 1.5 / combined_weight)
+   970→    handheld_freq = max(2.0, 8.0 - combined_weight * 0.3)
+   971→
+   972→    return BiomechanicsParams(
+   973→        spring_constant=spring_k,
+   974→        damping_ratio=damping,
+   975→        lag_frames=lag_frames,
+   976→        handheld_amplitude_deg=handheld_amp,
+   977→        handheld_frequency_hz=handheld_freq,
+   978→        moment_of_inertia=moment_of_inertia,
+   979→        combined_weight_kg=combined_weight,
+   980→    )
+   981→```
+   982→
+   983→### C.4 Acceptance Criteria
+   984→
+   985→```
+   986→AGENT δ DELIVERABLES (Pillar C):
+   987→  [ ] BiomechanicsParams frozen dataclass with all solver params
+   988→  [ ] derive_biomechanics() function with calibrated constants
+   989→  [ ] CHOPs network HDA: cinema::chops_biomechanics::1.0
+   990→  [ ] Spring solver configured from BiomechanicsParams
+   991→  [ ] Lag solver with frame-based delay
+   992→  [ ] Handheld noise generator (optional toggle)
+   993→  [ ] CHOP export targets FluidHead rotateXYZ
+   994→  [ ] Weight-driven parameter lookup from USD attributes
+   995→
+   996→TESTS:
+   997→  [ ] test_biomechanics_50mm — 7.5kg rig: spring_k≈15, damping≈0.5
+   998→  [ ] test_biomechanics_300mm — 13.3kg rig: spring_k≈8, damping≈0.9
+   999→  [ ] test_heavy_rig_slower_pan — animate 90° pan, heavy rig takes longer
+  1000→  [ ] test_handheld_amplitude — heavy rig less shake, light rig more
+  1001→```
+  1002→
+  1003→---
+  1004→
+  1005→## PILLAR D: Karma CVEX Lens Shader
+  1006→
+  1007→**Owner:** AGENT γ (VEX/CVEX)
+  1008→**Depends on:** Pillar A (MechanicalSpec for pupil offset), Pillar F (dynamic squeeze)
+  1009→
+  1010→### D.1 The Problem
+  1011→
+  1012→Applying distortion in Copernicus (post-process) stretches pixels. This destroys
+  1013→depth-of-field accuracy, motion blur fidelity, and refractive caustics. The correct
+  1014→approach is to warp the camera rays *before* they sample the scene.
+  1015→
+  1016→### D.2 libcinema_optics.h Extensions (Dynamic Squeeze)
+  1017→
+  1018→```c
+  1019→// File: vex/libcinema_optics.h (v4.0 ADDITIONS)
+  1020→
+  1021→// ── Dynamic Squeeze (Mumps) ────────────────────────────
+  1022→
+  1023→// PERF: O(n) where n = curve points | <0.001ms | Memory: negligible
+  1024→float co_evaluate_squeeze_curve(
+  1025→    float focus_m;
+  1026→    float curve_focus[];       // Sorted focus distances (m)
+  1027→    float curve_squeeze[];     // Corresponding squeeze values
+  1028→    float nominal_squeeze      // Fallback if arrays empty
+  1029→) {
+  1030→    int n = len(curve_focus);
+  1031→    if (n == 0) return nominal_squeeze;
+  1032→    if (n != len(curve_squeeze)) return nominal_squeeze;  // guard
+  1033→
+  1034→    if (focus_m <= curve_focus[0]) return curve_squeeze[0];
+  1035→    if (focus_m >= curve_focus[n-1]) return curve_squeeze[n-1];
+  1036→
+  1037→    for (int i = 0; i < n - 1; i++) {
+  1038→        if (curve_focus[i] <= focus_m && focus_m <= curve_focus[i+1]) {
+  1039→            float t = (focus_m - curve_focus[i]) /
+  1040→                      (curve_focus[i+1] - curve_focus[i]);
+  1041→            return lerp(curve_squeeze[i], curve_squeeze[i+1], t);
+  1042→        }
+  1043→    }
+  1044→    return nominal_squeeze;
+  1045→}
+  1046→
+  1047→
+  1048→// ── Anamorphic Distortion with Dynamic Squeeze ─────────
+  1049→
+  1050→// PERF: O(1) per pixel | ~15ms @ 4K | Memory: negligible
+  1051→vector2 co_apply_anamorphic_distortion(
+  1052→    vector2 uv_centered;
+  1053→    CO_DistortionCoeffs coeffs;
+  1054→    float effective_squeeze     // Dynamic squeeze at current focus distance
+  1055→) {
+  1056→    float x = uv_centered.x;
+  1057→    float y = uv_centered.y;
+  1058→
+  1059→    float r2 = x*x + y*y;
+  1060→    float r4 = r2 * r2;
+  1061→    float r6 = r4 * r2;
+  1062→
+  1063→    // Radial distortion (Brown-Conrady)
+  1064→    float radial = 1.0 + coeffs.k1*r2 + coeffs.k2*r4 + coeffs.k3*r6;
+  1065→
+  1066→    // Tangential
+  1067→    float dx = 2.0*coeffs.p1*x*y + coeffs.p2*(r2 + 2.0*x*x);
+  1068→    float dy = coeffs.p1*(r2 + 2.0*y*y) + 2.0*coeffs.p2*x*y;
+  1069→
+  1070→    // Anamorphic squeeze non-uniformity (across frame)
+  1071→    float sq_var = lerp(1.0, coeffs.squeeze_uniformity, r2);
+  1072→
+  1073→    // Dynamic squeeze applied to X axis
+  1074→    // Nominal 2.0x → effective 1.85x at MOD for front-anamorphic
+  1075→    float distorted_x = (x * radial + dx) * effective_squeeze;
+  1076→    float distorted_y = (y * radial + dy) * sq_var;
+  1077→
+  1078→    return set(distorted_x, distorted_y);
+  1079→}
+  1080→```
+  1081→
+  1082→### D.3 Karma CVEX Lens Shader
+  1083→
+  1084→```c
+  1085→// File: vex/karma_cinema_lens.vfl
+  1086→// ═══════════════════════════════════════════════════════════
+  1087→// KARMA CVEX LENS SHADER — Cinema Camera Rig v4.0
+  1088→//
+  1089→// Warps render rays BEFORE scene sampling.
+  1090→// This preserves DOF, motion blur, and refraction fidelity.
+  1091→//
+  1092→// Compiles to: cvex_cinema_lens.vex
+  1093→// Usage: Assign as lens shader on Karma render settings
+  1094→//
+  1095→// Parameters read from USD camera prim attributes at render time.
+  1096→// ═══════════════════════════════════════════════════════════
+  1097→
+  1098→#include <libcinema_optics.h>
+  1099→
+  1100→cvex cinema_lens_shader(
+  1101→    // ── Lens parameters (driven from USD attributes) ────
+  1102→    float focal_length_mm = 50.0;
+  1103→    float effective_squeeze = 2.0;         // cinema:rig:effectiveSqueeze
+  1104→    float entrance_pupil_offset_cm = 12.5; // cinema:rig:entrancePupilOffsetCm
+  1105→    float sensor_width_mm = 27.99;         // horizontalAperture
+  1106→    float sensor_height_mm = 19.22;        // verticalAperture
+  1107→
+  1108→    // Distortion coefficients (from cinema:lens:distortion:*)
+  1109→    float dist_k1 = 0.0;
+  1110→    float dist_k2 = 0.0;
+  1111→    float dist_k3 = 0.0;
+  1112→    float dist_p1 = 0.0;
+  1113→    float dist_p2 = 0.0;
+  1114→    float dist_sq_uniformity = 1.0;
+  1115→
+  1116→    // Enable/disable controls
+  1117→    int enable_distortion = 1;
+  1118→    int enable_squeeze = 1;
+  1119→    int enable_pupil_offset = 1;
+  1120→
+  1121→    // ── Standard CVEX lens inputs ───────────────────────
+  1122→    float x = 0.0;     // Screen-space X (-1 to 1)
+  1123→    float y = 0.0;     // Screen-space Y (-1 to 1)
+  1124→    float Time = 0.0;
+  1125→    float sx = 0.0;    // Sub-pixel jitter X
+  1126→    float sy = 0.0;    // Sub-pixel jitter Y
+  1127→
+  1128→    // ── Standard CVEX lens outputs ──────────────────────
+  1129→    export vector P = {0, 0, 0};    // Ray origin (camera space)
+  1130→    export vector I = {0, 0, 1};    // Ray direction (camera space)
+  1131→    export int valid = 1;           // 1 = valid ray, 0 = discard
+  1132→) {
+  1133→    // ── Apply sub-pixel jitter ──────────────────────────
+  1134→    float jx = x + sx;
+  1135→    float jy = y + sy;
+  1136→
+  1137→    // ── Apply optical distortion to screen coordinates ──
+  1138→    vector2 uv = set(jx, jy);
+  1139→
+  1140→    if (enable_distortion) {
+  1141→        CO_DistortionCoeffs coeffs;
+  1142→        coeffs.k1 = dist_k1;
+  1143→        coeffs.k2 = dist_k2;
+  1144→        coeffs.k3 = dist_k3;
+  1145→        coeffs.p1 = dist_p1;
+  1146→        coeffs.p2 = dist_p2;
+  1147→        coeffs.squeeze_uniformity = dist_sq_uniformity;
+  1148→
+  1149→        if (enable_squeeze && effective_squeeze > 1.01) {
+  1150→            // Dynamic anamorphic distortion with focus-dependent squeeze
+  1151→            uv = co_apply_anamorphic_distortion(uv, coeffs, effective_squeeze);
+  1152→        } else {
+  1153→            // Standard spherical distortion
+  1154→            uv = co_apply_distortion(uv, coeffs);
+  1155→        }
+  1156→    } else if (enable_squeeze && effective_squeeze > 1.01) {
+  1157→        // Squeeze only, no distortion
+  1158→        uv.x *= effective_squeeze;
+  1159→    }
+  1160→
+  1161→    // ── Convert screen UV to camera-space ray direction ─
+  1162→    // Map [-1,1] screen coords to sensor plane coordinates
+  1163→    float half_w = sensor_width_mm * 0.5;
+  1164→    float half_h = sensor_height_mm * 0.5;
+  1165→
+  1166→    float ray_x = uv.x * half_w;
+  1167→    float ray_y = uv.y * half_h;
+  1168→    float ray_z = focal_length_mm;
+  1169→
+  1170→    I = normalize(set(ray_x, ray_y, ray_z));
+  1171→
+  1172→    // ── Ray origin at entrance pupil ────────────────────
+  1173→    // Physical rays originate at the nodal point, not sensor plane
+  1174→    if (enable_pupil_offset) {
+  1175→        // Entrance pupil is FORWARD from sensor (positive Z in camera space)
+  1176→        // Convert cm to Houdini scene units (cm default in USD)
+  1177→        P = set(0, 0, entrance_pupil_offset_cm);
+  1178→    } else {
+  1179→        P = set(0, 0, 0);
+  1180→    }
+  1181→
+  1182→    valid = 1;
+  1183→}
+  1184→```
+  1185→
+  1186→### D.4 Shader Parameter Binding (LOP Python)
+  1187→
+  1188→```python
+  1189→# File: python/cinema_camera/karma_lens_shader.py
+  1190→"""
+  1191→Binds Karma CVEX lens shader parameters to USD camera attributes.
+  1192→Runs inside the cinema::camera_rig::2.0 LOP HDA.
+  1193→"""
+  1194→
+  1195→from __future__ import annotations
+  1196→from pxr import Usd, UsdShade, Sdf
+  1197→from .protocols import LensState, CameraState, OpticalResult
+  1198→
+  1199→
+  1200→def bind_lens_shader(
+  1201→    stage: Usd.Stage,
+  1202→    camera_path: str,
+  1203→    camera_state: CameraState,
+  1204→    lens_state: LensState,
+  1205→) -> None:
+  1206→    """
+  1207→    Create and bind Karma CVEX lens shader to the camera prim.
+  1208→
+  1209→    The shader reads attributes directly from the camera prim,
+  1210→    so parameters are automatically time-sampled when animated.
+  1211→    """
+  1212→    shader_path = f"{camera_path}/CinemaLensShader"
+  1213→    shader = UsdShade.Shader.Define(stage, shader_path)
+  1214→
+  1215→    # Shader ID for Karma CVEX
+  1216→    shader.CreateIdAttr("karma:cvex:cinema_lens_shader")
+  1217→
+  1218→    # ── Bind lens parameters ─────────────────────────────
+  1219→    shader.CreateInput("focal_length_mm", Sdf.ValueTypeNames.Float).Set(
+  1220→        lens_state.spec.focal_length_mm
+  1221→    )
+  1222→    shader.CreateInput("effective_squeeze", Sdf.ValueTypeNames.Float).Set(
+  1223→        lens_state.effective_squeeze
+  1224→    )
+  1225→    shader.CreateInput("entrance_pupil_offset_cm", Sdf.ValueTypeNames.Float).Set(
+  1226→        lens_state.entrance_pupil_offset_cm
+  1227→    )
+  1228→    shader.CreateInput("sensor_width_mm", Sdf.ValueTypeNames.Float).Set(
+  1229→        camera_state.active_width_mm
+  1230→    )
+  1231→    shader.CreateInput("sensor_height_mm", Sdf.ValueTypeNames.Float).Set(
+  1232→        camera_state.active_height_mm
+  1233→    )
+  1234→
+  1235→    # Distortion coefficients
+  1236→    d = lens_state.spec.distortion
+  1237→    shader.CreateInput("dist_k1", Sdf.ValueTypeNames.Float).Set(d.k1)
+  1238→    shader.CreateInput("dist_k2", Sdf.ValueTypeNames.Float).Set(d.k2)
+  1239→    shader.CreateInput("dist_k3", Sdf.ValueTypeNames.Float).Set(d.k3)
+  1240→    shader.CreateInput("dist_p1", Sdf.ValueTypeNames.Float).Set(d.p1)
+  1241→    shader.CreateInput("dist_p2", Sdf.ValueTypeNames.Float).Set(d.p2)
+  1242→    shader.CreateInput("dist_sq_uniformity", Sdf.ValueTypeNames.Float).Set(
+  1243→        d.squeeze_uniformity
+  1244→    )
+  1245→
+  1246→    # ── Bind shader to camera ────────────────────────────
+  1247→    camera_prim = stage.GetPrimAtPath(camera_path)
+  1248→    if camera_prim:
+  1249→        # Karma-specific lens shader binding
+  1250→        camera_prim.CreateAttribute(
+  1251→            "karma:lens:shader", Sdf.ValueTypeNames.String
+  1252→        ).Set(shader_path)
+  1253→```
+  1254→
+  1255→### D.5 Acceptance Criteria
+  1256→
+  1257→```
+  1258→AGENT γ DELIVERABLES (Pillar D):
+  1259→  [ ] co_evaluate_squeeze_curve() in libcinema_optics.h
+  1260→  [ ] co_apply_anamorphic_distortion() with dynamic squeeze param
+  1261→  [ ] karma_cinema_lens.vfl — complete CVEX lens shader
+  1262→  [ ] Shader reads entrance pupil offset from USD attrib
+  1263→  [ ] Shader applies dynamic squeeze (not static 2.0x)
+  1264→  [ ] karma_lens_shader.py — LOP binding script
+  1265→  [ ] Shader toggle controls: enable_distortion, enable_squeeze, enable_pupil_offset
+  1266→  [ ] Compiles with vcc without errors
+  1267→
+  1268→TESTS:
+  1269→  [ ] test_cvex_identity — all toggles off: ray passes through unchanged
+  1270→  [ ] test_squeeze_at_infinity — effective_squeeze=2.0: X doubled
+  1271→  [ ] test_squeeze_at_mod — effective_squeeze=1.85: X scaled by 1.85
+  1272→  [ ] test_pupil_offset — P.z = entrance_pupil_offset_cm
+  1273→  [ ] test_distortion_matches_post — CVEX output matches COP STMap within 0.5px
+  1274→```
+  1275→
+  1276→---
+  1277→
+  1278→## PILLAR E: Pipeline Bridge (EXR Metadata)
+  1279→
+  1280→**Owner:** AGENT β (USD/Solaris)
+  1281→**Depends on:** Pillars A-D (all metadata must be authored first)
+  1282→
+  1283→### E.1 Extended configure_render_product()
+  1284→
+  1285→```python
+  1286→# File: python/cinema_camera/usd_builder.py (ADDITION)
+  1287→
+  1288→def configure_render_product(
+  1289→    stage: Usd.Stage,
+  1290→    camera_path: str,
+  1291→    output_path: str,
+  1292→    camera_state: CameraState,
+  1293→    lens_state: LensState,
+  1294→    pixel_aspect: float = 1.0,
+  1295→) -> UsdRender.Product:
+  1296→    """
+  1297→    Configure USD Render Product with Cooke /i + ASWF metadata.
+  1298→
+  1299→    Bakes lens and camera metadata into OpenEXR headers so
+  1300→    downstream compositors (Nuke, Resolve, Flame) can
+  1301→    automatically extract match-move parameters.
+  1302→
+  1303→    Metadata conforms to:
+  1304→    - ASWF OpenEXR Technical Committee recommended attributes
+  1305→    - Cooke /i Technology data stream format
+  1306→    - ARRI camera metadata standard
+  1307→    """
+  1308→    cam_name = camera_path.split("/")[-1]
+  1309→    product_path = f"/Render/Products/{cam_name}"
+  1310→    product = UsdRender.Product.Define(stage, product_path)
+  1311→
+  1312→    # ── Standard render product ──────────────────────────
+  1313→    product.CreateResolutionAttr().Set(
+  1314→        Gf.Vec2i(camera_state.format.width_px, camera_state.format.height_px)
+  1315→    )
+  1316→    product.CreatePixelAspectRatioAttr().Set(pixel_aspect)
+  1317→    product.CreateCameraRel().SetTargets([Sdf.Path(camera_path)])
+  1318→    product.CreateProductNameAttr().Set(output_path)
+  1319→
+  1320→    # ── ASWF / Cooke /i EXR Metadata ────────────────────
+  1321→    # These attributes bake into OpenEXR headers via Karma
+  1322→    prim = product.GetPrim()
+  1323→    d = lens_state.spec.distortion
+  1324→
+  1325→    exr_metadata = {
+  1326→        # Camera identification
+  1327→        "driver:parameters:OpenEXR:camera:model":
+  1328→            ("String", camera_state.model),
+  1329→        "driver:parameters:OpenEXR:camera:sensorWidthMm":
+  1330→            ("Float", camera_state.active_width_mm),
+  1331→        "driver:parameters:OpenEXR:camera:sensorHeightMm":
+  1332→            ("Float", camera_state.active_height_mm),
+  1333→        "driver:parameters:OpenEXR:camera:exposureIndex":
+  1334→            ("Int", camera_state.exposure_index),
+  1335→        "driver:parameters:OpenEXR:camera:shutterAngleDeg":
+  1336→            ("Float", camera_state.shutter_angle_deg),
+  1337→        "driver:parameters:OpenEXR:camera:colorScience":
+  1338→            ("String", camera_state.sensor.color_science),
+  1339→
+  1340→        # Lens identification (Cooke /i format)
+  1341→        "driver:parameters:OpenEXR:lens:manufacturer":
+  1342→            ("String", lens_state.spec.manufacturer),
+  1343→        "driver:parameters:OpenEXR:lens:series":
+  1344→            ("String", lens_state.spec.series),
+  1345→        "driver:parameters:OpenEXR:lens:focalLengthMm":
+  1346→            ("Float", lens_state.spec.focal_length_mm),
+  1347→        "driver:parameters:OpenEXR:lens:tStop":
+  1348→            ("Float", lens_state.t_stop),
+  1349→        "driver:parameters:OpenEXR:lens:focusDistanceM":
+  1350→            ("Float", lens_state.focus_distance_m),
+  1351→        "driver:parameters:OpenEXR:lens:irisBlades":
+  1352→            ("Int", lens_state.spec.iris_blades),
+  1353→        "driver:parameters:OpenEXR:lens:squeezeRatio":
+  1354→            ("Float", lens_state.effective_squeeze),
+  1355→
+  1356→        # Distortion model (for Nuke STMap/LensDistortion nodes)
+  1357→        "driver:parameters:OpenEXR:lens:distortion:k1":
+  1358→            ("Float", d.k1),
+  1359→        "driver:parameters:OpenEXR:lens:distortion:k2":
+  1360→            ("Float", d.k2),
+  1361→        "driver:parameters:OpenEXR:lens:distortion:k3":
+  1362→            ("Float", d.k3),
+  1363→        "driver:parameters:OpenEXR:lens:distortion:p1":
+  1364→            ("Float", d.p1),
+  1365→        "driver:parameters:OpenEXR:lens:distortion:p2":
+  1366→            ("Float", d.p2),
+  1367→    }
+  1368→
+  1369→    # Mechanical metadata (if available)
+  1370→    if lens_state.spec.has_mechanics:
+  1371→        m = lens_state.spec.mechanics
+  1372→        exr_metadata.update({
+  1373→            "driver:parameters:OpenEXR:lens:entrancePupilOffsetMm":
+  1374→                ("Float", m.entrance_pupil_offset_mm),
+  1375→            "driver:parameters:OpenEXR:lens:weightKg":
+  1376→                ("Float", m.weight_kg),
+  1377→        })
+  1378→
+  1379→    _author_attributes(prim, exr_metadata)
+  1380→
+  1381→    return product
+  1382→```
+  1383→
+  1384→### E.2 Acceptance Criteria
+  1385→
+  1386→```
+  1387→AGENT β DELIVERABLES (Pillar E):
+  1388→  [ ] configure_render_product() extended with ASWF+Cooke/i metadata
+  1389→  [ ] Camera metadata: model, sensor dims, EI, shutter, color science
+  1390→  [ ] Lens metadata: manufacturer, series, focal length, T-stop, focus, iris
+  1391→  [ ] Distortion coefficients baked for Nuke STMap reconstruction
+  1392→  [ ] Mechanical metadata: entrance pupil offset, weight
+  1393→  [ ] All metadata uses driver:parameters:OpenEXR:* namespace
+  1394→  [ ] Time-sampled attributes for animated focus/t-stop
+  1395→
+  1396→TESTS:
+  1397→  [ ] test_exr_metadata_present — all expected attributes authored
+  1398→  [ ] test_exr_metadata_values — spot-check Cooke 50mm values
+  1399→  [ ] test_dynamic_squeeze_in_metadata — effective_squeeze reflects focus distance
+  1400→```
+  1401→
+  1402→---
+  1403→
+  1404→## PILLAR G: Copernicus 2.0 Effects
+  1405→
+  1406→**Owner:** AGENT δ (CHOPs/Copernicus)
+  1407→**Depends on:** Pillar A (MechanicalSpec for flare geometry)
+  1408→
+  1409→### G.1 Upgraded Effect Chain
+  1410→
+  1411→```
+  1412→EFFECT_CHAIN_V4 = [
+  1413→    # ── v3.0 preserved ──────────────────────────────────
+  1414→    "cinema::cop_distortion::1.0",        # Unchanged
+  1415→    "cinema::cop_chromatic_ab::1.0",      # Unchanged
+  1416→    "cinema::cop_vignette::1.0",          # Unchanged
+  1417→
+  1418→    # ── v4.0 upgraded ───────────────────────────────────
+  1419→    "cinema::cop_anamorphic_flare::2.0",  # REPLACES cop_anamorphic_streak::1.0
+  1420→    "cinema::cop_sensor_noise::1.0",      # REPLACES cop_film_grain::1.0
+  1421→    "cinema::cop_color_grade::1.0",       # Unchanged
+  1422→
+  1423→    # ── v4.0 new ────────────────────────────────────────
+  1424→    "cinema::cop_stmap_aov::1.0",         # NEW: generates STMap for Nuke
+  1425→]
+  1426→```
+  1427→
+  1428→### G.2 FFT Convolution Flare (Replaces cop_anamorphic_streak)
+  1429→
+  1430→```
+  1431→cinema::cop_anamorphic_flare::2.0  [Copernicus HDA]
+  1432→├── INPUT 0: Image (RGBA)
+  1433→├── Parameters:
+  1434→│   ├── enable (Toggle)
+  1435→│   ├── iris_blades (Int, from LensState — e.g. 11 for Cooke)
+  1436→│   ├── front_diameter_mm (Float, from MechanicalSpec — 110mm)
+  1437→│   ├── squeeze_ratio (Float, effective squeeze at current focus)
+  1438→│   ├── threshold (Float, flare trigger brightness)
+  1439→│   ├── intensity (Float, global flare strength)
+  1440→│   ├── ghosting_rings (Int, number of internal reflection ghosts)
+  1441→│   └── streak_asymmetry (Float, 0=symmetric, 1=full anamorphic bias)
+  1442→├── Internal VEX:
+  1443→│   ├── Step 1: Threshold input → extract bright pixels
+  1444→│   ├── Step 2: Generate iris kernel using co_generate_bokeh_kernel()
+  1445→│   │           with iris_blades=11 and squeeze_ratio
+  1446→│   ├── Step 3: FFT convolution of bright pixels × iris kernel
+  1447→│   │           (produces physically accurate polygonal ghost patterns)
+  1448→│   ├── Step 4: Anamorphic streak via horizontal Gaussian
+  1449→│   │           stretched by front_diameter_mm / focal_length ratio
+  1450→│   ├── Step 5: Chromatic fringing on ghosts (R/G/B offset)
+  1451→│   └── Step 6: Composite flare over original
+  1452→└── OUTPUT: Image with physically-based lens flare
+  1453→```
+  1454→
+  1455→### G.3 Sensor Noise Model (Replaces cop_film_grain)
+  1456→
+  1457→```
+  1458→cinema::cop_sensor_noise::1.0  [Copernicus HDA]
+  1459→├── INPUT 0: Image (RGBA)
+  1460→├── Parameters:
+  1461→│   ├── enable (Toggle)
+  1462→│   ├── exposure_index (Int, from CameraState — drives noise level)
+  1463→│   ├── native_iso (Int, from SensorSpec — 800 for Alexa 35)
+  1464→│   ├── sensor_model (Menu: "ALEXA 35 Dual Gain" / "Generic CMOS" / "Custom")
+  1465→│   ├── photon_noise_amount (Float, shot noise — sqrt of signal)
+  1466→│   ├── read_noise_amount (Float, electronic noise — constant floor)
+  1467→│   └── temporal_coherence (Float, 0=fully random per frame, 1=static)
+  1468→├── Internal VEX:
+  1469→│   ├── Photon noise: sqrt(luminance) × random × photon_amount
+  1470→│   │   (physically: shot noise scales with square root of exposure)
+  1471→│   ├── Read noise: constant random × read_amount × (EI / native_iso)
+  1472→│   │   (higher EI amplifies read noise — dual-gain model)
+  1473→│   ├── Per-channel application (Bayer-pattern awareness)
+  1474→│   ├── Temporal: lerp(random, cached_noise[frame], temporal_coherence)
+  1475→│   └── Grain size: 1px at native_iso, 2px at 2× native, etc.
+  1476→└── OUTPUT: Image with physically-modeled sensor noise
+  1477→```
+  1478→
+  1479→### G.4 STMap AOV Generator
+  1480→
+  1481→```
+  1482→cinema::cop_stmap_aov::1.0  [Copernicus HDA]
+  1483→├── INPUT 0: Resolution reference (or explicit width/height params)
+  1484→├── Parameters:
+  1485→│   ├── resolution_x (Int, from CameraState.format.width_px)
+  1486→│   ├── resolution_y (Int, from CameraState.format.height_px)
+  1487→│   ├── distortion coefficients (all from LensState.spec.distortion)
+  1488→│   ├── effective_squeeze (Float, dynamic squeeze)
+  1489→│   └── mode (Menu: "Undistort" / "Redistort")
+  1490→├── Internal VEX:
+  1491→│   ├── For each pixel: compute co_apply_distortion() or co_undistort()
+  1492→│   ├── Store result as Red=U, Green=V (normalized 0-1)
+  1493→│   └── Uses libcinema_optics.h directly
+  1494→├── OUTPUT 0: STMap image (RG float)
+  1495→└── NOTE: Nuke compositor plugs this directly into STMap node
+  1496→```
+  1497→
+  1498→### G.5 Acceptance Criteria
+  1499→
+  1500→```
+  1501→AGENT δ DELIVERABLES (Pillar G):
+  1502→  [ ] cinema::cop_anamorphic_flare::2.0 HDA with FFT convolution
+  1503→  [ ] Flare kernel generated from iris_blades + squeeze_ratio
+  1504→  [ ] Ghost patterns from front_diameter_mm ratio
+  1505→  [ ] cinema::cop_sensor_noise::1.0 HDA with dual-gain model
+  1506→  [ ] Photon noise scales with sqrt(luminance)
+  1507→  [ ] Read noise amplified by EI/native_iso ratio
+  1508→  [ ] cinema::cop_stmap_aov::1.0 HDA generating Nuke-ready STMap
+  1509→  [ ] STMap uses libcinema_optics.h distortion functions directly
+  1510→  [ ] All HDAs testable independently outside camera rig
+  1511→
+  1512→TESTS:
+  1513→  [ ] test_flare_11_blade — 11-sided polygonal ghost pattern visible
+  1514→  [ ] test_noise_at_native_iso — minimal noise at EI 800
+  1515→  [ ] test_noise_at_3200 — visible grain increase at 4× native
+  1516→  [ ] test_stmap_roundtrip — distort→STMap→Nuke undistort: <0.5px error
+  1517→```
+  1518→
+  1519→---
+  1520→
+  1521→## Integration: Updated Project Structure
+  1522→
+  1523→```
+  1524→$CINEMA_CAMERA_PATH/
+  1525→├── hda/
+  1526→│   ├── cinema_camera_rig_2.0.hda              # Top orchestrator (LOP) — UPDATED
+  1527→│   ├── bodies/
+  1528→│   │   └── cinema_alexa35_body_2.0.hda
+  1529→│   ├── lenses/
+  1530→│   │   └── cinema_cooke_anamorphic_2.0.hda
+  1531→│   ├── render/
+  1532→│   │   └── cinema_karma_setup_2.0.hda         # UPDATED: binds CVEX lens shader
+  1533→│   ├── chops/                                  # ← NEW (v4.0)
+  1534→│   │   └── cinema_chops_biomechanics_1.0.hda
+  1535→│   └── post/
+  1536→│       ├── cinema_cop_distortion_1.0.hda       # v3.0 (unchanged)
+  1537→│       ├── cinema_cop_chromatic_ab_1.0.hda     # v3.0 (unchanged)
+  1538→│       ├── cinema_cop_vignette_1.0.hda         # v3.0 (unchanged)
+  1539→│       ├── cinema_cop_anamorphic_flare_2.0.hda # ← NEW (replaces streak)
+  1540→│       ├── cinema_cop_sensor_noise_1.0.hda     # ← NEW (replaces grain)
+  1541→│       ├── cinema_cop_color_grade_1.0.hda      # v3.0 (unchanged)
+  1542→│       └── cinema_cop_stmap_aov_1.0.hda        # ← NEW
+  1543→├── vex/
+  1544→│   ├── libcinema_optics.h                      # EXTENDED: dynamic squeeze functions
+  1545→│   └── karma_cinema_lens.vfl                   # ← NEW: CVEX lens shader source
+  1546→├── python/
+  1547→│   └── cinema_camera/
+  1548→│       ├── __init__.py
+  1549→│       ├── protocols.py                        # EXTENDED: MechanicalSpec, SqueezeBreathing
+  1550→│       ├── registry.py                         # Unchanged
+  1551→│       ├── optics_engine.py                    # Unchanged
+  1552→│       ├── usd_builder.py                      # REFACTORED: nested Xform rig + EXR metadata
+  1553→│       ├── karma_lens_shader.py                # ← NEW: CVEX shader binding
+  1554→│       ├── biomechanics.py                     # ← NEW: CHOPs parameter derivation
+  1555→│       ├── i_technology.py                     # Unchanged
+  1556→│       ├── post_pipeline.py                    # UPDATED: v4.0 effect chain
+  1557→│       ├── bodies/
+  1558→│       │   ├── __init__.py
+  1559→│       │   └── alexa35.py                      # Unchanged
+  1560→│       └── lenses/
+  1561→│           ├── __init__.py
+  1562→│           └── cooke_anamorphic.py             # UPDATED: v4.0 JSON parser
+  1563→├── lenses/
+  1564→│   ├── cooke_ana_i_s35_50mm.json              # UPDATED: v4.0 JSON with mechanics
+  1565→│   ├── cooke_ana_i_s35_300mm.json             # UPDATED: v4.0 JSON with mechanics
+  1566→│   └── _schema_v4.json                         # ← NEW: v4.0 JSON schema
+  1567→├── tests/
+  1568→│   ├── test_protocols.py                       # EXTENDED: MechanicalSpec tests
+  1569→│   ├── test_optics_engine.py                   # EXTENDED: dynamic squeeze tests
+  1570→│   ├── test_registry.py                        # Unchanged
+  1571→│   ├── test_biomechanics.py                    # ← NEW
+  1572→│   ├── test_usd_rig_hierarchy.py               # ← NEW
+  1573→│   ├── test_exr_metadata.py                    # ← NEW
+  1574→│   ├── test_cvex_lens_shader.py                # ← NEW
+  1575→│   ├── test_fov_accuracy.hip
+  1576→│   ├── test_distortion_stmap.hip
+  1577→│   └── test_dof_render.hip
+  1578→└── README.md
+  1579→```
+  1580→
+  1581→---
+  1582→
+  1583→## Execution Plan: Agent Team Task Sequencing
+  1584→
+  1585→### Phase 1: Foundation (Day 1-2) — AGENT α solo
+  1586→
+  1587→```
+  1588→TASK 1.1: GearRingSpec + MechanicalSpec dataclasses
+  1589→TASK 1.2: SqueezeBreathingCurve dataclass
+  1590→TASK 1.3: LensSpec v4.0 extension (backwards-compatible)
+  1591→TASK 1.4: LensState v4.0 extension (effective_squeeze property)
+  1592→TASK 1.5: JSON schema v4.0 + Cooke 50mm/300mm data files
+  1593→TASK 1.6: Updated from_json() parser
+  1594→TASK 1.7: Protocol conformance tests
+  1595→
+  1596→GATE: All v3.0 tests pass + new v4.0 protocol tests pass
+  1597→```
+  1598→
+  1599→### Phase 2: Parallel Build (Day 3-5) — All agents
+  1600→
+  1601→```
+  1602→AGENT β (USD):
+  1603→  TASK 2.1: build_usd_camera_rig() with nested Xform hierarchy
+  1604→  TASK 2.2: Backwards-compatible build_usd_camera() wrapper
+  1605→  TASK 2.3: Extended configure_render_product() with EXR metadata
+  1606→  TASK 2.4: USD hierarchy tests + usdchecker validation
+  1607→
+  1608→AGENT γ (VEX/CVEX):
+  1609→  TASK 2.5: co_evaluate_squeeze_curve() in libcinema_optics.h
+  1610→  TASK 2.6: co_apply_anamorphic_distortion() with dynamic squeeze
+  1611→  TASK 2.7: karma_cinema_lens.vfl — CVEX lens shader
+  1612→  TASK 2.8: karma_lens_shader.py — USD binding
+  1613→  TASK 2.9: vcc compilation test
+  1614→
+  1615→AGENT δ (CHOPs/COP):
+  1616→  TASK 2.10: BiomechanicsParams + derive_biomechanics()
+  1617→  TASK 2.11: cinema::chops_biomechanics::1.0 HDA
+  1618→  TASK 2.12: cinema::cop_anamorphic_flare::2.0 HDA (FFT convolution)
+  1619→  TASK 2.13: cinema::cop_sensor_noise::1.0 HDA (dual-gain model)
+  1620→  TASK 2.14: cinema::cop_stmap_aov::1.0 HDA
+  1621→
+  1622→GATE: Each agent's tests pass independently
+  1623→```
+  1624→
+  1625→### Phase 3: Integration (Day 6-7) — ORCHESTRATOR
+  1626→
+  1627→```
+  1628→TASK 3.1: Wire top-level HDA — connect all v4.0 components
+  1629→TASK 3.2: CVEX shader binds to USD attributes from build_usd_camera_rig()
+  1630→TASK 3.3: CHOPs reads combinedWeightKg from USD → drives FluidHead
+  1631→TASK 3.4: Copernicus pipeline reads effective_squeeze from USD
+  1632→TASK 3.5: EXR metadata roundtrip test (render → read headers → validate)
+  1633→TASK 3.6: Full regression: all v3.0 + v4.0 tests pass
+  1634→TASK 3.7: Performance benchmarks vs targets
+  1635→
+  1636→GATE: Full pipeline functional, benchmarks met
+  1637→```
+  1638→
+  1639→### Phase 4: Polish (Day 8) — All agents
+  1640→
+  1641→```
+  1642→TASK 4.1: HDA parameter UI polish (labels, tooltips, folders)
+  1643→TASK 4.2: Viewport overlay for entrance pupil visualization
+  1644→TASK 4.3: Documentation update
+  1645→TASK 4.4: Example .hip file with animated focus pull showing Mumps
+  1646→```
+  1647→
+  1648→---
+  1649→
+  1650→## Performance Targets
+  1651→
+  1652→| Metric | v3.0 Target | v4.0 Target | Note |
+  1653→|--------|-------------|-------------|------|
+  1654→| Viewport | 60fps | 60fps | CHOPs must not drop frames |
+  1655→| Optical calcs | <1ms | <1ms | Dynamic squeeze adds negligible cost |
+  1656→| Bokeh map | <100ms | <100ms | Unchanged |
+  1657→| STMap gen (4K) | <200ms | <200ms | Now also available as COP AOV |
+  1658→| Karma preview | <30s | <35s | CVEX lens shader adds ~15% overhead |
+  1659→| Post pipeline (4K) | <5s/frame | <8s/frame | FFT flare is more expensive |
+  1660→| Biomechanics solve | N/A | <0.1ms/frame | CHOPs spring/lag is cheap |
+  1661→| EXR metadata write | N/A | <1ms | Pure attribute authoring |
+  1662→
+  1663→## Accuracy Targets
+  1664→
+  1665→| Metric | v3.0 Target | v4.0 Target | Note |
+  1666→|--------|-------------|-------------|------|
+  1667→| FOV | ±0.1° vs ARRI sim | ±0.1° | Unchanged |
+  1668→| DOF | ±5% vs ASC tables | ±5% | Unchanged |
+  1669→| Distortion STMap | <0.5px error | <0.5px | Now validated CVEX↔COP |
+  1670→| Color | ΔE < 1.0 ACES | ΔE < 1.0 | Unchanged |
+  1671→| Dynamic squeeze | N/A | ±0.02 vs Cooke spec | New |
+  1672→| Entrance pupil | N/A | ±1mm vs mfr spec | New |
+  1673→| Noise at native ISO | N/A | SNR within 3dB of Alexa | New |
+  1674→
+  1675→---
+  1676→
+  1677→## Cross-Agent Interface Contracts
+  1678→
+  1679→### Contract 1: AGENT α → AGENT β
+  1680→```
+  1681→LensState.entrance_pupil_offset_cm → USD cinema:rig:entrancePupilOffsetCm
+  1682→LensState.effective_squeeze → USD cinema:rig:effectiveSqueeze
+  1683→LensState.rig_weight_kg → USD cinema:rig:combinedWeightKg
+  1684→LensState.to_usd_dict() → all cinema:lens:* attributes
+  1685→```
+  1686→
+  1687→### Contract 2: AGENT α → AGENT γ
+  1688→```
+  1689→LensSpec.squeeze_breathing.evaluate(focus_m) → effective_squeeze float
+  1690→LensSpec.mechanics.entrance_pupil_offset_mm → entrance_pupil_offset_cm (÷10)
+  1691→LensSpec.distortion → CO_DistortionCoeffs struct mapping
+  1692→```
+  1693→
+  1694→### Contract 3: AGENT β → AGENT γ
+  1695→```
+  1696→USD cinema:rig:effectiveSqueeze → CVEX shader effective_squeeze param
+  1697→USD cinema:rig:entrancePupilOffsetCm → CVEX shader entrance_pupil_offset_cm
+  1698→USD horizontalAperture → CVEX shader sensor_width_mm
+  1699→USD cinema:lens:distortion:* → CVEX shader dist_* params
+  1700→```
+  1701→
+  1702→### Contract 4: AGENT β → AGENT δ
+  1703→```
+  1704→USD cinema:rig:combinedWeightKg → CHOPs spring/lag solver damping
+  1705→USD FluidHead xformOp:rotateXYZ → CHOPs export target
+  1706→```
+  1707→
+  1708→### Contract 5: AGENT α → AGENT δ
+  1709→```
+  1710→MechanicalSpec.weight_kg → derive_biomechanics() lens_weight
+  1711→MechanicalSpec.length_mm → moment arm calculation
+  1712→LensSpec.iris_blades → FFT flare kernel shape
+  1713→MechanicalSpec.front_diameter_mm → flare ghost scale
+  1714→CameraState.exposure_index → sensor noise amplification
+  1715→SensorSpec.native_iso → sensor noise baseline
+  1716→```
+  1717→

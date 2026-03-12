@@ -1,0 +1,161 @@
+---
+title: VEX Data Types and Conversions
+category: vex_reference
+subcategory: types
+keywords: [vex, type, conversion, cast, int, float, vector, matrix, quaternion, string, array]
+agent_relevance:
+  VexAuditor: 0.90
+  Librarian: 0.75
+  GraphTracer: 0.3
+related_documents:
+  - path: vex_reference/fundamentals.md
+    reason: "Type declarations and @-prefix syntax"
+  - path: vex_reference/attributes.md
+    reason: "Attribute type system"
+common_queries:
+  - "VEX data types"
+  - "How to convert types in VEX"
+  - "What is vector4 in VEX?"
+  - "Matrix types in VEX"
+---
+
+# VEX Data Types and Conversions
+
+## Type Hierarchy
+
+| Type | Size | Description | Literal Example |
+|------|------|-------------|-----------------|
+| `int` | 4 bytes | 32-bit integer | `42`, `-1`, `0xFF` |
+| `float` | 4 bytes | 32-bit float | `3.14`, `1e-5`, `.5` |
+| `vector2` | 8 bytes | 2 floats | `{0.5, 0.5}` |
+| `vector` | 12 bytes | 3 floats (xyz/rgb) | `{1, 2, 3}` |
+| `vector4` | 16 bytes | 4 floats (quaternion/rgba) | `{0, 0, 0, 1}` |
+| `matrix2` | 16 bytes | 2x2 matrix | `ident()` |
+| `matrix3` | 36 bytes | 3x3 matrix (rotation/scale) | `ident()` |
+| `matrix` | 64 bytes | 4x4 matrix (full transform) | `ident()` |
+| `string` | varies | UTF-8 string | `"hello"` |
+| `dict` | varies | Key-value dictionary | `set("k", "v")` |
+
+## Implicit Conversions
+
+VEX promotes types automatically in expressions:
+
+```
+int -> float -> vector2 -> vector -> vector4
+                                  \-> matrix3 -> matrix
+```
+
+```vex
+// int to float (automatic)
+float f = 5;            // f = 5.0
+
+// float to vector (broadcast)
+vector v = 2.0;         // v = {2, 2, 2}
+
+// int/float to vector
+vector v = set(1, 2, 3);
+
+// vector to vector4 (w=0)
+vector4 q = vector4(v); // q = {v.x, v.y, v.z, 0}
+```
+
+## Explicit Conversions
+
+```vex
+// Float to int (truncate)
+int i = int(3.7);            // i = 3
+int i = (int)3.7;            // Same
+
+// Int to float
+float f = float(42);         // f = 42.0
+
+// Vector component access
+float x = v.x;               // or v[0]
+float y = v.y;               // or v[1]
+float z = v.z;               // or v[2]
+
+// Construct vector from components
+vector v = set(x, y, z);
+
+// Vector4 component access
+float w = q.w;                // or q[3]
+
+// Matrix from vectors (columns)
+matrix3 m = set(xaxis, yaxis, zaxis);
+
+// String conversions
+string s = itoa(42);         // "42"
+string s = sprintf("%g", 3.14);  // "3.14"
+int i = atoi("42");          // 42
+float f = atof("3.14");      // 3.14
+
+// Array type conversion
+float fs[] = {1.0, 2.0, 3.0};
+int is[] = {};
+foreach (float f; fs) append(is, int(f));
+```
+
+## Quaternion Operations
+
+Quaternions are stored as `vector4` with (x, y, z, w) layout:
+
+```vex
+// Identity quaternion (no rotation)
+vector4 q = {0, 0, 0, 1};
+
+// From axis-angle
+vector4 q = quaternion(radians(90), {0, 1, 0});  // 90 deg around Y
+
+// From Euler angles
+vector4 q = eulertoquaternion(radians(rot), XFORM_XYZ);
+
+// From matrix3
+matrix3 m = lookat({0,0,0}, {0,0,1});
+vector4 q = quaternion(m);
+
+// Apply rotation
+vector rotated = qrotate(q, @P);
+
+// Combine rotations
+vector4 q_combined = qmultiply(q1, q2);
+
+// Interpolate (spherical)
+vector4 q_blend = slerp(q1, q2, chf("blend"));
+
+// Invert
+vector4 q_inv = qinvert(q);
+```
+
+## Matrix Operations
+
+```vex
+// Identity
+matrix m = ident();
+
+// Build from components
+matrix m = maketransform(XFORM_TRS, XFORM_XYZ,
+    translate, rotate, scale);
+
+// Extract components
+vector t, r, s;
+cracktransform(XFORM_TRS, XFORM_XYZ, {0,0,0}, m, t, r, s);
+
+// Transform point
+vector world_pos = @P * m;
+
+// Transform direction (no translate)
+matrix3 m3 = matrix3(m);
+vector world_dir = @N * m3;
+
+// Invert
+matrix inv = invert(m);
+
+// Look-at
+matrix3 rot = lookat(from_pos, to_pos);
+
+// Rotation between two vectors
+matrix3 rot = dihedral(vec_a, vec_b);
+```
+
+---
+*Houdini 21 VEX Reference -- Types*

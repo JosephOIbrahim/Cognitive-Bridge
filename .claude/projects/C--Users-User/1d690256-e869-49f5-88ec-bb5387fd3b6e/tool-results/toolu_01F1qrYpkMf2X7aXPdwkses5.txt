@@ -1,0 +1,263 @@
+C:\Users\User\Synapse\python\synapse\server\handlers.py-418-        """Handle ping command."""
+C:\Users\User\Synapse\python\synapse\server\handlers.py-419-        return {
+C:\Users\User\Synapse\python\synapse\server\handlers.py-420-            "pong": True,
+C:\Users\User\Synapse\python\synapse\server\handlers.py:421:            "timestamp": time.time(),
+C:\Users\User\Synapse\python\synapse\server\handlers.py-422-            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\handlers.py-423-        }
+C:\Users\User\Synapse\python\synapse\server\handlers.py-424-
+--
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-115-        """Health probe -- always succeeds, bypasses all checks."""
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-116-        return {
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-117-            "pong": True,
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py:118:            "timestamp": time.time(),
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-119-            "protocol_version": PROTOCOL_VERSION,
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-120-        }
+C:\Users\User\Synapse\python\synapse\server\api_adapter.py-121-
+--
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-135-
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-136-        temp_dir = Path(hou.text.expandString("$HOUDINI_TEMP_DIR"))
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-137-        ext = "jpg" if fmt == "jpeg" else "png"
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py:138:        timestamp = int(time.time() * 1000)
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-139-        # Flipbook requires $F4 frame pattern in output path
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-140-        out_pattern = str(temp_dir / f"synapse_cap_{timestamp}.$F4.{ext}")
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-141-
+--
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-229-
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-230-            # Output to temp JPEG (AI preview, not final EXR)
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-231-            temp_dir = Path(hou.text.expandString("$HOUDINI_TEMP_DIR"))
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py:232:            timestamp = int(time.time() * 1000)
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-233-            out_path = str(temp_dir / f"synapse_render_{timestamp}.jpg")
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-234-
+C:\Users\User\Synapse\python\synapse\server\handlers_render.py-235-            cur = int(hou.frame()) if frame is None else int(frame)
+--
+C:\Users\User\Synapse\python\synapse\memory\scene_memory.py-829-                issues.append(f"{name}: Corrupted - {e}")
+C:\Users\User\Synapse\python\synapse\memory\scene_memory.py-830-                # Backup corrupted file
+C:\Users\User\Synapse\python\synapse\memory\scene_memory.py-831-                import shutil
+C:\Users\User\Synapse\python\synapse\memory\scene_memory.py:832:                backup = path + f".corrupted.{int(time.time())}"
+C:\Users\User\Synapse\python\synapse\memory\scene_memory.py-833-                shutil.move(path, backup)
+C:\Users\User\Synapse\python\synapse\memory\scene_memory.py-834-                issues.append(f"{name}: Backed up to {backup}")
+C:\Users\User\Synapse\python\synapse\memory\scene_memory.py-835-                if name == "agent.usd":
+--
+C:\Users\User\Synapse\python\synapse\core\protocol.py-163-            payload=parsed.get("payload", {}),
+C:\Users\User\Synapse\python\synapse\core\protocol.py-164-            sequence=parsed.get("sequence", 0),
+C:\Users\User\Synapse\python\synapse\core\protocol.py-165-            # He2025: preserve wire timestamp; 0.0 sentinel = "not provided"
+C:\Users\User\Synapse\python\synapse\core\protocol.py:166:            # (avoids injecting nondeterministic time.time() on deserialization)
+C:\Users\User\Synapse\python\synapse\core\protocol.py-167-            timestamp=parsed.get("timestamp", 0.0),
+C:\Users\User\Synapse\python\synapse\core\protocol.py-168-            protocol_version=parsed.get("protocol_version", "1.0.0")
+C:\Users\User\Synapse\python\synapse\core\protocol.py-169-        )
+--
+C:\Users\User\Synapse\python\synapse\session\tracker.py-53-        if self.ended_at:
+C:\Users\User\Synapse\python\synapse\session\tracker.py-54-            end = time.mktime(time.strptime(self.ended_at, "%Y-%m-%dT%H:%M:%SZ"))
+C:\Users\User\Synapse\python\synapse\session\tracker.py-55-        else:
+C:\Users\User\Synapse\python\synapse\session\tracker.py:56:            end = time.time()
+C:\Users\User\Synapse\python\synapse\session\tracker.py-57-        start = time.mktime(time.strptime(self.started_at, "%Y-%m-%dT%H:%M:%SZ"))
+C:\Users\User\Synapse\python\synapse\session\tracker.py-58-        return end - start
+C:\Users\User\Synapse\python\synapse\session\tracker.py-59-
+--
+C:\Users\User\Synapse\python\synapse\session\tracker.py-131-        Returns:
+C:\Users\User\Synapse\python\synapse\session\tracker.py-132-            Session ID
+C:\Users\User\Synapse\python\synapse\session\tracker.py-133-        """
+C:\Users\User\Synapse\python\synapse\session\tracker.py:134:        session_id = f"sess_{int(time.time())}_{client_id}"
+C:\Users\User\Synapse\python\synapse\session\tracker.py-135-
+C:\Users\User\Synapse\python\synapse\session\tracker.py-136-        session = SynapseSession(
+C:\Users\User\Synapse\python\synapse\session\tracker.py-137-            session_id=session_id,
+--
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-271-        if crypto:
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-272-            content = crypto.encrypt_file_content(content)
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-273-        self.decisions_file.write_text(content, encoding='utf-8')
+C:\Users\User\Synapse\python\synapse\memory\markdown.py:274:        self._last_sync['decisions'] = time.time()
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-275-
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-276-    def read_context(self) -> str:
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-277-        """Read the current context.md content."""
+--
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-289-        if crypto:
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-290-            content = crypto.encrypt_file_content(content)
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-291-        self.context_file.write_text(content, encoding='utf-8')
+C:\Users\User\Synapse\python\synapse\memory\markdown.py:292:        self._last_sync['context'] = time.time()
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-293-
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-294-    def get_context_for_ai(self) -> str:
+C:\Users\User\Synapse\python\synapse\memory\markdown.py-295-        """
+--
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-201-                return result
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-202-
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-203-            # --- Render ---
+C:\Users\User\Synapse\python\synapse\server\render_farm.py:204:            t0 = time.time()
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-205-            try:
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-206-                render_resp = self._cb.render_frame({
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-207-                    "node": rop,
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-208-                    "frame": frame,
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-209-                })
+C:\Users\User\Synapse\python\synapse\server\render_farm.py:210:                result.render_time = round_float(time.time() - t0)
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-211-                result.image_path = render_resp.get("image_path", "")
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-212-            except Exception as e:
+C:\Users\User\Synapse\python\synapse\server\render_farm.py:213:                result.render_time = round_float(time.time() - t0)
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-214-                result.error = str(e)
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-215-                result.success = False
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-216-                return result
+--
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-221-                return result
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-222-
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-223-            # --- Validate ---
+C:\Users\User\Synapse\python\synapse\server\render_farm.py:224:            t1 = time.time()
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-225-            try:
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-226-                val_resp = self._cb.validate_frame({
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-227-                    "image_path": result.image_path,
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-228-                })
+C:\Users\User\Synapse\python\synapse\server\render_farm.py:229:                result.validate_time = round_float(time.time() - t1)
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-230-            except Exception as e:
+C:\Users\User\Synapse\python\synapse\server\render_farm.py:231:                result.validate_time = round_float(time.time() - t1)
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-232-                # Validation error is not a render failure
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-233-                logger.warning("Validation error on frame %d: %s", frame, e)
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-234-                result.success = True
+--
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-373-            total_frames=total,
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-374-            rop_path=rop,
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-375-        )
+C:\Users\User\Synapse\python\synapse\server\render_farm.py:376:        wall_start = time.time()
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-377-
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-378-        # Phase 0: Scene classification + memory warmup
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-379-        self._scene_tags = self._classify_scene()
+--
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-462-                        pass
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-463-
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-464-        # Phase 2: Finalize
+C:\Users\User\Synapse\python\synapse\server\render_farm.py:465:        report.total_wall_time = round_float(time.time() - wall_start)
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-466-        self._running = False
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-467-
+C:\Users\User\Synapse\python\synapse\server\render_farm.py-468-        # Write report and send notifications
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-53-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-54-        # Global bucket
+C:\Users\User\Synapse\python\synapse\server\resilience.py-55-        self._tokens = float(bucket_size)
+C:\Users\User\Synapse\python\synapse\server\resilience.py:56:        self._last_refill = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-57-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-58-        # Per-client buckets: client_id -> (tokens, last_refill)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-59-        self._client_buckets: Dict[str, Tuple[float, float]] = {}
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-97-        """
+C:\Users\User\Synapse\python\synapse\server\resilience.py-98-        with self._lock:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-99-            self._total_requests += 1
+C:\Users\User\Synapse\python\synapse\server\resilience.py:100:            now = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-101-            self._refill_global(now)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-102-            client_tokens = self._refill_client(client_id, now)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-103-
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-212-        """Check if we should transition states."""
+C:\Users\User\Synapse\python\synapse\server\resilience.py-213-        if self._state == CircuitState.OPEN:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-214-            if self._last_failure_time:
+C:\Users\User\Synapse\python\synapse\server\resilience.py:215:                elapsed = time.time() - self._last_failure_time
+C:\Users\User\Synapse\python\synapse\server\resilience.py-216-                if elapsed >= self.config.timeout_seconds:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-217-                    self._transition_to(CircuitState.HALF_OPEN)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-218-
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-233-        self._state_history.append({
+C:\Users\User\Synapse\python\synapse\server\resilience.py-234-            "from": old_state.value,
+C:\Users\User\Synapse\python\synapse\server\resilience.py-235-            "to": new_state.value,
+C:\Users\User\Synapse\python\synapse\server\resilience.py:236:            "time": time.time(),
+C:\Users\User\Synapse\python\synapse\server\resilience.py-237-            "failures": self._failure_count
+C:\Users\User\Synapse\python\synapse\server\resilience.py-238-        })
+C:\Users\User\Synapse\python\synapse\server\resilience.py-239-
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-261-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-262-            elif self._state == CircuitState.OPEN:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-263-                if self._last_failure_time:
+C:\Users\User\Synapse\python\synapse\server\resilience.py:264:                    remaining = self.config.timeout_seconds - (time.time() - self._last_failure_time)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-265-                    return False, {
+C:\Users\User\Synapse\python\synapse\server\resilience.py-266-                        "state": "open",
+C:\Users\User\Synapse\python\synapse\server\resilience.py-267-                        "retry_after": max(0, remaining),
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-272-            else:  # HALF_OPEN
+C:\Users\User\Synapse\python\synapse\server\resilience.py-273-                if self._half_open_calls >= self.config.half_open_max_calls:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-274-                    # Reset to OPEN to retry recovery cycle
+C:\Users\User\Synapse\python\synapse\server\resilience.py:275:                    self._last_failure_time = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-276-                    self._transition_to(CircuitState.OPEN)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-277-                    return False, {
+C:\Users\User\Synapse\python\synapse\server\resilience.py-278-                        "state": "open",
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-297-        """Record a failed call."""
+C:\Users\User\Synapse\python\synapse\server\resilience.py-298-        with self._lock:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-299-            self._failure_count += 1
+C:\Users\User\Synapse\python\synapse\server\resilience.py:300:            self._last_failure_time = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-301-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-302-            if self._state == CircuitState.HALF_OPEN:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-303-                # Any failure in half-open goes back to open
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-309-    def force_open(self):
+C:\Users\User\Synapse\python\synapse\server\resilience.py-310-        """Manually trip the circuit."""
+C:\Users\User\Synapse\python\synapse\server\resilience.py-311-        with self._lock:
+C:\Users\User\Synapse\python\synapse\server\resilience.py:312:            self._last_failure_time = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-313-            self._transition_to(CircuitState.OPEN)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-314-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-315-    def force_close(self):
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-435-                health.is_healthy = False
+C:\Users\User\Synapse\python\synapse\server\resilience.py-436-                health.last_error = error
+C:\Users\User\Synapse\python\synapse\server\resilience.py-437-                health.error_count += 1
+C:\Users\User\Synapse\python\synapse\server\resilience.py:438:                health.last_check = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-439-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-440-                logger.warning("Port %s marked unhealthy: %s", port, error)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-441-
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-452-            if health:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-453-                health.is_healthy = True
+C:\Users\User\Synapse\python\synapse\server\resilience.py-454-                health.last_error = None
+C:\Users\User\Synapse\python\synapse\server\resilience.py:455:                health.last_check = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-456-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-457-                logger.info("Port %s recovered", port)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-458-
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-528-        self._on_freeze = on_freeze
+C:\Users\User\Synapse\python\synapse\server\resilience.py-529-        self._on_recover = on_recover
+C:\Users\User\Synapse\python\synapse\server\resilience.py-530-
+C:\Users\User\Synapse\python\synapse\server\resilience.py:531:        self._last_heartbeat = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-532-        self._is_frozen = False
+C:\Users\User\Synapse\python\synapse\server\resilience.py-533-        self._running = False
+C:\Users\User\Synapse\python\synapse\server\resilience.py-534-        self._thread: Optional[threading.Thread] = None
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-565-        """Launch monitor thread on first heartbeat (lazy start)."""
+C:\Users\User\Synapse\python\synapse\server\resilience.py-566-        if self._thread is not None:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-567-            return
+C:\Users\User\Synapse\python\synapse\server\resilience.py:568:        self._last_heartbeat = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-569-        self._thread = threading.Thread(
+C:\Users\User\Synapse\python\synapse\server\resilience.py-570-            target=self._monitor_loop,
+C:\Users\User\Synapse\python\synapse\server\resilience.py-571-            daemon=True,
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-585-        # Lazy start: first heartbeat spins up the monitor thread
+C:\Users\User\Synapse\python\synapse\server\resilience.py-586-        self._ensure_started()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-587-
+C:\Users\User\Synapse\python\synapse\server\resilience.py:588:        now = time.time()
+C:\Users\User\Synapse\python\synapse\server\resilience.py-589-        with self._lock:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-590-            latency = now - self._last_heartbeat
+C:\Users\User\Synapse\python\synapse\server\resilience.py-591-            self._latencies.append(latency)
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-609-            time.sleep(self.heartbeat_interval)
+C:\Users\User\Synapse\python\synapse\server\resilience.py-610-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-611-            with self._lock:
+C:\Users\User\Synapse\python\synapse\server\resilience.py:612:                elapsed = time.time() - self._last_heartbeat
+C:\Users\User\Synapse\python\synapse\server\resilience.py-613-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-614-                if elapsed > self.freeze_threshold and not self._is_frozen:
+C:\Users\User\Synapse\python\synapse\server\resilience.py-615-                    self._is_frozen = True
+--
+C:\Users\User\Synapse\python\synapse\server\resilience.py-639-                "total_heartbeats": self._total_heartbeats,
+C:\Users\User\Synapse\python\synapse\server\resilience.py-640-                "max_latency": self._max_latency,
+C:\Users\User\Synapse\python\synapse\server\resilience.py-641-                "avg_latency": avg_latency,
+C:\Users\User\Synapse\python\synapse\server\resilience.py:642:                "last_heartbeat_ago": time.time() - self._last_heartbeat
+C:\Users\User\Synapse\python\synapse\server\resilience.py-643-            }
+C:\Users\User\Synapse\python\synapse\server\resilience.py-644-
+C:\Users\User\Synapse\python\synapse\server\resilience.py-645-
+--
+C:\Users\User\Synapse\python\synapse\server\render_notify.py-254-        "total_frames": total_frames,
+C:\Users\User\Synapse\python\synapse\server\render_notify.py-255-        "progress": round_float(frame / max(total_frames, 1)),
+C:\Users\User\Synapse\python\synapse\server\render_notify.py-256-        "status": status,
+C:\Users\User\Synapse\python\synapse\server\render_notify.py:257:        "timestamp": round_float(time.time()),
+C:\Users\User\Synapse\python\synapse\server\render_notify.py-258-    }
+C:\Users\User\Synapse\python\synapse\server\render_notify.py-259-    if details:
+C:\Users\User\Synapse\python\synapse\server\render_notify.py-260-        event["details"] = details
+--
+C:\Users\User\Synapse\python\synapse\mcp\session.py-34-    def __init__(self, session_id: str, client_info: dict):
+C:\Users\User\Synapse\python\synapse\mcp\session.py-35-        self.session_id = session_id
+C:\Users\User\Synapse\python\synapse\mcp\session.py-36-        self.client_info = client_info
+C:\Users\User\Synapse\python\synapse\mcp\session.py:37:        self.created_at = time.time()
+C:\Users\User\Synapse\python\synapse\mcp\session.py-38-        self.protocol_version = "2025-06-18"
+C:\Users\User\Synapse\python\synapse\mcp\session.py-39-        self.initialized = False
+C:\Users\User\Synapse\python\synapse\mcp\session.py-40-

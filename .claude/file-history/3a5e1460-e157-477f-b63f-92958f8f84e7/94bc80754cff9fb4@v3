@@ -1,0 +1,42 @@
+# Session Handover
+**Date:** 2026-02-27 18:30
+**Project:** Cinema Camera Rig v4.0 (Houdini 21)
+**Working directory:** C:\Users\User\OneDrive\Documents\houdini21.0
+
+## What Was Done This Session
+
+### Step 8: HDA Build Phase (COMPLETE)
+
+All 4 HDAs built and verified via Synapse:
+
+| HDA | File | Status |
+|-----|------|--------|
+| `cinema::chops_biomechanics::1.0` | `hda/chops/cinema_chops_biomechanics_1.0.hda` | Built + Loaded |
+| `cinema::cop_anamorphic_flare::2.0` | `hda/post/cinema_cop_anamorphic_flare_2.0.hda` | Built + Loaded |
+| `cinema::cop_sensor_noise::1.0` | `hda/post/cinema_cop_sensor_noise_1.0.hda` | Built + Loaded |
+| `cinema::cop_stmap_aov::1.0` | `hda/post/cinema_cop_stmap_aov_1.0.hda` | Built + Loaded |
+
+Preflight passed: Houdini 21.0.596, Copernicus available, HDA dirs ready.
+All 4 HDAs install via `hou.hda.installFile()` without error.
+
+## What's Next
+
+### Phase 3: Integration — Orchestrator HDA
+- Wire top-level `cinema::camera_rig::2.0` HDA referencing all 4 sub-HDAs
+- Cross-HDA wiring tests via Synapse
+- Full regression (pytest for Python, Synapse for HDA tests)
+
+### Phase 4: Polish
+- HDA parameter UI polish
+- Viewport overlay for entrance pupil
+- Example .hip file
+- Documentation
+
+## Prior Session Summary
+- Steps 0-3: Environment cleanup (nest_asyncio, path sync, wolfram_oracle patch)
+- Steps 5-7: All Wolfram phases pass (W1-W5)
+- wolfram_oracle.py: fully synchronous httpx.Client patch (no async)
+- synapse_runner.py: fixed SynapseClient API, response parsing
+
+## Blockers
+None. All gates passed through G4 (HDAs Built).

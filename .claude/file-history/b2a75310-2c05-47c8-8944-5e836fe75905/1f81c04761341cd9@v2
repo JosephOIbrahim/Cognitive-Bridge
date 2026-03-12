@@ -1,0 +1,23 @@
+---
+type: moc
+domain: tangents
+---
+# Tangents
+
+## Parked (needs triage)
+
+```dataview
+TABLE source_project, source_context, created
+FROM "_tangents"
+WHERE status = "parked"
+SORT created DESC
+```
+
+## Exploring
+
+```dataview
+TABLE source_project, created
+FROM "_tangents"
+WHERE status = "exploring"
+SORT created DESC
+```

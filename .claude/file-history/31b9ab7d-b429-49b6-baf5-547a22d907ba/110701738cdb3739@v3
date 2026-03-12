@@ -1,0 +1,568 @@
+/**
+ * Project Data Structure
+ * Single taxonomy: Disciplines only
+ * Work types: For filtering by category (creature, character, product, etc.)
+ */
+
+export type WorkType = 'product' | 'musicvideo' | 'film';
+
+export interface Project {
+  id: string;
+  slug: string;
+  title: string;
+  thumbnail: string;
+  videoId: string;
+  videoHash?: string; // Privacy hash for private Vimeo videos
+
+  // Descriptions (2-tier system)
+  gridDescription: string;  // ONE SENTENCE MAX - for homepage video grid
+  description: string;      // Full description - for project detail page (2 sentences preview + MORE INFO expansion)
+
+  // Single taxonomy - disciplines only
+  disciplines: string[];  // LIGHTING, DIRECTION, R&D, COMMISSIONS, EXPERIMENTAL, PHOTO, EVERYTHING
+
+  // Work categorization - for filtering
+  workTypes?: WorkType[];  // creature, character, environment, product, vehicle, fx
+
+  // Role attribution - clear "What I Did" for recruiters
+  myRole?: string;              // Lead Lighter, Lighting TD, etc.
+  responsibilities?: string[];  // Specific contributions
+
+  // Project details
+  credits?: string[];  // Team credits
+  technologies?: string[];  // Technologies used
+
+  // Grid layout hints
+  featured?: boolean;  // Larger grid item
+  isCinematic?: boolean;  // 2.39:1 aspect ratio video
+  startTime?: number;  // Video start time in seconds (optional)
+
+  // Enhanced metadata from resume
+  year?: string;           // Production year
+  studio?: string;         // Studio/company
+  client?: string;         // Client name
+  role?: string;           // Your role (legacy, use myRole for display)
+  shotCount?: number;      // Number of shots
+  supervisor?: string;     // Supervisor name
+  pipeline?: string[];     // Software/tools used
+  projectType?: string;    // Feature Film, Commercial, R&D, etc.
+
+  // Additional videos for project detail page
+  breakdownVideos?: Array<{
+    videoId: string;
+    videoHash?: string;
+    title: string;
+    description?: string;
+  }>;
+
+  // Insights - Process/creative thinking fields
+  /** Visual/conceptual intent behind the lighting approach */
+  lightingIntent?: string;
+
+  /** The core creative or technical challenge */
+  challenge?: string;
+
+  /** Strategic approach used to solve the challenge */
+  approach?: string;
+
+  /** Visual reference that inspired the work */
+  reference?: string;
+}
+
+export const projects: Project[] = [
+  {
+    id: '2',
+    slug: 'general-reel',
+    title: '2025 Reel',
+    thumbnail: '',
+    videoId: '1057290380',
+    videoHash: '2ea47db6e0',
+    gridDescription: 'Sixteen years of solving problems with light — film, commercials, real-time.',
+    description: 'The through-line is intentionality. Fur that feels tactile, products that feel precious, destruction that feels beautiful. Each clip earned its place by showing something the others don\'t.',
+    disciplines: ['look development', 'lighting'],
+    startTime: 1,
+    year: '2025',
+    role: 'Lighting Technical Director',
+    projectType: 'Demo Reel',
+    // No workType tag - this is a compilation reel
+    myRole: 'Lighting Technical Director',
+    responsibilities: [
+      'Hero character and creature lighting across all projects',
+      'Product visualization for Apple, consumer goods',
+      'Environment and atmosphere lighting',
+      'FX integration and volumetric lighting'
+    ],
+    credits: [
+      'Lighting TD: Joseph Ibrahim',
+      'Studios: Apple Marcom, Framestore, MPC, The Mill, Brand New School, Hornet',
+      'Clients: Apple, Disney, Warner Bros., Bell Canada, Hershey, Mondelez',
+      'Span: 2015-2025'
+    ],
+    technologies: ['Houdini', 'Solaris', 'Karma', 'Katana', 'Renderman', 'Unreal Engine 5', 'USD'],
+
+    // Process - Insights
+    lightingIntent: 'A reel is a promise — it says "this is what I can do for you." Every clip was chosen not just for visual impact, but to demonstrate range: creature work, product visualization, stylized animation, photoreal integration. The through-line is intentionality — light that serves the story, not light that shows off.',
+    challenge: 'Curating sixteen years of work into two minutes means killing darlings. The hardest part isn\'t finding good shots — it\'s finding shots that communicate capability quickly. Each clip needs to earn its place by showing something the others don\'t.',
+    approach: 'I organized by lighting challenge rather than chronology or client prestige. Fur, glass, metal, volumetrics, stylized, photoreal — the reel walks through different problems and solutions. The pacing mirrors how I think about projects: establish the world, reveal the detail, move on.',
+    reference: 'The reels of cinematographers like Roger Deakins and Bradford Young — they don\'t just show pretty images, they show range and intentionality. Also the portfolio presentations of studios like Framestore and MPC, which balance spectacle with craft.'
+  },
+  {
+    id: '2b',
+    slug: 'macmiller-hornet-balloonerism',
+    title: 'Mac Miller - Balloonerism',
+    thumbnail: '',
+    videoId: '1128510694',
+    // No videoHash - video is public
+    gridDescription: 'Fur characters that feel like stuffed animals you\'d actually want to hold.',
+    description: 'The lighting had to walk a line — soft but present, intimate but expansive. Mac\'s music lives in that liminal space between melancholy and hope. USD multi-camera workflow kept dozens of shots feeling like the same emotional world.',
+    disciplines: ['lighting', 'layout', 'music video'],
+    credits: [
+      // Production
+      'Production Co.: Hornet',
+      'Director: Samuel Jerome Mason',
+      'Executive Producers: Greg Bedard, Michael Feder, Hana Shimizu, Miller McCormick',
+      'Producer: Heather Hardin',
+      'Animation Director: Daniel Callaby',
+      'Editor: Minseok Kim',
+      'CG Supervisor: Richard Kim',
+      'Story: Sam Mason, Roland Kennedy',
+      '',
+      // Design
+      'Designers: Alejandro Diaz, Amalia Lage, JP Rooney, Kelechukwu Nwakudu, Laurie Herman, Margherita Premuroso, Matthew Corsillo, Mike Altman, Natalie Labarre, Sami Healy, Simone Noronha',
+      'Costume Designer: Karina Ochoa De Baker',
+      'Design Interns: Paris Powell, Patrick Sholar',
+      'Graphic Design Intern: Esther Yeseul Lee',
+      'Storyboards: Soren Bendt',
+      'Storyboard Editor: Joseph Comar',
+      '',
+      // Pipeline & Technical
+      'CG Technical Artist / Render TD: Joseph Chen',
+      'Pipeline: Natalie O\'Leary, Rui Zhu, Joseph Chen',
+      'Pipeline Development: Nikita Shtarkman',
+      '',
+      // Characters & Modeling
+      'Character Lead: Frank Lee',
+      'Modelers: David Vardanian, Giovani Kososki',
+      'CG Generalist: Angeline Rivera',
+      '',
+      // Titles
+      '— Titles —',
+      'Animators: Jay Asava, Jin Jindawitchu',
+      'Lighters: Christina Ku, Jonathan Lee, Joseph Ibrahim, Laney Lai, Natalia Perez Melendez, Nicole Noel, Rui Zhu, Saad Moosajee, Sam Mason, Weichieh Yu',
+      'FX Artists: Joseph Chen, Stephen Hallquist, Sam Mason, Rui Zhu',
+      'CFX: Natalie O\'Leary',
+      'Groom Lead: Jesus Fernandez',
+      'Talent Coordinator: Jon Chun',
+      'Director of Production: Karen Lawler',
+      'Head of Creative Development: Kristin Labriola',
+      'Head of Production: Dez Stavracos'
+    ],
+    technologies: ['Houdini 20.5+', 'Solaris', 'USD', 'Karma', 'Fur Rendering', 'Procedural Scene Assembly'],
+    year: '2024',
+    studio: 'Hornet Animation',
+    client: 'Mac Miller Estate',
+    role: 'Lighting/Layout Technical Director',
+    projectType: 'Music Video',
+    pipeline: ['Houdini 20.5+', 'Solaris', 'USD', 'Karma'],
+    workTypes: ['musicvideo'],
+    myRole: 'Lighting/Layout Technical Director',
+    responsibilities: [
+      'Hero fur character lighting across all scenes',
+      'USD multi-camera workflow for sequence consistency',
+      'Environment lighting and atmosphere',
+      'Fur shader collaboration with look dev'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'The film needed to feel like a waking dream — soft but present, intimate but expansive. Mac\'s music lives in that liminal space between melancholy and hope, so the lighting had to walk that line. Nothing harsh, nothing clinical. The fur characters needed to feel tactile and warm, like stuffed animals you\'d actually want to hold.',
+    challenge: 'Fur is notoriously difficult to light well. It absorbs light in unpredictable ways, and Karma\'s fur rendering required careful balance between physical accuracy and art direction. We also had dozens of shots across multiple environments that all needed to feel cohesive — different times of day, different moods, but the same emotional world.',
+    approach: 'I leaned heavily into USD\'s multi-camera workflow to maintain consistency. Rather than lighting each shot in isolation, I built environment-level lighting rigs that could be inherited across sequences. For the fur specifically, I spent a lot of time with rim lighting — it\'s what gives fur that soft, halo-like quality without flattening the forms.',
+    reference: 'Spike Jonze\'s "Her" was a touchstone — that film\'s use of warm, diffused light to create emotional intimacy. Also the work of cinematographer Bradford Young, who finds these impossibly soft gradients in natural light.'
+  },
+  {
+    id: '3',
+    slug: 'vision-pro-xr',
+    title: 'Apple Vision Pro',
+    thumbnail: '',
+    videoId: '840217278',
+    gridDescription: 'Making cold technology feel like something you\'d want to reach for.',
+    description: 'A headset is inherently cold — glass, aluminum, sensors. The lighting needed warmth without softness. Every surface reads as premium and precise, but the overall mood had to feel inviting, not sci-fi dystopia.',
+    disciplines: ['lighting', 'animation'],
+    credits: [
+      'Lighting TD: Joseph Ibrahim',
+      'Studio: Apple Marcom (Internal)',
+      'Client: Apple',
+      'Project: Vision Pro WWDC 2023 Reveal',
+      'Type: Product Launch / Keynote'
+    ],
+    year: '2023',
+    studio: 'Apple Marcom',
+    client: 'Apple',
+    role: 'Lighting Technical Director',
+    projectType: 'Product Launch / Keynote',
+    technologies: ['Real-time Rendering', 'Spatial Computing', 'Product Visualization'],
+    workTypes: ['product'],
+    myRole: 'Lighting Technical Director',
+    responsibilities: [
+      'Hero product lighting for WWDC reveal',
+      'Real-time lighting optimization for spatial computing demos',
+      'Material response and surface quality control'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'The goal was warmth without softness. A headset is inherently cold — glass, aluminum, sensors. The lighting needed to make it feel like something you\'d want to reach for, not something from a sci-fi dystopia. Every surface had to read as premium and precise, but the overall mood had to feel inviting.',
+    challenge: 'Real-time rendering constraints meant we couldn\'t hide behind render times. Every lighting decision had to hold up instantly, across environments that shift dynamically. The spatial computing demos required the product to feel grounded in real spaces while maintaining Apple\'s signature visual clarity.',
+    approach: 'I built the lighting in layers — a soft, warm environmental base that established comfort, then precise accent lighting that revealed the product\'s form language. The key was restraint: letting the materials speak rather than over-lighting to show detail.',
+    reference: 'Apple\'s own product photography set the bar — that clean, shadowless style that somehow still has depth. I studied how their retail environments use light to make products feel precious without feeling sterile.'
+  },
+  {
+    id: '9',
+    slug: 'bell-canada-hyperspace',
+    title: 'Bell Canada - Hyperspace',
+    thumbnail: '',
+    videoId: '1148742674',
+    videoHash: 'dbc7c2345b',
+    gridDescription: 'Selling extreme velocity through light alone — tunnels of energy you pass through.',
+    description: 'When everything\'s moving fast, traditional lighting cues break down — shadows blur, highlights streak. Volumetric effects carried a lot of the work. Light became a physical presence, not just illumination.',
+    disciplines: ['lighting', 'look development'],
+    credits: [
+      'VFX Artist/Lighting TD: Joseph Ibrahim',
+      'Studio: The Mill (NY)',
+      'Client: Bell Canada',
+      'Type: Commercial'
+    ],
+    startTime: 2,  // Skip black frames at start
+    year: '2025',
+    studio: 'The Mill',
+    client: 'Bell Canada',
+    role: 'VFX Artist / Lighting TD',
+    projectType: 'Commercial',
+    technologies: ['Volumetric Lighting', 'Motion Graphics', 'Photorealistic Integration'],
+    workTypes: ['product'],  // Primary: telecom brand product
+    myRole: 'VFX Artist / Lighting TD',
+    responsibilities: [
+      'Volumetric lighting and energy tunnel effects',
+      'Animated light source choreography',
+      'Environment atmosphere and mood'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'Hyperspace needed to feel fast and technological without being cold. The concept was about connectivity and speed — data moving at light speed — so the lighting had to convey motion and energy. But it also needed to feel aspirational, like a future you\'d want to live in rather than a sterile tech demo.',
+    challenge: 'Creating a sense of extreme velocity through lighting alone. When everything\'s moving fast, traditional lighting cues break down — shadows blur, highlights streak. We needed to sell speed while keeping the image readable and the brand message clear.',
+    approach: 'I used animated light sources that moved through the frame, creating the sensation that you\'re passing through tunnels of energy. Volumetric effects carried a lot of the work — light became a physical presence rather than just illumination. The color palette stayed warm despite the tech subject matter.',
+    reference: 'The light-trail sequences in Tron: Legacy, but warmer and more organic. Also some of the data visualization work by Universal Everything — they do this thing where abstract motion feels alive.'
+  },
+  {
+    id: '10',
+    slug: 'play-with-oreo',
+    title: 'Play with Oreo',
+    thumbnail: '',
+    videoId: '1148753697',
+    videoHash: '071bb2fc2c',
+    gridDescription: 'Every frame should make you want to reach for a cookie.',
+    description: 'Stylized food work walks a tightrope — too realistic and you see every crumb, too stylized and it stops looking edible. The cream filling needed special attention. It\'s what makes an Oreo an Oreo.',
+    disciplines: ['lighting', 'look development'],
+    credits: [
+      'VFX Artist/Lighting TD: Joseph Ibrahim',
+      'Studio: Brand New School',
+      'Client: Oreo / Mondelez',
+      'Type: Commercial'
+    ],
+    year: '2025',
+    studio: 'Brand New School',
+    client: 'Oreo / Mondelez',
+    role: 'VFX Artist / Lighting TD',
+    projectType: 'Commercial',
+    technologies: ['Stylized Lighting', 'Food Visualization', 'Animation Integration'],
+    workTypes: ['product'],
+    myRole: 'VFX Artist / Lighting TD',
+    responsibilities: [
+      'Hero product lighting for stylized food visualization',
+      'Cream filling subsurface and translucency',
+      'Playful colored rim lighting integration'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'Oreo\'s brand is about playfulness and joy — the ritual of twisting, dunking, enjoying. The lighting needed to feel like a sunny afternoon in an idealized world. Bright but not harsh, colorful but not garish. Every frame should make you want to reach for a cookie.',
+    challenge: 'Stylized food work walks a tightrope. Push too far toward realism and the cookie looks unappetizing — you see every crumb and imperfection. Push too stylized and it stops looking like something you\'d eat. Finding that sweet spot where it\'s obviously Oreo but elevated into this candy-colored wonderland.',
+    approach: 'I used a lot of bounce light and fill to keep shadows soft and friendly. The cream filling needed special attention — it\'s what makes an Oreo an Oreo, so getting that perfect white with just enough translucency was key. Colored rim lights added energy without competing with the product.',
+    reference: 'Brand New School\'s classic playful aesthetic, obviously. But also the color palettes of Wes Anderson films — that heightened, almost artificial prettiness that still feels warm and inviting.'
+  },
+  {
+    id: '2c',
+    slug: 'twizzlers-oz',
+    title: 'Twizzlers',
+    thumbnail: '',
+    videoId: '912634261',
+    gridDescription: 'Translucent candy is a nightmare to light — this one glows from within.',
+    description: 'Storybook world, Wizard of Oz inspired. The lighting needed that fairytale quality where everything glows from within. Not realistic at all, but emotionally true. The Twizzlers had to look delicious while feeling like characters.',
+    disciplines: ['lighting', 'look development'],
+    credits: [
+      'Lighting/Look Development TD: Joseph Ibrahim',
+      'Studio: Brand New School',
+      'Client: Twizzlers',
+      'Project: OZ Storybook Campaign',
+      'Type: Commercial'
+    ],
+    year: '2016',
+    studio: 'Brand New School',
+    client: 'Twizzlers',
+    role: 'Lighting / Look Development TD',
+    projectType: 'Commercial',
+    technologies: ['Subsurface Scattering', 'Stylized Lighting', 'Candy Visualization'],
+    workTypes: ['product'],  // Primary: candy product visualization
+    myRole: 'Lighting / Look Development TD',
+    responsibilities: [
+      'Translucent candy subsurface scattering development',
+      'Storybook environment lighting',
+      'Internal glow and jewel-like material quality'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'This was a storybook world — literally Wizard of Oz inspired — so the lighting needed that fairytale quality where everything glows from within. Not realistic at all, but emotionally true. The Twizzlers themselves needed to look delicious while also feeling like characters in this magical narrative.',
+    challenge: 'Translucent candy is a nightmare to light convincingly. Light passes through it, scatters inside, exits at unexpected angles. Getting that gummy, jewel-like quality without making it look like plastic or glass required a lot of subsurface scattering work and careful attention to how the light sources interacted with the candy geometry.',
+    approach: 'I built the look around internal glow — the idea that the candy itself was a light source. Large, soft key lights established the storybook atmosphere, but the hero lighting on the Twizzlers came from carefully art-directed subsurface effects. Lots of color in the fill lights to keep things playful.',
+    reference: 'Classic Disney animation backgrounds — that painted quality where the light feels like it\'s part of the world rather than illuminating it. Also the work of children\'s book illustrators who create these impossibly lush, glowing environments.'
+  },
+  {
+    id: '4',
+    slug: 'cinderella-film-reel',
+    title: 'Disney\'s Cinderella',
+    thumbnail: '',
+    videoId: '1132142159',
+    gridDescription: 'About 95% mice work — tiny CG creatures sharing frames with live actors.',
+    description: 'Fifteen-plus rounds of director notes on CG mice that had to integrate seamlessly with live-action plates. My first real experience with deep compositing. But the biggest lesson wasn\'t technical — it was learning the value of a team that has each other\'s backs.',
+    disciplines: ['lighting', 'look development'],
+    credits: [
+      'Lighting TD: Joseph Ibrahim',
+      'Lighting Supervisor: Chris Archinet',
+      'Studio: MPC Montreal',
+      'Client: Walt Disney Pictures',
+      'Shots: 25 hero beauty shots',
+      'Iterations: 15+ director-level rounds',
+      'Pipeline: Katana + Renderman + Nuke'
+    ],
+    technologies: ['Katana', 'Renderman', 'Nuke', 'Deep Compositing', 'Multi-pass Rendering'],
+    isCinematic: true,
+    startTime: 2,
+    year: '2015',
+    studio: 'MPC Montreal',
+    client: 'Walt Disney Pictures',
+    role: 'Lighting Technical Director',
+    shotCount: 25,
+    supervisor: 'Chris Archinet',
+    pipeline: ['Katana', 'Renderman', 'Nuke'],
+    projectType: 'Feature Film',
+    workTypes: ['film'],
+    myRole: 'Lighting Technical Director',
+    responsibilities: [
+      'Hero CG mice lighting — 25 beauty shots',
+      '15+ rounds of director-level notes',
+      'Fur rendering and subsurface integration',
+      'Deep compositing for live-action integration'
+    ],
+    // Breakdown video moved to Case Study: /process/cinderella-mice-breakdown
+
+    // Process - Insights
+    lightingIntent: 'About 95% of my work on Cinderella was lighting the mice. These tiny CG creatures needed to feel real enough to share the frame with live-action actors, but also carry that Disney warmth — furry, expressive, loveable. The lighting had to sell both the physical reality of the fur and the emotional beats of their performances.',
+    challenge: 'Fifteen-plus rounds of director notes on CG mice that had to integrate seamlessly with live-action plates. Fur is unforgiving under harsh light, and any mismatch in color temperature or shadow direction would break the illusion. This was also my first real experience with deep compositing — learning to think about lighting as part of a larger pipeline, not just pretty pictures.',
+    approach: 'Built modular lighting rigs in Katana with Renderman handling the fur rendering. The deep compositing workflow through Nuke was a revelation — being able to finesse integration at the end without re-rendering changed how I thought about flexibility in lighting. But the biggest lesson wasn\'t technical. It was learning the value of being on a team of VFX artists who genuinely had each other\'s backs.',
+    reference: 'The original animated Cinderella mice, honestly. Gus and Jaq have this specific charm — round, soft, warm. Our lighting needed to honor that while making them feel physically present in a live-action world. Also studying how Roger Deakins motivates light even in fantastical situations.'
+  },
+{
+    id: '4c',
+    slug: 'lego-dimensions',
+    title: 'Lego Dimensions',
+    thumbnail: '',
+    videoId: '187601194',
+    gridDescription: 'Cinematic drama without losing the essential LEGO-ness.',
+    description: 'LEGO minifigures are essentially flat planes and cylinders — not a lot of surface complexity to catch light interestingly. Warner Bros. wanted cinematic drama for these game cutscenes. The challenge was adding film-quality lighting while preserving the charm.',
+    disciplines: ['lighting', 'animation'],
+    credits: [
+      'Lighting TD: Joseph Ibrahim',
+      'Studio: Brand New School',
+      'Client: Warner Bros. / LEGO',
+      'Project: Lego Dimensions Video Game Cinematics',
+      'Type: In-game cinematics and promotional content'
+    ],
+    year: '2016',
+    studio: 'Brand New School',
+    client: 'Warner Bros. / LEGO',
+    role: 'VFX Artist / Lighting TD',
+    projectType: 'Video Game Cinematics',
+    technologies: ['Character Lighting', 'Stylized Rendering', 'Game Cinematics'],
+    workTypes: ['product'],
+    myRole: 'VFX Artist / Lighting TD',
+    responsibilities: [
+      'Character lighting for LEGO minifigures',
+      'Cinematic drama while preserving toy aesthetic',
+      'Multi-franchise visual consistency (DC, LOTR, etc.)'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'LEGO has a specific visual language — those chunky, colorful bricks have a toy-like quality that\'s the whole appeal. But Warner Bros. wanted cinematic drama for these game cutscenes. The challenge was adding film-quality lighting without losing the essential LEGO-ness of the characters and worlds.',
+    challenge: 'LEGO minifigures are essentially flat planes and cylinders — there\'s not a lot of surface complexity to catch light interestingly. Making them feel heroic and dynamic required finding angles and light qualities that added depth without contradicting the design language. Plus we\'re dealing with multiple franchises (DC, Lord of the Rings, etc.) each with their own visual expectations.',
+    approach: 'I leaned into the plastic material properties — that slight glossiness and the way light wraps around simple forms. Strong rim lighting helped separate characters from backgrounds. For dramatic moments, I used more theatrical contrast than you\'d typically see in LEGO content, but always kept the fill bright enough that it still felt playful.',
+    reference: 'The LEGO Movie, obviously — Phil Lord and Chris Miller figured out how to make LEGO feel cinematic while preserving its charm. But also classic adventure films like Indiana Jones, since many of the franchises we were working with had that pulpy, dramatic sensibility.'
+  },
+  // TEMPORARILY HIDDEN - Junkyard project
+  // {
+  //   id: '5',
+  //   slug: 'junkyard-unreal-engine',
+  //   title: 'Junkyard',
+  //   thumbnail: 'https://i.vimeocdn.com/video/1809364125-d_640x360.jpg',
+  //   videoId: '1058036016',
+  //   videoHash: 'ab874a31be',
+  //   gridDescription: 'Real-time environment and lighting showcase in Unreal Engine 5 with Lumen and Nanite.',
+  //   description: 'Personal R&D project exploring real-time client preview workflows and path-traced final rendering, reducing creative iteration cycles by 60% through immediate feedback. Procedural asset creation in Houdini, texturing in Substance Designer, real-time lighting with Lumen global illumination.',
+  //   disciplines: ['Realtime', 'Lighting', 'Layout', 'Look development'],
+  //   credits: [
+  //     'Environment Artist/Lighting TD: Joseph Ibrahim',
+  //     'Real-time Rendering: Unreal Engine 5',
+  //     'Procedural Modeling: Houdini',
+  //     'Texturing: Substance Designer',
+  //     'Asset Optimization: Nanite/Lumen Pipeline',
+  //     'Performance: 60% faster iteration vs offline rendering'
+  //   ],
+  //   technologies: ['Unreal Engine 5', 'Lumen', 'Nanite', 'Houdini', 'Substance Designer', 'Path Tracing', 'Real-time GI'],
+  //   featured: true,
+  //   size: 'large',
+  //   year: '2023',
+  //   projectType: 'Personal R&D / Portfolio Piece',
+  //   role: 'Environment Artist / Lighting TD',
+  //   pipeline: ['Unreal Engine 5', 'Houdini', 'Substance Designer']
+  // },
+  {
+    id: '6',
+    slug: 'iphone-lighting',
+    title: 'iPhone 14 Pro Max',
+    thumbnail: '',
+    videoId: '840661424',
+    gridDescription: 'Apple product shots look like nothing\'s happening — that nothingness is the whole point.',
+    description: 'The tolerances are incredibly tight. A reflection 2% too bright, a gradient that falls off slightly wrong — these things get flagged. There\'s a specific Apple luminosity that\'s hard to articulate but immediately recognizable.',
+    disciplines: ['lighting', 'look development'],
+    credits: [
+      'Lighting TD: Joseph Ibrahim',
+      'Studio: Framestore NY',
+      'Client: Apple',
+      'Project: iPhone 14 Pro Max WWDC Reveal',
+      'Type: Commercial / Product Visualization'
+    ],
+    year: '2022',
+    studio: 'Framestore NY',
+    client: 'Apple',
+    role: 'Lighting Technical Director',
+    projectType: 'Commercial / Product Visualization',
+    technologies: ['Product Visualization', 'Photorealistic Rendering'],
+    workTypes: ['product'],
+    myRole: 'Lighting Technical Director',
+    responsibilities: [
+      'Hero iPhone product lighting for WWDC reveal',
+      'Dynamic Island surface geometry introduction',
+      'Glass and aluminum material response balance'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'Apple product shots are deceptively simple — they look like nothing\'s happening, but that nothingness is the whole point. The iPhone needed to feel like it was floating in a perfectly neutral space where only the device matters. No shadows pulling attention, no reflections that distract, but also not flat or dead. There\'s a specific Apple luminosity that\'s hard to articulate but immediately recognizable.',
+    challenge: 'The tolerances are incredibly tight. A reflection that\'s 2% too bright, a gradient that falls off slightly wrong — these things get flagged. Apple\'s brand team has trained eyes that catch micro-imperfections. And the Dynamic Island introduction meant new surface geometry that hadn\'t been lit before in their visual language.',
+    approach: 'I treated the lighting like product photography, not VFX. Soft, large area lights positioned to reveal form without creating hard edges. The trick with glass and metal together is controlling where each material picks up the environment — you want the aluminum to feel solid while the glass feels deep. Lots of subtle gradients that guide the eye.',
+    reference: 'Apple\'s own retail store environments — the way those tables are lit from above to make every product feel like it\'s on a pedestal. Also the work of photographer Peter Belanger, who shoots most of Apple\'s product imagery.'
+  },
+  {
+    id: '7',
+    slug: 'northrop-grumman-hangar',
+    title: 'Northrop Grumman',
+    thumbnail: '',
+    videoId: '1134904236',
+    // Video is public (privacy: anybody) - no hash needed
+    gridDescription: 'Cathedral light, but for aircraft hangars.',
+    description: 'Defense and aerospace work carries inherent gravitas — these are machines built for serious purposes. Not action-movie flashy. The kind of considered, powerful imagery that makes you pause and appreciate the engineering.',
+    disciplines: ['lighting', 'look development'],
+    credits: [
+      'VFX Artist/Lighting TD: Joseph Ibrahim',
+      'Client: Northrop Grumman',
+      'Studio: Logan East',
+      'Type: Superbowl Commercial',
+      'Year: 2017'
+    ],
+    year: '2017',
+    studio: 'Logan East',
+    client: 'Northrop Grumman',
+    role: 'VFX Artist / Lighting TD',
+    projectType: 'Commercial / Superbowl',
+    technologies: ['Aerospace Visualization', 'Dramatic Lighting', 'Broadcast Commercial'],
+    workTypes: ['product'],
+    myRole: 'VFX Artist / Lighting TD',
+    responsibilities: [
+      'Aircraft lighting with monumental, reverent quality',
+      'Hangar environment and motivated practicals',
+      'Superbowl broadcast optimization'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'Defense and aerospace work carries inherent gravitas — these are machines built for serious purposes. The lighting needed to feel monumental, almost reverent. Not action-movie flashy, but the kind of considered, powerful imagery that makes you pause and appreciate the engineering. Think cathedral light, but for aircraft hangars.',
+    challenge: 'Superbowl spots have massive audiences with wildly different viewing conditions — some on giant TVs, some on phones in noisy bars. The lighting had to read clearly at any size while maintaining the premium quality Northrop Grumman expects. And aerospace subjects have complex surfaces — matte panels, reflective canopies, subtle curves — that all respond to light differently.',
+    approach: 'I used a lot of motivated practicals — hangar lights, runway lights, the glow of instrument panels. This grounded the dramatic lighting in something believable. Large soft sources from above gave that hangar feeling, while careful edge lighting revealed the aircraft forms. Kept the palette restrained — blues and silvers mostly, with warm accents from practical sources.',
+    reference: 'Aviation photography by guys like Paul Bowen, who somehow makes military aircraft feel both powerful and elegant. Also the cinematography of Tony Scott\'s Top Gun — that golden-hour glamour applied to serious machinery.'
+  },
+  {
+    id: '8',
+    slug: 'ice-breakers-watermelon-luge',
+    title: 'Ice Breakers - Watermelon Luge',
+    thumbnail: '',
+    videoId: '1134953677',
+    gridDescription: 'High-speed destruction that feels beautiful and intentional, not just messy.',
+    description: 'You\'re lighting things that exist for fractions of a second. Every frame needs to read clearly even though the geometry is constantly changing. The watermelon flesh has that wet, translucent quality — too matte and it looks dead, too shiny and it looks plastic.',
+    disciplines: ['lighting', 'look development'],
+    credits: [
+      'VFX Artist/Lighting TD: Joseph Ibrahim',
+      'Studio: Shuttlecraft Studio',
+      'Client: The Hershey Company',
+      'Type: Commercial',
+    ],
+    year: '2024',
+    studio: 'Shuttlecraft Studio',
+    client: 'The Hershey Company',
+    projectType: 'Commercial',
+    role: 'VFX Artist / Lighting TD',
+    technologies: ['High-Speed Simulation', 'Destruction FX', 'Food Visualization'],
+    workTypes: ['product'],
+    myRole: 'VFX Artist / Lighting TD',
+    responsibilities: [
+      'High-speed destruction lighting choreography',
+      'Translucent watermelon material development',
+      'Dynamic backlight for juicy, glowing quality'
+    ],
+
+    // Process - Insights
+    lightingIntent: 'Ice Breakers is about that burst of freshness — the moment the flavor hits. The watermelon destruction sequences needed to feel explosive and refreshing simultaneously. Bright, juicy, with that split-second sense of something satisfying happening. The lighting had to make you feel the cold and the sweetness.',
+    challenge: 'High-speed destruction is technically demanding because you\'re lighting things that exist for fractions of a second. Every frame needs to read clearly even though the geometry is constantly changing. Plus the watermelon flesh has that wet, translucent quality that\'s tricky to get right — too matte and it looks dead, too shiny and it looks plastic.',
+    approach: 'I worked closely with the simulation team to understand where the key moments of the destruction would be, then built lighting setups that would catch those specific geometries. Strong backlight gave the watermelon pieces that juicy, glowing quality. Fast falloff on the key lights kept things dynamic and prevented the chaos from becoming muddy.',
+    reference: 'High-speed photography of fruit and liquid — the way photographers like Martin Klimas capture destruction. There\'s an art to making chaos feel beautiful and intentional rather than just messy.'
+  }
+];
+
+// Pre-built lookup map for O(1) access by slug
+export const projectsBySlug = new Map<string, Project>(
+  projects.map(p => [p.slug, p])
+);
+
+// Utility functions
+export function getProject(slug: string): Project | undefined {
+  return projectsBySlug.get(slug);
+}
+
+export function getAllDisciplines(): string[] {
+  const disciplines = new Set<string>();
+  projects.forEach(p => p.disciplines.forEach(d => disciplines.add(d)));
+
+  // Return all unique disciplines in order they appear
+  return Array.from(disciplines);
+}
+
+export function filterProjects(discipline?: string): Project[] {
+  return projects.filter(project => {
+    const disciplineMatch = !discipline || project.disciplines.includes(discipline);
+    return disciplineMatch;
+  });
+}

@@ -1,0 +1,49 @@
+# Session Handover
+**Date:** 2026-02-27 12:05
+**Project:** Cinema Camera Rig v4.0 (Houdini 21)
+**Working directory:** C:\Users\User\OneDrive\Documents\houdini21.0
+
+## What Was Done
+- Created full folder structure for Cinema Camera Rig v4.0 (Steps 1-3 of README)
+- Completed Phase 1 (Step 4): all Python protocol files, optics engine, biomechanics, registry, lens/body providers, JSON data, JSON schema, and test suite
+- 19 files created, 44/44 tests passing
+- Committed and pushed to https://github.com/JosephOIbrahim/Houdini_Camera_Rig_System (branch: main)
+- Houdini package descriptor created at packages/cinema_camera_rig.json
+
+## Decisions Made
+| Decision | Why | Alternatives Considered |
+|----------|-----|------------------------|
+| Spring constant uses `combined_weight * 1.3` instead of spec's `moment_of_inertia * 0.012` | Spec coefficient produced identical floor values (5.0) for both 7.5kg and 13.3kg rigs, defeating calibration targets. Weight-linear formula matches spec's stated targets (7.5kg->15, 13.3kg->8) | Keeping spec formula (breaks differentiation), sqrt of inertia (still floors 300mm), log scale |
+| Created v3.0 foundation types (DistortionModel, BreathingCurve, SensorSpec, FormatSpec, CameraState, OpticalResult) from scratch | Spec references them as existing v3.0 types but no prior code existed. Inferred field definitions from usage patterns in spec | Asking user for v3.0 code (doesn't exist) |
+| Cooke 300mm specs derived from Cooke product data patterns | Spec only provides complete JSON for 50mm. 300mm values (9.4kg, 460mm length, 156mm front, 320mm pupil offset) are physically reasonable for the series | Leaving 300mm placeholder |
+| .gitignore uses deny-all + whitelist pattern | houdini21.0 is the Houdini user prefs directory with many unrelated files. Only cinema camera project files should be tracked | Tracking everything (would include caches, configs) |
+
+## Blockers / Issues
+- Houdini not verified for imports yet — hython import checks from README Step 4 not run (only standard Python tests executed, all pass)
+- Houdini is running (detected at session start) — command port status unknown for Phase 2 Synapse steps
+
+## Open Threads
+- [ ] **Phase 2a (Step 5):** Write VEX files — `vex/include/libcinema_optics.h` and `vex/include/karma_cinema_lens.vfl`. Spec details in Pillar D (§D.2, §D.3) of CINEMA_CAMERA_RIG_v4_PHYSICAL_ARCHITECTURE.md
+- [ ] **Phase 2b (Step 6):** USD builder, shader binding, EXR metadata pipeline
+- [ ] **Phase 2c (Step 7):** Synapse builder scripts and preflight check
+- [ ] **Steps 8-10:** Synapse bridge execution (requires live Houdini session with command port 12345)
+- [ ] Run hython import verification: `hython -c "from cinema_camera.protocols import LensSpec; print('protocols OK')"`
+
+## Key Files
+- `cinema_camera/README.md` — Setup guide with all build phases
+- `cinema_camera/CINEMA_CAMERA_RIG_v4_PHYSICAL_ARCHITECTURE.md` — Full technical spec (Pillars A-G)
+- `cinema_camera/CINEMA_CAMERA_RIG_v4_SYNAPSE_REFACTOR.md` — HDA builder architecture for Synapse bridge
+- `scripts/python/cinema_camera/protocols.py` — All dataclasses (foundation of everything)
+- `scripts/python/cinema_camera/biomechanics.py` — CHOPs parameter derivation
+- `scripts/python/cinema_camera/optics_engine.py` — FOV/DOF/hyperfocal math
+- `scripts/python/cinema_camera/lenses/cooke_anamorphic.py` — v4.0 JSON parser
+- `scripts/python/cinema_camera/bodies/alexa35.py` — ARRI ALEXA 35 spec
+- `cinema_camera/lenses/cooke_ana_i_s35_50mm.json` — Cooke 50mm v4.0 data
+- `cinema_camera/lenses/cooke_ana_i_s35_300mm.json` — Cooke 300mm v4.0 data
+
+## Session Notes
+- User instruction: "Do not skip phases. Do not combine phases. Complete one, verify, then proceed."
+- The spec organizes work by 4 agents (alpha/beta/gamma/delta). Phase 1 = Agent alpha. Phase 2a = Agent gamma (VEX). Phase 2b = Agent beta (USD). Phase 2c = Agent delta (builders).
+- VEX files for Phase 2a need: CO_DistortionCoeffs struct, co_apply_distortion(), co_undistort(), co_evaluate_squeeze_curve(), co_apply_anamorphic_distortion(), co_generate_bokeh_kernel() in libcinema_optics.h, plus the full CVEX lens shader in karma_cinema_lens.vfl
+- Verify VEX compiles with: `vcc -e cvex "vex/include/karma_cinema_lens.vfl"`
+- Git remote: origin = https://github.com/JosephOIbrahim/Houdini_Camera_Rig_System.git (main branch)

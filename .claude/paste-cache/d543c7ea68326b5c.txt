@@ -1,0 +1,1008 @@
+# Obsidian Cognitive Vault — Claude Code Setup Blueprint
+
+> **Execute this blueprint from your intended vault root directory.**
+> `cd C:\Users\User\vault && claude`
+> Then: `"Read this blueprint and execute Phase 1"`
+
+---
+
+## Meta-Principle (Non-Negotiable)
+
+**Every tool in your life either serves your work or competes with it for attention.
+Obsidian configured correctly is a 30-second capture tool and a weekly 15-minute review tool.
+That's maybe 20 minutes a week of actual Obsidian time. If it's more than that, the tool is winning.**
+
+---
+
+## Agent Team: MOE Architecture
+
+Six agents with strict role boundaries. Each agent has a lane. No agent crosses lanes.
+The Dopamine Guardian has **veto power** over all other agents.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    ORCHESTRATOR                          │
+│         (you, the human, or Claude Code main)           │
+│                                                         │
+│  Dispatches phases → agents execute → Guardian reviews  │
+└──────────┬──────────────────────────────────┬───────────┘
+           │                                  │
+           ▼                                  ▼
+┌─────────────────┐                ┌─────────────────────┐
+│   ARCHITECT     │                │  DOPAMINE GUARDIAN   │
+│   Structure &   │                │  Reviews ALL output  │
+│   filesystem    │                │  Veto power          │
+└────────┬────────┘                │  Runs LAST on every  │
+         │                         │  phase                │
+┌────────┴────────┐                └──────────┬──────────┘
+│   LIBRARIAN     │                           │
+│   Content &     │                ┌──────────┴──────────┐
+│   metadata      │                │    TIMEKEEPER        │
+└────────┬────────┘                │    Usage limits &    │
+         │                         │    friction design   │
+┌────────┴────────┐                └─────────────────────┘
+│   LINKER        │
+│   Connections & │
+│   backlinks     │
+└────────┬────────┘
+         │
+┌────────┴────────┐
+│   LOCKSMITH     │
+│   Disables &    │
+│   restricts     │
+└─────────────────┘
+```
+
+### Execution Order (Every Phase)
+
+1. **Domain agent** executes (Architect, Librarian, Linker, or Timekeeper)
+2. **Locksmith** applies restrictions relevant to that phase
+3. **Dopamine Guardian** reviews output — can REJECT and require changes
+4. Phase only completes when Guardian signs off
+
+---
+
+## Agent Definitions
+
+### Place these in: `vault/.claude/agents/`
+
+---
+
+### Agent 1: ARCHITECT (`architect.md`)
+
+```markdown
+# Agent: Architect
+
+## Role
+Filesystem structure, directory creation, NTFS junctions, Obsidian
+configuration files. You build the skeleton. You do not add content,
+links, or metadata — that's other agents' work.
+
+## Scope
+- Create directories
+- Create NTFS junctions to existing paths
+- Generate .obsidian/ configuration files
+- Set up workspace layout (cockpit note as default)
+- Configure Obsidian settings JSON files
+
+## Boundaries
+- NEVER install community plugins (Locksmith does that)
+- NEVER add content to notes (Librarian does that)
+- NEVER create wiki-links (Linker does that)
+- NEVER configure timers or usage limits (Timekeeper does that)
+
+## Quality Standard
+Every directory must have a PURPOSE documented in a _README.md.
+Every junction must be verified with `dir /AL` after creation.
+Vault structure must be flat — maximum 2 levels deep from root.
+
+## Output
+After completing work, output a structure tree for Guardian review:
+vault/
+├── {dir} — {purpose}
+└── ...
+```
+
+---
+
+### Agent 2: LIBRARIAN (`librarian.md`)
+
+```markdown
+# Agent: Librarian
+
+## Role
+Content processing, YAML frontmatter, templates, Maps of Content.
+You make existing files discoverable. You do not create structure
+or connections — that's other agents' work.
+
+## Scope
+- Add YAML frontmatter to existing files
+- Create MOC (Map of Content) index files
+- Create template files in _templates/
+- Process the frameworks goldmine folder (add metadata)
+- Create the cockpit note content
+
+## Boundaries
+- NEVER create directories (Architect does that)
+- NEVER add wiki-links inside note bodies (Linker does that)
+- NEVER configure plugins or settings (Locksmith does that)
+- Frontmatter tags only — no inline tags
+
+## Quality Standard
+Every file gets frontmatter with: type, created, tags, status.
+MOC files use Dataview queries, not manual lists (auto-updating).
+Templates are minimal — capture friction must be under 30 seconds.
+
+## Frameworks Goldmine Protocol
+When processing the frameworks folder:
+1. Read each file
+2. Infer domain from content (ai-research, vfx, webdev, cognitive)
+3. Infer date from file metadata
+4. Add frontmatter with status: dormant
+5. Do NOT restructure or rewrite content
+6. Do NOT add wiki-links (Linker's job)
+7. Create MOC-Frameworks.md with Dataview query
+
+## Template Design Rule
+Templates must have FEWER than 10 fields.
+If a template feels heavy, cut fields until it doesn't.
+The tangent template is the ceiling of complexity.
+```
+
+---
+
+### Agent 3: LINKER (`linker.md`)
+
+```markdown
+# Agent: Linker
+
+## Role
+Wiki-links, backlink discovery, concept interconnection.
+You create the graph. You do not create content or structure.
+
+## Scope
+- Add [[wiki-links]] inside note bodies
+- Identify shared concepts across files
+- Create stub notes for frequently-linked concepts
+- Run connection audits (find unlinked mentions)
+
+## Boundaries
+- NEVER create directories (Architect does that)
+- NEVER modify frontmatter (Librarian does that)
+- NEVER add links to template files (templates stay clean)
+- NEVER create links just because you can — only link concepts
+  that genuinely appear in multiple files
+
+## Quality Standard
+A link must connect two notes that share a SUBSTANTIVE concept.
+Do not link common words (the, process, system).
+Do not link single-occurrence concepts (if it only appears once,
+it doesn't need a link — it needs to earn connections over time).
+
+## Link Density Rule
+Maximum 5 wiki-links per note on first pass.
+Dense linking feels productive but creates noise in the graph.
+Sparse, meaningful links create signal.
+
+## Stub Note Rule
+Only create a stub note if a concept is linked from 3+ files.
+Stub format:
+---
+type: concept
+created: {date}
+status: stub
+---
+# {Concept Name}
+{One sentence description. To be expanded when relevant.}
+```
+
+---
+
+### Agent 4: TIMEKEEPER (`timekeeper.md`)
+
+```markdown
+# Agent: Timekeeper
+
+## Role
+Usage tracking, time limits, friction design, session boundaries.
+You protect the user's attention from the tool itself.
+
+## Scope
+- Configure Obsidian Reminder plugin (if approved by Locksmith)
+- Create usage protocol documentation
+- Design the weekly review ritual with time limits
+- Set up session boundary markers
+- Configure workspace layouts that minimize browsing
+
+## Boundaries
+- NEVER modify vault content (other agents do that)
+- NEVER install plugins (Locksmith does that)
+- NEVER make the vault more visually engaging
+- Your job is to make Obsidian LESS interesting to be inside
+
+## Time Budgets (Non-Negotiable)
+
+### Capture Interaction
+- Budget: 30 seconds maximum
+- Flow: hotkey → template appears → type idea → save → out
+- If capture takes longer than 30 seconds, the template is too complex.
+  Flag to Librarian for simplification.
+
+### Weekly Review
+- Budget: 15 minutes maximum
+- Structure:
+  - 0:00–5:00  — Tangent triage (parked → exploring/dead)
+  - 5:00–10:00 — Graph view (ONLY during this window)
+  - 10:00–15:00 — Dormant framework scan
+  - 15:00 — CLOSE OBSIDIAN. Done. Non-negotiable.
+
+### Monthly Maintenance
+- Budget: 30 minutes maximum
+- Claude Code does the work, user reviews output
+- Connection audit, orphan cleanup, MOC refresh
+
+### Emergency Rule
+If Obsidian has been open for >10 minutes outside of weekly review:
+→ The tool is winning. Close it. Return to work.
+
+## Friction Design Principles
+1. Obsidian should NOT be pinned to taskbar
+2. Obsidian should NOT auto-start with Windows
+3. Graph view should NOT be in any default workspace layout
+4. File explorer sidebar should be COLLAPSED by default
+5. Recent files list should be DISABLED
+6. No daily notes plugin — session captures serve this purpose
+7. No homepage plugin — cockpit note is enough
+8. Search should be accessible (it's functional) but not prominent
+
+## Weekly Review Template
+Create `_templates/weekly-review.md`:
+
+---
+type: review
+date: {{date}}
+duration_target: 15min
+---
+
+# Weekly Review — {{date}}
+
+## Timer: START NOW (15 min)
+
+### Tangent Triage (5 min)
+```dataview
+TABLE status, source_project, created
+FROM "_tangents"
+WHERE status = "parked"
+SORT created DESC
+LIMIT 10
+```
+For each: change status to `exploring`, `integrated`, or `dead`.
+
+### Graph Check (5 min)
+Open graph (Ctrl+G). Look for:
+- [ ] New clusters forming?
+- [ ] Any tangent connecting to current FOCUS project?
+- [ ] Anything surprising?
+Close graph.
+
+### Framework Scan (5 min)
+```dataview
+TABLE domain, status, last_touched
+FROM "_frameworks"
+WHERE status = "dormant"
+SORT last_touched ASC
+LIMIT 5
+```
+Any of these relevant to current work? If yes, change status.
+
+### DONE. CLOSE OBSIDIAN.
+```
+
+---
+
+### Agent 5: LOCKSMITH (`locksmith.md`)
+
+```markdown
+# Agent: Locksmith
+
+## Role
+Plugin management, feature disabling, restriction enforcement.
+You lock doors. You make Obsidian smaller, not bigger.
+
+## Scope
+- Install ONLY approved plugins (whitelist below)
+- Disable Obsidian features that create dopamine traps
+- Configure plugin settings for minimal stimulation
+- Remove access to plugin browser after setup
+
+## Boundaries
+- NEVER add plugins not on the whitelist
+- NEVER enable features for "nice to have" reasons
+- NEVER configure visual enhancements (themes, icons, CSS)
+- When in doubt, disable it
+
+## Approved Plugin Whitelist
+1. **Templater** — template engine for quick capture
+2. **Dataview** — database queries for MOCs (NO inline queries in notes)
+3. **QuickAdd** — global hotkey capture (the 30-second path)
+4. **Minimal Theme** (optional) — only if default is too visually noisy
+
+That's it. Four items. Everything else is scope creep.
+
+## EXPLICITLY BANNED
+- Graph Analysis (the default graph is sufficient and less addictive)
+- Calendar plugin (creates daily browsing habit)
+- Kanban (turns Obsidian into a project manager — scope creep)
+- Excalidraw (turns Obsidian into a drawing tool — scope creep)
+- Homepage (adds visual dashboard dopamine)
+- Daily Notes (session captures replace this)
+- Periodic Notes (same)
+- Sliding Panes (visual novelty)
+- Any theme with custom colors, gradients, or animations
+- Any plugin with a "dashboard" or "overview" view
+- Any plugin that adds visual indicators to the file explorer
+- Any plugin that shows statistics (word count, note count, streaks)
+- ANYTHING that shows streaks. Streaks are pure dopamine manipulation.
+
+## Feature Disabling (in .obsidian/app.json and workspace)
+- Disable: "Show tab title bar" → cleaner, less to click
+- Disable: "Show inline title" → less visual noise
+- Disable: backlink suggestions while typing
+- Disable: auto-complete for wiki-links while typing
+- Disable: starred/bookmarked files panel
+- Disable: tag pane in sidebar
+- Collapse: file explorer by default
+- Set: default new tab to cockpit note
+- Set: graph view NOT in any workspace layout
+
+## Plugin Browser Lockdown
+After installing the 3-4 approved plugins:
+1. Document that setup is complete
+2. Note in CLAUDE.md: "Plugin browser should not be opened.
+   If a specific unmet need arises, document the need in
+   _sessions/ and revisit during monthly review."
+3. This is honor-system — Obsidian can't truly lock the browser.
+   The documentation creates intentional friction.
+
+## Post-Setup Verification Checklist
+- [ ] Only whitelisted plugins installed
+- [ ] Graph view not in any workspace layout
+- [ ] File explorer collapsed by default
+- [ ] No visual theme customizations
+- [ ] No daily notes configured
+- [ ] No homepage plugin
+- [ ] No streak-tracking anything
+- [ ] Backlink suggestions while typing: OFF
+- [ ] Default new tab: cockpit note
+- [ ] Recent files: disabled or hidden
+```
+
+---
+
+### Agent 6: DOPAMINE GUARDIAN (`dopamine-guardian.md`)
+
+```markdown
+# Agent: Dopamine Guardian
+
+## Role
+Review ALL output from all other agents for dopamine trap potential.
+You have VETO POWER. If something creates unnecessary engagement
+with the tool itself rather than serving the work, you reject it.
+
+You are the only agent whose job is to make Obsidian LESS appealing.
+
+## Authority
+- Can REJECT any agent's output
+- Can REQUIRE modifications before phase completion
+- Can ESCALATE to user if uncertain
+- Cannot be overridden by other agents
+- Only the user can override a Guardian veto
+
+## Review Framework
+
+For EVERY piece of output, ask these five questions:
+
+### 1. Does this create a reason to open Obsidian?
+GOOD: Tangent capture (serves the work, under 30 sec)
+BAD: Dashboard that shows today's stats (creates checking habit)
+
+### 2. Does this create a reason to stay in Obsidian?
+GOOD: Weekly review with hard 15-min boundary
+BAD: Graph view that "you can explore when you have time"
+
+### 3. Does this create visual reward?
+GOOD: Plain markdown, monochrome, no flair
+BAD: Color-coded tags, progress bars, completion percentages
+
+### 4. Does this add configuration surface area?
+GOOD: Template with 5 fields, works immediately
+BAD: Template with 15 fields and "customize to your workflow"
+
+### 5. Does this compete with the actual work for attention?
+GOOD: File that captures a thought and gets out of the way
+BAD: Feature that makes you think about your notes instead
+    of thinking about your work
+
+## Specific Vetoes (Auto-Reject)
+
+REJECT any output that includes:
+- Visual dashboards or status overviews
+- Streak counters or habit tracking
+- Daily notes or journal prompts
+- Graph view in default workspace
+- More than 4 plugins
+- Any "fun" or "nice to have" feature
+- Statistics about vault size, note count, link density
+- Gamification of any kind (points, levels, achievements, streaks)
+- Color-coding beyond functional frontmatter status fields
+- Sidebar panels beyond file explorer
+- Any suggestion to "customize" or "personalize" the appearance
+- Embedded media (images, videos) in structural notes
+- Social or sharing features
+- Notification systems of any kind
+- Progress tracking that creates anxiety about "falling behind"
+
+REJECT templates that:
+- Have more than 10 frontmatter fields
+- Include optional "nice to have" fields
+- Require decision-making during capture
+- Take more than 30 seconds to fill out
+
+## Microdose-Specific Review
+
+When injection_state is microdose or higher:
+- EXTRA SCRUTINY on anything exploration-related
+- Graph view access must be BLOCKED during active sessions
+- Tangent capture must be FASTER (20-second target, not 30)
+- Any feature that "surfaces interesting connections" is SUSPECT
+  during active work — connections surface during weekly review ONLY
+
+## Sign-Off Format
+
+After reviewing each phase:
+
+GUARDIAN REVIEW — Phase {N}
+├── Items reviewed: {count}
+├── Vetoes: {count}
+│   └── {item}: {reason}
+├── Modifications required: {count}
+│   └── {item}: {change needed}
+└── APPROVED / REJECTED
+
+Phase cannot proceed to next until status is APPROVED.
+```
+
+---
+
+## Execution Phases
+
+### Phase 0: Pre-Flight
+
+**Agent: Orchestrator (Claude Code main)**
+
+```
+1. Verify paths exist:
+   - C:\Users\User\.claude\cognitive_substrate\
+   - C:\Users\User\.claude\projects\
+   - {frameworks_folder} — ASK USER for exact path
+
+2. Verify Obsidian is installed:
+   - Check: winget list Obsidian.Obsidian
+   - If not: winget install Obsidian.Obsidian
+
+3. Verify Claude Code has filesystem access to vault root
+
+4. Confirm with user:
+   "Ready to set up vault at C:\Users\User\vault\
+    Frameworks folder: {path}
+    Proceed?"
+```
+
+---
+
+### Phase 1: Skeleton (Architect)
+
+**Time estimate: 10 minutes**
+
+```
+1. Create vault root: C:\Users\User\vault\
+
+2. Create NTFS junctions:
+   mklink /J "C:\Users\User\vault\_substrate" "C:\Users\User\.claude\cognitive_substrate"
+   mklink /J "C:\Users\User\vault\_projects" "C:\Users\User\.claude\projects"
+   mklink /J "C:\Users\User\vault\_frameworks" "{user_frameworks_path}"
+
+3. Create new directories:
+   _research\
+   _tangents\
+   _sessions\
+   _templates\
+
+4. Create _README.md in each directory:
+   _substrate\  → "JUNCTION: Cognitive substrate USDA files. Read-view. Edit at source."
+   _projects\   → "JUNCTION: Project capsules and index. Edit at source."
+   _frameworks\ → "JUNCTION: Feb-July 2025 framework archive. Metadata added by Librarian."
+   _research\   → "Research notes, papers, explorations."
+   _tangents\   → "Parked tangent files. Captured during sessions, reviewed weekly."
+   _sessions\   → "Session capture blocks. One file per session."
+   _templates\  → "Templates for QuickAdd capture."
+
+5. Create .obsidian/ directory structure (Obsidian config)
+
+6. Verify junctions:
+   dir /AL C:\Users\User\vault\
+
+7. Output structure tree → GUARDIAN REVIEW
+```
+
+**Guardian checks:**
+- No unnecessary directories (flat structure?)
+- No "inspiration" or "ideas" folders (these become browsing traps)
+- Junctions verified working?
+
+---
+
+### Phase 2: Lockdown (Locksmith)
+
+**Time estimate: 15 minutes**
+
+```
+1. Create .obsidian/app.json with restrictive defaults:
+   {
+     "showLineNumber": false,
+     "showInlineTitle": false,
+     "showBacklinks": false,        ← No backlink panel by default
+     "enabledCssSnippets": [],      ← No custom CSS
+     "theme": "obsidian",           ← Default theme, no customization
+     "translucency": false,
+     "nativeMenus": true,
+     "alwaysUpdateLinks": true,
+     "newFileLocation": "folder",
+     "newFileFolderPath": "_tangents",  ← New files default to tangents
+     "attachmentFolderPath": "_attachments",
+     "livePreview": true,
+     "readableLineLength": true,
+     "spellcheck": false,
+     "strictLineBreaks": false,
+     "autoComplete": false           ← No wiki-link autocomplete while typing
+   }
+
+2. Create .obsidian/workspace.json:
+   - Default layout: single editor pane
+   - Left sidebar: COLLAPSED
+   - Right sidebar: CLOSED
+   - No graph view in layout
+   - Active file on open: cockpit.md
+
+3. Install ONLY whitelisted plugins:
+   a. Templater
+   b. Dataview
+   c. QuickAdd
+   (download from GitHub releases, place in .obsidian/plugins/)
+
+4. Configure QuickAdd:
+   - Global hotkey: Ctrl+Alt+T → Tangent capture
+   - Global hotkey: Ctrl+Alt+S → Session capture
+   - Template-based capture, auto-open: false (file saves silently)
+   - After capture: return to previous app (not Obsidian)
+
+5. Configure Dataview:
+   - Enable JavaScript queries: false (too much power, scope creep)
+   - Enable inline queries: false (visual noise in notes)
+   - Only allow dataview blocks in MOC files
+
+6. Configure Templater:
+   - Template folder: _templates/
+   - No automatic template on new file (keeps capture simple)
+
+7. Document lockdown in CLAUDE.md:
+   "SETUP LOCKED. No additional plugins. If a specific need arises,
+    document it in _sessions/ and review during monthly maintenance."
+
+8. Output configuration summary → GUARDIAN REVIEW
+```
+
+**Guardian checks:**
+- Plugin count = exactly 3?
+- Graph view absent from workspace?
+- Backlink suggestions disabled?
+- No visual customizations?
+- QuickAdd configured for SILENT capture (no Obsidian focus-steal)?
+
+---
+
+### Phase 3: Content Foundation (Librarian)
+
+**Time estimate: 30 minutes (depends on frameworks folder size)**
+
+```
+1. Process frameworks goldmine:
+   For each .md file in _frameworks/:
+   a. Read content
+   b. Infer domain: ai-research | vfx | webdev | cognitive | general
+   c. Get created date from file metadata
+   d. Add YAML frontmatter:
+      ---
+      type: framework
+      created: {date}
+      domain: [{inferred}]
+      status: dormant
+      substrate_era: v5-v7  (infer from content/date)
+      tags: [{3-5 relevant tags}]
+      ---
+   e. Do NOT modify body content
+   f. Do NOT add wiki-links (Linker's job)
+
+2. Create templates in _templates/:
+
+   a. tangent.md:
+      ---
+      type: tangent
+      created: {{date}}
+      source_project: ""
+      source_context: ""
+      status: parked
+      injection_state: none
+      tags: []
+      ---
+      ## Idea
+
+      ## Why It Might Matter
+
+      ## Next Step If Pursued
+
+   b. session.md:
+      ---
+      type: session
+      date: {{date}}
+      project: ""
+      momentum: ""
+      energy: ""
+      burnout: green
+      injection: none
+      ---
+      ## Goal
+
+      ## Progress
+
+      ## Stopped At
+
+      ## Next Steps
+
+      ## Parked Ideas
+
+   c. research.md:
+      ---
+      type: research
+      created: {{date}}
+      domain: []
+      source: ""
+      tags: []
+      ---
+      ## Summary
+
+      ## Key Insights
+
+      ## Connections
+
+3. Create cockpit.md (vault root):
+   ---
+   type: cockpit
+   ---
+   # Cockpit
+
+   ## Current Focus
+   Check [[MOC-Projects]] for active project.
+
+   ## Quick Capture
+   `Ctrl+Alt+T` — Tangent | `Ctrl+Alt+S` — Session
+
+   ## Weekly Review (15 min, Sundays only)
+   Use [[weekly-review-protocol]]
+
+   ## Rule
+   If Obsidian has been open >10 minutes outside weekly review,
+   close it. Return to work. The tool is winning.
+
+4. Create MOC-Projects.md:
+   (Dataview query pulling from _projects/)
+
+5. Create MOC-Frameworks.md:
+   (Dataview query pulling from _frameworks/)
+
+6. Create MOC-Tangents.md:
+   (Dataview query pulling from _tangents/)
+
+7. Create MOC-Sessions.md:
+   (Dataview query pulling from _sessions/)
+
+8. Create weekly-review-protocol.md:
+   (Timekeeper's template from above, placed as a permanent note)
+
+9. Output file list with frontmatter summary → GUARDIAN REVIEW
+```
+
+**Guardian checks:**
+- Templates have ≤10 frontmatter fields each?
+- Cockpit note is plain and functional (no visual flair)?
+- MOC files use Dataview queries (auto-updating, no manual maintenance)?
+- No "inspiration" or "motivational" content anywhere?
+- Weekly review protocol has hard time limits?
+
+---
+
+### Phase 4: Connections (Linker)
+
+**Time estimate: 20 minutes**
+
+```
+1. Scan ALL files in _frameworks/, _substrate/, _projects/
+   Build concept index: which concepts appear in 3+ files
+
+2. For concepts appearing in 3+ files:
+   Create stub note in _research/:
+   ---
+   type: concept
+   created: {date}
+   status: stub
+   ---
+   # {Concept Name}
+   {One sentence. Expanded when relevant.}
+
+3. Add wiki-links in framework files:
+   - Maximum 5 links per file
+   - Only link to concepts with stub notes (3+ file threshold)
+   - Link to the concept, not to other frameworks directly
+
+4. Add wiki-links in MOC files:
+   - Project names → project capsule files
+   - Domain names → concept stubs where they exist
+
+5. Do NOT link inside templates (templates stay clean)
+6. Do NOT link inside cockpit (cockpit stays minimal)
+7. Do NOT link inside _substrate/ files (read-only junction)
+
+8. Output link map: {file} → [{links added}] → GUARDIAN REVIEW
+```
+
+**Guardian checks:**
+- Link density ≤5 per file?
+- No links added to templates or cockpit?
+- No links added to substrate files (read-only)?
+- Stub notes are genuinely multi-file concepts, not single-occurrence words?
+- No "interesting" or "exploratory" links — only substantive connections?
+
+---
+
+### Phase 5: Time Boundaries (Timekeeper)
+
+**Time estimate: 10 minutes**
+
+```
+1. Create weekly-review-protocol.md (if not already created by Librarian):
+   Include hard time sections with minute markers
+   Include "DONE. CLOSE OBSIDIAN." at the end
+
+2. Create usage-protocol.md in vault root:
+   ---
+   type: protocol
+   ---
+   # Obsidian Usage Protocol
+
+   ## Allowed Interactions
+
+   ### During Work Sessions
+   - Tangent capture: Ctrl+Alt+T (30 sec max, silent save)
+   - Session capture: Ctrl+Alt+S (2 min max at session end)
+   - That's it. Nothing else during work.
+
+   ### Weekly Review (Sundays, 15 min)
+   - Follow [[weekly-review-protocol]]
+   - Timer required. When it rings, close Obsidian.
+
+   ### Monthly Maintenance (30 min, first Sunday of month)
+   - Run Claude Code connection audit
+   - Review dormant frameworks
+   - Clean up dead tangents
+   - Update MOCs if needed
+
+   ## Not Allowed
+   - Opening Obsidian "to check something"
+   - Browsing the graph outside weekly review
+   - Installing plugins
+   - Customizing appearance
+   - Reorganizing files manually
+   - Reading old notes for fun
+   - Obsidian open in background during work
+
+   ## If You Notice Obsidian Open > 10 Minutes
+   Close it. No judgment. Just close it.
+   Write in your next session capture: "Obsidian pull detected."
+   Review pattern in monthly maintenance.
+
+   ## Microdose Sessions
+   During active microdose injection:
+   - Capture only. No graph. No browsing.
+   - Tangent capture target: 20 seconds (not 30)
+   - Graph view is OFF LIMITS until baseline state
+   - Weekly review should happen on non-microdose days
+
+3. Add to CLAUDE.md:
+   "## Usage Protocol
+    See [[usage-protocol]]. Obsidian is a capture tool and
+    weekly review tool. Total usage target: 20 min/week.
+    Any Claude Code agent that suggests features increasing
+    Obsidian engagement time should be reviewed by the
+    Dopamine Guardian before implementation."
+
+4. Output protocol document → GUARDIAN REVIEW
+```
+
+**Guardian checks:**
+- Protocol explicitly names all forbidden interactions?
+- Microdose-specific restrictions present?
+- No language that makes Obsidian sound exciting or rewarding?
+- "Close Obsidian" appears as a concrete instruction, not a suggestion?
+- No habit-tracking or streak language in the protocol?
+
+---
+
+### Phase 6: Final Guardian Audit
+
+**Agent: Dopamine Guardian — full vault review**
+
+```
+FINAL AUDIT CHECKLIST
+
+STRUCTURE
+- [ ] Vault has ≤8 top-level items (directories + root files)
+- [ ] No nested directories beyond 1 level
+- [ ] All junctions verified working
+- [ ] No "inspiration", "ideas", "resources" folders
+
+VISUAL
+- [ ] Default Obsidian theme only
+- [ ] No custom CSS snippets
+- [ ] No icon packs
+- [ ] No banner images
+- [ ] No color-coded anything in file explorer
+- [ ] Cockpit note is plain text, no formatting beyond headers
+
+PLUGINS
+- [ ] Exactly 3 plugins installed (Templater, Dataview, QuickAdd)
+- [ ] No additional plugins
+- [ ] Plugin browser access documented as restricted
+
+FEATURES
+- [ ] Graph view not in any workspace layout
+- [ ] File explorer collapsed by default
+- [ ] Backlink suggestions while typing: OFF
+- [ ] Auto-complete wiki-links: OFF
+- [ ] Recent files: hidden
+- [ ] Starred/bookmarked panel: hidden
+- [ ] Tag pane: hidden
+- [ ] No daily notes configured
+- [ ] No homepage plugin
+
+CONTENT
+- [ ] Templates ≤10 frontmatter fields each
+- [ ] Links ≤5 per file
+- [ ] No motivational or inspirational content
+- [ ] No statistics or metrics in any note
+- [ ] No gamification
+
+TIME BOUNDARIES
+- [ ] Usage protocol exists and is prominent
+- [ ] Weekly review has hard 15-minute limit
+- [ ] Capture interaction designed for ≤30 seconds
+- [ ] "Close Obsidian" instructions are explicit
+- [ ] Microdose-specific restrictions documented
+
+META
+- [ ] Obsidian NOT suggested for taskbar pinning
+- [ ] Obsidian NOT set to auto-start
+- [ ] CLAUDE.md references usage protocol
+- [ ] All agents documented in .claude/agents/
+
+GUARDIAN SIGN-OFF
+Date: {date}
+Status: APPROVED / REQUIRES CHANGES
+Notes: {any_final_modifications}
+
+If APPROVED: Setup is complete. User should close Obsidian
+and not open it again until their first weekly review day.
+```
+
+---
+
+## CLAUDE.md (Vault Root)
+
+**Create this as the master context file for Claude Code:**
+
+```markdown
+# Cognitive Substrate Vault
+
+## What This Is
+Obsidian viewer layer for the cognitive substrate knowledge graph.
+Source of truth remains at C:\Users\User\.claude\cognitive_substrate\.
+This vault is a NAVIGATION AND CAPTURE tool, not a workspace.
+
+## Meta-Principle
+Every tool either serves work or competes with it for attention.
+This vault is configured for ~20 minutes/week of interaction.
+If usage exceeds this, the tool is winning. See [[usage-protocol]].
+
+## Structure
+- `_substrate/` — JUNCTION: Cognitive substrate USDA files (READ ONLY)
+- `_projects/` — JUNCTION: Project capsules and index
+- `_frameworks/` — JUNCTION: Framework archive with metadata
+- `_research/` — Research notes, papers, concept stubs
+- `_tangents/` — Parked tangent files (captured during sessions)
+- `_sessions/` — Session capture blocks (one per session)
+- `_templates/` — Templates for QuickAdd capture
+- `MOC-*.md` — Maps of Content (navigation, auto-updated via Dataview)
+- `cockpit.md` — Landing page (default on open)
+
+## Conventions
+- All files get YAML frontmatter: type, created, tags, status
+- Wiki-links: [[concept-name]] for cross-references
+- File naming: YYYY-MM-DD-descriptive-slug.md for dated content
+- MOC naming: MOC-{Domain}.md
+- Tags: kebab-case (sparse-routing, cognitive-substrate)
+- Maximum 5 wiki-links per note
+- Templates have ≤10 frontmatter fields
+
+## Agent Team
+- Architect: structure and filesystem only
+- Librarian: content, metadata, templates only
+- Linker: wiki-links and connections only
+- Timekeeper: usage limits and friction design only
+- Locksmith: plugin management and restrictions only
+- Dopamine Guardian: reviews all output, veto power
+
+## Usage Protocol
+See [[usage-protocol]]. Key rules:
+- During work: capture only (Ctrl+Alt+T tangent, Ctrl+Alt+S session)
+- Weekly review: 15 min, Sundays, with timer
+- Monthly maintenance: 30 min, Claude Code does the work
+- Microdose sessions: capture only, no graph, 20-second target
+- If open >10 min outside review: close it
+
+## Plugin Whitelist
+Templater, Dataview, QuickAdd. No others. No exceptions.
+
+## Substrate Integration
+- Source of truth: C:\Users\User\.claude\cognitive_substrate\
+- Project index: C:\Users\User\.claude\projects\_index.md
+- Converter: C:\Users\User\.claude\cognitive_substrate\converter.py
+- Edits to substrate files: make at source, not through junction
+```
+
+---
+
+## Post-Setup User Instructions
+
+```
+SETUP COMPLETE
+
+What happens now:
+1. Close Obsidian.
+2. Go back to your actual work.
+3. When you have a tangent during a session: Ctrl+Alt+T, type it, done.
+4. When a session ends: Ctrl+Alt+S, capture state, done.
+5. Sunday: open Obsidian, 15-minute review, close Obsidian.
+6. That's it.
+
+What does NOT happen:
+- You don't "use" Obsidian during the day.
+- You don't browse your vault.
+- You don't check the graph.
+- You don't install plugins.
+- You don't customize anything.
+
+The vault works in the background.
+Claude Code maintains it during monthly reviews.
+You capture and review. That's the whole workflow.
+
+The tool serves the work. Not the other way around.
+```

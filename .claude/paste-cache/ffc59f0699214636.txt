@@ -1,0 +1,52 @@
+Create a new file: ui/web/js/node_fx.js
+
+This is a ComfyUI extension that modifies how nodes render on the canvas. Register it using:
+
+app.registerExtension({
+  name: "SuperDuper.NodeFX",
+  async setup() { ... }
+});
+
+STEP A — Listen to existing ComfyUI execution events:
+- api.addEventListener("executing", ({detail}) => ...) — detail contains the node ID currently executing
+- api.addEventListener("executed", ({detail}) => ...) — detail contains the node ID that just finished
+- When executing fires with a node ID, store that ID as the "active" node
+- When executing fires with null, execution is complete
+
+STEP B — Hook into LiteGraph node rendering:
+In setup(), override the default node drawing. Use this pattern that other ComfyUI extensions use:
+
+const origDrawNode = LGraphCanvas.prototype.drawNode;
+LGraphCanvas.prototype.drawNode = function(node, ctx) {
+  origDrawNode.apply(this, arguments);
+  // Our overlay drawing goes AFTER the default draw
+  drawNodeFX(node, ctx);
+};
+
+STEP C — drawNodeFX(node, ctx) renders overlays based on node state:
+
+EXECUTING state (node ID matches active executing node):
+- ctx.save()
+- Draw a 2px rounded rect stroke in #00BB81 (jade) around the node
+- Add shadowColor #00BB81, shadowBlur 15 for the glow effect
+- Pulse opacity using: 0.5 + Math.sin(Date.now() / 400) * 0.3
+- ctx.restore()
+- Request continuous redraws: node.graph?.change()
+
+COMPLETED state (node just finished — store a completion timestamp):
+- Brief green flash: draw filled rect with #00BB8130 that fades over 1 second
+- After 1 second, clear the state
+
+AGENT-TOUCHED state (node was modified by an agent — listen for superduper:node_touch custom events):
+- Draw a 3px tall colored bar on the LEFT edge of the node, using the agent's color
+- Fade out over 30 seconds
+- Store touch data as node._sd_touch = { agent, color, time }
+
+STEP D — Listen for agent touch events from the WebSocket:
+Register a custom event listener. When sidebar.js receives a node_touch event (we'll wire this next), it dispatches:
+  document.dispatchEvent(new CustomEvent("superduper:node_touch", { detail: { nodeId, agentColor } }))
+In the handler, find the node via app.graph.getNodeById(nodeId) and set node._sd_touch.
+
+Keep it minimal. No progress bar inside nodes yet — that's an enhancement for later. Just: glow while executing, flash on complete, accent bar when agent-touched.
+
+Add a @keyframes sd-node-glow animation to superduper.css (even though we're using canvas drawing, define it for any DOM overlay fallbacks).

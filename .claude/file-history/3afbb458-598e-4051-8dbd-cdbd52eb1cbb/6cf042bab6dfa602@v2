@@ -1,0 +1,24 @@
+"""Query karma ROP parms in /out."""
+import asyncio, sys, os
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+CODE = r'''
+import hou
+out = hou.node("/out")
+cat = out.childTypeCategory()
+karma_types = [t for t in cat.nodeTypes().keys() if "karma" in t.lower()]
+
+# Also check existing nodes in /stage and /out
+stage_children = [c.name() for c in hou.node("/stage").children()] if hou.node("/stage") else []
+out_children = [c.name() for c in out.children()] if out else []
+
+result = {"karma_rop_types": sorted(karma_types), "stage_children": stage_children, "out_children": out_children}
+'''
+
+async def main():
+    async with SynapseClient() as client:
+        r = await client.execute_python(CODE, timeout=15.0)
+        print(r)
+
+asyncio.run(main())

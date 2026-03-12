@@ -1,0 +1,1458 @@
+# DeepSeek-V3.2 Research Graft → SYNAPSE
+# Claude Code Execution Instructions
+# Generated: 2026-02-15 | Source: arxiv 2512.02556
+
+---
+
+## Section 1: Project Analysis
+
+### Architecture Summary
+
+SYNAPSE is an MCP server bridging Claude AI ↔ SideFX Houdini 21 via WebSocket (`ws://localhost:9999`). Core stats:
+
+- **58 Python modules** | 22K+ LOC | 890 tests | 43 MCP tools
+- **Safety layers:** atomic scripts, idempotent guards, transaction wrappers (undo-group rollback)
+- **Memory system:** markdown → USD evolution based on usage patterns
+- **Sprint orchestrator:** filesystem-driven state detection, auto-phase management
+- **Comms:** WebSocket JSON-RPC, full `hou` module execution
+- **Transition:** reactive MCP bridge → autonomous agent (Claude Agent SDK + PDG/TOPs)
+
+### Pattern Relevance Assessment
+
+| Pattern | Relevance | Rationale |
+|---------|-----------|-----------|
+| **1: Sparse Routing** | **HIGH** | 43 MCP tools. Dense tool matching is wasteful. Lightweight indexer pre-scores top-3 tools per request, full dispatch logic runs only on candidates. Direct latency win. |
+| **2: Persistent Reasoning** | **HIGH** | Autonomous render agent chains 5-15 tool calls (create → parameterize → render → evaluate → adjust). Reasoning context (artistic intent, parameter history, evaluation criteria) must survive each tool boundary. This is THE missing piece for Agent SDK integration. |
+| **3: Specialist Distillation** | **MEDIUM** | Domain tool categories exist (scene, lighting, materials, rendering, memory). Formalizing into specialist modes with domain-specific system prompts and verifiable rewards adds value but infrastructure partially exists via voice guide system. Graft as enhancement, not net-new. |
+| **4: Agentic Task Synthesis** | **MEDIUM-HIGH** | PDG integration needs robust test coverage. Synthetic task generation (diverse scene setups, lighting challenges, material assignments, render evaluations) creates regression suite that manual test writing can't match. Critical for autonomous agent reliability. |
+
+### Integration Points
+
+```
+src/
+├── server/
+│   ├── mcp_server.py          ← Pattern 1: sparse router wraps tool dispatch
+│   ├── tool_registry.py       ← Pattern 1: indexer calibration data source
+│   └── websocket_handler.py   ← Pattern 2: reasoning context carrier
+├── tools/
+│   ├── __init__.py             ← Pattern 1: tool metadata for indexer
+│   ├── scene_tools.py          ← Pattern 3: scene specialist
+│   ├── lighting_tools.py       ← Pattern 3: lighting specialist
+│   ├── material_tools.py       ← Pattern 3: material specialist
+│   ├── render_tools.py         ← Pattern 3: render specialist
+│   └── memory_tools.py         ← Pattern 2: reasoning persistence store
+├── agent/
+│   ├── reasoning_context.py    ← Pattern 2: NEW — persistent reasoning trace
+│   ├── sparse_router.py        ← Pattern 1: NEW — lightweight tool indexer
+│   ├── specialist_modes.py     ← Pattern 3: NEW — domain specialist configs
+│   └── task_synthesizer.py     ← Pattern 4: NEW — synthetic test generator
+├── memory/
+│   └── memory_system.py        ← Pattern 2: reasoning archive integration
+└── tests/
+    ├── test_sparse_router.py   ← Pattern 1: indexer accuracy tests
+    ├── test_reasoning_ctx.py   ← Pattern 2: context persistence tests
+    ├── test_specialists.py     ← Pattern 3: domain routing tests
+    └── test_task_synthesis.py  ← Pattern 4: synthetic coverage tests
+```
+
+---
+
+## Section 2: Implementation Blueprint
+
+### Pattern 1: Sparse Tool Router
+
+**Problem:** 43 tools evaluated densely per request. Most requests touch 1-3 tools.
+
+**Solution:** Lightweight signal indexer pre-scores tool relevance, full dispatch runs only on top-k candidates.
+
+#### File: `src/agent/sparse_router.py`
+
+```python
+"""
+Sparse Tool Router — DeepSeek DSA pattern adapted for MCP tool dispatch.
+
+Principle: Before expensive full evaluation of all 43 tools,
+run a cheap classifier to identify the ~3 most relevant tools,
+then only do deep matching on those.
+
+Calibration: Run dense for N requests, collect ground truth,
+tune indexer weights against actual tool selections.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+# --- Data Structures ---
+
+@dataclass(frozen=True)
+class ToolSignature:
+    """Lightweight tool fingerprint for cheap matching."""
+    name: str
+    domain: str                    # scene | lighting | material | render | memory | system
+    keywords: frozenset[str]       # trigger words
+    param_patterns: frozenset[str] # expected parameter names
+    cost_tier: int                 # 1=read-only, 2=mutation, 3=render/heavy
+    
+@dataclass
+class RouteCandidate:
+    """Scored candidate from sparse indexer."""
+    tool_name: str
+    score: float
+    match_signals: list[str] = field(default_factory=list)
+
+@dataclass
+class SparseRouterConfig:
+    """Router tuning parameters."""
+    top_k: int = 3                          # candidates passed to full dispatch
+    keyword_weight: float = 0.4             # weight for keyword match
+    domain_weight: float = 0.3              # weight for domain match  
+    param_weight: float = 0.2               # weight for parameter pattern match
+    recency_weight: float = 0.1             # weight for recently-used tools
+    calibration_file: str = "router_calibration.json"
+
+# --- Indexer ---
+
+class SparseToolIndexer:
+    """
+    Lightweight pre-scorer for MCP tool selection.
+    
+    Phase 1 (DENSE — calibration):
+        Runs full evaluation, logs actual selections as ground truth.
+        
+    Phase 2 (SPARSE — production):
+        Runs cheap indexer, returns top-k candidates.
+        Periodically validates against dense to prevent drift.
+    """
+    
+    def __init__(self, config: SparseRouterConfig | None = None) -> None:
+        self.config = config or SparseRouterConfig()
+        self.signatures: dict[str, ToolSignature] = {}
+        self.recency_buffer: list[str] = []  # last N tool selections
+        self.calibration_data: list[dict[str, Any]] = []
+        self._mode: str = "dense"  # "dense" | "sparse" | "hybrid"
+        
+    def register_tool(self, sig: ToolSignature) -> None:
+        """Register a tool's lightweight signature."""
+        self.signatures[sig.name] = sig
+        
+    def index(self, request: dict[str, Any]) -> list[RouteCandidate]:
+        """
+        Cheap pre-scoring pass. O(T) where T = number of tools.
+        Returns top-k candidates sorted by score descending.
+        """
+        text = self._extract_text_signal(request)
+        params = set(request.get("params", {}).keys())
+        domain_hint = self._detect_domain(text)
+        
+        candidates: list[RouteCandidate] = []
+        
+        for name, sig in self.signatures.items():
+            score = 0.0
+            signals: list[str] = []
+            
+            # Keyword match (cheap string intersection)
+            keyword_hits = sig.keywords & set(text.lower().split())
+            if keyword_hits:
+                score += self.config.keyword_weight * (len(keyword_hits) / max(len(sig.keywords), 1))
+                signals.append(f"keywords:{','.join(keyword_hits)}")
+            
+            # Domain match
+            if domain_hint and sig.domain == domain_hint:
+                score += self.config.domain_weight
+                signals.append(f"domain:{domain_hint}")
+                
+            # Parameter pattern match
+            param_hits = sig.param_patterns & params
+            if param_hits:
+                score += self.config.param_weight * (len(param_hits) / max(len(sig.param_patterns), 1))
+                signals.append(f"params:{','.join(param_hits)}")
+                
+            # Recency boost
+            if name in self.recency_buffer[-5:]:
+                score += self.config.recency_weight
+                signals.append("recent")
+                
+            if score > 0:
+                candidates.append(RouteCandidate(
+                    tool_name=name,
+                    score=score,
+                    match_signals=signals,
+                ))
+        
+        # Sort descending, take top-k
+        candidates.sort(key=lambda c: c.score, reverse=True)
+        return candidates[:self.config.top_k]
+    
+    def record_selection(self, request: dict[str, Any], selected_tool: str) -> None:
+        """Record actual tool selection for calibration."""
+        self.recency_buffer.append(selected_tool)
+        if len(self.recency_buffer) > 50:
+            self.recency_buffer = self.recency_buffer[-50:]
+            
+        if self._mode == "dense":
+            self.calibration_data.append({
+                "request_text": self._extract_text_signal(request),
+                "params": list(request.get("params", {}).keys()),
+                "selected": selected_tool,
+                "indexed_top_k": [c.tool_name for c in self.index(request)],
+            })
+    
+    def calibration_accuracy(self) -> float:
+        """
+        What % of actual selections were in the indexer's top-k?
+        This is the KL-divergence proxy — we want this > 95%.
+        """
+        if not self.calibration_data:
+            return 0.0
+        hits = sum(
+            1 for d in self.calibration_data
+            if d["selected"] in d["indexed_top_k"]
+        )
+        return hits / len(self.calibration_data)
+    
+    def should_switch_to_sparse(self) -> bool:
+        """Switch to sparse mode when calibration accuracy > 95% over 100+ samples."""
+        return (
+            len(self.calibration_data) >= 100
+            and self.calibration_accuracy() >= 0.95
+        )
+    
+    # --- Private helpers ---
+    
+    def _extract_text_signal(self, request: dict[str, Any]) -> str:
+        """Pull text signal from request for cheap matching."""
+        parts = [
+            str(request.get("method", "")),
+            str(request.get("description", "")),
+            json.dumps(request.get("params", {})),
+        ]
+        return " ".join(parts)
+    
+    def _detect_domain(self, text: str) -> str | None:
+        """Cheap regex domain detection."""
+        domain_patterns: dict[str, list[str]] = {
+            "lighting": [r"\blight\b", r"\blamp\b", r"\bintensity\b", r"\bcolor\b.*\blight\b", r"\bkarma.*light\b"],
+            "material": [r"\bmaterial\b", r"\bshader\b", r"\bmtlx\b", r"\bsurface\b", r"\btexture\b"],
+            "render":   [r"\brender\b", r"\bkarma\b", r"\brop\b", r"\bimage\b.*\boutput\b"],
+            "scene":    [r"\bnode\b", r"\bcreate\b", r"\bdelete\b", r"\btransform\b", r"\bgeometry\b"],
+            "memory":   [r"\bmemory\b", r"\brecall\b", r"\bsave\b.*\bcontext\b", r"\bsession\b"],
+        }
+        text_lower = text.lower()
+        for domain, patterns in domain_patterns.items():
+            if any(re.search(p, text_lower) for p in patterns):
+                return domain
+        return None
+
+
+# --- Tool Signature Registry ---
+# Populated at server startup from tool_registry.py
+
+SYNAPSE_TOOL_SIGNATURES: dict[str, ToolSignature] = {
+    # Example — full registry built from actual tool definitions
+    "houdini_execute_python": ToolSignature(
+        name="houdini_execute_python",
+        domain="scene",
+        keywords=frozenset({"execute", "python", "code", "script", "hou"}),
+        param_patterns=frozenset({"code", "script", "timeout"}),
+        cost_tier=3,
+    ),
+    "synapse_ping": ToolSignature(
+        name="synapse_ping",
+        domain="system",
+        keywords=frozenset({"ping", "status", "health", "connection"}),
+        param_patterns=frozenset(),
+        cost_tier=1,
+    ),
+    # ... remaining 41 tools populated via build_signatures_from_registry()
+}
+
+
+def build_signatures_from_registry(registry: dict[str, Any]) -> dict[str, ToolSignature]:
+    """
+    Auto-generate ToolSignatures from the existing tool registry.
+    
+    Reads tool names, descriptions, and parameter schemas to build
+    lightweight fingerprints. Called once at server startup.
+    """
+    signatures: dict[str, ToolSignature] = {}
+    
+    for tool_name, tool_def in registry.items():
+        description = tool_def.get("description", "")
+        params = set(tool_def.get("inputSchema", {}).get("properties", {}).keys())
+        
+        # Extract keywords from description
+        # Simple approach: take nouns and domain terms
+        words = set(re.findall(r'\b[a-z]{3,}\b', description.lower()))
+        stop_words = {"the", "and", "for", "with", "that", "this", "from", "will", "are"}
+        keywords = frozenset(words - stop_words)
+        
+        # Infer domain from description
+        domain = "scene"  # default
+        domain_keywords = {
+            "lighting": {"light", "lamp", "intensity", "illumination"},
+            "material": {"material", "shader", "surface", "texture", "mtlx"},
+            "render":   {"render", "karma", "image", "output", "rop"},
+            "memory":   {"memory", "context", "session", "recall", "store"},
+            "system":   {"ping", "status", "health", "version", "connection"},
+        }
+        for d, kw in domain_keywords.items():
+            if keywords & kw:
+                domain = d
+                break
+        
+        # Infer cost tier
+        cost_tier = 1  # default: read-only
+        if any(w in description.lower() for w in ("create", "set", "modify", "delete", "write")):
+            cost_tier = 2  # mutation
+        if any(w in description.lower() for w in ("render", "cook", "execute")):
+            cost_tier = 3  # heavy
+            
+        signatures[tool_name] = ToolSignature(
+            name=tool_name,
+            domain=domain,
+            keywords=keywords,
+            param_patterns=frozenset(params),
+            cost_tier=cost_tier,
+        )
+    
+    return signatures
+```
+
+#### Integration wiring
+
+In `mcp_server.py`, wrap the existing tool dispatch:
+
+```python
+# In MCP server's handle_tool_call method:
+
+async def handle_tool_call(self, request: dict) -> dict:
+    # SPARSE: pre-filter
+    candidates = self.sparse_router.index(request)
+    candidate_names = {c.tool_name for c in candidates}
+    
+    # If indexer is confident (mode=sparse), only evaluate candidates
+    if self.sparse_router._mode == "sparse" and candidates:
+        tool = self._match_tool(request, restrict_to=candidate_names)
+    else:
+        # DENSE: evaluate all (calibration mode or low-confidence fallback)
+        tool = self._match_tool(request, restrict_to=None)
+    
+    result = await self._execute_tool(tool, request)
+    
+    # Record for calibration
+    self.sparse_router.record_selection(request, tool.name)
+    
+    return result
+```
+
+#### Testing strategy
+
+```python
+# test_sparse_router.py
+
+def test_indexer_returns_top_k():
+    """Indexer returns at most top_k candidates."""
+    
+def test_keyword_matching():
+    """Known keywords route to expected tools."""
+    
+def test_domain_detection():
+    """Domain hints correctly classify requests."""
+    
+def test_calibration_accuracy():
+    """After 100+ dense samples, accuracy > 95%."""
+    
+def test_fallback_to_dense():
+    """When indexer confidence is low, falls back to dense."""
+    
+def test_recency_boost():
+    """Recently used tools get score boost."""
+
+def test_build_signatures_from_registry():
+    """Auto-generated signatures cover all 43 tools."""
+```
+
+#### Rollback
+
+Feature flag in config:
+```yaml
+sparse_routing:
+  enabled: true
+  mode: "dense"        # dense | sparse | hybrid
+  top_k: 3
+  min_calibration: 100
+  accuracy_threshold: 0.95
+```
+
+Set `enabled: false` to bypass entirely. Set `mode: "dense"` to collect calibration without changing behavior.
+
+---
+
+### Pattern 2: Persistent Reasoning Context
+
+**Problem:** Autonomous render agent chains 5-15 tool calls. Artistic intent, parameter history, and evaluation criteria evaporate between calls.
+
+**Solution:** ReasoningContext object that survives tool boundaries, compresses intelligently, and archives to SYNAPSE memory system.
+
+#### File: `src/agent/reasoning_context.py`
+
+```python
+"""
+Persistent Reasoning Context — DeepSeek thinking-in-tool-use pattern.
+
+Maintains reasoning trace across multi-tool agent chains.
+Integrates with SYNAPSE memory system for long-term archival.
+
+Three protected categories (NEVER dropped during compression):
+  1. Active decisions — what we decided and why
+  2. Unresolved questions — what we still need to figure out
+  3. Planned next steps — what we intend to do next
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+
+class EntryCategory(Enum):
+    """Categories for reasoning trace entries."""
+    DECISION = "decision"           # Protected: active decisions
+    QUESTION = "question"           # Protected: unresolved questions  
+    PLAN = "plan"                   # Protected: planned next steps
+    OBSERVATION = "observation"     # Compressible: tool results, findings
+    ANALYSIS = "analysis"           # Compressible: reasoning about results
+    CONTEXT = "context"             # Compressible: background info
+
+
+PROTECTED_CATEGORIES = frozenset({
+    EntryCategory.DECISION,
+    EntryCategory.QUESTION,
+    EntryCategory.PLAN,
+})
+
+
+@dataclass
+class ReasoningEntry:
+    """Single entry in the reasoning trace."""
+    category: EntryCategory
+    content: str
+    timestamp: float = field(default_factory=time.time)
+    tool_call: str | None = None       # which tool produced this
+    confidence: float = 1.0            # 0.0-1.0, affects compression priority
+    compressed: bool = False           # has this been compressed already?
+    
+    @property
+    def is_protected(self) -> bool:
+        return self.category in PROTECTED_CATEGORIES
+
+
+@dataclass
+class ReasoningContext:
+    """
+    Persistent reasoning trace across multi-tool agent chains.
+    
+    Usage:
+        ctx = ReasoningContext(intent="Create warm studio lighting")
+        ctx.add_decision("Using 3-point lighting setup for portrait feel")
+        ctx.add_plan("Step 1: Key light at 45° camera-left")
+        
+        result = await call_tool("create_light", params)
+        ctx.add_observation(f"Key light created: {result}", tool="create_light")
+        
+        ctx.add_plan("Step 2: Fill light at 30° camera-right, 0.3x key intensity")
+        # ... chain continues with full context
+    """
+    
+    intent: str                                    # artistic/technical intent (never compressed)
+    entries: list[ReasoningEntry] = field(default_factory=list)
+    tool_chain: list[str] = field(default_factory=list)  # ordered tool call history
+    max_entries: int = 100                         # trigger compression above this
+    compression_target: int = 50                   # compress down to this many entries
+    
+    # --- Public API: Add entries ---
+    
+    def add_decision(self, content: str, confidence: float = 1.0) -> None:
+        self._add(EntryCategory.DECISION, content, confidence=confidence)
+        
+    def add_question(self, content: str) -> None:
+        self._add(EntryCategory.QUESTION, content)
+        
+    def add_plan(self, content: str) -> None:
+        self._add(EntryCategory.PLAN, content)
+        
+    def add_observation(self, content: str, tool: str | None = None, confidence: float = 0.8) -> None:
+        self._add(EntryCategory.OBSERVATION, content, tool=tool, confidence=confidence)
+        
+    def add_analysis(self, content: str, confidence: float = 0.9) -> None:
+        self._add(EntryCategory.ANALYSIS, content, confidence=confidence)
+        
+    def add_context(self, content: str) -> None:
+        self._add(EntryCategory.CONTEXT, content, confidence=0.5)
+    
+    def record_tool_call(self, tool_name: str) -> None:
+        """Record a tool invocation in the chain."""
+        self.tool_chain.append(tool_name)
+        
+    # --- Public API: Query ---
+    
+    @property
+    def active_decisions(self) -> list[ReasoningEntry]:
+        return [e for e in self.entries if e.category == EntryCategory.DECISION]
+    
+    @property
+    def open_questions(self) -> list[ReasoningEntry]:
+        return [e for e in self.entries if e.category == EntryCategory.QUESTION]
+    
+    @property
+    def next_steps(self) -> list[ReasoningEntry]:
+        return [e for e in self.entries if e.category == EntryCategory.PLAN]
+    
+    def summarize(self, max_tokens: int = 500) -> str:
+        """
+        Generate a compressed summary for inclusion in tool call context.
+        Protected categories always included in full.
+        Compressible categories summarized.
+        """
+        parts = [f"INTENT: {self.intent}"]
+        
+        if self.active_decisions:
+            parts.append("DECISIONS:")
+            for e in self.active_decisions:
+                parts.append(f"  • {e.content}")
+                
+        if self.open_questions:
+            parts.append("OPEN QUESTIONS:")
+            for e in self.open_questions:
+                parts.append(f"  ? {e.content}")
+                
+        if self.next_steps:
+            parts.append("NEXT STEPS:")
+            for e in self.next_steps:
+                parts.append(f"  → {e.content}")
+        
+        # Add recent observations (last 5)
+        recent_obs = [e for e in self.entries if e.category == EntryCategory.OBSERVATION][-5:]
+        if recent_obs:
+            parts.append("RECENT OBSERVATIONS:")
+            for e in recent_obs:
+                tool_tag = f"[{e.tool_call}] " if e.tool_call else ""
+                parts.append(f"  {tool_tag}{e.content}")
+        
+        parts.append(f"TOOL CHAIN: {' → '.join(self.tool_chain[-10:])}")
+        
+        return "\n".join(parts)
+    
+    def to_memory_record(self) -> dict[str, Any]:
+        """
+        Export reasoning context for SYNAPSE memory system archival.
+        Integrates with markdown → USD memory evolution.
+        """
+        return {
+            "type": "reasoning_chain",
+            "intent": self.intent,
+            "decisions": [e.content for e in self.active_decisions],
+            "open_questions": [e.content for e in self.open_questions],
+            "tool_chain": self.tool_chain,
+            "entry_count": len(self.entries),
+            "timestamp": time.time(),
+        }
+    
+    # --- Compression ---
+    
+    def compress_if_needed(self) -> bool:
+        """
+        Compress trace if above max_entries threshold.
+        Returns True if compression occurred.
+        
+        Strategy:
+          1. Never touch protected categories (decisions, questions, plans)
+          2. Merge consecutive observations from same tool
+          3. Drop low-confidence entries first
+          4. Summarize older analysis entries
+        """
+        if len(self.entries) <= self.max_entries:
+            return False
+            
+        protected = [e for e in self.entries if e.is_protected]
+        compressible = [e for e in self.entries if not e.is_protected]
+        
+        # Sort compressible by (already_compressed ASC, confidence ASC, timestamp ASC)
+        # = compress already-compressed first, then low confidence, then oldest
+        compressible.sort(key=lambda e: (e.compressed, e.confidence, e.timestamp))
+        
+        # Keep enough compressible entries to hit target
+        keep_count = max(0, self.compression_target - len(protected))
+        kept = compressible[-keep_count:] if keep_count > 0 else []
+        
+        # Mark surviving compressible as compressed
+        for e in kept:
+            e.compressed = True
+        
+        self.entries = protected + kept
+        # Re-sort by timestamp
+        self.entries.sort(key=lambda e: e.timestamp)
+        
+        return True
+    
+    # --- Private ---
+    
+    def _add(
+        self,
+        category: EntryCategory,
+        content: str,
+        tool: str | None = None,
+        confidence: float = 1.0,
+    ) -> None:
+        self.entries.append(ReasoningEntry(
+            category=category,
+            content=content,
+            tool_call=tool,
+            confidence=confidence,
+        ))
+        self.compress_if_needed()
+
+
+class ReasoningContextManager:
+    """
+    Manages multiple reasoning contexts for concurrent agent chains.
+    Each chain gets its own context, keyed by chain_id.
+    """
+    
+    def __init__(self) -> None:
+        self.contexts: dict[str, ReasoningContext] = {}
+        
+    def create(self, chain_id: str, intent: str) -> ReasoningContext:
+        ctx = ReasoningContext(intent=intent)
+        self.contexts[chain_id] = ctx
+        return ctx
+        
+    def get(self, chain_id: str) -> ReasoningContext | None:
+        return self.contexts.get(chain_id)
+        
+    def archive(self, chain_id: str) -> dict[str, Any] | None:
+        """Archive context to memory system and remove from active."""
+        ctx = self.contexts.pop(chain_id, None)
+        if ctx:
+            return ctx.to_memory_record()
+        return None
+```
+
+#### Integration wiring
+
+In the Agent SDK orchestration layer:
+
+```python
+# In agent execution loop:
+
+async def execute_agent_chain(self, intent: str, steps: list[AgentStep]) -> AgentResult:
+    ctx = self.reasoning_mgr.create(chain_id=uuid4().hex, intent=intent)
+    
+    for step in steps:
+        # Inject reasoning context into tool call
+        step.context = ctx.summarize()
+        
+        ctx.add_plan(f"Executing: {step.description}")
+        ctx.record_tool_call(step.tool_name)
+        
+        result = await self.execute_tool(step)
+        
+        ctx.add_observation(
+            f"{step.tool_name} returned: {self._summarize_result(result)}",
+            tool=step.tool_name,
+        )
+        
+        # Agent evaluates result and updates reasoning
+        evaluation = await self.evaluate_step(result, ctx)
+        if evaluation.decision:
+            ctx.add_decision(evaluation.decision)
+        if evaluation.question:
+            ctx.add_question(evaluation.question)
+        if evaluation.revised_plan:
+            ctx.add_plan(evaluation.revised_plan)
+    
+    # Archive to SYNAPSE memory
+    memory_record = self.reasoning_mgr.archive(ctx.chain_id)
+    await self.memory_system.store(memory_record)
+    
+    return AgentResult(...)
+```
+
+#### Testing strategy
+
+```python
+# test_reasoning_ctx.py
+
+def test_protected_categories_survive_compression():
+    """Decisions, questions, plans never dropped."""
+
+def test_compression_respects_threshold():
+    """Compress triggers at max_entries, targets compression_target."""
+
+def test_summarize_includes_all_protected():
+    """Summary always contains decisions, questions, plans."""
+
+def test_tool_chain_ordering():
+    """Tool chain maintains correct temporal order."""
+
+def test_memory_record_export():
+    """to_memory_record() produces valid memory system format."""
+
+def test_concurrent_contexts():
+    """Multiple chains managed independently."""
+```
+
+#### Rollback
+
+ReasoningContext is additive — it wraps existing tool calls without modifying them. To disable, skip `ctx.summarize()` injection and `ctx.add_*()` calls. Feature flag:
+
+```yaml
+reasoning_context:
+  enabled: true
+  max_entries: 100
+  compression_target: 50
+  archive_to_memory: true
+```
+
+---
+
+### Pattern 3: Specialist Domain Modes
+
+**Problem:** Single system prompt handles all domains. Lighting requests get generic responses instead of lighting-expert responses.
+
+**Solution:** Domain-specific specialist configs with tailored system prompts, parameter vocabularies, and verifiable reward functions.
+
+#### File: `src/agent/specialist_modes.py`
+
+```python
+"""
+Specialist Domain Modes — DeepSeek specialist distillation pattern.
+
+Each domain gets:
+  1. Tailored system prompt (domain vocabulary, conventions)
+  2. Verifiable reward function (deterministic success criteria)
+  3. Parameter vocabulary (H21-specific naming)
+  4. Evaluation rubric (domain-specific quality signals)
+  
+Routing: Sparse router (Pattern 1) identifies domain → specialist config loaded.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+
+@dataclass(frozen=True)
+class SpecialistMode:
+    """Domain specialist configuration."""
+    domain: str
+    system_prompt_extension: str
+    parameter_vocabulary: dict[str, str]   # encoded_name → human_name
+    quality_signals: list[str]             # what "good" looks like
+    reward_fn: Callable[[dict[str, Any]], float] | None = None  # 0.0-1.0
+    thinking_mode: str = "standard"        # "standard" | "deep" | "quick"
+
+
+# --- Specialist Definitions ---
+
+LIGHTING_SPECIALIST = SpecialistMode(
+    domain="lighting",
+    system_prompt_extension="""
+You are a lighting specialist for Houdini 21 / Karma XPU.
+Key conventions:
+- USD light parameters use encoded names: xn__inputsintensity_i0a, xn__inputscolor_ztar/ztag/ztab
+- Always set light type before parameters (distant, dome, rect, sphere, disk, cylinder)
+- Karma XPU supports: PxrRectLight, PxrDomeLight, PxrSphereLight, PxrDiskLight, PxrDistantLight, PxrCylinderLight
+- Color values are linear RGB, not sRGB
+- Intensity is in nits for physical lights, arbitrary for artistic
+- Think in terms of key/fill/rim ratios, not absolute values
+- Shadow quality: ray samples control noise, bias prevents acne
+""",
+    parameter_vocabulary={
+        "xn__inputsintensity_i0a": "intensity",
+        "xn__inputscolor_ztar": "color_r",
+        "xn__inputscolor_ztag": "color_g", 
+        "xn__inputscolor_ztab": "color_b",
+        "xn__inputsenabletemperature_ohb": "enable_temperature",
+        "xn__inputstemperature_k8a": "temperature",
+        "xn__inputsdiffuse_e6a": "diffuse_multiplier",
+        "xn__inputsspecular_vca": "specular_multiplier",
+    },
+    quality_signals=[
+        "Light ratios between key/fill/rim are intentional",
+        "Shadow direction supports composition",
+        "Color temperature consistent with scene mood",
+        "No blown highlights or crushed shadows",
+        "Specular highlights placed deliberately",
+    ],
+    reward_fn=None,  # TODO: render-based evaluation via PDG
+    thinking_mode="standard",
+)
+
+MATERIAL_SPECIALIST = SpecialistMode(
+    domain="material",
+    system_prompt_extension="""
+You are a material/shader specialist for Houdini 21 / MaterialX.
+Key conventions:
+- Use mtlxstandard_surface as base shader
+- Parameter names: base_color, metalness, roughness, specular, coat, emission
+- Texture maps go through mtlximage nodes → mtlxtiledimage for tiling
+- Normal maps: mtlxnormalmap node, tangent space default
+- Always set color space: sRGB for color textures, raw/linear for data (roughness, normal, metalness)
+- MaterialX graph connects to material output via surfaceshader
+- USD material binding: /materials/{mat_name} → assign to geometry prims
+""",
+    parameter_vocabulary={
+        "base_color": "base_color",
+        "metalness": "metalness",
+        "specular_roughness": "roughness",
+        "specular_color": "specular_color",
+        "coat": "clearcoat",
+        "coat_roughness": "clearcoat_roughness",
+        "emission": "emission",
+        "emission_color": "emission_color",
+        "opacity": "opacity",
+    },
+    quality_signals=[
+        "PBR values physically plausible (metalness 0 or 1, roughness 0.02-1.0)",
+        "Texture color spaces correctly set",
+        "Material binding targets correct geometry prims",
+        "Normal map tangent space matches geometry",
+        "No black/missing textures in render",
+    ],
+    reward_fn=None,
+    thinking_mode="standard",
+)
+
+RENDER_SPECIALIST = SpecialistMode(
+    domain="render",
+    system_prompt_extension="""
+You are a rendering specialist for Houdini 21 / Karma XPU.
+Key conventions:
+- Karma XPU: GPU-accelerated, supports most MaterialX features
+- Karma CPU: Full feature set, slower
+- Resolution: Set on ROP node, not camera
+- Sampling: karma:global:pathtracedsamples for quality
+- Pixel filter: gaussian default, box for sharp edges
+- AOVs: beauty, diffuse, specular, emission, depth, normal, cryptomatte
+- Convergence: noise threshold + max samples for adaptive sampling
+- Denoise: OIDN post-process or Karma native
+- Output format: EXR for compositing (16-bit half float), PNG/JPEG for preview
+""",
+    parameter_vocabulary={
+        "karma:global:pathtracedsamples": "max_samples",
+        "karma:global:convergencethreshold": "noise_threshold",
+        "karma:global:pixelfilter": "pixel_filter",
+    },
+    quality_signals=[
+        "Render converges within sample budget",
+        "No fireflies or excessive noise",
+        "AOVs correctly separated",
+        "Output format matches pipeline requirements",
+        "GPU memory within 24GB VRAM budget (RTX 4090)",
+    ],
+    reward_fn=None,
+    thinking_mode="deep",  # render decisions benefit from deeper analysis
+)
+
+SCENE_SPECIALIST = SpecialistMode(
+    domain="scene",
+    system_prompt_extension="""
+You are a scene/layout specialist for Houdini 21 / LOPs (USD).
+Key conventions:
+- USD stage operations through LOPs context
+- Prim paths: /{category}/{name} (e.g., /lights/key_light, /geo/hero_asset)
+- Transform order: scale → rotate → translate (SRT)
+- Reference assets via USD references/payloads, not file SOPs
+- Scene graph hierarchy matters for inheritance
+- Use purpose: render, proxy, guide for LOD management
+- Coordinate system: Y-up, right-handed
+""",
+    parameter_vocabulary={},
+    quality_signals=[
+        "Scene hierarchy is clean and well-organized",
+        "Transform values physically reasonable",
+        "Asset references use proper USD composition arcs",
+        "No orphaned or dangling prims",
+    ],
+    reward_fn=None,
+    thinking_mode="standard",
+)
+
+MEMORY_SPECIALIST = SpecialistMode(
+    domain="memory",
+    system_prompt_extension="""
+You are managing SYNAPSE's persistent memory system.
+Key conventions:
+- Memory evolves: markdown → USD based on usage
+- Store decisions, parameter experiments, asset references, blockers
+- Memory travels with scene file (sidecar pattern)
+- Query memory before suggesting parameters (check what's been tried)
+- Archive reasoning chains after completion
+""",
+    parameter_vocabulary={},
+    quality_signals=[
+        "Memory entries are retrievable by future queries",
+        "No duplicate entries for same decision",
+        "Archived reasoning chains maintain coherence",
+    ],
+    reward_fn=None,
+    thinking_mode="quick",
+)
+
+
+# --- Registry ---
+
+SPECIALIST_REGISTRY: dict[str, SpecialistMode] = {
+    "lighting": LIGHTING_SPECIALIST,
+    "material": MATERIAL_SPECIALIST,
+    "render": RENDER_SPECIALIST,
+    "scene": SCENE_SPECIALIST,
+    "memory": MEMORY_SPECIALIST,
+}
+
+
+def get_specialist(domain: str) -> SpecialistMode | None:
+    """Get specialist config for domain. Returns None for unknown domains."""
+    return SPECIALIST_REGISTRY.get(domain)
+
+
+def build_enhanced_prompt(base_prompt: str, domain: str) -> str:
+    """Append specialist context to base system prompt."""
+    specialist = get_specialist(domain)
+    if specialist:
+        return f"{base_prompt}\n\n--- SPECIALIST MODE: {domain.upper()} ---\n{specialist.system_prompt_extension}"
+    return base_prompt
+```
+
+#### Testing strategy
+
+```python
+# test_specialists.py
+
+def test_all_domains_have_specialists():
+    """Every domain in sparse router maps to a specialist."""
+
+def test_specialist_prompt_extension():
+    """build_enhanced_prompt correctly appends specialist context."""
+
+def test_parameter_vocabulary_covers_h21():
+    """Lighting vocabulary includes all encoded parameter names."""
+
+def test_quality_signals_are_evaluable():
+    """Each quality signal can be checked programmatically (future: render eval)."""
+```
+
+---
+
+### Pattern 4: Synthetic Task Generation for Agent Testing
+
+**Problem:** Manual test writing can't cover the combinatorial space of scene setups, lighting configurations, material assignments, and render settings that the autonomous agent will encounter.
+
+**Solution:** Programmatic task environment generator that creates diverse, structured test scenarios.
+
+#### File: `src/agent/task_synthesizer.py`
+
+```python
+"""
+Synthetic Task Synthesizer — DeepSeek agentic task synthesis pattern.
+
+Generates diverse test environments for autonomous render agent validation.
+Prioritizes DIVERSITY over volume: 100 genuinely different task structures
+beats 1000 variations of the same task.
+
+Axes of variation:
+  - Scene complexity (1 object → full environment)
+  - Lighting setup (single → multi-light → HDRI → mixed)
+  - Material complexity (default → textured → layered)
+  - Render settings (preview → production)
+  - Constraint types (time budget, quality floor, VRAM ceiling)
+  - Failure modes (missing assets, invalid params, render crash)
+"""
+
+from __future__ import annotations
+
+import itertools
+import random
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+
+class Complexity(Enum):
+    MINIMAL = 1      # single object, single light
+    SIMPLE = 2       # 2-3 objects, basic lighting
+    MODERATE = 3     # scene with multiple elements
+    COMPLEX = 4      # full environment
+    PRODUCTION = 5   # production-level scene
+
+
+class ConstraintType(Enum):
+    TIME_BUDGET = "time"           # must complete within N seconds
+    QUALITY_FLOOR = "quality"      # render must meet quality threshold
+    VRAM_CEILING = "vram"          # must fit in 24GB
+    SAMPLE_BUDGET = "samples"      # max render samples
+    RESOLUTION = "resolution"      # specific output resolution required
+
+
+class FailureMode(Enum):
+    NONE = "none"                  # happy path
+    MISSING_ASSET = "missing"      # referenced asset doesn't exist
+    INVALID_PARAM = "invalid"      # parameter value out of range
+    RENDER_TIMEOUT = "timeout"     # render exceeds time budget
+    VRAM_OVERFLOW = "vram"         # scene exceeds GPU memory
+    AMBIGUOUS_INTENT = "ambiguous" # vague or contradictory user request
+
+
+@dataclass
+class TaskEnvironment:
+    """A single synthetic test environment."""
+    task_id: str
+    description: str
+    scene_complexity: Complexity
+    lighting_type: str             # "single" | "three_point" | "hdri" | "mixed" | "practical"
+    material_type: str             # "default" | "textured" | "layered" | "emissive"
+    render_target: str             # "preview" | "lookdev" | "production"
+    constraints: list[dict[str, Any]]
+    failure_mode: FailureMode
+    expected_tool_chain: list[str] # expected sequence of tool calls
+    success_criteria: list[str]    # verifiable conditions for pass/fail
+    
+    
+@dataclass
+class TaskSynthesizer:
+    """
+    Generates diverse task environments for agent testing.
+    
+    Usage:
+        synth = TaskSynthesizer(seed=42)
+        envs = synth.generate(n=200, diversity_threshold=0.7)
+        
+        for env in envs:
+            result = agent.execute(env)
+            assert env.evaluate(result)
+    """
+    
+    seed: int = 42
+    
+    # --- Generation axes ---
+    
+    LIGHTING_TYPES = ["single", "three_point", "hdri", "mixed", "practical"]
+    MATERIAL_TYPES = ["default", "textured", "layered", "emissive"]
+    RENDER_TARGETS = ["preview", "lookdev", "production"]
+    
+    TASK_TEMPLATES: list[dict[str, Any]] = field(default_factory=lambda: [
+        {
+            "template": "Create {lighting_type} lighting for a {scene_desc}",
+            "domain": "lighting",
+            "tool_chain_pattern": ["create_light", "set_params", "render_preview"],
+        },
+        {
+            "template": "Apply {material_type} material to {object_desc} and render",
+            "domain": "material",
+            "tool_chain_pattern": ["create_material", "assign_material", "render_preview"],
+        },
+        {
+            "template": "Set up {scene_desc} with {lighting_type} lighting and {material_type} materials",
+            "domain": "scene",
+            "tool_chain_pattern": ["create_geo", "create_light", "create_material", "assign_material", "render_preview"],
+        },
+        {
+            "template": "Render {scene_desc} at {render_target} quality within {time_budget}s",
+            "domain": "render",
+            "tool_chain_pattern": ["configure_render", "render", "evaluate_quality"],
+        },
+        {
+            "template": "Iterate on {scene_desc} lighting: {intent}",
+            "domain": "lighting",
+            "tool_chain_pattern": ["query_memory", "adjust_light", "render_preview", "evaluate", "adjust_light", "render_preview"],
+        },
+        {
+            "template": "Debug render issue: {failure_desc}",
+            "domain": "render",
+            "tool_chain_pattern": ["inspect_scene", "diagnose", "fix", "render_preview", "verify"],
+        },
+    ])
+    
+    SCENE_DESCRIPTIONS = [
+        "hero product on white background",
+        "interior room with window light",
+        "exterior landscape at golden hour",
+        "character portrait with dramatic lighting",
+        "architectural visualization of lobby",
+        "abstract geometric composition",
+        "food photography setup",
+        "vehicle in studio environment",
+        "jewelry close-up with caustics",
+        "foggy forest with volumetrics",
+    ]
+    
+    ARTISTIC_INTENTS = [
+        "make it feel warm and inviting",
+        "create dramatic contrast",
+        "soft and ethereal mood",
+        "hyper-realistic product shot",
+        "cinematic film look",
+        "clean and minimal",
+        "moody and mysterious",
+        "bright and energetic",
+    ]
+
+    def generate(self, n: int = 200, diversity_threshold: float = 0.7) -> list[TaskEnvironment]:
+        """
+        Generate n diverse task environments.
+        
+        diversity_threshold: minimum pairwise diversity score (0.0-1.0).
+        Rejects generated tasks that are too similar to existing ones.
+        """
+        rng = random.Random(self.seed)
+        environments: list[TaskEnvironment] = []
+        attempts = 0
+        max_attempts = n * 5  # prevent infinite loop
+        
+        while len(environments) < n and attempts < max_attempts:
+            attempts += 1
+            env = self._generate_single(rng, len(environments))
+            
+            if self._is_diverse_enough(env, environments, diversity_threshold):
+                environments.append(env)
+        
+        return environments
+    
+    def _generate_single(self, rng: random.Random, idx: int) -> TaskEnvironment:
+        """Generate a single task environment."""
+        template = rng.choice(self.TASK_TEMPLATES)
+        complexity = rng.choice(list(Complexity))
+        lighting = rng.choice(self.LIGHTING_TYPES)
+        material = rng.choice(self.MATERIAL_TYPES)
+        render_target = rng.choice(self.RENDER_TARGETS)
+        scene_desc = rng.choice(self.SCENE_DESCRIPTIONS)
+        intent = rng.choice(self.ARTISTIC_INTENTS)
+        
+        # Generate constraints based on complexity
+        constraints = self._generate_constraints(rng, complexity, render_target)
+        
+        # Select failure mode (20% of tasks include failure scenarios)
+        failure_mode = FailureMode.NONE
+        if rng.random() < 0.2:
+            failure_mode = rng.choice([
+                FailureMode.MISSING_ASSET,
+                FailureMode.INVALID_PARAM,
+                FailureMode.RENDER_TIMEOUT,
+                FailureMode.AMBIGUOUS_INTENT,
+            ])
+        
+        description = template["template"].format(
+            lighting_type=lighting,
+            material_type=material,
+            scene_desc=scene_desc,
+            render_target=render_target,
+            object_desc=scene_desc.split()[0],
+            time_budget=rng.choice([30, 60, 120, 300]),
+            intent=intent,
+            failure_desc=f"{failure_mode.value} during {template['domain']} operation",
+        )
+        
+        return TaskEnvironment(
+            task_id=f"synth_{idx:04d}",
+            description=description,
+            scene_complexity=complexity,
+            lighting_type=lighting,
+            material_type=material,
+            render_target=render_target,
+            constraints=constraints,
+            failure_mode=failure_mode,
+            expected_tool_chain=template["tool_chain_pattern"],
+            success_criteria=self._generate_success_criteria(
+                template["domain"], complexity, failure_mode
+            ),
+        )
+    
+    def _generate_constraints(
+        self, rng: random.Random, complexity: Complexity, render_target: str
+    ) -> list[dict[str, Any]]:
+        """Generate realistic constraints for a task."""
+        constraints: list[dict[str, Any]] = []
+        
+        # Time budget (always present)
+        time_budgets = {
+            Complexity.MINIMAL: 30,
+            Complexity.SIMPLE: 60,
+            Complexity.MODERATE: 120,
+            Complexity.COMPLEX: 300,
+            Complexity.PRODUCTION: 600,
+        }
+        constraints.append({
+            "type": ConstraintType.TIME_BUDGET.value,
+            "value": time_budgets[complexity],
+        })
+        
+        # VRAM ceiling (always 24GB for RTX 4090)
+        constraints.append({
+            "type": ConstraintType.VRAM_CEILING.value,
+            "value": 24_000,  # MB
+        })
+        
+        # Quality floor for production renders
+        if render_target == "production":
+            constraints.append({
+                "type": ConstraintType.QUALITY_FLOOR.value,
+                "value": 0.95,  # convergence threshold
+            })
+        
+        # Resolution
+        resolutions = {
+            "preview": (960, 540),
+            "lookdev": (1920, 1080),
+            "production": (3840, 2160),
+        }
+        constraints.append({
+            "type": ConstraintType.RESOLUTION.value,
+            "value": resolutions[render_target],
+        })
+        
+        return constraints
+    
+    def _generate_success_criteria(
+        self, domain: str, complexity: Complexity, failure_mode: FailureMode
+    ) -> list[str]:
+        """Generate verifiable success criteria."""
+        criteria = ["Agent completed without crash"]
+        
+        if failure_mode != FailureMode.NONE:
+            criteria.append(f"Agent detected and handled {failure_mode.value} failure")
+            criteria.append("Agent reported failure to user with actionable guidance")
+        else:
+            criteria.append("All tool calls executed successfully")
+            criteria.append("Final render produced valid image output")
+            
+        domain_criteria = {
+            "lighting": ["Light nodes created with valid parameters", "Intensity values physically plausible"],
+            "material": ["Material binding resolved correctly", "Texture color spaces set appropriately"],
+            "render": ["Render converged within sample budget", "Output file written successfully"],
+            "scene": ["Scene hierarchy is valid USD", "No orphaned prims"],
+        }
+        criteria.extend(domain_criteria.get(domain, []))
+        
+        return criteria
+    
+    def _is_diverse_enough(
+        self, candidate: TaskEnvironment, existing: list[TaskEnvironment], threshold: float
+    ) -> bool:
+        """Check if candidate is sufficiently different from existing environments."""
+        if not existing:
+            return True
+            
+        for env in existing:
+            similarity = self._compute_similarity(candidate, env)
+            if similarity > (1.0 - threshold):
+                return False
+        return True
+    
+    def _compute_similarity(self, a: TaskEnvironment, b: TaskEnvironment) -> float:
+        """Compute similarity score between two environments (0.0-1.0)."""
+        score = 0.0
+        dimensions = 6
+        
+        if a.scene_complexity == b.scene_complexity:
+            score += 1.0
+        if a.lighting_type == b.lighting_type:
+            score += 1.0
+        if a.material_type == b.material_type:
+            score += 1.0
+        if a.render_target == b.render_target:
+            score += 1.0
+        if a.failure_mode == b.failure_mode:
+            score += 1.0
+        if a.expected_tool_chain == b.expected_tool_chain:
+            score += 1.0
+            
+        return score / dimensions
+```
+
+#### Testing strategy
+
+```python
+# test_task_synthesis.py
+
+def test_generates_requested_count():
+    """Synthesizer produces exactly n environments."""
+
+def test_diversity_threshold_enforced():
+    """No two environments exceed similarity threshold."""
+
+def test_all_complexity_levels_represented():
+    """Generated set covers all Complexity enum values."""
+
+def test_failure_modes_included():
+    """~20% of generated tasks include failure scenarios."""
+
+def test_constraints_are_realistic():
+    """VRAM always 24GB, time budgets scale with complexity."""
+
+def test_success_criteria_are_verifiable():
+    """Each criterion maps to a programmatic check."""
+
+def test_deterministic_with_seed():
+    """Same seed produces same environments."""
+```
+
+---
+
+## Section 3: Claude Code Execution Plan
+
+```
+Phase 1: Foundation (no behavioral changes)
+═══════════════════════════════════════════
+Step 1:  Create src/agent/ directory
+Step 2:  Create src/agent/__init__.py with public API exports  
+Step 3:  Create src/agent/sparse_router.py (Pattern 1)
+Step 4:  Create src/agent/reasoning_context.py (Pattern 2)
+Step 5:  Create src/agent/specialist_modes.py (Pattern 3)
+Step 6:  Create src/agent/task_synthesizer.py (Pattern 4)
+Step 7:  Run mypy on all new files — fix any type errors
+Step 8:  Create test files for all four modules
+Step 9:  Run pytest — all new tests pass
+Step 10: Run full test suite — no regressions (890 existing tests still pass)
+
+Phase 2: Integration wiring (sparse router)
+═══════════════════════════════════════════
+Step 11: Add build_signatures_from_registry() call to server startup
+Step 12: Wire sparse_router.index() into tool dispatch (dense mode only — calibration)
+Step 13: Add feature flag to config: sparse_routing.enabled = true, mode = "dense"
+Step 14: Add calibration accuracy logging
+Step 15: Integration test: full request → sparse index → dense dispatch → verify match
+
+Phase 3: Integration wiring (reasoning context)
+═══════════════════════════════════════════════
+Step 16: Add ReasoningContextManager to server state
+Step 17: Wire ctx.summarize() injection into multi-tool agent chains
+Step 18: Wire ctx.to_memory_record() into memory system archival
+Step 19: Add feature flag: reasoning_context.enabled = true
+Step 20: Integration test: multi-tool chain preserves reasoning trace
+
+Phase 4: Integration wiring (specialists)
+═════════════════════════════════════════
+Step 21: Wire build_enhanced_prompt() into tool dispatch
+Step 22: Connect sparse router domain detection → specialist selection
+Step 23: Add feature flag: specialist_modes.enabled = true
+Step 24: Integration test: lighting request → lighting specialist prompt
+
+Phase 5: Task synthesis (test infrastructure)
+═════════════════════════════════════════════
+Step 25: Generate initial 200 synthetic environments
+Step 26: Create pytest fixtures from synthetic environments
+Step 27: Dry-run agent against synthetic tasks (mock tool execution)
+Step 28: Baseline metrics: coverage, diversity, failure mode distribution
+
+Phase 6: Validation
+═══════════════════
+Step 29: Full test suite passes (890 + new tests)
+Step 30: mypy clean on entire codebase
+Step 31: Feature flags all default to safe/calibration mode
+Step 32: Document graft in CHANGELOG.md
+```
+
+---
+
+## Section 4: Verification Checklist
+
+```
+Pattern 1: Sparse Tool Router
+- [ ] sparse_router.py created with SparseToolIndexer class
+- [ ] ToolSignature dataclass covers all 43 MCP tools  
+- [ ] build_signatures_from_registry() auto-generates from tool definitions
+- [ ] Dense calibration mode collects ground truth without changing behavior
+- [ ] Calibration accuracy metric computed and logged
+- [ ] Feature flag: sparse_routing.enabled controls activation
+- [ ] Tests: test_sparse_router.py passes
+- [ ] No regression in existing tool dispatch
+
+Pattern 2: Persistent Reasoning Context
+- [ ] reasoning_context.py created with ReasoningContext + ReasoningContextManager
+- [ ] Protected categories (decision, question, plan) survive compression
+- [ ] summarize() produces usable context for tool calls
+- [ ] to_memory_record() integrates with SYNAPSE memory system
+- [ ] Concurrent chain management via ReasoningContextManager
+- [ ] Feature flag: reasoning_context.enabled controls activation
+- [ ] Tests: test_reasoning_ctx.py passes
+- [ ] No regression in existing tool execution
+
+Pattern 3: Specialist Domain Modes
+- [ ] specialist_modes.py created with 5 specialist configs
+- [ ] H21 parameter vocabulary accurate for lighting (encoded names)
+- [ ] build_enhanced_prompt() correctly appends specialist context
+- [ ] Sparse router domain detection → specialist selection wired
+- [ ] Feature flag: specialist_modes.enabled controls activation
+- [ ] Tests: test_specialists.py passes
+- [ ] No regression in existing prompt construction
+
+Pattern 4: Synthetic Task Synthesis
+- [ ] task_synthesizer.py created with TaskSynthesizer class
+- [ ] 200+ environments generated with diversity > 0.7
+- [ ] All Complexity levels, failure modes, domains represented
+- [ ] Success criteria are programmatically verifiable
+- [ ] Deterministic with seed (reproducible)
+- [ ] Tests: test_task_synthesis.py passes
+- [ ] Synthetic environments usable as pytest fixtures
+
+Cross-cutting
+- [ ] mypy passes on all new + existing code
+- [ ] Full test suite: 890 existing + new tests all pass
+- [ ] All feature flags default to safe/calibration mode
+- [ ] CHANGELOG.md updated with graft documentation
+- [ ] Performance: no measurable latency increase in calibration mode
+```
+
+---
+
+## Config: Feature Flags
+
+```yaml
+# synapse_config.yaml — DeepSeek graft feature flags
+
+deepseek_graft:
+  version: "2512.02556"
+  grafted: "2026-02-15"
+  
+  sparse_routing:
+    enabled: true
+    mode: "dense"              # dense (calibration) | sparse | hybrid
+    top_k: 3
+    min_calibration_samples: 100
+    accuracy_threshold: 0.95
+    keyword_weight: 0.4
+    domain_weight: 0.3
+    param_weight: 0.2
+    recency_weight: 0.1
+    
+  reasoning_context:
+    enabled: true
+    max_entries: 100
+    compression_target: 50
+    archive_to_memory: true
+    
+  specialist_modes:
+    enabled: true
+    domains:
+      - lighting
+      - material
+      - render
+      - scene
+      - memory
+      
+  task_synthesis:
+    enabled: true
+    seed: 42
+    default_count: 200
+    diversity_threshold: 0.7
+    failure_mode_ratio: 0.2
+```

@@ -1,0 +1,39 @@
+Sync this local repo with the latest pushed version from origin.
+
+1. Run: git remote -v
+   - Confirm origin points to https://github.com/JosephOIbrahim/usd-cognitive-substrate
+   - If not, run: git remote set-url origin https://github.com/JosephOIbrahim/usd-cognitive-substrate.git
+
+2. Run: git fetch --all
+
+3. Run: git branch -a
+   - Identify which branch has the lossless-v10 build (59 files, src/lossless/ directory, 154 tests)
+   - Check both local and remote branches
+
+4. If lossless-v10 exists on remote:
+   - git checkout lossless-v10
+   - git pull origin lossless-v10
+   
+   If lossless-v10 was merged to main:
+   - git checkout main
+   - git pull origin main
+
+5. Verify the pull landed correctly:
+   - ls src/lossless/ — should show: schema/, clean_channel/, injection/, routing/, experts/, integration/, consistency/
+   - ls tests/lossless/ — should show: unit/, integration/, consistency/
+   - python -m pytest tests/lossless/ -v --tb=short — all 154 tests should pass
+   - Confirm LOSSLESS_IMPLEMENTATION_BLUEPRINT.md exists
+   - Confirm CONSISTENCY_REPORT.md exists
+
+6. If tests fail due to missing dependencies:
+   - pip install -r requirements.txt (if it exists)
+   - Or install whatever pytest reports as missing
+   - Re-run tests until all pass
+
+7. Run: git log --oneline -5
+   - Show me the last 5 commits to confirm we're on the right version
+
+8. Run: python -m src.lossless.integration.cli compile --dry-run
+   - Confirm the lossless pipeline runs
+
+Report what you find at each step. Do not skip steps. If any step fails, stop and report the error before proceeding.

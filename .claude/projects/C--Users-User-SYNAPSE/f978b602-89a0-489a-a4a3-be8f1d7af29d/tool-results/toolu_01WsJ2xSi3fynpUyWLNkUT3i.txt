@@ -1,0 +1,792 @@
+C:\Users\User\SYNAPSE\python\synapse\server\dashboard.py-175-    if(paused || !ws || ws.readyState !== 1) return;
+C:\Users\User\SYNAPSE\python\synapse\server\dashboard.py-176-    msgId++;
+C:\Users\User\SYNAPSE\python\synapse\server\dashboard.py:177:    const cmd = JSON.stringify({type:'get_live_metrics',id:'dash-'+msgId,payload:{}});
+C:\Users\User\SYNAPSE\python\synapse\server\dashboard.py-178-    try{ ws.send(cmd); }catch(e){}
+C:\Users\User\SYNAPSE\python\synapse\server\dashboard.py-179-    timer = setTimeout(poll, interval);
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-22-    """Mixin providing material creation, assignment, and reading handlers."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-23-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:24:    def _handle_create_material(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-25-        """Create a materiallibrary LOP with a MaterialX shader inside it.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-26-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-31-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-32-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:33:        node_path_arg = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:34:        name = resolve_param_with_default(payload, "name", "material")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-35-        shader_type = resolve_param_with_default(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:36:            payload, "shader_type", "mtlxstandard_surface"
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-37-        )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:38:        base_color = resolve_param(payload, "base_color", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:39:        metalness = resolve_param(payload, "metalness", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:40:        roughness = resolve_param(payload, "roughness", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-41-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-42-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-112-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-113-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:114:    def _handle_assign_material(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-115-        """Create an assignmaterial LOP to bind a material to geometry prims."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-116-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-117-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-118-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:119:        node_path_arg = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:120:        prim_pattern = resolve_param(payload, "prim_pattern")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:121:        material_path = resolve_param(payload, "material_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-122-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-123-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-145-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-146-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:147:    def _handle_read_material(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-148-        """Read material binding and shader parameters from a USD prim.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-149-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-154-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-155-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:156:        node_path_arg = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py:157:        prim_path = resolve_param(payload, "prim_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-158-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_material.py-159-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-370-        """Add a memory entry."""
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-371-        _ensure_session()
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py:372:        payload = {"content": content, "memory_type": memory_type}
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-373-        if tags:
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py:374:            payload["tags"] = [t.strip() for t in tags.split(",")]
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py:375:        result = _get_bridge().handle_memory_add(payload)
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-376-        _log_action("add_memory")
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-377-        return result
+--
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-382-        """Record a decision."""
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-383-        _ensure_session()
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py:384:        payload = {"decision": decision}
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-385-        if reasoning:
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py:386:            payload["reasoning"] = reasoning
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-387-        if alternatives:
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py:388:            payload["alternatives"] = alternatives
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py:389:        result = _get_bridge().handle_memory_decide(payload)
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-390-        _log_action("decide")
+C:\Users\User\SYNAPSE\python\synapse\server\api_adapter.py-391-        return result
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-209-                )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-210-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:211:            result = handler(command.payload)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-212-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-213-            # Log action asynchronously — don't block the response path
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-214-            if cmd_type not in _READ_ONLY_COMMANDS:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:215:                self._submit_logs(cmd_type, command.payload, result)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-216-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-217-            return SynapseResponse(
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-254-            )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-255-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:256:    def _submit_logs(self, cmd_type: str, payload: Dict, result: Any):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-257-        """Submit bridge + audit log in a single executor call."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-258-        bridge = self._get_bridge()
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-271-                category=category,
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-272-                user_id=uid,
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:273:                input_data=payload,
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-274-                output_data=output,
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-275-            )
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-393-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-394-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:395:    def _handle_ping(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-396-        """Handle ping command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-397-        return {
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-401-        }
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-402-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:403:    def _handle_get_health(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-404-        """Handle health check command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-405-        return {
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-409-        }
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-410-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:411:    def _handle_get_help(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-412-        """Handle help command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-413-        return {
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-421-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-422-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:423:    def _handle_batch_commands(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-424-        """Execute a batch of commands in declared order.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-425-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-426-        Payload:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:427:            commands: list of {type: str, payload: dict}
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-428-            atomic: bool (default True) -- wrap in single undo group
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-429-            stop_on_error: bool (default False) -- halt on first error
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-430-        """
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:431:        commands = payload.get("commands")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-432-        if not commands or not isinstance(commands, list):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-433-            raise ValueError("'commands' must be a non-empty list")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-434-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:435:        atomic = payload.get("atomic", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:436:        stop_on_error = payload.get("stop_on_error", False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-437-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-438-        from .main_thread import run_on_main, _SLOW_TIMEOUT
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-446-                for i, cmd_spec in enumerate(commands):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-447-                    cmd_type = cmd_spec.get("type", "")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:448:                    cmd_payload = cmd_spec.get("payload", {})
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-449-                    handler = self._registry.get(cmd_type)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-450-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-459-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-460-                    try:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:461:                        result = handler(cmd_payload)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-462-                        results.append(result)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-463-                        statuses.append("ok")
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-488-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-489-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:490:    def _handle_get_parm(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-491-        """Handle get_parm command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-492-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-493-            raise HoudiniUnavailableError()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-494-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:495:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:496:        parm_name = resolve_param(payload, "parm")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-497-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-498-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-535-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-536-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:537:    def _handle_set_parm(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-538-        """Handle set_parm command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-539-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-540-            raise HoudiniUnavailableError()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-541-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:542:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:543:        parm_name = resolve_param(payload, "parm")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:544:        value = resolve_param(payload, "value")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-545-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-546-        # Guard: reject NaN/Inf before they reach Houdini (they persist and corrupt)
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-622-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-623-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:624:    def _handle_get_scene_info(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-625-        """Handle get_scene_info command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-626-        if not HOU_AVAILABLE:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-639-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-640-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:641:    def _handle_get_selection(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-642-        """Handle get_selection command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-643-        if not HOU_AVAILABLE:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-662-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-663-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:664:    def _handle_execute_python(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-665-        """
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-666-        Handle execute_python command.
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-676-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-677-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:678:        code = resolve_param(payload, "content")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:679:        dry_run = resolve_param_with_default(payload, "dry_run", False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:680:        atomic = resolve_param_with_default(payload, "atomic", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-681-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-682-        # Compile first -- catches SyntaxError for both dry_run and real runs
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-740-        return run_on_main(_on_main, timeout=_SLOW_TIMEOUT)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-741-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:742:    def _handle_execute_vex(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-743-        """
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-744-        Handle execute_vex command.
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-751-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-752-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:753:        snippet = resolve_param(payload, "snippet")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:754:        run_over = resolve_param_with_default(payload, "run_over", "Points")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:755:        input_node = resolve_param_with_default(payload, "input_node", None)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-756-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-757-        # Pre-execution lint check (no hou.* needed)
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-848-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-849-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:850:    def _handle_inspect_selection(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-851-        """Inspect currently selected nodes -- connections, parms, geometry, input graph."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-852-        if not HOU_AVAILABLE:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-854-        from .introspection import inspect_selection
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-855-        from .main_thread import run_on_main
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:856:        depth = resolve_param_with_default(payload, "depth", 1)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-857-        return run_on_main(lambda: inspect_selection(depth=int(depth)))
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-858-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:859:    def _handle_inspect_scene(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-860-        """Hierarchical scene overview with issues and artist notes."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-861-        if not HOU_AVAILABLE:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-863-        from .introspection import inspect_scene
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-864-        from .main_thread import run_on_main
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:865:        root = resolve_param_with_default(payload, "root", "/")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:866:        max_depth = resolve_param_with_default(payload, "max_depth", 3)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:867:        context_filter = resolve_param_with_default(payload, "context_filter", None)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-868-        return run_on_main(lambda: inspect_scene(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-869-            root=root,
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-872-        ))
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-873-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:874:    def _handle_inspect_node(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-875-        """Deep single-node dump: all parms, expressions, code, geometry, HDA info."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-876-        if not HOU_AVAILABLE:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-878-        from .introspection import inspect_node_detail
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-879-        from .main_thread import run_on_main
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:880:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:881:        include_code = resolve_param_with_default(payload, "include_code", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:882:        include_geometry = resolve_param_with_default(payload, "include_geometry", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:883:        include_expressions = resolve_param_with_default(payload, "include_expressions", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-884-        return run_on_main(lambda: inspect_node_detail(
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-885-            node_path=node_path,
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-889-        ))
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-890-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:891:    def _handle_get_metrics(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-892-        """Return Prometheus-format metrics text."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-893-        from .metrics import render_prometheus
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-922-        return {"format": "prometheus", "text": text}
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-923-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:924:    def _handle_router_stats(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-925-        """Return tier cascade statistics for LLM self-reflection."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-926-        if not hasattr(self, "_router"):
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-928-        return self._router.stats()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-929-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:930:    def _handle_list_recipes(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-931-        """List all available recipes for artist discovery."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-932-        from ..routing.recipes import RecipeRegistry
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-955-        self._metrics_aggregator = aggregator
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-956-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:957:    def _handle_get_live_metrics(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-958-        """Return live metrics snapshot or historical snapshots."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-959-        if not getattr(self, "_metrics_aggregator", None):
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-960-            return {"error": "Metrics aggregator not running"}
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-961-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:962:        count = payload.get("history_count", 0)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-963-        if count > 0:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-964-            return {"snapshots": self._metrics_aggregator.history(count)}
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-971-        return snapshot_to_dict(snapshot)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-972-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:973:    def _handle_knowledge_lookup(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-974-        """Look up Houdini knowledge from the RAG index.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-975-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-977-        node types, workflow guides, and FX setup instructions.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-978-        """
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py:979:        query = resolve_param(payload, "query")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-980-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers.py-981-        # Lazy-init the knowledge index
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-23-    """Mixin providing TOPs/PDG wedge and pipeline handlers."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-24-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:25:    def _handle_wedge(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-26-        """Run a TOPs/PDG wedge to explore parameter variations."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-27-        if not HOU_AVAILABLE:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-30-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-31-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:32:        top_path = resolve_param(payload, "node")  # TOP network or wedge node
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:33:        wedge_parm = resolve_param(payload, "parm", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:34:        values = resolve_param(payload, "values", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-35-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-36-        if values is not None and not isinstance(values, list):
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-77-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-78-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:79:    def _handle_tops_get_work_items(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-80-        """Get work items from a TOP node with optional state filtering.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-81-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-88-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-89-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:90:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:91:        state_filter = resolve_param_with_default(payload, "state_filter", "all")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:92:        include_attrs = resolve_param_with_default(payload, "include_attributes", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:93:        limit = resolve_param_with_default(payload, "limit", 100)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-94-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-95-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-162-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-163-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:164:    def _handle_tops_get_dependency_graph(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-165-        """Get the dependency graph for a TOP network.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-166-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-173-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-174-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:175:        topnet_path = resolve_param(payload, "topnet_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:176:        depth = resolve_param_with_default(payload, "depth", -1)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-177-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-178-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-236-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-237-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:238:    def _handle_tops_get_cook_stats(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-239-        """Get cook statistics for a TOP node or network.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-240-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-247-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-248-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:249:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-250-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-251-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-312-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-313-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:314:    def _handle_tops_cook_node(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-315-        """Cook a TOP node, optionally generating work items only.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-316-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-323-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-324-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:325:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:326:        generate_only = resolve_param_with_default(payload, "generate_only", False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:327:        blocking = resolve_param_with_default(payload, "blocking", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:328:        top_down = resolve_param_with_default(payload, "top_down", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-329-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-330-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-363-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-364-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:365:    def _handle_tops_generate_items(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-366-        """Generate work items for a TOP node without cooking.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-367-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-374-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-375-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:376:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-377-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-378-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-405-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-406-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:407:    def _handle_tops_configure_scheduler(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-408-        """Configure the scheduler for a TOP network.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-409-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-416-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-417-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:418:        topnet_path = resolve_param(payload, "topnet_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:419:        scheduler_type = resolve_param_with_default(payload, "scheduler_type", "local")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:420:        max_concurrent = resolve_param(payload, "max_concurrent", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:421:        working_dir = resolve_param(payload, "working_dir", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-422-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-423-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-479-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-480-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:481:    def _handle_tops_cancel_cook(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-482-        """Cancel an active cook on a TOP node or network.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-483-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-490-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-491-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:492:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-493-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-494-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-528-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-529-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:530:    def _handle_tops_dirty_node(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-531-        """Dirty a TOP node, optionally including upstream nodes.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-532-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-539-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-540-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:541:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:542:        dirty_upstream = resolve_param_with_default(payload, "dirty_upstream", False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-543-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-544-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-575-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-576-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:577:    def _handle_tops_setup_wedge(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-578-        """Set up a Wedge TOP node for parameter variation exploration.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-579-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-586-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-587-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:588:        topnet_path = resolve_param(payload, "topnet_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:589:        wedge_name = resolve_param_with_default(payload, "wedge_name", "wedge1")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:590:        attributes = resolve_param(payload, "attributes")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-591-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-592-        if not isinstance(attributes, list) or len(attributes) == 0:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-671-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-672-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:673:    def _handle_tops_batch_cook(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-674-        """Cook multiple TOP nodes in sequence, collecting results.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-675-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-683-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-684-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:685:        node_paths = resolve_param(payload, "node_paths")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:686:        blocking = resolve_param_with_default(payload, "blocking", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:687:        stop_on_error = resolve_param_with_default(payload, "stop_on_error", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-688-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-689-        if not isinstance(node_paths, list) or len(node_paths) == 0:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-778-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-779-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:780:    def _handle_tops_query_items(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-781-        """Query work items by attribute value with filter operators.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-782-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-791-        import re
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-792-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:793:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:794:        attr_name = resolve_param(payload, "query_attribute")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:795:        filter_op = resolve_param_with_default(payload, "filter_op", "eq")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:796:        filter_value = resolve_param(payload, "filter_value")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-797-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-798-        valid_ops = ("eq", "gt", "lt", "gte", "lte", "contains", "regex")
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-880-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-881-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:882:    def _handle_tops_cook_and_validate(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-883-        """Cook a TOP node with optional retry on failure (Item 15: self-healing).
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-884-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-892-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-893-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:894:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:895:        max_retries = resolve_param_with_default(payload, "max_retries", 0)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:896:        validate_states = resolve_param_with_default(payload, "validate_states", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-897-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-898-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-965-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-966-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:967:    def _handle_tops_diagnose(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-968-        """Diagnose failures on a TOP node -- inspect work items, scheduler,
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-969-        upstream dependencies, and generate actionable suggestions.
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-974-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-975-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:976:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:977:        include_scheduler = resolve_param_with_default(payload, "include_scheduler", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:978:        include_dependencies = resolve_param_with_default(payload, "include_dependencies", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-979-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-980-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-1087-        return hdefereval.executeInMainThreadWithResult(_run)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-1088-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:1089:    def _handle_tops_pipeline_status(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-1090-        """Full health check for a TOP network -- walk all child nodes,
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-1091-        aggregate work item counts, detect issues, generate suggestions.
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-1096-        import hdefereval
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-1097-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:1098:        topnet_path = resolve_param(payload, "topnet_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py:1099:        include_items = resolve_param_with_default(payload, "include_items", False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-1100-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_tops.py-1101-        def _run():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-35-    """Mixin providing node creation, deletion, and connection handlers."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-36-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:37:    def _handle_create_node(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-38-        """Handle create_node command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-39-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-40-            raise HoudiniUnavailableError()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-41-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:42:        parent = resolve_param(payload, "parent")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:43:        node_type = resolve_param(payload, "type")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:44:        name = resolve_param(payload, "name", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-45-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-46-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-74-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-75-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:76:    def _handle_delete_node(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-77-        """Handle delete_node command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-78-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-79-            raise HoudiniUnavailableError()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-80-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:81:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-82-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-83-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-95-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-96-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:97:    def _handle_connect_nodes(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-98-        """Handle connect_nodes command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-99-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-100-            raise HoudiniUnavailableError()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-101-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:102:        source_path = resolve_param(payload, "source")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:103:        target_path = resolve_param(payload, "target")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:104:        source_output = resolve_param_with_default(payload, "source_output", 0)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py:105:        target_input = resolve_param_with_default(payload, "target_input", 0)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-106-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_node.py-107-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-90-    frame validation, and render farm handlers."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-91-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:92:    def _handle_capture_viewport(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-93-        """Capture the Houdini viewport as an image file.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-94-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-102-        from pathlib import Path
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-103-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:104:        fmt = resolve_param_with_default(payload, "format", "jpeg")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:105:        width = resolve_param_with_default(payload, "width", 800)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:106:        height = resolve_param_with_default(payload, "height", 600)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-107-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-108-        temp_dir = Path(hou.text.expandString("$HOUDINI_TEMP_DIR"))
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-153-        }
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-154-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:155:    def _handle_render(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-156-        """Render a frame via Karma, Mantra, or any ROP node.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-157-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-166-        from pathlib import Path
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-167-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:168:        rop_path = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:169:        frame = resolve_param_with_default(payload, "frame", None)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:170:        width = resolve_param_with_default(payload, "width", None)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:171:        height = resolve_param_with_default(payload, "height", None)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-172-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-173-        def _render_on_main():
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-351-        return result
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-352-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:353:    def _handle_set_keyframe(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-354-        """Set a keyframe on a node parameter at a specific frame."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-355-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-356-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:357:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:358:        parm_name = resolve_param(payload, "parm")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:359:        value = resolve_param(payload, "value")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:360:        frame = resolve_param_with_default(payload, "frame", None)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-361-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-362-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-396-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-397-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:398:    def _handle_render_settings(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-399-        """Read and optionally modify render settings on a ROP or Karma node."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-400-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-401-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:402:        node_path = resolve_param(payload, "node")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:403:        overrides = resolve_param_with_default(payload, "settings", {})
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-404-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-405-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-436-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-437-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:438:    def _handle_validate_frame(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-439-        """Validate a rendered frame for common quality issues.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-440-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-444-        is unavailable.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-445-        """
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:446:        image_path = resolve_param(payload, "image_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:447:        requested_checks = resolve_param_with_default(payload, "checks", None)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:448:        threshold_overrides = resolve_param_with_default(payload, "thresholds", None) or {}
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-449-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-450-        # Determine which checks to run
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-662-    # =========================================================================
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-663-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:664:    def _handle_render_sequence(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-665-        """Render a frame sequence with per-frame validation and auto-fix.
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-666-
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-674-        from .render_farm import RenderFarmOrchestrator, RenderCallbacks
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-675-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:676:        start_frame = resolve_param(payload, "start_frame")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:677:        end_frame = resolve_param(payload, "end_frame")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:678:        rop = resolve_param(payload, "rop", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:679:        step = int(resolve_param_with_default(payload, "step", 1))
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:680:        auto_fix = resolve_param_with_default(payload, "auto_fix", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:681:        max_retries = int(resolve_param_with_default(payload, "max_retries", 3))
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-682-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-683-        # Discover the Karma Render Properties LOP where quality parms live.
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-769-        return report.to_dict()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-770-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py:771:    def _handle_render_farm_status(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-772-        """Get the current render farm status."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_render.py-773-        if hasattr(self, '_render_farm') and self._render_farm is not None:
+--
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-59-    """
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-60-    render_frame: Callable[[Dict], Dict]
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py:61:    """render handler: (payload) -> {"image_path": str, "rop": str, ...}"""
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-62-
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-63-    validate_frame: Callable[[Dict], Dict]
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py:64:    """validate_frame handler: (payload) -> {"valid": bool, "checks": {...}}"""
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-65-
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-66-    get_render_settings: Callable[[Dict], Dict]
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py:67:    """render_settings handler (read): (payload) -> {"settings": {...}}"""
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-68-
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-69-    set_render_settings: Callable[[Dict], Dict]
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py:70:    """render_settings handler (write): (payload) -> {"settings": {...}}"""
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-71-
+C:\Users\User\SYNAPSE\python\synapse\server\render_farm.py-72-    get_stage_info: Optional[Callable[[Dict], Dict]] = None
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-36-        return {"hip_path": hip_path, "hip_dir": hip_dir, "job_path": job_path}
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-37-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:38:    def _handle_memory_context(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-39-        """Handle context/engram_context command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-40-        bridge = self._get_bridge()  # type: ignore[attr-defined]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:41:        return bridge.handle_memory_context(payload)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-42-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:43:    def _handle_memory_search(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-44-        """Handle search/engram_search command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-45-        bridge = self._get_bridge()  # type: ignore[attr-defined]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:46:        return bridge.handle_memory_search(payload)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-47-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:48:    def _handle_memory_add(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-49-        """Handle add_memory/engram_add command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-50-        bridge = self._get_bridge()  # type: ignore[attr-defined]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:51:        return bridge.handle_memory_add(payload)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-52-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:53:    def _handle_memory_decide(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-54-        """Handle decide/engram_decide command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-55-        bridge = self._get_bridge()  # type: ignore[attr-defined]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:56:        return bridge.handle_memory_decide(payload)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-57-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:58:    def _handle_memory_recall(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-59-        """Handle recall/engram_recall command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-60-        bridge = self._get_bridge()  # type: ignore[attr-defined]
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:61:        return bridge.handle_memory_recall(payload)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-62-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:63:    def _handle_project_setup(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-64-        """Initialize or load SYNAPSE project structure for current scene."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-65-        from ..memory.scene_memory import ensure_scene_structure, load_full_context
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-80-        }
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-81-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:82:    def _handle_memory_write(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-83-        """Write a memory entry to scene or project memory."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-84-        from ..memory.scene_memory import write_memory_entry, ensure_scene_structure
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-87-        paths = ensure_scene_structure(sp["hip_path"], sp["job_path"])
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-88-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:89:        entry_type = resolve_param(payload, "entry_type")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:90:        content = resolve_param(payload, "content")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:91:        scope = resolve_param_with_default(payload, "scope", "scene")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-92-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-93-        if isinstance(content, str):
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-98-        return {"written": True, "entry_type": entry_type, "scope": scope}
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-99-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:100:    def _handle_memory_query(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-101-        """Query scene or project memory with section-aware ranked search."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-102-        from ..memory.scene_memory import load_full_context, search_memory
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-104-        sp = self._scene_paths()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-105-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:106:        query = resolve_param(payload, "query")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:107:        scope = resolve_param_with_default(payload, "scope", "all")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:108:        type_filter = resolve_param_with_default(payload, "type_filter", "")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-109-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-110-        ctx = load_full_context(sp["hip_dir"], sp["job_path"])
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-153-        }
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-154-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:155:    def _handle_memory_status(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-156-        """Get memory system status."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-157-        from ..memory.scene_memory import get_memory_status
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-160-        return get_memory_status(sp["hip_dir"], sp["job_path"])
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-161-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:162:    def _handle_evolve_memory(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-163-        """Manually trigger memory evolution."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-164-        from ..memory.evolution import check_evolution, evolve_to_charmeleon
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-165-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-166-        sp = self._scene_paths()
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:167:        scope = resolve_param_with_default(payload, "scope", "scene")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py:168:        dry_run = resolve_param_with_default(payload, "dry_run", True)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-169-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_memory.py-170-        claude_dir = os.path.join(sp["hip_dir"], "claude")
+--
+C:\Users\User\SYNAPSE\python\synapse\server\hwebserver_adapter.py-130-                try:
+C:\Users\User\SYNAPSE\python\synapse\server\hwebserver_adapter.py-131-                    msg = json.loads(text_data)
+C:\Users\User\SYNAPSE\python\synapse\server\hwebserver_adapter.py:132:                    token = msg.get("payload", {}).get("key", "")
+C:\Users\User\SYNAPSE\python\synapse\server\hwebserver_adapter.py-133-                    if msg.get("type") == AUTH_COMMAND_TYPE and authenticate(token, self._auth_key):
+C:\Users\User\SYNAPSE\python\synapse\server\hwebserver_adapter.py-134-                        self._authenticated = True
+--
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py-346-                try:
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py-347-                    auth_msg = json.loads(next(iter([websocket.recv()])))
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py:348:                    token = auth_msg.get("payload", {}).get("key", "")
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py-349-
+C:\Users\User\SYNAPSE\python\synapse\server\websocket.py-350-                    # Validate against shared key (legacy) or user directory
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-77-        )
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-78-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:79:    def _handle_get_stage_info(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-80-        """Handle get_stage_info command."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-81-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-82-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-83-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:84:        node_path = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-85-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-86-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-128-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-129-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:130:    def _handle_get_usd_attribute(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-131-        """Handle get_usd_attribute command -- read a USD attribute from a prim."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:132:        node_path_arg = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:133:        prim_path = resolve_param(payload, "prim_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:134:        attr_name = resolve_param(payload, "usd_attribute")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-135-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-136-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-174-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-175-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:176:    def _handle_set_usd_attribute(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-177-        """Handle set_usd_attribute command -- set a USD attribute via Python LOP."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:178:        node_path_arg = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:179:        prim_path = resolve_param(payload, "prim_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:180:        attr_name = resolve_param(payload, "usd_attribute")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:181:        value = resolve_param(payload, "value")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-182-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-183-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-212-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-213-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:214:    def _handle_create_usd_prim(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-215-        """Handle create_usd_prim command -- define a USD prim via Python LOP."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:216:        node_path_arg = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:217:        prim_path = resolve_param(payload, "prim_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:218:        prim_type = resolve_param_with_default(payload, "prim_type", "Xform")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-219-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-220-        from .main_thread import run_on_main
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-243-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-244-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:245:    def _handle_modify_usd_prim(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-246-        """Handle modify_usd_prim command -- set metadata/properties on a prim."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:247:        node_path_arg = resolve_param(payload, "node", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:248:        prim_path = resolve_param(payload, "prim_path")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-249-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-250-        # Collect optional modifications
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:251:        kind = resolve_param(payload, "kind", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:252:        purpose = resolve_param(payload, "purpose", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:253:        active = resolve_param(payload, "active", required=False)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-254-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-255-        # Validate before touching hou.*
+--
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-302-        return run_on_main(_on_main)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-303-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:304:    def _handle_reference_usd(self, payload: Dict) -> Dict:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-305-        """Import a USD file into the stage via reference or sublayer."""
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-306-        if not HOU_AVAILABLE:
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-307-            raise RuntimeError(_HOUDINI_UNAVAILABLE)
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-308-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:309:        file_path = resolve_param(payload, "file")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:310:        prim_path = resolve_param_with_default(payload, "prim_path", "/")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:311:        mode = resolve_param_with_default(payload, "mode", "reference")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py:312:        parent = resolve_param_with_default(payload, "parent", "/stage")
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-313-
+C:\Users\User\SYNAPSE\python\synapse\server\handlers_usd.py-314-        # Validate mode before touching hou.*

@@ -1,0 +1,166 @@
+# Plan: Build The Translators Game in UE5
+
+## Context
+
+The TranslatorsCard bridge infrastructure is complete — C++ BridgeComponent, Python orchestrator, Remote Control API, MCP server all working. The C++ UI widgets (QuestionDisplay, OptionButton, ConnectingScreen, FinaleScreen, ProgressIndicator) are all implemented programmatically. But the game hasn't been compiled and run end-to-end as a playable experience yet.
+
+**Goal:** Make the game playable — compile, configure, test the full 8-question flow, add a title screen, and enhance the finale to display actual profile results.
+
+---
+
+## What Already Exists (Don't Rebuild)
+
+| Component | File | Status |
+|-----------|------|--------|
+| BridgeComponent | `BridgeComponent.h/cpp` (~1,260 lines) | Complete |
+| TranslatorsGameMode | `UI/TranslatorsGameMode.h/cpp` | Complete — auto-spawns BridgeActor |
+| TranslatorsHUD | `UI/TranslatorsHUD.h/cpp` (~614 lines) | Complete — widget lifecycle, transitions, keyboard 1/2/3 |
+| W_QuestionDisplay | `UI/W_QuestionDisplay.h/cpp` | Complete — programmatic UMG |
+| W_OptionButton | `UI/W_OptionButton.h/cpp` | Complete — click/hover/press |
+| W_ConnectingScreen | `UI/W_ConnectingScreen.h/cpp` | Complete |
+| W_FinaleScreen | `UI/W_FinaleScreen.h/cpp` | Minimal — "Profile Complete" + USD path only |
+| W_ProgressIndicator | `UI/W_ProgressIndicator.h/cpp` | Complete |
+| bridge_orchestrator.py | (~813 lines) | Complete — 8 questions, profile gen, USD export |
+| remote_control_bridge.py | (~696 lines) | Complete — REST API wrapper |
+| MCP Server | `mcp/` (7 tool modules) | Complete — 20+ tools |
+| Config | `Config/Default*.ini` | Complete |
+
+---
+
+## Phase 1: Compile & Verify Build
+
+Run `Build.bat`. Fix any compile errors iteratively. The code was written incrementally and may have issues with header includes or conditional compilation.
+
+**File:** `ue-bridge/Build.bat`
+
+---
+
+## Phase 2: Add Title Screen
+
+### 2a. Create W_TitleScreen (NEW files)
+
+- `ue-bridge/Source/TranslatorsCard/UI/W_TitleScreen.h`
+- `ue-bridge/Source/TranslatorsCard/UI/W_TitleScreen.cpp`
+
+**Displays:**
+- "The Translators" (large, cyan #5cffdb)
+- "A cognitive profiling experience" (dim subtitle)
+- "Press ENTER to begin" (pulsing opacity via Tick)
+- Dark background matching existing widgets
+
+Programmatic UI (same CanvasPanel → Border → VerticalBox → TextBlocks pattern). Delegate: `FOnStartRequested` fires on Enter key.
+
+### 2b. Integrate into TranslatorsHUD
+
+Modify `TranslatorsHUD.h/cpp`:
+- Add `EHUDState` enum: `Title → Connecting → Questions → Finale`
+- Title screen shown first → Enter → ShowConnectingScreen → bridge connects → questions
+- Create & manage TitleWidget alongside existing widgets
+
+---
+
+## Phase 3: Add Depth Labels to Questions
+
+The web game labels questions by cognitive depth tier:
+- Q1-Q2: **SURFACE** (sage green)
+- Q3-Q4: **PATTERNS** (teal)
+- Q5-Q6: **FEELINGS** (coral)
+- Q7-Q8: **CORE** (gold)
+
+### 3a. Add DepthLabel to FTranslatorsQuestion
+
+In `BridgeComponent.h`, add `FString DepthLabel` to the struct. In `BridgeComponent.cpp`, populate it based on question index when parsing questions.
+
+### 3b. Display in W_QuestionDisplay
+
+Add a `DepthText` TextBlock above the question text. Color it by tier.
+
+---
+
+## Phase 4: Enhance Finale with Profile Display
+
+### 4a. Add profile data structs
+
+In `BridgeComponent.h`:
+```cpp
+USTRUCT(BlueprintType)
+struct FTranslatorsTrait {
+    FString Dimension;    // "cognitive_density"
+    FString Label;        // "Balanced"
+    float Score;          // 0.0-1.0
+    FString Behavior;     // "You can hold moderate complexity"
+};
+
+USTRUCT(BlueprintType)
+struct FTranslatorsProfile {
+    TArray<FTranslatorsTrait> Traits;
+    TArray<FString> Insights;
+    FString Checksum;
+    FString Anchor;
+};
+```
+
+### 4b. Parse profile from USDA
+
+Add `FTranslatorsProfile ParseCognitiveProfile(const FString& UsdPath)` to BridgeComponent. Uses the existing regex-based USDA parsing pattern to extract traits and insights from `~/.translators/cognitive_profile.usda`.
+
+### 4c. Enhance W_FinaleScreen
+
+Rebuild the widget tree to show:
+- Title: "Your Cognitive Profile" (cyan, 36pt)
+- Scrollable traits list: dimension | label | score | behavior
+- Insights section (3-4 bullet points)
+- Checksum/anchor at bottom
+- "Exported to ~/.translators/cognitive_profile.usda"
+
+### 4d. Wire through TranslatorsHUD
+
+In `OnFinaleReceived`: parse profile → pass to FinaleScreen → display.
+
+---
+
+## Phase 5: Level Setup via MCP
+
+After build + editor launch, use `ue_execute_python` to:
+1. Verify GameMode is TranslatorsGameMode
+2. Add PlayerStart if missing
+3. Test PIE flow
+
+---
+
+## Phase 6: End-to-End Test
+
+1. Build (`Build.bat`)
+2. Launch editor → Press Play
+3. Title screen → Enter
+4. Separate terminal: `python bridge_orchestrator.py`
+5. Connecting → first question appears
+6. Answer all 8 (keyboard 1/2/3)
+7. Transitions (fade out/in) work
+8. Profile results display with traits
+9. `~/.translators/cognitive_profile.usda` exported
+
+---
+
+## Files to Create/Modify
+
+| Action | File |
+|--------|------|
+| **NEW** | `UI/W_TitleScreen.h` |
+| **NEW** | `UI/W_TitleScreen.cpp` |
+| **MODIFY** | `UI/TranslatorsHUD.h` — title state, profile relay |
+| **MODIFY** | `UI/TranslatorsHUD.cpp` — title flow, profile display |
+| **MODIFY** | `UI/W_FinaleScreen.h` — profile display |
+| **MODIFY** | `UI/W_FinaleScreen.cpp` — profile UI |
+| **MODIFY** | `UI/W_QuestionDisplay.h` — depth label |
+| **MODIFY** | `UI/W_QuestionDisplay.cpp` — depth label rendering |
+| **MODIFY** | `BridgeComponent.h` — profile struct, depth label, parser |
+| **MODIFY** | `BridgeComponent.cpp` — profile parsing, depth labels |
+
+## Verification
+
+1. `Build.bat` → 0 errors
+2. Editor → Press Play → title screen visible
+3. `python bridge_orchestrator.py` → questions flow
+4. Answer 8 questions → profile displays traits
+5. `~/.translators/cognitive_profile.usda` correct

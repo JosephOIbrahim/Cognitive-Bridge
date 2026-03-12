@@ -1,0 +1,111 @@
+# Fix husk Rendering Failure on Houdini Indie
+
+## Context
+
+`_handle_render` in `handlers_render.py` renders via `node.render()` on usdrender ROPs. For Karma/USD ROPs, Houdini internally exports a `__render__.usd` temp file and launches `husk` as a subprocess. On Houdini Indie (`.hiplc`), husk fails silently — it can't load the exported USD file. The `node.render()` call returns without error but produces no output file, causing the 15-second poll to time out with a generic "output wasn't created" error.
+
+Meanwhile, `_handle_capture_viewport` uses the Flipbook API (captures the Scene Viewer viewport) and works perfectly on Indie. The viewport in Solaris already renders via Karma through Hydra delegates.
+
+## Root Cause
+
+`_handle_render` (line 259) has exactly one render path: `node.render()`. There is:
+- No detection of husk failure (only a generic file-not-found poll)
+- No license type detection
+- No fallback to an alternative render method
+
+## Plan
+
+### File: `python/synapse/server/handlers_render.py`
+
+Add a **flipbook fallback** inside `_render_on_main()` (the inner function at line 201). When `node.render()` on a `usdrender_rop` produces no output file, fall back to the same Flipbook API that `_handle_capture_viewport` uses.
+
+#### Changes to `_render_on_main()` (lines 259-273):
+
+After the existing `node.render()` call and the poll loop, instead of immediately raising RuntimeError when the output file doesn't appear:
+
+1. **Check if this is a usdrender ROP** — `node_type in ("usdrender", "usdrender_rop")`
+2. **If so, attempt flipbook fallback:**
+   - Get the Scene Viewer pane via `hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)`
+   - Set the frame: `hou.setFrame(cur)`
+   - Use `sv.flipbookSettings()` to configure single-frame capture to the same `out_path`
+   - Call `sv.flipbook(viewport=vp, settings=settings, open_dialog=False)`
+   - Poll for the output file again (shorter 5s poll since flipbook is fast)
+   - If flipbook produces output, log a warning about husk failure and return the flipbook result
+   - If flipbook also fails, raise the original RuntimeError with additional context
+
+3. **Add `"flipbook_fallback": True`** to the return tuple when fallback was used, so callers know the image came from the viewport (lower quality) not from Karma batch rendering.
+
+#### Specific code structure:
+
+```python
+# After existing node.render() + poll loop...
+# Instead of the current else: raise RuntimeError, do:
+
+# -- Flipbook fallback for usdrender ROPs (husk may fail on Indie) --
+if node_type in ("usdrender", "usdrender_rop"):
+    logger.warning(
+        "Render output not found after node.render() — "
+        "attempting viewport flipbook fallback (husk may not "
+        "support this license type)"
+    )
+    try:
+        desktop = hou.ui.curDesktop()
+        sv = desktop.paneTabOfType(hou.paneTabType.SceneViewer)
+        if sv is not None:
+            hou.setFrame(cur)
+            vp = sv.curViewport()
+            fb_settings = sv.flipbookSettings()
+            # Flipbook needs $F4 pattern
+            fb_pattern = out_path.replace(".jpg", ".$F4.jpg")
+            fb_settings.frameRange((cur, cur))
+            fb_settings.output(fb_pattern)
+            fb_settings.useResolution(True)
+            w_fb = int(width) if width else 640
+            h_fb = int(height) if height else 480
+            fb_settings.resolution((w_fb, h_fb))
+            sv.flipbook(viewport=vp, settings=fb_settings,
+                        open_dialog=False)
+            fb_actual = fb_pattern.replace("$F4", f"{cur:04d}")
+            if Path(fb_actual).exists() and Path(fb_actual).stat().st_size > 0:
+                used_flipbook = True
+                out_path = fb_actual  # redirect to flipbook output
+            # else fall through to raise
+    except Exception as fb_err:
+        logger.warning("Flipbook fallback also failed: %s", fb_err)
+
+if not Path(out_path).exists() or Path(out_path).stat().st_size == 0:
+    raise RuntimeError(
+        f"The render finished but the output wasn't created at {out_path} -- "
+        "check if the output directory is writable and the renderer didn't error"
+    )
+```
+
+#### Return value change:
+
+Currently returns `(out_path, node.path(), node_type, engine)`. Add a 5th element:
+```python
+return out_path, node.path(), node_type, engine, used_flipbook
+```
+
+Update the unpacking at line 277 and add `"flipbook_fallback"` key to the returned dict.
+
+### File: `tests/test_render.py`
+
+Add 2 tests to `TestHandleRender`:
+
+1. **`test_flipbook_fallback_on_usdrender_no_output`** — Mock `node.render()` to succeed but `Path.exists()` returns False for the initial poll, then True after flipbook. Verify flipbook was called and result includes `"flipbook_fallback": True`.
+
+2. **`test_no_flipbook_fallback_for_non_usdrender`** — For non-usdrender ROP types (e.g., `"karma"`), verify the original RuntimeError is raised without attempting flipbook.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `python/synapse/server/handlers_render.py` | Add flipbook fallback in `_handle_render`, update return signature |
+| `tests/test_render.py` | Add 2 tests for flipbook fallback |
+
+## Verification
+
+1. `python -m pytest tests/test_render.py -v` — all existing + new tests pass
+2. `python -m pytest tests/ -v` — full suite passes (no regressions)
+3. Live test: call `render` via WebSocket on the Synapse demo scene with usdrender_rop1 — should fall back to flipbook and return an image

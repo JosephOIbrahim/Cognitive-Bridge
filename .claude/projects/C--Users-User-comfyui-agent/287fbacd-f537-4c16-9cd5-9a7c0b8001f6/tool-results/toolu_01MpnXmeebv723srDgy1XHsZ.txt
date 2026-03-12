@@ -1,0 +1,250 @@
+C:\Users\User\comfyui-agent\agent\brain\demo.py-57-                    "so we can do a fair comparison."
+C:\Users\User\comfyui-agent\agent\brain\demo.py-58-                ),
+C:\Users\User\comfyui-agent\agent\brain\demo.py:59:                "suggested_tools": ["set_input", "validate_before_execute"],
+C:\Users\User\comfyui-agent\agent\brain\demo.py-60-            },
+C:\Users\User\comfyui-agent\agent\brain\demo.py-61-            {
+--
+C:\Users\User\comfyui-agent\agent\brain\demo.py-108-                    "exactly how much faster it got."
+C:\Users\User\comfyui-agent\agent\brain\demo.py-109-                ),
+C:\Users\User\comfyui-agent\agent\brain\demo.py:110:                "suggested_tools": ["apply_optimization", "validate_before_execute"],
+C:\Users\User\comfyui-agent\agent\brain\demo.py-111-            },
+C:\Users\User\comfyui-agent\agent\brain\demo.py-112-            {
+--
+C:\Users\User\comfyui-agent\agent\brain\demo.py-169-                ),
+C:\Users\User\comfyui-agent\agent\brain\demo.py-170-                "suggested_tools": [
+C:\Users\User\comfyui-agent\agent\brain\demo.py:171:                    "validate_before_execute", "execute_workflow", "analyze_image",
+C:\Users\User\comfyui-agent\agent\brain\demo.py-172-                ],
+C:\Users\User\comfyui-agent\agent\brain\demo.py-173-            },
+--
+C:\Users\User\comfyui-agent\agent\brain\demo.py-198-                    "Now I'll customize the template: set the prompt, choose a model, "
+C:\Users\User\comfyui-agent\agent\brain\demo.py-199-                    "adjust resolution and quality settings. Each change is small, "
+C:\Users\User\comfyui-agent\agent\brain\demo.py:200:                    "validated, and reversible."
+C:\Users\User\comfyui-agent\agent\brain\demo.py-201-                ),
+C:\Users\User\comfyui-agent\agent\brain\demo.py-202-                "suggested_tools": [
+--
+C:\Users\User\comfyui-agent\agent\brain\demo.py-217-                "label": "Execute and Evaluate",
+C:\Users\User\comfyui-agent\agent\brain\demo.py-218-                "narration": (
+C:\Users\User\comfyui-agent\agent\brain\demo.py:219:                    "Everything's set. Let me validate the pipeline, execute it, "
+C:\Users\User\comfyui-agent\agent\brain\demo.py-220-                    "and then analyze the output."
+C:\Users\User\comfyui-agent\agent\brain\demo.py-221-                ),
+C:\Users\User\comfyui-agent\agent\brain\demo.py-222-                "suggested_tools": [
+C:\Users\User\comfyui-agent\agent\brain\demo.py:223:                    "validate_before_execute", "execute_workflow", "analyze_image",
+C:\Users\User\comfyui-agent\agent\brain\demo.py-224-                ],
+C:\Users\User\comfyui-agent\agent\brain\demo.py-225-            },
+--
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-623-                "message": (
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-624-                    f"Set steps={target_steps} on {len(updated)} sampler nodes. "
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py:625:                    "Run a same-seed comparison to verify quality is maintained."
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-626-                ),
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-627-            })
+--
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-654-                "message": (
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-655-                    f"Set sampler={sampler}, scheduler={scheduler} on {len(updated)} nodes. "
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py:656:                    "Run a same-seed comparison to verify quality."
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-657-                ),
+C:\Users\User\comfyui-agent\agent\brain\optimizer.py-658-            })
+--
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-24-
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-25-
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py:26:def _default_validate_path(path_str: str, *, must_exist: bool = False) -> str | None:
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-27-    """Permissive path validation for standalone use."""
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-28-    try:
+--
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-63-
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-64-    to_json: Callable[..., str] = field(default_factory=lambda: _default_to_json)
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py:65:    validate_path: Callable[..., str | None] = field(default_factory=lambda: _default_validate_path)
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-66-    sessions_dir: Path = field(default_factory=lambda: Path("./sessions"))
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-67-    comfyui_url: str = "http://127.0.0.1:8188"
+--
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-135-        )
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-136-        from ..rate_limiter import VISION_LIMITER
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py:137:        from ..tools._util import to_json, validate_path
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-138-
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-139-        _integrated_config = BrainConfig(
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-140-            to_json=to_json,
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py:141:            validate_path=validate_path,
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-142-            sessions_dir=SESSIONS_DIR,
+C:\Users\User\comfyui-agent\agent\brain\_sdk.py-143-            comfyui_url=COMFYUI_URL,
+--
+C:\Users\User\comfyui-agent\agent\brain\vision.py-74-                "Compare two images (same-seed A/B test). Returns what changed, "
+C:\Users\User\comfyui-agent\agent\brain\vision.py-75-                "whether it improved, and specific differences. Use after modifying "
+C:\Users\User\comfyui-agent\agent\brain\vision.py:76:                "a workflow to verify the change had the intended effect."
+C:\Users\User\comfyui-agent\agent\brain\vision.py-77-            ),
+C:\Users\User\comfyui-agent\agent\brain\vision.py-78-            "input_schema": {
+--
+C:\Users\User\comfyui-agent\agent\brain\vision.py-157-    def _read_image_as_base64(self, path: str) -> tuple[str, str]:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-158-        """Read an image file and return (base64_data, media_type)."""
+C:\Users\User\comfyui-agent\agent\brain\vision.py:159:        path_err = self.cfg.validate_path(path, must_exist=True)
+C:\Users\User\comfyui-agent\agent\brain\vision.py-160-        if path_err:
+C:\Users\User\comfyui-agent\agent\brain\vision.py-161-            raise FileNotFoundError(path_err)
+--
+C:\Users\User\comfyui-agent\agent\brain\planner.py-32-            {"id": "add_specializations", "action": "Add specialized nodes (ControlNet, LoRA, upscale, etc.)",
+C:\Users\User\comfyui-agent\agent\brain\planner.py-33-             "tools": ["add_node", "connect_nodes", "discover"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py:34:            {"id": "validate", "action": "Pre-flight validation",
+C:\Users\User\comfyui-agent\agent\brain\planner.py:35:             "tools": ["validate_before_execute"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-36-            {"id": "test_execute", "action": "Execute with test seed",
+C:\Users\User\comfyui-agent\agent\brain\planner.py-37-             "tools": ["execute_workflow"]},
+--
+C:\Users\User\comfyui-agent\agent\brain\planner.py-61-        "steps": [
+C:\Users\User\comfyui-agent\agent\brain\planner.py-62-            {"id": "reproduce", "action": "Reproduce the issue",
+C:\Users\User\comfyui-agent\agent\brain\planner.py:63:             "tools": ["validate_before_execute", "execute_workflow"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-64-            {"id": "isolate", "action": "Isolate the failing node or connection",
+C:\Users\User\comfyui-agent\agent\brain\planner.py:65:             "tools": ["validate_workflow", "get_node_info"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-66-            {"id": "diagnose", "action": "Check inputs, outputs, and connections",
+C:\Users\User\comfyui-agent\agent\brain\planner.py-67-             "tools": ["get_editable_fields", "load_workflow"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-68-            {"id": "fix", "action": "Apply the fix",
+C:\Users\User\comfyui-agent\agent\brain\planner.py-69-             "tools": ["set_input", "connect_nodes", "apply_workflow_patch"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py:70:            {"id": "verify", "action": "Verify the fix works",
+C:\Users\User\comfyui-agent\agent\brain\planner.py:71:             "tools": ["validate_before_execute", "execute_workflow"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-72-        ],
+C:\Users\User\comfyui-agent\agent\brain\planner.py-73-    },
+--
+C:\Users\User\comfyui-agent\agent\brain\planner.py-80-             "tools": ["list_models", "discover"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-81-            {"id": "check_compatibility", "action": "Verify the new model is compatible",
+C:\Users\User\comfyui-agent\agent\brain\planner.py:82:             "tools": ["get_node_info", "validate_before_execute"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-83-            {"id": "apply_swap", "action": "Swap the model in the workflow",
+C:\Users\User\comfyui-agent\agent\brain\planner.py-84-             "tools": ["set_input"]},
+--
+C:\Users\User\comfyui-agent\agent\brain\planner.py-98-            {"id": "configure", "action": "Set ControlNet strength and parameters",
+C:\Users\User\comfyui-agent\agent\brain\planner.py-99-             "tools": ["set_input"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py:100:            {"id": "validate_run", "action": "Validate and test run",
+C:\Users\User\comfyui-agent\agent\brain\planner.py:101:             "tools": ["validate_before_execute", "execute_workflow"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-102-            {"id": "evaluate", "action": "Evaluate ControlNet effect",
+C:\Users\User\comfyui-agent\agent\brain\planner.py-103-             "tools": ["analyze_image"]},
+--
+C:\Users\User\comfyui-agent\agent\brain\planner.py-123-    {"id": "understand", "action": "Understand the current state", "tools": ["load_workflow"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-124-    {"id": "modify", "action": "Make the requested changes", "tools": []},
+C:\Users\User\comfyui-agent\agent\brain\planner.py:125:    {"id": "validate", "action": "Validate the changes", "tools": ["validate_before_execute"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py:126:    {"id": "execute", "action": "Execute and verify", "tools": ["execute_workflow"]},
+C:\Users\User\comfyui-agent\agent\brain\planner.py-127-]
+C:\Users\User\comfyui-agent\agent\brain\planner.py-128-
+--
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-30-            "list_custom_nodes", "list_models", "get_models_summary", "read_node_source",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-31-            "discover", "find_missing_nodes",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py:32:            "load_workflow", "validate_workflow", "get_editable_fields",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-33-            "list_workflow_templates",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-34-            "get_learned_patterns", "get_recommendations",
+--
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-42-            "add_node", "connect_nodes", "set_input",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-43-            "get_workflow_template",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py:44:            "validate_before_execute",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-45-        },
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-46-    },
+--
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-48-        "description": "Validation and execution",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-49-        "allowed_tools": {
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py:50:            "validate_before_execute", "execute_workflow", "get_execution_status",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-51-            "analyze_image", "compare_outputs",
+C:\Users\User\comfyui-agent\agent\brain\orchestrator.py-52-        },
+--
+C:\Users\User\comfyui-agent\agent\system_prompt.py-18-12. Use format='names_only' or format='summary' for large tool queries; drill down with specific tools.
+C:\Users\User\comfyui-agent\agent\system_prompt.py-19-13. For workflow creation, prefer loading a template (list_workflow_templates) and patching it.
+C:\Users\User\comfyui-agent\agent\system_prompt.py:20:14. Before executing, use validate_before_execute to catch errors early.
+C:\Users\User\comfyui-agent\agent\system_prompt.py-21-15. Use add_node/connect_nodes/set_input for building workflows instead of raw JSON patches when possible.
+C:\Users\User\comfyui-agent\agent\system_prompt.py-22-
+--
+C:\Users\User\comfyui-agent\agent\system_prompt.py-31-
+C:\Users\User\comfyui-agent\agent\system_prompt.py-32-Workflow Understanding:
+C:\Users\User\comfyui-agent\agent\system_prompt.py:33:  load_workflow, validate_workflow, get_editable_fields
+C:\Users\User\comfyui-agent\agent\system_prompt.py-34-
+C:\Users\User\comfyui-agent\agent\system_prompt.py-35-Workflow Editing (RFC6902 JSON Patch):
+--
+C:\Users\User\comfyui-agent\agent\system_prompt.py-41-
+C:\Users\User\comfyui-agent\agent\system_prompt.py-42-Execution:
+C:\Users\User\comfyui-agent\agent\system_prompt.py:43:  validate_before_execute, execute_workflow, get_execution_status
+C:\Users\User\comfyui-agent\agent\system_prompt.py-44-
+C:\Users\User\comfyui-agent\agent\system_prompt.py-45-Discovery:
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-31-TOOLS: list[dict] = [
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-32-    {
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:33:        "name": "validate_before_execute",
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-34-        "description": (
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-35-            "Pre-flight check before executing a workflow. Validates that: "
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-45-                    "type": "string",
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-46-                    "description": (
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:47:                        "Path to workflow JSON file. If omitted, validates the "
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-48-                        "currently loaded/patched workflow."
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-49-                    ),
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-452-# ---------------------------------------------------------------------------
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-453-
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:454:def _handle_validate_before_execute(tool_input: dict) -> str:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-455-    """Pre-flight validation of a workflow before queueing."""
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-456-    path_str = tool_input.get("path")
+--
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-681-    """Execute a comfy_execute tool call."""
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-682-    try:
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:683:        if name == "validate_before_execute":
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py:684:            return _handle_validate_before_execute(tool_input)
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-685-        elif name == "execute_workflow":
+C:\Users\User\comfyui-agent\agent\tools\comfy_execute.py-686-            return _handle_execute_workflow(tool_input)
+--
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-132-        "description": (
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-133-            "Identify which base model family a model file belongs to. "
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py:134:            "Returns: sd15, sdxl, flux, sd3, or unknown. Use to verify "
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-135-            "compatibility before swapping models."
+C:\Users\User\comfyui-agent\agent\tools\model_compat.py-136-        ),
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-39-def _load_workflow(path_str: str) -> str | None:
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-40-    """Load a workflow into state. Returns error or None."""
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py:41:    from ._util import validate_path
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py:42:    path_err = validate_path(path_str, must_exist=True)
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-43-    if path_err:
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-44-        return path_err
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-438-        return to_json({"error": "No output path specified."})
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-439-
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py:440:    from ._util import validate_path
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py:441:    path_err = validate_path(output_path)
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-442-    if path_err:
+C:\Users\User\comfyui-agent\agent\tools\workflow_patch.py-443-        return to_json({"error": path_err})
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-1-"""Workflow analysis tools.
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-2-
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:3:Load, analyze, summarize, and validate ComfyUI workflow JSON.
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-4-Handles both UI format (from ComfyUI "Save") and API format
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-5-(from "Save API Format" or programmatic use).
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-43-    },
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-44-    {
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:45:        "name": "validate_workflow",
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-46-        "description": (
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-47-            "Validate a workflow against the running ComfyUI instance. "
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-282-# ---------------------------------------------------------------------------
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-283-
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:284:def _validate_against_comfyui(nodes: dict, connections: list[dict]) -> dict:
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-285-    """Validate workflow against running ComfyUI instance."""
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-286-    errors = []
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-418-
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-419-
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:420:def _handle_validate_workflow(tool_input: dict) -> str:
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-421-    path_str = tool_input["path"]
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-422-    data, err = _load_json(path_str)
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-428-        return to_json({
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-429-            "error": (
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:430:                "UI-only workflow format — can't validate without API format data. "
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-431-                "Re-export the workflow using 'Save (API Format)' in ComfyUI, "
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-432-                "or use a workflow that has extra.prompt embedded."
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-435-
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-436-    connections = _trace_connections(nodes)
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:437:    result = _validate_against_comfyui(nodes, connections)
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-438-    return to_json(result)
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-439-
+--
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-479-        if name == "load_workflow":
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-480-            return _handle_load_workflow(tool_input)
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:481:        elif name == "validate_workflow":
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py:482:            return _handle_validate_workflow(tool_input)
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-483-        elif name == "get_editable_fields":
+C:\Users\User\comfyui-agent\agent\tools\workflow_parse.py-484-            return _handle_get_editable_fields(tool_input)
+--
+C:\Users\User\comfyui-agent\agent\tools\_util.py-34-
+C:\Users\User\comfyui-agent\agent\tools\_util.py-35-
+C:\Users\User\comfyui-agent\agent\tools\_util.py:36:def validate_path(path_str: str, *, must_exist: bool = False) -> str | None:
+C:\Users\User\comfyui-agent\agent\tools\_util.py-37-    """Validate a file path is safe for tool access.
+C:\Users\User\comfyui-agent\agent\tools\_util.py-38-

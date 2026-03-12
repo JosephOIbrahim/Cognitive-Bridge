@@ -1,0 +1,577 @@
+# Corpus Ripening Plan — vex-rag-pipeline
+
+## How to Use This Document
+
+This is a **two-stage Claude Code plan**.
+
+**Stage 1 — ANALYZE:** Paste Part 1 into Claude Code from inside the repo directory. Claude Code will audit the entire codebase, map the pipeline stages, identify gaps, and produce a structured analysis.
+
+**Stage 2 — IMPLEMENT:** After reviewing the analysis, paste Part 2 (the phased plan) into Claude Code. Each phase is self-contained and shippable.
+
+---
+
+## PART 1: CODEBASE ANALYSIS PROMPT
+
+> Paste this into Claude Code from inside the `vex-rag-pipeline/` directory.
+
+```
+Analyze this codebase thoroughly. This is a 9-stage pipeline that converts Joy of VEX YouTube tutorials into structured RAG knowledge for "Synapse" (a Houdini VEX AI assistant).
+
+Do the following in order:
+
+### 1. Map the Pipeline Architecture
+- Read every file in `scripts/`, `config/`, and `output/`
+- For each pipeline stage, document:
+  - Filename and purpose
+  - Input format → Output format
+  - Dependencies (APIs, libraries, models)
+  - Where it writes output
+- Draw the full data flow: source → stage 1 → stage 2 → ... → final output
+
+### 2. Assess the Chunk Schema
+- Find the output schema (what does a final chunk look like?)
+- Document every field in the schema
+- Identify what metadata exists vs. what's missing
+- Show a sample chunk from `output/`
+
+### 3. Identify Gaps
+Compare the current pipeline against these requirements:
+- [ ] Multiple source ingestion (not just YouTube transcripts)
+- [ ] VEX code extraction and validation
+- [ ] Chunk taxonomy (concept / pattern / reference / troubleshooting)
+- [ ] Difficulty tagging (beginner / intermediate / advanced / expert)
+- [ ] VEX context tagging (sop / dop / cop / chop / cvex / material)
+- [ ] Function reference linking
+- [ ] Houdini version awareness
+- [ ] Source authority weighting
+- [ ] Deduplication detection
+- [ ] Prerequisites/dependency graph between chunks
+
+### 4. Assess Code Quality
+- Identify hardcoded values that should be config
+- Find error handling gaps
+- Check if the pipeline is idempotent (can re-run safely)
+- Note any API keys or credentials in code
+- Check for a README
+
+### 5. Output a Structured Report
+
+Format your report as:
+
+---
+## PIPELINE MAP
+[stage-by-stage diagram]
+
+## CHUNK SCHEMA (Current)
+[field-by-field breakdown + sample]
+
+## GAP ANALYSIS
+[table: requirement | status | priority | effort]
+
+## CODE QUALITY ISSUES
+[list with file:line references]
+
+## RECOMMENDED CHUNK SCHEMA (Target)
+[proposed schema with all needed fields]
+
+## CRITICAL PATH
+[ordered list of what to build first]
+---
+
+Save this report to `docs/ANALYSIS.md` in the repo.
+```
+
+---
+
+## PART 2: PHASED IMPLEMENTATION PLAN
+
+> Paste the relevant phase into Claude Code after reviewing the analysis.
+> Each phase is independent and shippable. Do them in order.
+
+---
+
+### PHASE 0: Foundation (Do First, Always)
+
+```
+We're improving the vex-rag-pipeline. Read `docs/ANALYSIS.md` first if it exists.
+
+Do the following:
+
+## 0.1 — Create README.md
+Write a README for this repo covering:
+- What Synapse is (1 paragraph)
+- What this pipeline does (the 9 stages, briefly)
+- Source material: Joy of VEX by Matt Estela (tokeru.com/cgwiki), recorded by Peter Arcara
+- How to run the pipeline (prerequisites, environment setup, execution order)
+- Output format description
+- License/attribution for source material
+- Future: note that additional sources are planned
+
+## 0.2 — Create docs/ directory structure
+```
+docs/
+├── ANALYSIS.md          (from Part 1)
+├── ARCHITECTURE.md      (pipeline stage diagram, data flow)
+├── CHUNK_SCHEMA.md      (current + target schema)
+└── SOURCES.md           (source registry with status)
+```
+
+## 0.3 — Create source registry config
+Create `config/sources.yaml` (or extend existing config) with this structure:
+```yaml
+sources:
+  - id: joy-of-vex-youtube
+    name: "Joy of VEX (YouTube - Peter Arcara)"
+    type: youtube_transcript
+    url: "https://youtube.com/playlist?list=PLTXmnikJEYnBtSfn4LwKx5vpopwrInp18"
+    authority: 0.9  # Matt Estela's content, recorded by SideFX staff
+    difficulty_range: [beginner, intermediate]
+    vex_contexts: [sop]
+    status: active
+    houdini_version_era: "18.0-19.5"
+
+  - id: cgwiki-vex
+    name: "tokeru.com cgwiki - VEX pages"
+    type: web_scrape
+    url: "https://tokeru.com/cgwiki/"
+    authority: 0.95  # Matt Estela, primary author
+    difficulty_range: [beginner, advanced]
+    vex_contexts: [sop, dop, cop]
+    status: planned
+
+  - id: sidefx-vex-reference
+    name: "SideFX VEX Function Reference"
+    type: web_scrape
+    url: "https://www.sidefx.com/docs/houdini/vex/functions/"
+    authority: 1.0  # Official documentation
+    difficulty_range: [reference]
+    vex_contexts: [all]
+    status: planned
+
+  - id: kiryha-vex-artists
+    name: "VEX for Artists (kiryha)"
+    type: github_wiki
+    url: "https://github.com/kiryha/Houdini/wiki/vex-for-artists"
+    authority: 0.7
+    difficulty_range: [beginner, intermediate]
+    vex_contexts: [sop]
+    status: planned
+
+  - id: vex-pattern-library
+    name: "Production VEX Pattern Library"
+    type: local_skill
+    path: "~/.claude/skills/vex-pattern-library/"
+    authority: 0.85  # Production-tested, self-authored
+    difficulty_range: [intermediate, expert]
+    vex_contexts: [sop, dop]
+    status: planned
+```
+
+## 0.4 — Standardize output schema
+Create or update the chunk output schema to include these fields.
+Find where chunks are currently defined and extend:
+
+```python
+# Target chunk schema
+CHUNK_SCHEMA = {
+    # Content
+    "id": str,              # unique chunk ID (source_id + sequence)
+    "content": str,          # the actual text content
+    "code_blocks": list,     # extracted VEX code snippets (separate field)
+
+    # Classification
+    "content_type": str,     # concept | pattern | reference | troubleshooting | discussion
+    "difficulty": str,       # beginner | intermediate | advanced | expert
+    "vex_context": list,     # [sop, dop, cop, chop, cvex, material, solver]
+
+    # Metadata
+    "source_id": str,        # maps to sources.yaml
+    "source_url": str,       # direct URL to source
+    "source_authority": float,  # 0.0-1.0
+    "title": str,            # human-readable chunk title
+    "section": str,          # section within source (e.g., "JoyOfVex Day 7")
+
+    # VEX-specific
+    "functions_referenced": list,  # ["pcopen", "pcfind", "pcclose"]
+    "houdini_version_min": str,    # minimum Houdini version
+    "houdini_version_notes": str,  # deprecation or behavior change notes
+    "prerequisites": list,         # chunk IDs this depends on
+
+    # Pipeline
+    "created_at": str,       # ISO timestamp
+    "pipeline_version": str, # pipeline version that generated this
+    "checksum": str,         # content hash for dedup detection
+}
+```
+
+Don't break existing functionality. Add new fields with sensible defaults
+so old chunks still work. Make the schema importable from a central location.
+```
+
+---
+
+### PHASE 1: Widen the Garden (New Sources)
+
+```
+We're adding new sources to the vex-rag-pipeline. Read docs/ANALYSIS.md
+and config/sources.yaml for context.
+
+## 1.1 — cgwiki Scraper
+
+Create `scripts/scrapers/scrape_cgwiki.py` that:
+
+1. Fetches all VEX-related pages from tokeru.com/cgwiki:
+   - JoyOfVex01 through JoyOfVex20 (the TEXT versions, not YouTube)
+   - HoudiniVex (the main VEX tips page)
+   - Any page containing substantial VEX code blocks
+2. Extracts:
+   - Prose content (explanations, tips)
+   - VEX code blocks (preserve formatting exactly)
+   - Section headers for chunk boundaries
+   - Links/references to other cgwiki pages
+3. Handles Matt Estela's formatting quirks:
+   - Code is often inline, not in fenced blocks
+   - Uses `...` to indicate omitted code
+   - GIF/image references should become text descriptions
+   - "prev/this/next" navigation at page bottom should be stripped
+4. Outputs to `output/cgwiki/` in the same chunk format as existing pipeline
+5. Respects rate limiting (1 request/second minimum)
+6. Is idempotent (can re-run, overwrites cleanly)
+7. Tags every chunk with source_id: "cgwiki-vex"
+
+Page list to scrape (at minimum):
+- https://tokeru.com/cgwiki/JoyOfVex.html (index)
+- https://tokeru.com/cgwiki/JoyOfVex01.html through JoyOfVex20.html
+- https://tokeru.com/cgwiki/HoudiniVex.html
+
+Use requests + BeautifulSoup. Don't use Selenium/Playwright.
+
+## 1.2 — SideFX VEX Reference Scraper
+
+Create `scripts/scrapers/scrape_sidefx_vex.py` that:
+
+1. Fetches the VEX function reference from SideFX docs
+2. Creates ONE chunk per function with:
+   - Function name and signature
+   - Description
+   - Parameters with types
+   - Return type
+   - Example code (if provided)
+   - Context availability (which VEX contexts support this function)
+   - Related functions
+3. Tags: content_type="reference", source_id="sidefx-vex-reference"
+4. Outputs to `output/sidefx_reference/`
+
+Target URL pattern:
+https://www.sidefx.com/docs/houdini/vex/functions/
+
+Note: SideFX docs may have anti-scraping measures.
+Include a User-Agent header, respect robots.txt, rate limit to 1 req/2sec.
+If scraping is blocked, create an alternative approach:
+- Document the manual download process
+- Write a parser that works on locally saved HTML files
+- Create a config entry pointing to local docs path
+
+## 1.3 — Local Skill Ingester
+
+Create `scripts/ingest_local.py` that:
+
+1. Reads markdown files from a local directory (configurable path)
+2. Parses markdown into chunks at heading boundaries
+3. Extracts VEX code blocks with language detection
+4. First target: the vex-pattern-library skill files
+5. Tags with source_id from config
+6. Outputs alongside other sources
+
+## 1.4 — Unified Merge Script
+
+Create `scripts/merge_sources.py` that:
+
+1. Reads all per-source outputs from `output/*/`
+2. Merges into a single unified corpus at `output/corpus/`
+3. Generates content checksums for dedup detection
+4. Reports statistics: chunk count by source, by type, by difficulty
+5. Flags near-duplicate chunks (>0.9 cosine similarity on content)
+   - Use a simple approach: TF-IDF or MinHash, not heavy embeddings
+6. Outputs a manifest file listing all chunks with metadata
+```
+
+---
+
+### PHASE 2: Harden the Soil (Quality & Metadata)
+
+```
+Read docs/ANALYSIS.md and the current codebase. We're adding quality
+gates and metadata enrichment to the pipeline.
+
+## 2.1 — VEX Code Extractor & Validator
+
+Create `scripts/enrichment/vex_extractor.py` that:
+
+1. Takes a chunk and extracts all VEX code blocks into the
+   `code_blocks` field (list of dicts with code + line context)
+2. For each code block:
+   - Extract all VEX function names (regex: word followed by `(`)
+   - Populate `functions_referenced` on the parent chunk
+   - Check for common VEX syntax issues:
+     * Missing semicolons
+     * Unclosed braces/parens
+     * Using deprecated `@opinput1_` syntax
+     * Using global variables directly (flagged as warning)
+   - Flag but don't reject — add a `validation_warnings` field
+3. Cross-reference extracted functions against the SideFX reference
+   chunks (if they exist in the corpus)
+
+## 2.2 — Auto-Tagger
+
+Create `scripts/enrichment/auto_tagger.py` that:
+
+1. Applies rule-based tagging to chunks missing metadata:
+
+   **Difficulty detection:**
+   - Contains only `@P`, `@Cd`, `@N`, basic arithmetic → beginner
+   - Contains `pcopen`, `pcfind`, foreach loops → intermediate
+   - Contains `getbbox_size`, matrix ops, intrinsics → advanced
+   - Contains solver references, compile blocks, threading → expert
+
+   **Content type detection:**
+   - Has "how to" or step-by-step structure → pattern
+   - Has function signature + params → reference
+   - Has "error", "fix", "why does" → troubleshooting
+   - Has "what is", "introduction", "overview" → concept
+   - Has forum-style Q&A → discussion
+
+   **VEX context detection:**
+   - Contains `@Frame`, `@Time` + particle refs → dop
+   - Contains `@voxelsize`, volume functions → volume
+   - Contains `@uv`, shader functions → material/cvex
+   - Default: sop
+
+   **Houdini version detection:**
+   - References to `chramp` clamping behavior → "19.5+"
+   - References to `@opinput1_` → "pre-17.0"
+   - References to `osd_limit` → "21.0+"
+
+2. Never overwrite existing tags — only fill gaps
+3. Log all tagging decisions for review
+
+## 2.3 — Prerequisites Linker
+
+Create `scripts/enrichment/prereq_linker.py` that:
+
+1. Builds a concept graph from chunk titles and content
+2. For JoyOfVex chunks: JoV Day N depends on Day 1..N-1
+3. For function reference chunks: link to concept chunks that explain them
+4. For pattern chunks: link to the functions they use
+5. Output: each chunk gets a `prerequisites` list of chunk IDs
+6. Store graph as `output/corpus/prereq_graph.json`
+
+## 2.4 — Deduplication Report
+
+Create `scripts/quality/dedup_report.py` that:
+
+1. Compares all chunks in merged corpus
+2. Uses MinHash (datasketch library) for approximate similarity
+3. Flags pairs with >0.85 Jaccard similarity
+4. For each pair, recommends:
+   - KEEP: higher authority source
+   - LINK: lower authority source references higher
+   - MERGE: combine if complementary
+5. Outputs `output/corpus/dedup_report.json`
+6. Does NOT auto-delete — human review required
+
+## 2.5 — Pipeline Orchestrator
+
+Create `scripts/run_pipeline.py` that:
+
+1. Runs all stages in order with a single command
+2. Supports `--source` flag to process only one source
+3. Supports `--stage` flag to run from a specific stage
+4. Supports `--dry-run` to show what would happen
+5. Logs to `logs/pipeline_YYYYMMDD_HHMMSS.log`
+6. Reports timing per stage
+7. Exits cleanly on error with state saved
+
+Usage:
+  python scripts/run_pipeline.py                    # full run
+  python scripts/run_pipeline.py --source cgwiki    # one source
+  python scripts/run_pipeline.py --stage enrich     # from enrichment
+  python scripts/run_pipeline.py --dry-run           # preview
+```
+
+---
+
+### PHASE 3: Harvest Season (Retrieval & Evaluation)
+
+```
+Read docs/ANALYSIS.md and the current codebase. We're optimizing
+retrieval quality and adding evaluation.
+
+## 3.1 — Hybrid Search Index Builder
+
+Create `scripts/retrieval/build_index.py` that:
+
+1. Builds two complementary indices from the corpus:
+
+   **Keyword index** (for exact function name matching):
+   - BM25 index over chunk content
+   - Boost field: `functions_referenced` (exact match critical)
+   - Use `rank_bm25` or `whoosh` library
+
+   **Semantic index** (for concept matching):
+   - Embed chunks using a code-aware model
+   - Recommended: `Alibaba-NLP/gte-large-en-v1.5` or
+     `BAAI/bge-large-en-v1.5` (both handle code reasonably)
+   - Store in ChromaDB or FAISS (whichever Synapse already uses)
+
+2. Query interface that combines both:
+   ```python
+   def search(query: str, top_k=10, difficulty=None, context=None):
+       keyword_results = bm25_search(query, top_k=top_k*2)
+       semantic_results = embed_search(query, top_k=top_k*2)
+       combined = reciprocal_rank_fusion(keyword_results, semantic_results)
+       if difficulty:
+           combined = filter_by_difficulty(combined, difficulty)
+       if context:
+           combined = filter_by_context(combined, context)
+       return combined[:top_k]
+   ```
+
+## 3.2 — VEX Query Expander
+
+Create `scripts/retrieval/query_expand.py` that:
+
+1. Maintains a VEX-specific synonym/concept map:
+   ```yaml
+   expansions:
+     "scatter points": ["point distribution", "random placement", "seed"]
+     "color": ["@Cd", "colour", "RGB", "chromatic"]
+     "move points": ["@P", "displacement", "deformation", "position"]
+     "find nearest": ["pcfind", "pcopen", "nearpoint", "proximity"]
+     "loop": ["foreach", "for loop", "iteration", "while"]
+     "random": ["rand", "noise", "seed", "stochastic"]
+     "speed": ["performance", "cook time", "optimization", "PERF"]
+     "array": ["list", "resize", "append", "push"]
+     "matrix": ["transform", "rotate", "scale", "orient", "quaternion"]
+     "group": ["pointgroup", "primgroup", "membership", "selection"]
+   ```
+
+2. Expands user queries before search
+3. Strips Houdini jargon into searchable terms
+
+## 3.3 — Evaluation Harness
+
+Create `scripts/eval/run_eval.py` with:
+
+1. A test suite of VEX queries with expected retrieval targets:
+   ```yaml
+   test_queries:
+     - query: "How do I color points based on distance?"
+       expected_chunks: ["jov-day-02", "jov-day-03"]
+       expected_functions: ["length", "fit"]
+       difficulty: beginner
+
+     - query: "Point cloud averaging for smoothing"
+       expected_chunks: ["jov-day-20", "pattern-pcfilter"]
+       expected_functions: ["pcopen", "pcfilter", "pcclose"]
+       difficulty: intermediate
+
+     - query: "How do packed primitive transforms work?"
+       expected_chunks: ["jov-day-18", "ref-intrinsic"]
+       expected_functions: ["setprimintrinsic", "packedtransform"]
+       difficulty: advanced
+
+     - query: "My wrangle is slow on 1M points"
+       expected_chunks: ["pattern-performance", "troubleshoot-cook-time"]
+       expected_functions: []
+       difficulty: intermediate
+       content_type: troubleshooting
+
+     - query: "What does pcopen do?"
+       expected_chunks: ["ref-pcopen"]
+       expected_functions: ["pcopen"]
+       content_type: reference
+   ```
+
+2. Metrics:
+   - Recall@K: are expected chunks in top K?
+   - MRR: mean reciprocal rank of first expected chunk
+   - Function precision: do retrieved chunks mention expected functions?
+
+3. Reports results as a table + saves to `output/eval/results.json`
+4. Tracks over time so you can see if changes improve retrieval
+
+## 3.4 — Corpus Statistics Dashboard
+
+Create `scripts/stats.py` that prints:
+
+```
+╔═══════════════════════════════════════════════════════╗
+║ CORPUS STATISTICS                                     ║
+╠═══════════════════════════════════════════════════════╣
+║ Total chunks: 847                                     ║
+║                                                       ║
+║ By Source:                                            ║
+║   joy-of-vex-youtube  ████████████░░░░░ 234 (27.6%)   ║
+║   cgwiki-vex          ██████████████░░░ 312 (36.8%)   ║
+║   sidefx-reference    ████████░░░░░░░░░ 189 (22.3%)   ║
+║   vex-pattern-lib     ███░░░░░░░░░░░░░░  67 (7.9%)   ║
+║   kiryha              ██░░░░░░░░░░░░░░░  45 (5.3%)   ║
+║                                                       ║
+║ By Type:                                              ║
+║   concept: 198 | pattern: 267 | reference: 201        ║
+║   troubleshooting: 89 | discussion: 92                ║
+║                                                       ║
+║ By Difficulty:                                        ║
+║   beginner: 312 | intermediate: 298                    ║
+║   advanced: 178 | expert: 59                           ║
+║                                                       ║
+║ VEX Functions Covered: 156 / ~400 (39%)               ║
+║ Dedup candidates: 23 pairs flagged                    ║
+║ Chunks with code: 634 (74.9%)                         ║
+║ Avg chunk length: 847 tokens                          ║
+╚═══════════════════════════════════════════════════════╝
+```
+```
+
+---
+
+## Execution Checklist
+
+```
+PHASE 0: Foundation
+  [ ] 0.1 README.md
+  [ ] 0.2 docs/ structure
+  [ ] 0.3 sources.yaml
+  [ ] 0.4 Standardized chunk schema
+
+PHASE 1: Widen the Garden
+  [ ] 1.1 cgwiki scraper
+  [ ] 1.2 SideFX reference scraper
+  [ ] 1.3 Local skill ingester
+  [ ] 1.4 Unified merge script
+
+PHASE 2: Harden the Soil
+  [ ] 2.1 VEX code extractor & validator
+  [ ] 2.2 Auto-tagger
+  [ ] 2.3 Prerequisites linker
+  [ ] 2.4 Deduplication report
+  [ ] 2.5 Pipeline orchestrator
+
+PHASE 3: Harvest Season
+  [ ] 3.1 Hybrid search index builder
+  [ ] 3.2 VEX query expander
+  [ ] 3.3 Evaluation harness
+  [ ] 3.4 Corpus statistics dashboard
+```
+
+---
+
+## Notes for Claude Code Sessions
+
+- **Start every session** by reading `docs/ANALYSIS.md` if it exists
+- **Run `python scripts/stats.py`** after each phase to see progress
+- **Don't break existing pipeline** — new stages are additive
+- **Each phase ships independently** — commit after each phase
+- **Test with `--dry-run`** before full pipeline runs
+- Phase 0 is ~1 session. Phases 1-3 are ~2-3 sessions each.

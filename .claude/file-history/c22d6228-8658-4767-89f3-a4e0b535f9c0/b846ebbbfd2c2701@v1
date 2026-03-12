@@ -1,0 +1,58 @@
+# TOPS Render Farm — Live Proof with Real Scene
+
+## Context
+
+The auto-fix parm discovery fix is committed and deployed. Now we need to prove it works end-to-end in the real Synapse Demo scene (`Synapse_demo_v0012.hiplc`) with production Karma settings.
+
+**Current scene state:**
+- Karma LOP: `/stage/karmarendersettings` — `pathtracedsamples=512`, `samplesperpixel=15`, `colorlimit=10.0`, `diffuselimit=3.0`, `reflectionlimit=5.0`
+- ROP: `/stage/usdrender_rop1` (Karma XPU) — `loppath` is **empty**, input wired to `/stage/karmarendersettings`
+- TOPS: `/tasks/topnet1` exists but is empty (only `localscheduler`)
+- `/out/` is empty — no ROPs there
+
+**Two problems to solve before render_sequence works:**
+1. The ROP's `loppath` is empty — our Karma LOP discovery reads `loppath` to find the LOP network. Need to set it.
+2. `render_sequence` expects a ROP path — `/stage/usdrender_rop1` is the existing one.
+
+## Plan — No Code Changes, Just Scene Setup + Live Test
+
+All work is done via Synapse execute_python / MCP tools. No repo file edits.
+
+### Step 1: Configure the ROP
+
+Set `loppath` on `/stage/usdrender_rop1` to point to `/stage/karmarendersettings` (its input). This enables our Karma LOP discovery to find the `karmarenderproperties` node.
+
+### Step 2: Build TOPS Network
+
+Inside `/tasks/topnet1`, create:
+1. **ropfetch** node — points to `/stage/usdrender_rop1`
+2. **waitforall** node — collects frame results
+3. Wire: ropfetch -> waitforall
+
+### Step 3: Lower Karma Settings for Speed
+
+Temporarily set `pathtracedsamples=16`, `samplesperpixel=4` for fast 320x240 test renders. Record original values to restore after.
+
+### Step 4: Run `render_sequence`
+
+Call `render_sequence` with `start_frame=1, end_frame=3, rop=/stage/usdrender_rop1, auto_fix=True`.
+
+**Expected proof points:**
+- Settings read shows real parms from `/stage/karmarendersettings` (not empty)
+- If saturation triggers, auto-fix doubles `pathtracedsamples` on the Karma LOP (16->32->64)
+- Frame renders complete via Karma XPU
+
+### Step 5: Restore Settings
+
+Restore `pathtracedsamples=512`, `samplesperpixel=15`.
+
+### Step 6: Capture Viewport
+
+Take a viewport capture showing the rendered scene for visual confirmation.
+
+## Verification
+
+- `render_sequence` returns `settings_used` containing real Karma parms
+- Auto-fix targets `/stage/karmarendersettings`, not the ROP
+- All 3 frames render (success or fail-with-correct-fix-attempt)
+- TOPS network visible in `/tasks/topnet1`

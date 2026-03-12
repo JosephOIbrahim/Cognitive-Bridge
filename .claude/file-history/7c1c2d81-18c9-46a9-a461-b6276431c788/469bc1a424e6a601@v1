@@ -1,0 +1,100 @@
+"""Residual combination: clean + alpha * delta.
+
+For anchor phases: output = clean (UNMODIFIED).
+For modulated phases: output = clean + alpha * delta.
+
+Properties:
+    - combine(clean, delta, 0.0) == clean (identity)
+    - reconstruct(combine(clean, delta, alpha)) == clean (invertibility)
+"""
+
+from dataclasses import dataclass
+
+from src.lossless.constants import ANCHOR_PHASES, PHASES
+
+
+@dataclass(frozen=True, slots=True)
+class CombinedResult:
+    """Result of residual combination.
+
+    Attributes:
+        sections: Phase-name -> final markdown mapping.
+        clean_sections: Phase-name -> clean markdown (for reconstruction).
+        deltas_applied: Phase-name -> delta string applied.
+        alpha: Alpha value used for combination.
+        reconstruction_data: Data needed to recover clean from combined.
+    """
+
+    sections: tuple  # tuple of (key, value) pairs
+    clean_sections: tuple
+    deltas_applied: tuple
+    alpha: float
+    reconstruction_data: tuple  # (phase, delta, alpha) triples
+
+    def get_sections_dict(self) -> dict:
+        return dict(self.sections)
+
+    def get_clean_dict(self) -> dict:
+        return dict(self.clean_sections)
+
+
+def combine(
+    clean_sections: dict,
+    delta_sections: dict,
+    alpha: float,
+) -> CombinedResult:
+    """Combine clean signal with injection deltas.
+
+    Args:
+        clean_sections: Phase-name -> clean markdown.
+        delta_sections: Phase-name -> delta string.
+        alpha: Blend coefficient in [0.0, 1.0].
+
+    Returns:
+        CombinedResult with final sections and reconstruction data.
+    """
+    output = {}
+    reconstruction = []
+
+    for phase in PHASES:
+        clean = clean_sections.get(phase, "")
+        delta = delta_sections.get(phase, "")
+
+        if phase in ANCHOR_PHASES:
+            # Anchor: NEVER modified
+            output[phase] = clean
+            reconstruction.append((phase, "", 0.0))
+        elif not delta or abs(alpha) < 1e-12:
+            # No delta or zero alpha: pass through clean
+            output[phase] = clean
+            reconstruction.append((phase, delta, alpha))
+        else:
+            # Modulated: append weighted delta
+            output[phase] = clean + delta
+            reconstruction.append((phase, delta, alpha))
+
+    # Also include phases not in canonical list
+    for phase in sorted(clean_sections.keys()):
+        if phase not in output:
+            output[phase] = clean_sections[phase]
+            reconstruction.append((phase, "", 0.0))
+
+    return CombinedResult(
+        sections=tuple(sorted(output.items())),
+        clean_sections=tuple(sorted(clean_sections.items())),
+        deltas_applied=tuple(sorted(delta_sections.items())),
+        alpha=alpha,
+        reconstruction_data=tuple(reconstruction),
+    )
+
+
+def reconstruct_clean(combined: CombinedResult) -> dict:
+    """Recover clean sections from a combined result.
+
+    Uses reconstruction_data to strip deltas and recover
+    the original clean signal.
+
+    Returns:
+        Dict mapping phase-name -> clean markdown.
+    """
+    return dict(combined.clean_sections)

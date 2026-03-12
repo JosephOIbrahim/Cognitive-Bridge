@@ -1,0 +1,120 @@
+"""Manual render farm integration test — requires Houdini + Synapse running."""
+
+import asyncio
+import json
+import uuid
+
+
+async def send_cmd(ws, cmd_type, payload=None, timeout=30):
+    msg_id = str(uuid.uuid4())[:8]
+    msg = json.dumps({
+        "id": msg_id,
+        "type": cmd_type,
+        "payload": payload or {},
+        "protocol_version": "4.0.0",
+    })
+    await ws.send(msg)
+    resp = await asyncio.wait_for(ws.recv(), timeout=timeout)
+    parsed = json.loads(resp)
+    if not parsed.get("success"):
+        print(f"  WARN [{cmd_type}]: {parsed.get('error', 'unknown')}")
+    return parsed
+
+
+def safe_data(r):
+    """Extract data dict safely, handling None."""
+    return r.get("data") or {}
+
+
+async def main():
+    import websockets
+
+    async with websockets.connect(
+        "ws://localhost:9999/synapse", open_timeout=5
+    ) as ws:
+        print("=== Building test scene for render farm ===\n")
+
+        # 1. Build scene — LOP nodes don't have setRenderFlag, use setDisplayFlag only
+        print("1. Creating sphere + lights in /stage...")
+        code = """
+import hou
+
+stage = hou.node("/stage")
+if stage is None:
+    stage = hou.node("/").createNode("lopnet", "stage")
+
+# Clean any existing children
+for child in stage.children():
+    child.destroy()
+
+# Sphere
+sphere = stage.createNode("sphere", "test_sphere")
+
+# Dome light (environment)
+dome = stage.createNode("domelight", "env_light")
+
+# Distant light (key)
+key = stage.createNode("distantlight", "key_light")
+
+# Merge
+merge = stage.createNode("merge", "merge_all")
+merge.setInput(0, sphere)
+merge.setInput(1, dome)
+merge.setInput(2, key)
+
+# Karma render properties
+karma = stage.createNode("karmarenderproperties", "karma_settings")
+karma.setInput(0, merge)
+karma.setDisplayFlag(True)
+
+stage.layoutChildren()
+result = "Scene built: sphere + dome_light + key_light + karma_settings"
+"""
+        r = await send_cmd(ws, "execute_python", {"content": code})
+        print(f"   {safe_data(r).get('result', r.get('error', '?'))}\n")
+
+        # 2. Check stage
+        print("2. Checking USD stage...")
+        r = await send_cmd(ws, "get_stage_info", {"node": "/stage/karma_settings"})
+        prims = safe_data(r).get("prims", [])
+        print(f"   Found {len(prims)} prims on stage")
+        for p in prims[:15]:
+            print(f"     {p.get('path', '?')} ({p.get('type', '?')})")
+        print()
+
+        # 3. Test render at low res
+        print("3. Test render at 320x240...")
+        r = await send_cmd(ws, "render", {"width": 320, "height": 240}, timeout=90)
+        data = safe_data(r)
+        if r.get("success"):
+            print("   Render OK!")
+            print(f"   Image: {data.get('image_path', '?')}")
+            print(f"   Engine: {data.get('engine', '?')}")
+        else:
+            print(f"   Render issue: {r.get('error', '?')}")
+        print()
+
+        # 4. Validate the frame
+        image_path = data.get("image_path", "")
+        if image_path:
+            print("4. Validating rendered frame...")
+            r = await send_cmd(ws, "validate_frame", {"image_path": image_path})
+            vdata = safe_data(r)
+            if r.get("success"):
+                valid = vdata.get("valid", False)
+                print(f"   Valid: {valid}")
+                checks = vdata.get("checks", {})
+                for name, check in sorted(checks.items()):
+                    status = "PASS" if check.get("passed") else "FAIL"
+                    val = check.get("value", "")
+                    print(f"     {name}: {status} {f'({val})' if val else ''}")
+            else:
+                print(f"   Validation error: {r.get('error', '?')}")
+        else:
+            print("4. Skipping validation (no image path)")
+
+        print("\n=== Test complete ===")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

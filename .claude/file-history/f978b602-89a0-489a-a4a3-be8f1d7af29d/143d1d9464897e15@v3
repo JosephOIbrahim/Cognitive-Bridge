@@ -1,0 +1,89 @@
+{
+  "version": "1.0.0",
+  "items": [
+    {
+      "id": "BL-001",
+      "created_cycle": 1,
+      "created_at": "2026-02-18T19:00:00Z",
+      "category": "TOOL_GAP",
+      "title": "No dedicated undo/redo MCP tool",
+      "description": "Undo/redo requires execute_python with atomic=false and manual hou.undos calls. A dedicated tool would simplify scene state rollback for agents.",
+      "evidence": ["T1-SAF-001", "T2-SAF-001"],
+      "proposed_fix": "Add houdini_undo and houdini_redo tools to MCP that call hou.undos.performUndo()/performRedo() with atomic=false wrapper.",
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "BL-002",
+      "created_cycle": 1,
+      "created_at": "2026-02-18T19:00:00Z",
+      "category": "WORKFLOW_FRICTION",
+      "title": "read_material returns empty for MaterialX shaders",
+      "description": "read_material tool returns empty shader_params and shader_type for MaterialX standard surface materials. Cannot verify material properties after creation.",
+      "evidence": ["T1-MTL-001"],
+      "proposed_fix": "Enhance read_material handler to introspect MaterialX shader nodes — traverse the material's shader network and extract surface shader parameters.",
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "BL-003",
+      "created_cycle": 1,
+      "created_at": "2026-02-18T19:00:00Z",
+      "category": "WORKFLOW_FRICTION",
+      "title": "create_material returns mismatched USD prim path",
+      "description": "create_material returns material_usd_path=/materials/NAME but actual stage prim is /materials/NAME_shader. Agents must traverse stage to find real path.",
+      "evidence": ["T1-MTL-001", "T1-MTL-002"],
+      "proposed_fix": "Fix create_material handler to return the actual USD prim path by querying the stage after creation, or fix the matlib naming convention.",
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "BL-004",
+      "created_cycle": 1,
+      "created_at": "2026-02-18T19:00:00Z",
+      "category": "PARAMETER_CONFUSION",
+      "title": "set_parm lacks tuple/vector mode for color parameters",
+      "description": "Setting a light color requires 3 separate set_parm calls (R, G, B). A tuple mode would reduce friction and match how artists think about color.",
+      "evidence": ["T1-PAR-001"],
+      "proposed_fix": "Extend set_parm to accept array values and auto-distribute to component parameters when the target is a tuple parm.",
+      "priority": "medium",
+      "status": "open"
+    },
+    {
+      "id": "BL-005",
+      "created_cycle": 2,
+      "created_at": "2026-02-18T21:00:00Z",
+      "category": "WORKFLOW_FRICTION",
+      "title": "synapse_batch undo grouping broken",
+      "description": "synapse_batch with atomic=true fails: 'undos object has no attribute beginGroup'. Batch operations cannot be wrapped in a single undo group.",
+      "evidence": ["T2-LGT-001"],
+      "proposed_fix": "Fix undo group API call in batch handler — likely needs hou.undos.disabler() or correct beginUndoGroup()/endUndoGroup() method names.",
+      "priority": "medium",
+      "status": "open"
+    },
+    {
+      "id": "BL-006",
+      "created_cycle": 2,
+      "created_at": "2026-02-18T21:00:00Z",
+      "category": "SAFETY_CONCERN",
+      "title": "execute_python rollback fails under atomic=true",
+      "description": "When execute_python (atomic=true default) hits a rollback error (NameError, TypeError, etc.), the auto-undo fails with 'Cannot undo within an undo group'. Nodes created before the error persist as orphans. The safety net has a hole.",
+      "evidence": ["T2-SAF-001"],
+      "proposed_fix": "Either: (1) switch rollback to use hou.undos.undoGroup() context manager exit instead of performUndo(), or (2) make atomic=true wrap in try/finally that rolls back the entire undo group on exception.",
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "BL-007",
+      "created_cycle": 2,
+      "created_at": "2026-02-18T21:00:00Z",
+      "category": "WORKFLOW_FRICTION",
+      "title": "houdini_render does not persist EXR to disk",
+      "description": "houdini_render returns an in-memory JPEG preview but does not write the EXR file to the path specified in picture/outputimage parms. Cannot do post-render file validation or AOV inspection.",
+      "evidence": ["T1-RND-001", "T2-RND-001"],
+      "proposed_fix": "Ensure render handler triggers a disk-write render (not just viewport preview). May need soho_foreground=1 or background render with file polling.",
+      "priority": "high",
+      "status": "open"
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+# Fix WebSocket Soft-Deadlock: hdefereval Wrappers + Fast-Lane Ping
+
+## Context
+
+When any `hou.*` handler (e.g., `get_scene_info`) is called from the WebSocket handler thread while Houdini's main thread is busy (cooking, rendering, loading), the handler thread blocks indefinitely. Because the WebSocket message loop is synchronous per-client (`for message in websocket: _handle_message()`), ALL subsequent messages — including pings — queue behind the blocked handler and time out.
+
+This was observed live: `synapse_ping` succeeded, then `scene_info` blocked waiting for the main thread (busy cooking after scene load), and every subsequent ping timed out for 30+ seconds.
+
+## Root Cause
+
+**24 handlers call `hou.*` directly** from the WebSocket thread without `hdefereval.executeInMainThreadWithResult()`. Only render/capture/TOPS handlers use it correctly. Direct `hou.*` calls from non-main threads create a soft-deadlock when the main thread is busy.
+
+## Approach
+
+### 1. Create `run_on_main(fn, timeout)` utility
+
+A single helper that wraps any callable to run on Houdini's main thread with a timeout. Uses `hdefereval.executeDeferred()` (non-blocking) + `threading.Event.wait(timeout)` instead of `executeInMainThreadWithResult()` (blocking, no timeout).
+
+**File:** `python/synapse/server/main_thread.py` (new)
+
+```python
+import threading
+import logging
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_TIMEOUT = 10.0  # seconds
+_SLOW_TIMEOUT = 30.0     # for execute_python, execute_vex, batch
+
+def run_on_main(fn, timeout=_DEFAULT_TIMEOUT):
+    """Run fn on Houdini's main thread with a timeout.
+
+    Returns the result of fn(). Raises RuntimeError if timeout expires.
+    Raises any exception fn() raised.
+    """
+    import hdefereval
+
+    result_holder = [None]
+    error_holder = [None]
+    done = threading.Event()
+
+    def _on_main():
+        try:
+            result_holder[0] = fn()
+        except Exception as e:
+            error_holder[0] = e
+        finally:
+            done.set()
+
+    hdefereval.executeDeferred(_on_main)
+
+    if not done.wait(timeout=timeout):
+        raise RuntimeError(
+            "Houdini's main thread is busy right now -- "
+            "it may be cooking or rendering. Try again in a moment."
+        )
+
+    if error_holder[0] is not None:
+        raise error_holder[0]
+
+    return result_holder[0]
+```
+
+### 2. Wrap all 24 direct-hou handlers
+
+Each handler that currently calls `hou.*` directly gets its body wrapped in `run_on_main()`. The pattern:
+
+**Before:**
+```python
+def _handle_get_scene_info(self, payload):
+    if not HOU_AVAILABLE:
+        raise RuntimeError(...)
+    return {
+        "hip_file": hou.hipFile.name(),
+        ...
+    }
+```
+
+**After:**
+```python
+def _handle_get_scene_info(self, payload):
+    if not HOU_AVAILABLE:
+        raise RuntimeError(...)
+    from .main_thread import run_on_main
+    def _on_main():
+        return {
+            "hip_file": hou.hipFile.name(),
+            ...
+        }
+    return run_on_main(_on_main)
+```
+
+**Handlers to wrap (by file):**
+
+| File | Handlers | Timeout |
+|------|----------|---------|
+| `handlers.py` | `get_scene_info`, `get_selection`, `get_parm`, `set_parm`, `execute_python`, `execute_vex`, `batch_commands`, `inspect_selection`, `inspect_scene`, `inspect_node` | 10s default; 30s for execute_python, execute_vex, batch |
+| `handlers_node.py` | `create_node`, `delete_node`, `connect_nodes` | 10s |
+| `handlers_usd.py` | `get_stage_info`, `get_usd_attribute`, `set_usd_attribute`, `create_usd_prim`, `modify_usd_prim`, `reference_usd` | 10s |
+| `handlers_render.py` | `set_keyframe`, `render_settings`, `create_material`, `assign_material`, `read_material` | 10s |
+
+**NOT wrapped** (already use hdefereval internally): `capture_viewport`, `render`, `wedge`, all 14 TOPS handlers.
+
+### 3. Migrate existing hdefereval handlers to `run_on_main`
+
+`capture_viewport`, `render`, `wedge`, and TOPS handlers already use `hdefereval.executeInMainThreadWithResult()` which blocks without timeout. Migrate them to use `run_on_main()` too, with appropriate timeouts:
+
+| Handler | Current timeout | New timeout |
+|---------|----------------|-------------|
+| `capture_viewport` | none (blocks forever) | 30s |
+| `render` | none (blocks forever) | 120s |
+| `wedge` | none (blocks forever) | 120s |
+| TOPS handlers | none (blocks forever) | 30-60s |
+
+This is a **Phase 2** optimization — do it in a follow-up commit to keep the diff reviewable. Phase 1 focuses on the 24 unwrapped handlers.
+
+### 4. Tests
+
+**File:** `tests/test_main_thread.py` (new)
+
+1. `test_run_on_main_returns_result` — fn returns a value, verify it's passed through
+2. `test_run_on_main_propagates_exception` — fn raises, verify it's re-raised
+3. `test_run_on_main_timeout` — fn never signals done, verify RuntimeError after timeout
+
+**File:** `tests/test_render.py` (existing)
+
+4. Verify existing 15 tests still pass (no regressions from wrapping render-adjacent handlers)
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `python/synapse/server/main_thread.py` | **NEW** — `run_on_main()` utility |
+| `python/synapse/server/handlers.py` | Wrap 10 handlers in `run_on_main()` |
+| `python/synapse/server/handlers_node.py` | Wrap 3 handlers in `run_on_main()` |
+| `python/synapse/server/handlers_usd.py` | Wrap 6 handlers in `run_on_main()` |
+| `python/synapse/server/handlers_render.py` | Wrap 5 handlers in `run_on_main()` |
+| `tests/test_main_thread.py` | **NEW** — 3 tests for `run_on_main` |
+
+## Verification
+
+1. `python -m pytest tests/test_main_thread.py -v` — new utility tests pass
+2. `python -m pytest tests/ -v` — full suite passes (1418+ tests, no regressions)
+3. Live test: connect to Houdini demo scene, issue `scene_info` while scene is cooking, verify it returns a "busy" error after 10s instead of hanging forever, and subsequent pings work immediately

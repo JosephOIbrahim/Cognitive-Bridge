@@ -1,0 +1,1002 @@
+warning: in the working copy of '.claude/settings.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'python/synapse/mcp/session.py', LF will be replaced by CRLF the next time Git touches it
+diff --git a/.claude/settings.json b/.claude/settings.json
+index f8f28f5..452c699 100644
+--- a/.claude/settings.json
++++ b/.claude/settings.json
+@@ -22,6 +22,82 @@
+             "timeout": 30
+           }
+         ]
++      },
++      {
++        "matcher": "Bash|Write|Edit",
++        "hooks": [
++          {
++            "type": "command",
++            "command": "python C:/Users/User/SYNAPSE/.claude/hooks/synapse_hooks_bridge.py",
++            "timeout": 10
++          }
++        ]
++      }
++    ],
++    "SessionStart": [
++      {
++        "hooks": [
++          {
++            "type": "command",
++            "command": "python C:/Users/User/SYNAPSE/.claude/hooks/synapse_hooks_bridge.py",
++            "timeout": 10
++          }
++        ]
++      }
++    ],
++    "UserPromptSubmit": [
++      {
++        "hooks": [
++          {
++            "type": "command",
++            "command": "python C:/Users/User/SYNAPSE/.claude/hooks/synapse_hooks_bridge.py",
++            "timeout": 5
++          }
++        ]
++      }
++    ],
++    "Stop": [
++      {
++        "hooks": [
++          {
++            "type": "command",
++            "command": "python C:/Users/User/SYNAPSE/.claude/hooks/synapse_hooks_bridge.py",
++            "timeout": 15
++          }
++        ]
++      }
++    ],
++    "TaskCompleted": [
++      {
++        "hooks": [
++          {
++            "type": "command",
++            "command": "python C:/Users/User/SYNAPSE/.claude/hooks/synapse_hooks_bridge.py",
++            "timeout": 10
++          }
++        ]
++      }
++    ],
++    "PreCompact": [
++      {
++        "hooks": [
++          {
++            "type": "command",
++            "command": "python C:/Users/User/SYNAPSE/.claude/hooks/synapse_hooks_bridge.py",
++            "timeout": 10
++          }
++        ]
++      }
++    ],
++    "SessionEnd": [
++      {
++        "hooks": [
++          {
++            "type": "command",
++            "command": "python C:/Users/User/SYNAPSE/.claude/hooks/synapse_hooks_bridge.py",
++            "timeout": 5
++          }
++        ]
+       }
+     ]
+   }
+diff --git a/houdini/python_panels/synapse_panel.pypanel b/houdini/python_panels/synapse_panel.pypanel
+index 7630c38..ee388f1 100644
+--- a/houdini/python_panels/synapse_panel.pypanel
++++ b/houdini/python_panels/synapse_panel.pypanel
+@@ -174,12 +174,12 @@ class _FallbackClaudeWorker(QtCore.QThread):
+     stream_error = QtCore.Signal(str)
+     # Stubs -- never emitted, but wired so the panel doesn't crash
+     tool_requested = QtCore.Signal(object)
+-    tool_status = QtCore.Signal(str, str)
++    tool_status = QtCore.Signal(str, str, str)
+ 
+     _API_HOST = "api.anthropic.com"
+     _API_PATH = "/v1/messages"
+     _API_VERSION = "2023-06-01"
+-    _MODEL = "claude-sonnet-4-20250514"
++    _MODEL = "claude-sonnet-4-6"
+     _MAX_TOKENS = 4096
+ 
+     def __init__(self, messages, system_prompt="", parent=None):
+@@ -267,6 +267,120 @@ class _FallbackClaudeWorker(QtCore.QThread):
+                             pass
+ 
+ 
++# ── SSE Event Poller ─────────────────────────────────────
++
++class _SSEPoller(QtCore.QObject):
++    """Polls the MCP SSE endpoint for server-initiated events.
++
++    Uses a QTimer to periodically GET /mcp with Accept: text/event-stream.
++    Emits event_received for each SSE event so the panel can display them.
++    """
++
++    event_received = QtCore.Signal(str, str)  # (event_type, data_json)
++
++    def __init__(self, parent=None):
++        super().__init__(parent)
++        self._timer = QtCore.QTimer(self)
++        self._timer.timeout.connect(self._poll)
++        self._session_id = None
++        self._last_event_id = None
++        self._port = None
++        self._interval_ms = 3000  # 3 seconds default
++        self._consecutive_empties = 0
++
++    def start(self, session_id, port):
++        """Start polling with the given MCP session ID and port."""
++        self._session_id = session_id
++        self._port = port
++        self._last_event_id = None
++        self._consecutive_empties = 0
++        self._interval_ms = 3000
++        self._timer.start(self._interval_ms)
++
++    def stop(self):
++        """Stop polling."""
++        self._timer.stop()
++        self._session_id = None
++
++    @property
++    def active(self):
++        return self._timer.isActive()
++
++    def _poll(self):
++        """GET /mcp for SSE events."""
++        if not self._session_id or not self._port:
++            return
++
++        try:
++            conn = http.client.HTTPConnection("localhost", self._port, timeout=5)
++            headers = {
++                "Accept": "text/event-stream",
++                "Mcp-Session-Id": self._session_id,
++            }
++            if self._last_event_id:
++                headers["Last-Event-ID"] = self._last_event_id
++
++            conn.request("GET", "/mcp", headers=headers)
++            resp = conn.getresponse()
++            body = resp.read().decode("utf-8", errors="replace")
++            conn.close()
++
++            if resp.status != 200:
++                return
++
++            # Parse SSE events from body
++            events = self._parse_sse(body)
++
++            if not events:
++                # Adaptive backoff: slow down when idle
++                self._consecutive_empties += 1
++                if self._consecutive_empties > 5:
++                    new_interval = min(self._interval_ms + 1000, 10000)
++                    if new_interval != self._interval_ms:
++                        self._interval_ms = new_interval
++                        self._timer.setInterval(self._interval_ms)
++            else:
++                # Events received -- reset to fast polling
++                self._consecutive_empties = 0
++                if self._interval_ms != 3000:
++                    self._interval_ms = 3000
++                    self._timer.setInterval(self._interval_ms)
++
++                for evt in events:
++                    self._last_event_id = evt.get("id")
++                    self.event_received.emit(
++                        evt.get("event", "unknown"),
++                        evt.get("data", "{}"),
++                    )
++
++        except Exception:
++            pass  # Best-effort -- don't crash the panel
++
++    @staticmethod
++    def _parse_sse(body):
++        """Parse SSE text into list of event dicts."""
++        events = []
++        current = {}
++        for line in body.split("\n"):
++            line = line.strip()
++            if line.startswith("id: "):
++                current["id"] = line[4:]
++            elif line.startswith("event: "):
++                current["event"] = line[7:]
++            elif line.startswith("data: "):
++                current["data"] = line[6:]
++            elif line == "" and current:
++                if "event" in current:
++                    events.append(current)
++                current = {}
++            elif line.startswith(":"):
++                pass  # SSE comment (e.g., ": no events")
++        # Handle last event if no trailing blank line
++        if current and "event" in current:
++            events.append(current)
++        return events
++
++
+ # ── Main Panel Widget ────────────────────────────────────
+ 
+ class SynapsePanel(QtWidgets.QWidget):
+@@ -342,6 +456,11 @@ class SynapsePanel(QtWidgets.QWidget):
+             self._set_status("disconnected")
+             self._log_activity("Server not running -- click Connect to start", "info")
+ 
++        # SSE event poller for MCP server-initiated events
++        self._sse_poller = _SSEPoller(self)
++        self._sse_poller.event_received.connect(self._on_sse_event)
++        QtCore.QTimer.singleShot(2000, self._start_sse_polling)
++
+         # Deferred shot login (avoid blocking panel init)
+         QtCore.QTimer.singleShot(200, self._deferred_shot_login)
+ 
+@@ -353,6 +472,8 @@ class SynapsePanel(QtWidgets.QWidget):
+ 
+     def closeEvent(self, event):
+         """Clean up timers and workers to prevent orphaned resources."""
++        if self._sse_poller and self._sse_poller.active:
++            self._sse_poller.stop()
+         if self._health_timer:
+             self._health_timer.stop()
+         if self._dot_animator and hasattr(self._dot_animator, '_timer'):
+@@ -478,8 +599,9 @@ class SynapsePanel(QtWidgets.QWidget):
+                     btn.clicked.connect(
+                         lambda checked=False, c=cmd: self._route_cmd(c)
+                     )
+-        except Exception:
+-            pass  # context bar not available, panel still works
++        except Exception as exc:
++            # Deferred log -- _log is built after this in _build_activity_log
++            self._context_bar_error = str(exc)
+ 
+         # 3. Chat area (dominant, stretch=1)
+         layout.addWidget(self._build_chat_area(), stretch=1)
+@@ -487,6 +609,15 @@ class SynapsePanel(QtWidgets.QWidget):
+         # 4. Activity log (collapsible, hidden by default)
+         layout.addWidget(self._build_activity_log())
+ 
++        # Surface any context bar init failure
++        if getattr(self, "_context_bar_error", None):
++            QtCore.QTimer.singleShot(
++                100, lambda: self._log_activity(
++                    "Context bar couldn't load: {}".format(self._context_bar_error),
++                    "warning",
++                )
++            )
++
+         # 5. Compact footer
+         layout.addWidget(self._build_connection_bar())
+ 
+@@ -754,12 +885,15 @@ class SynapsePanel(QtWidgets.QWidget):
+         self._ws_path_btn.setToolTip("Copy WebSocket URL to clipboard")
+         self._ws_path_btn.clicked.connect(self._on_copy_ws_path)
+         ws_sz = SIZE_LABEL if _HAS_DESIGN else 11
++        ws_color = SLATE if _HAS_DESIGN else "#555555"
++        ws_hover = SILVER if _HAS_DESIGN else "#888888"
++        ws_font = FONT_MONO if _HAS_DESIGN else "Consolas"
++        self._ws_path_btn.setCursor(QtCore.Qt.PointingHandCursor)
+         self._ws_path_btn.setStyleSheet(
+             "QPushButton {{ background: transparent; color: {c}; border: none; "
+-            "font-size: {sz}px; font-family: {f}; }}".format(
+-                c=SLATE if _HAS_DESIGN else "#555555",
+-                sz=ws_sz,
+-                f=FONT_MONO if _HAS_DESIGN else "Consolas",
++            "font-size: {sz}px; font-family: {f}; text-decoration: none; }}"
++            "QPushButton:hover {{ color: {h}; text-decoration: underline; }}".format(
++                c=ws_color, sz=ws_sz, f=ws_font, h=ws_hover,
+             )
+         )
+         layout.addWidget(self._ws_path_btn)
+@@ -883,6 +1017,81 @@ class SynapsePanel(QtWidgets.QWidget):
+             )
+             cursor.removeSelectedText()
+ 
++    # ── SSE Event Handling ─────────────────────────────────
++
++    def _on_sse_event(self, event_type, data_json):
++        """Handle an SSE event from the MCP server."""
++        try:
++            data = json.loads(data_json)
++        except (json.JSONDecodeError, TypeError):
++            data = {}
++
++        if event_type == "synapse/render_progress":
++            status = data.get("status", "unknown")
++            tool = data.get("tool", "render")
++            self._log_activity(
++                "Render {}: {}".format(status, tool), "action"
++            )
++
++        elif event_type == "synapse/gate_request":
++            op = data.get("operation", "unknown")
++            level = data.get("level", "unknown")
++            self._log_activity(
++                "Gate check ({}) for {}".format(level, op), "warning"
++            )
++
++        elif event_type == "synapse/health_update":
++            status = data.get("status", "unknown")
++            reason = data.get("reason", "")
++            msg = "Health: {}".format(status)
++            if reason:
++                msg += " -- {}".format(reason[:80])
++            lvl = "warning" if status == "degraded" else "success"
++            self._log_activity(msg, lvl)
++
++        elif event_type == "synapse/memory_evolved":
++            self._log_activity("Memory evolved to next stage", "success")
++
++        elif event_type == "synapse/tools_changed":
++            self._log_activity("Tool list updated", "info")
++
++    def _start_sse_polling(self):
++        """Start SSE polling if hwebserver is available."""
++        try:
++            port = hou.webServer.port()
++        except Exception:
++            return
++
++        if not port:
++            return
++
++        # Get or create an MCP session for the panel
++        try:
++            conn = http.client.HTTPConnection("localhost", port, timeout=5)
++            body = json.dumps({
++                "jsonrpc": "2.0",
++                "id": "panel-sse-init",
++                "method": "initialize",
++                "params": {
++                    "clientInfo": {"name": "synapse-panel-sse", "version": "1.0.0"},
++                    "protocolVersion": "2025-06-18",
++                },
++            }, sort_keys=True).encode("utf-8")
++            conn.request("POST", "/mcp", body=body, headers={
++                "Content-Type": "application/json",
++                "Accept": "application/json",
++            })
++            resp = conn.getresponse()
++            session_id = resp.getheader("Mcp-Session-Id")
++            resp.read()  # drain
++            conn.close()
++
++            if session_id:
++                self._sse_poller.start(session_id, port)
++                self._log_activity("SSE polling started", "info")
++        except Exception:
++            pass  # Best-effort
++
+     # ── Tool Callbacks ───────────────────────────────────
+ 
+     def _on_project_setup(self):
+@@ -2344,7 +2553,7 @@ class SynapsePanel(QtWidgets.QWidget):
+         except Exception:
+             pass
+ 
+-    def _on_tool_status(self, tool_name, status):
++    def _on_tool_status(self, tool_name, status, summary=""):
+         """Display a compact inline indicator showing tool execution status."""
+         icons = {"running": "\u2699", "done": "\u2713", "error": "\u2717"}
+         colors = {
+@@ -2374,7 +2583,8 @@ class SynapsePanel(QtWidgets.QWidget):
+             try:
+                 from synapse.panel.session_journal import get_journal
+                 get_journal().log_tool(
+-                    tool_name, {}, None,
++                    tool_name, {"summary": summary} if summary else {},
++                    None,
+                     error=("Tool error" if status == "error" else None),
+                 )
+             except Exception:
+diff --git a/python/synapse/mcp/server.py b/python/synapse/mcp/server.py
+index 36851b9..f6bc42f 100644
+--- a/python/synapse/mcp/server.py
++++ b/python/synapse/mcp/server.py
+@@ -19,8 +19,9 @@ MCP Protocol Version: 2025-06-18
+ import json
+ import logging
+ import os
++import threading
+ import time
+-from typing import Any, Optional, Tuple
++from typing import Any, Dict, Optional, Tuple
+ 
+ from .protocol import (
+     MCP_PROTOCOL_VERSION,
+@@ -42,6 +43,26 @@ from .session import MCPSessionManager
+ from .resources import get_resources, get_resource_templates, resolve_resource
+ from .tools import dispatch_tool, get_tools
+ 
++# Resilience layer — shared with WebSocket server
++try:
++    from ..server.resilience import (
++        RateLimiter,
++        CircuitBreaker,
++        CircuitBreakerConfig,
++    )
++    _RESILIENCE_AVAILABLE = True
++except ImportError:
++    _RESILIENCE_AVAILABLE = False
++
++# Main-thread stall detection
++try:
++    from ..server.main_thread import is_main_thread_stalled
++    _STALL_DETECT_AVAILABLE = True
++except ImportError:
++    _STALL_DETECT_AVAILABLE = False
++    def is_main_thread_stalled():
++        return False
++
+ # Fast JSON (He2025: sort_keys)
+ try:
+     import orjson
+@@ -54,6 +75,13 @@ except ImportError:
+ 
+ logger = logging.getLogger("synapse.mcp")
+ 
++# SSE event types
++SSE_RENDER_PROGRESS = "synapse/render_progress"
++SSE_GATE_REQUEST = "synapse/gate_request"
++SSE_TOOLS_CHANGED = "synapse/tools_changed"
++SSE_MEMORY_EVOLVED = "synapse/memory_evolved"
++SSE_HEALTH_UPDATE = "synapse/health_update"
++
+ # Read-only tools: bypass resilience/rate-limiting in future fast-path.
+ # Derived from registry annotations instead of hardcoded list.
+ from ._tool_registry import TOOL_JSON as _TOOL_JSON_REGISTRY
+@@ -74,6 +102,86 @@ except Exception:
+         _SYNAPSE_VERSION = "5.8.0"
+ 
+ 
++# =========================================================================
++# SSE Event Bus (polling pattern for hwebserver)
++# =========================================================================
++
++class SSEEventBus:
++    """Per-session event queue for SSE polling.
++
++    hwebserver does not support chunked transfer encoding or long-polling,
++    so clients GET /mcp with Accept: text/event-stream and receive any
++    queued events as a batch. The client polls again after a short delay.
++    """
++
++    def __init__(self, max_queue_size: int = 100):
++        self._queues: Dict[str, list] = {}  # session_id -> [events]
++        self._lock = threading.Lock()
++        self._max_size = max_queue_size
++        self._event_counter = 0
++
++    def emit(self, session_id: str, event_type: str, data: dict) -> None:
++        """Queue an event for a session."""
++        with self._lock:
++            if session_id not in self._queues:
++                self._queues[session_id] = []
++            q = self._queues[session_id]
++            self._event_counter += 1
++            q.append({
++                "id": str(self._event_counter),
++                "event": event_type,
++                "data": json.dumps(data, sort_keys=True),
++            })
++            # Cap queue size -- drop oldest
++            if len(q) > self._max_size:
++                q[:] = q[-self._max_size:]
++
++    def drain(self, session_id: str, last_event_id: Optional[str] = None) -> list:
++        """Drain all queued events for a session.
++
++        If last_event_id is provided, only return events after that ID.
++        Returns list of event dicts.
++        """
++        with self._lock:
++            q = self._queues.get(session_id, [])
++            if not q:
++                return []
++
++            if last_event_id:
++                # Find events after the given ID
++                idx = None
++                for i, evt in enumerate(q):
++                    if evt["id"] == last_event_id:
++                        idx = i
++                        break
++                if idx is not None:
++                    events = q[idx + 1:]
++                    q[:] = []  # Clear the full queue
++                    return events
++
++            events = list(q)
++            q.clear()
++            return events
++
++    def create_session_queue(self, session_id: str) -> None:
++        """Create an event queue for a new session."""
++        with self._lock:
++            if session_id not in self._queues:
++                self._queues[session_id] = []
++
++    def destroy_session_queue(self, session_id: str) -> None:
++        """Remove and discard the event queue for a session."""
++        with self._lock:
++            self._queues.pop(session_id, None)
++
++    def broadcast(self, event_type: str, data: dict) -> None:
++        """Emit an event to ALL active sessions."""
++        with self._lock:
++            session_ids = list(self._queues.keys())
++        for sid in session_ids:
++            self.emit(sid, event_type, data)
++
++
+ # =========================================================================
+ # MCP Server
+ # =========================================================================
+@@ -94,6 +202,28 @@ class MCPServer:
+         """
+         self._handler = handler
+         self._sessions = MCPSessionManager()
++        self._events = SSEEventBus()
++
++        # Resilience (shared logic with WebSocket server)
++        self._enable_resilience = _RESILIENCE_AVAILABLE and (
++            os.environ.get("SYNAPSE_RESILIENCE", "").strip() != "0"
++        )
++        if self._enable_resilience:
++            self._rate_limiter = RateLimiter()
++            self._circuit_breaker = CircuitBreaker(
++                name="synapse-mcp",
++                config=CircuitBreakerConfig(
++                    failure_threshold=5,
++                    timeout_seconds=30.0,
++                ),
++            )
++        else:
++            self._rate_limiter = None
++            self._circuit_breaker = None
++
++        # Latency tracking (EMA)
++        self._avg_latency = 0.0
++        self._latency_alpha = 0.2
+ 
+     def _get_handler(self):
+         if self._handler is None:
+@@ -164,7 +294,7 @@ class MCPServer:
+ 
+         # Route to method handler
+         try:
+-            result = self._route_method(method, params)
++            result = self._route_method(method, params, session_id=session_id)
+             return jsonrpc_result(msg_id, result), headers
+         except JsonRpcError as e:
+             return error_from_exception(msg_id, e), headers
+@@ -179,12 +309,12 @@ class MCPServer:
+     # Method routing
+     # -----------------------------------------------------------------
+ 
+-    def _route_method(self, method: str, params: dict) -> dict:
++    def _route_method(self, method: str, params: dict, session_id: Optional[str] = None) -> dict:
+         """Route a JSON-RPC method to its handler."""
+         if method == "tools/list":
+             return self._handle_tools_list(params)
+         elif method == "tools/call":
+-            return self._handle_tools_call(params)
++            return self._handle_tools_call(params, session_id=session_id)
+         elif method == "resources/list":
+             return self._handle_resources_list(params)
+         elif method == "resources/read":
+@@ -209,6 +339,7 @@ class MCPServer:
+         client_info = params.get("clientInfo", {})
+         session_id = self._sessions.create_session(client_info)
+         self._sessions.mark_initialized(session_id)
++        self._events.create_session_queue(session_id)
+ 
+         # Auto-load project context so agents start with full memory
+         session = self._sessions.get_session(session_id)
+@@ -261,13 +392,17 @@ class MCPServer:
+         """Return all available MCP tools."""
+         return {"tools": get_tools()}
+ 
+-    def _handle_tools_call(self, params: dict) -> dict:
+-        """Dispatch a tool call to SynapseHandler.
++    def _handle_tools_call(self, params: dict, session_id: Optional[str] = None) -> dict:
++        """Dispatch a tool call with resilience checks.
+ 
+         Tool calls go through hdefereval.executeInMainThreadWithResult()
+         because hwebserver @urlHandler callbacks run on worker threads,
+         but hou.* calls require the main thread.
+ 
++        Resilience gates (rate limiter, circuit breaker, stall detection)
++        match the WebSocket server's behavior so both transports have the
++        same safety guarantees.
++
+         If dispatch_tool returns isError=True, we raise a JsonRpcError so
+         MCP clients receive a proper JSON-RPC error response instead of a
+         success response with error content buried inside.
+@@ -279,23 +414,116 @@ class MCPServer:
+         arguments = params.get("arguments", {})
+         handler = self._get_handler()
+ 
++        # Read-only tools bypass resilience (cheap reads can't cause cascading failures)
++        if tool_name in _READ_ONLY_TOOLS:
++            try:
++                import hdefereval
++                result = hdefereval.executeInMainThreadWithResult(
++                    dispatch_tool, handler, tool_name, arguments
++                )
++            except ImportError:
++                result = dispatch_tool(handler, tool_name, arguments)
++            if self._circuit_breaker and not (isinstance(result, dict) and result.get("isError")):
++                self._circuit_breaker.record_success()
++            return result
++
++        # --- Resilience gates (match WebSocket server behavior) ---
++
++        # 1. Main-thread stall detection
++        if _STALL_DETECT_AVAILABLE and is_main_thread_stalled():
++            if self._circuit_breaker:
++                self._circuit_breaker.record_failure()
++            raise JsonRpcError(
++                INTERNAL_ERROR,
++                "Houdini's main thread is unresponsive — commands will resume when it recovers",
++            )
++
++        # 2. Rate limiting (keyed by MCP session, not per-client like WS)
++        if self._enable_resilience and self._rate_limiter:
++            allowed, info = self._rate_limiter.acquire("mcp")
++            if not allowed:
++                raise JsonRpcError(
++                    INTERNAL_ERROR,
++                    "Synapse is handling a lot of requests right now — "
++                    "try again in a moment ({})".format(info.get("reason", "")),
++                )
++
++        # 3. Circuit breaker
++        if self._enable_resilience and self._circuit_breaker:
++            can_exec, cb_info = self._circuit_breaker.can_execute()
++            if not can_exec:
++                raise JsonRpcError(
++                    INTERNAL_ERROR,
++                    "Synapse paused commands temporarily to recover from errors — "
++                    "it'll resume shortly ({})".format(cb_info.get("reason", "")),
++                )
++
++        # Notify SSE subscribers about critical tool execution
++        if session_id is not None and tool_name in (
++            "houdini_execute_python", "houdini_execute_vex",
++        ):
++            self._events.emit(session_id, SSE_GATE_REQUEST, {
++                "level": "critical",
++                "operation": tool_name,
++            })
++
++        # --- Dispatch with latency tracking ---
++        t0 = time.monotonic()
++
+         try:
+             import hdefereval
+             result = hdefereval.executeInMainThreadWithResult(
+                 dispatch_tool, handler, tool_name, arguments
+             )
+         except ImportError:
+-            # Not inside Houdini (testing) — call directly
+             result = dispatch_tool(handler, tool_name, arguments)
+ 
++        elapsed = time.monotonic() - t0
++        self._avg_latency = (
++            self._latency_alpha * elapsed
++            + (1 - self._latency_alpha) * self._avg_latency
++        )
++
+         # Propagate tool errors to JSON-RPC layer so MCP clients detect failures
+         if isinstance(result, dict) and result.get("isError"):
+             error_text = "Unknown error"
+             content = result.get("content", [])
+             if content and isinstance(content[0], dict):
+                 error_text = content[0].get("text", error_text)
++            # Only record infrastructure failures for circuit breaker
++            # (not user errors like "node not found")
++            if any(k in error_text.lower() for k in ("timeout", "main thread", "crashed", "unresponsive")):
++                if self._circuit_breaker:
++                    self._circuit_breaker.record_failure()
++                self.broadcast_event(SSE_HEALTH_UPDATE, {
++                    "component": "mcp",
++                    "reason": error_text[:200],
++                    "status": "degraded",
++                })
+             raise JsonRpcError(INTERNAL_ERROR, error_text)
+ 
++        if self._circuit_breaker:
++            self._circuit_breaker.record_success()
++
++        # Emit completion event for SSE subscribers
++        if session_id is not None:
++            self._events.emit(session_id, "synapse/tool_complete", {
++                "latency_ms": round(elapsed * 1000),
++                "tool": tool_name,
++            })
++
++        # Render-related tools get a progress event
++        if session_id is not None and tool_name in (
++            "houdini_render", "synapse_safe_render",
++            "synapse_autonomous_render", "synapse_render_progressively",
++            "synapse_render_sequence", "tops_render_sequence",
++        ):
++            self._events.emit(session_id, SSE_RENDER_PROGRESS, {
++                "latency_ms": round(elapsed * 1000),
++                "status": "complete",
++                "tool": tool_name,
++            })
++
+         return result
+ 
+     def _handle_ping(self) -> dict:
+@@ -374,8 +602,21 @@ class MCPServer:
+ 
+     def destroy_session(self, session_id: str) -> bool:
+         """Destroy a session (e.g. on HTTP DELETE /mcp)."""
++        self._events.destroy_session_queue(session_id)
+         return self._sessions.destroy_session(session_id)
+ 
++    # -----------------------------------------------------------------
++    # SSE event emission
++    # -----------------------------------------------------------------
++
++    def emit_event(self, session_id: str, event_type: str, data: dict) -> None:
++        """Queue a server-initiated event for a session."""
++        self._events.emit(session_id, event_type, data)
++
++    def broadcast_event(self, event_type: str, data: dict) -> None:
++        """Queue an event for all active sessions."""
++        self._events.broadcast(event_type, data)
++
+     @property
+     def active_sessions(self) -> int:
+         """Number of active MCP sessions."""
+@@ -470,10 +711,60 @@ try:
+                 server.destroy_session(session_id)
+             return hwebserver.Response("", status=200, content_type="text/plain")
+ 
++        elif request.method() == "GET":
++            # SSE polling -- drain queued events for the session
++            accept = request.headers().get("Accept", "")
++            if "text/event-stream" not in accept:
++                return hwebserver.Response(
++                    '{"error": "GET /mcp requires Accept: text/event-stream"}',
++                    status=406,
++                    content_type="application/json",
++                )
++
++            session_id = request.headers().get("Mcp-Session-Id")
++            if not session_id:
++                return hwebserver.Response(
++                    '{"error": "Missing Mcp-Session-Id header"}',
++                    status=400,
++                    content_type="application/json",
++                )
++
++            # Validate session exists
++            session = server._sessions.get_session(session_id)
++            if session is None:
++                return hwebserver.Response(
++                    '{"error": "Unknown session"}',
++                    status=404,
++                    content_type="application/json",
++                )
++
++            last_event_id = request.headers().get("Last-Event-ID")
++            events = server._events.drain(session_id, last_event_id)
++
++            if not events:
++                # No events -- return empty SSE with retry hint
++                body = ": no events\nretry: 2000\n\n"
++            else:
++                lines = []
++                for evt in events:
++                    lines.append("id: {}".format(evt["id"]))
++                    lines.append("event: {}".format(evt["event"]))
++                    lines.append("data: {}".format(evt["data"]))
++                    lines.append("")  # blank line = end of event
++                body = "\n".join(lines) + "\n"
++
++            resp = hwebserver.Response(
++                body,
++                status=200,
++                content_type="text/event-stream",
++            )
++            resp.setHeader("Cache-Control", "no-cache")
++            resp.setHeader("Mcp-Session-Id", session_id)
++            return resp
++
+         else:
+-            # GET for SSE — Phase 2
+             return hwebserver.Response(
+-                '{"error": "Method not allowed. Use POST for MCP requests."}',
++                '{"error": "Method not allowed. Use POST, GET, or DELETE."}',
+                 status=405,
+                 content_type="application/json",
+             )
+diff --git a/python/synapse/mcp/session.py b/python/synapse/mcp/session.py
+index f3e7989..43d82b3 100644
+--- a/python/synapse/mcp/session.py
++++ b/python/synapse/mcp/session.py
+@@ -3,15 +3,22 @@ MCP Session Manager
+ 
+ Manages MCP client sessions with unique Mcp-Session-Id tokens.
+ Thread-safe for concurrent hwebserver requests.
++
++Sessions track last_activity for TTL-based expiry. On session end
++(explicit destroy or reaper sweep), Living Memory hooks run to
++persist context — mirroring the WebSocket disconnect behavior.
+ """
+ 
++import logging
+ import threading
+ import time
+ from typing import Dict, Optional
+ 
+ 
++logger = logging.getLogger("synapse.mcp.session")
++
+ _MAX_SESSIONS = 100
+-_SESSION_TTL = 3600  # 1 hour in seconds
++_DEFAULT_SESSION_TTL = 1800  # 30 minutes in seconds
+ 
+ # He2025: deterministic session IDs (sequential counter, not uuid4)
+ _session_counter = 0
+@@ -30,7 +37,7 @@ class MCPSession:
+     """Single MCP session state."""
+ 
+     __slots__ = (
+-        "session_id", "client_info", "created_at",
++        "session_id", "client_info", "created_at", "last_activity",
+         "protocol_version", "initialized", "project_context",
+     )
+ 
+@@ -38,6 +45,7 @@ class MCPSession:
+         self.session_id = session_id
+         self.client_info = client_info
+         self.created_at = time.time()
++        self.last_activity = self.created_at
+         self.protocol_version = "2025-06-18"
+         self.initialized = False
+         self.project_context = None
+@@ -53,11 +61,17 @@ class MCPSession:
+ 
+ 
+ class MCPSessionManager:
+-    """Manages MCP client sessions. Thread-safe."""
++    """Manages MCP client sessions. Thread-safe.
+ 
+-    def __init__(self):
++    Args:
++        session_ttl_seconds: Inactivity timeout before a session is reaped.
++            Defaults to 1800 (30 minutes).
++    """
++
++    def __init__(self, session_ttl_seconds: int = _DEFAULT_SESSION_TTL):
+         self._sessions: Dict[str, MCPSession] = {}
+         self._lock = threading.Lock()
++        self._ttl = session_ttl_seconds
+ 
+     def create_session(self, client_info: Optional[dict] = None) -> str:
+         """Create a new session. Sweeps expired sessions first."""
+@@ -69,27 +83,47 @@ class MCPSessionManager:
+         return session_id
+ 
+     def _sweep_expired(self):
+-        """Remove sessions older than TTL and enforce max count."""
++        """Remove sessions past TTL (by last_activity) and enforce max count.
++
++        Living Memory cleanup hooks run for every removed session.
++        """
+         now = time.time()
+         with self._lock:
+-            # Remove expired
++            # Collect expired sessions (inactivity-based)
+             expired = [
+-                sid for sid, s in self._sessions.items()
+-                if (now - s.created_at) > _SESSION_TTL
++                (sid, s) for sid, s in self._sessions.items()
++                if (now - s.last_activity) > self._ttl
+             ]
+-            for sid in expired:
++            for sid, session in expired:
+                 del self._sessions[sid]
+-            # Enforce max count (remove oldest first)
++
++            # Enforce max count (remove oldest-activity first)
++            overflow: list = []
+             if len(self._sessions) > _MAX_SESSIONS:
+-                by_age = sorted(self._sessions.items(), key=lambda x: x[1].created_at)
++                by_activity = sorted(
++                    self._sessions.items(), key=lambda x: x[1].last_activity,
++                )
+                 excess = len(self._sessions) - _MAX_SESSIONS
+-                for sid, _ in by_age[:excess]:
++                for sid, session in by_activity[:excess]:
++                    overflow.append((sid, session))
+                     del self._sessions[sid]
+ 
++        # Run cleanup OUTSIDE the lock to avoid blocking other callers
++        for _sid, session in expired:
++            self._run_session_cleanup(session)
++        for _sid, session in overflow:
++            self._run_session_cleanup(session)
++
+     def get_session(self, session_id: str) -> Optional[MCPSession]:
+-        """Get a session by ID, or None if not found."""
++        """Get a session by ID, or None if not found.
++
++        Updates last_activity on hit so the session stays alive.
++        """
+         with self._lock:
+-            return self._sessions.get(session_id)
++            session = self._sessions.get(session_id)
++            if session is not None:
++                session.last_activity = time.time()
++            return session
+ 
+     def mark_initialized(self, session_id: str) -> bool:
+         """Mark a session as initialized. Returns False if session not found."""
+@@ -101,9 +135,95 @@ class MCPSessionManager:
+             return False
+ 
+     def destroy_session(self, session_id: str) -> bool:
+-        """Remove a session. Returns False if session not found."""
++        """Remove a session. Runs Living Memory cleanup before removal.
++
++        Returns False if session not found.
++        """
+         with self._lock:
+-            return self._sessions.pop(session_id, None) is not None
++            session = self._sessions.pop(session_id, None)
++        if session is not None:
++            self._run_session_cleanup(session)
++            return True
++        return False
++
++    def reap_expired(self) -> int:
++        """Reap sessions that exceeded TTL (inactivity-based).
++
++        Returns the number of sessions reaped. Safe to call from a
++        periodic timer or external health-check loop.
++        """
++        now = time.time()
++        reaped: list = []
++        with self._lock:
++            expired_ids = [
++                sid for sid, s in self._sessions.items()
++                if (now - s.last_activity) > self._ttl
++            ]
++            for sid in expired_ids:
++                reaped.append(self._sessions.pop(sid))
++
++        # Cleanup outside lock
++        for session in reaped:
++            self._run_session_cleanup(session)
++
++        if reaped:
++            logger.info("Reaped %d expired MCP session(s)", len(reaped))
++        return len(reaped)
++
++    # ------------------------------------------------------------------
++    # Living Memory cleanup (mirrors WebSocket disconnect hooks)
++    # ------------------------------------------------------------------
++
++    @staticmethod
++    def _run_session_cleanup(session: MCPSession) -> None:
++        """Run Living Memory hooks on session end.
++
++        Best-effort: failures are logged but never propagate. The method
++        mirrors the WebSocket disconnect handler in websocket.py so that
++        MCP sessions leave the same context trail as interactive ones.
++        """

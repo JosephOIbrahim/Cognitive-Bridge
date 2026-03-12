@@ -1,0 +1,59 @@
+"""SHA256 integrity hashing with deterministic serialization.
+
+All hashing uses sorted keys and canonical UTF-8 encoding
+to ensure deterministic output.
+"""
+
+import hashlib
+
+from src.lossless.constants import ANCHOR_PHASES, HASH_ALGORITHM
+
+
+def hash_string(s: str) -> str:
+    """Compute SHA256 hash of a string.
+
+    Args:
+        s: Input string.
+
+    Returns:
+        Hex digest string.
+    """
+    h = hashlib.new(HASH_ALGORITHM)
+    h.update(s.encode('utf-8'))
+    return h.hexdigest()
+
+
+def hash_sections(sections: dict) -> str:
+    """Compute SHA256 hash of all sections.
+
+    Keys are sorted before hashing for determinism.
+
+    Args:
+        sections: Phase-name -> markdown mapping.
+
+    Returns:
+        Hex digest string.
+    """
+    h = hashlib.new(HASH_ALGORITHM)
+    for key in sorted(sections.keys()):
+        h.update(key.encode('utf-8'))
+        h.update(b':')
+        h.update(sections[key].encode('utf-8'))
+        h.update(b'\n')
+    return h.hexdigest()
+
+
+def hash_anchors(sections: dict) -> str:
+    """Compute SHA256 hash of anchor phase sections only.
+
+    Args:
+        sections: Phase-name -> markdown mapping.
+
+    Returns:
+        Hex digest string (only anchor phases included).
+    """
+    anchor_sections = {
+        k: v for k, v in sorted(sections.items())
+        if k in ANCHOR_PHASES
+    }
+    return hash_sections(anchor_sections)

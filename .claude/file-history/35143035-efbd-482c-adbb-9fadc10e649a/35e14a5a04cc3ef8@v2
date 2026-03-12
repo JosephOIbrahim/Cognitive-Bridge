@@ -1,0 +1,327 @@
+#usda 1.0
+(
+    doc = "Cognitive Substrate - Source of truth for ~/.claude/CLAUDE.md"
+)
+
+def "CognitiveSubstrate" (
+    kind = "assembly"
+)
+{
+    def "Metadata"
+    {
+        custom string section_type = "metadata"
+        custom string version = "1.0"
+        custom string content = """# Global Cognitive Substrate
+
+Global reasoning protocols and cognitive frameworks. Loaded automatically for all projects and sessions.
+
+- **Workspace navigation and domain knowledge** --> `~/CLAUDE.md`
+- **Project-specific context** --> each project's `CLAUDE.md`
+- **This file** --> reasoning protocols, workflow scaffolds, cognitive patterns
+
+Adapted from [Context-Engineering](https://github.com/davidkimai/Context-Engineering) and integrated with Orchestra/Synapse cognitive infrastructure."""
+        custom int display_order = 0
+    }
+
+    def "ReasoningProtocols" (
+        kind = "group"
+    )
+    {
+        custom string title = "Reasoning Protocols"
+        custom int display_order = 1
+
+        def "SystematicDecomposition"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Systematic Decomposition"
+            custom string description = "When facing complex or ambiguous problems, follow this sequence explicitly:"
+            custom string list_type = "ordered"
+            custom string[] items = [
+                "**Understand** -- Restate the problem in your own words. Clarify goals, constraints, and success criteria. If ambiguous, ask.",
+                "**Analyze** -- Break into components. Identify dependencies, ordering constraints, and unknowns.",
+                "**Plan** -- Design a step-by-step approach. Use extended thinking to evaluate 2-3 alternatives before committing. Surface trade-offs.",
+                "**Execute** -- Implement methodically. Verify correctness at each step, not just at the end.",
+                "**Verify** -- Validate against the original requirements. Run tests. Check edge cases.",
+                "**Refine** -- Improve based on verification. If verification fails, loop back to Analyze, not just retry."
+            ]
+            custom int display_order = 1
+        }
+
+        def "SelfReflectionLoop"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Self-Reflection Loop"
+            custom string description = "After producing non-trivial outputs (code, architecture, analysis), silently evaluate:"
+            custom string list_type = "bullet"
+            custom string[] items = [
+                "**Completeness** -- What's missing? What assumptions are implicit?",
+                "**Correctness** -- Are facts sound? Is logic valid? Could this break?",
+                "**Blind spots** -- What would a reviewer catch? What would fail in production?",
+                "**Improvements** -- What's the simplest change that makes this meaningfully better?"
+            ]
+            custom string epilogue = "Apply improvements before presenting. Don't narrate the reflection unless the user asks for reasoning traces."
+            custom int display_order = 2
+        }
+
+        def "KnowledgeGapProtocol"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Knowledge Gap Protocol"
+            custom string description = "When requirements exceed current understanding:"
+            custom string list_type = "ordered"
+            custom string[] items = [
+                "**Identify** the specific gap -- don't guess or confabulate",
+                "**Research** using available tools (read files, grep, glob, web search)",
+                "**Integrate** findings into your working model before proceeding",
+                "**Flag** remaining uncertainties explicitly to the user"
+            ]
+            custom int display_order = 3
+        }
+    }
+
+    def "WorkflowProtocols" (
+        kind = "group"
+    )
+    {
+        custom string title = "Workflow Protocols"
+        custom int display_order = 2
+
+        def "PreExecutionChecks"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Pre-Execution Checks (Multi-Step Tasks)"
+            custom string description = "Before executing any multi-step task involving file edits or system changes, **pause and verify**:"
+            custom string list_type = "ordered"
+            custom string[] items = [
+                "**Target verification** -- Confirm the files you plan to edit are repo source, not deployed copies. Check the Source vs Deployed table in `~/CLAUDE.md`.",
+                "**Process check** -- If the task involves pipelines, renders, or background scripts, verify no previous instance is still running.",
+                "**Plan disclosure** -- For tasks touching 3+ files or running system commands, state your plan (which files, what changes, what commands) and wait for approval before proceeding.",
+                "**Shell selection** -- If the task requires environment variables, elevation, or registry changes, use PowerShell, not Git Bash."
+            ]
+            custom int display_order = 1
+        }
+
+        def "ExplorePlanCodeCommit"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Explore-Plan-Code-Commit"
+            custom string description = "Default workflow for any code modification task:"
+            custom string list_type = "ordered"
+            custom string[] items = [
+                "**Explore** -- Read relevant files. Understand existing patterns, naming conventions, test structure. Do not write code yet.",
+                "**Plan** -- Design the approach. Use extended thinking for non-trivial changes. Evaluate alternatives. Consider blast radius.",
+                "**Implement** -- Write code following the plan. Verify at each step. Match existing project style.",
+                "**Finalize** -- Run tests. Stage specific files. Commit with clear messages. Only push when asked."
+            ]
+            custom int display_order = 2
+        }
+
+        def "TestDrivenDevelopment"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Test-Driven Development"
+            custom string description = "When requirements are clear and testable:"
+            custom string list_type = "ordered"
+            custom string[] items = [
+                "Write tests from requirements first (do not implement yet)",
+                "Run tests -- verify they fail for the right reasons",
+                "Implement the minimum code to make tests pass",
+                "Refactor while keeping tests green",
+                "Commit tests and implementation together"
+            ]
+            custom int display_order = 3
+        }
+
+        def "BugDiagnosis"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Bug Diagnosis"
+            custom string description = "Systematic isolation for debugging (do not jump to fixes):"
+            custom string list_type = "ordered"
+            custom string[] items = [
+                "**Reproduce** -- Establish reliable repro steps, identify environmental factors",
+                "**Isolate** -- Narrow scope: which component, which input, which path?",
+                "**Trace** -- Follow execution through the code, examine state at key points",
+                "**Hypothesize** -- Form 2-3 testable theories about root cause",
+                "**Verify** -- Confirm the actual root cause before writing any fix"
+            ]
+            custom int display_order = 4
+        }
+
+        def "BugFixProtocol"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Bug Fix Protocol"
+            custom string description = "When fixing any bug, **enumerate all cases before coding**:"
+            custom string list_type = "ordered"
+            custom string[] items = [
+                "**List all affected cases** -- Before writing a fix, identify every place/edge/state/path the bug could manifest. Don't fix just the first symptom.",
+                "**Fix all cases in one pass** -- Apply the fix comprehensively. CSS bug on one edge? Check all four. Encoding bug in one `open()` call? Grep for all of them.",
+                "**Verify each case** -- After applying, confirm each case from your list is resolved. Don't declare done after checking only the originally reported case.",
+                "**Update hardcoded assertions** -- When adding new data (fixtures, recipes, entries), proactively find and update any hardcoded count assertions in tests before running the suite."
+            ]
+            custom int display_order = 5
+        }
+    }
+
+    def "CodeProtocols" (
+        kind = "group"
+    )
+    {
+        custom string title = "Code Protocols"
+        custom int display_order = 3
+
+        def "BeforeModifyingCode"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Before Modifying Code"
+            custom string list_type = "bullet"
+            custom string[] items = [
+                "Read the file first. Understand the existing patterns before suggesting changes.",
+                "Check for tests. Run them before and after changes.",
+                "Prefer minimal, focused changes over broad refactors unless explicitly asked.",
+                "Match the existing code style (naming, indentation, patterns) of the file you're editing."
+            ]
+            custom int display_order = 1
+        }
+
+        def "RefactoringSafety"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Refactoring Safety"
+            custom string list_type = "ordered"
+            custom string[] items = [
+                "Document current behavior via tests or observation before changing anything",
+                "Make incremental changes -- verify after each one",
+                "Never change behavior and structure in the same step",
+                "If tests exist, run them after every change"
+            ]
+            custom int display_order = 2
+        }
+
+        def "CodeReviewMindset"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Code Review Mindset"
+            custom string description = "When analyzing code, evaluate systematically:"
+            custom string list_type = "bullet"
+            custom string[] items = [
+                "**Structure** -- Organization, component boundaries, separation of concerns",
+                "**Flow** -- Execution paths, data flow, error propagation",
+                "**Quality** -- Edge cases, error handling, resource management",
+                "**Security** -- Input validation, injection risks, auth boundaries",
+                "**Performance** -- Algorithmic complexity, unnecessary allocations, I/O patterns"
+            ]
+            custom int display_order = 3
+        }
+    }
+
+    def "SlashCommandAgents" (
+        kind = "group"
+    )
+    {
+        custom string title = "Slash Command Agents"
+        custom string description = "36 commands installed at `~/.claude/commands/`. Invoke with `/command-name`:"
+        custom int display_order = 4
+
+        def "DomainAgents"
+        {
+            custom string section_type = "table"
+            custom string title = "Domain Agents (16)"
+            custom string[] column_headers = ["Agent", "Domain", "Best For"]
+            custom int num_columns = 3
+            custom string[] row_data = [
+                "`/research`", "Research", "Structured evidence gathering, literature review",
+                "`/test`", "Testing", "Test generation, mutation testing, coverage analysis",
+                "`/security`", "Security", "Threat modeling, vulnerability assessment, compliance",
+                "`/optimize`", "Performance", "Profiling, bottleneck analysis, benchmarking",
+                "`/deploy`", "DevOps", "Deployment automation, rollback planning",
+                "`/monitor`", "Ops", "System health monitoring, alerting",
+                "`/cli`", "Terminal", "Workflow automation, alias creation",
+                "`/doc`", "Docs", "Documentation generation, technical writing",
+                "`/data`", "Data", "Transformation, validation, schema enforcement",
+                "`/meta`", "Orchestration", "Multi-agent coordination, workflow sequencing",
+                "`/alignment`", "AI Safety", "Safety evaluation, prompt injection analysis",
+                "`/diligence`", "Analysis", "Due diligence research, risk assessment",
+                "`/legal`", "Legal", "Contract review, regulatory analysis",
+                "`/lit`", "Academic", "Literature review, citation management",
+                "`/marketing`", "Marketing", "Strategy, campaign planning, content",
+                "`/comms`", "Communications", "Stakeholder comms, crisis response"
+            ]
+            custom string epilogue = """Each agent follows a phased workflow: context/scope --> domain-specific phases --> synthesis --> audit. They accept arguments inline (e.g., `/research Q="topic" field="domain" years=5`)."""
+            custom int display_order = 1
+        }
+
+        def "ContextEngineeringCommands"
+        {
+            custom string section_type = "table"
+            custom string title = "Context Engineering Commands (11)"
+            custom string[] column_headers = ["Command", "Category", "Best For"]
+            custom int num_columns = 3
+            custom string[] row_data = [
+                "`/reasoning`", "Cognitive Template", "Reasoning scaffolds for tricky logic problems",
+                "`/verification`", "Cognitive Template", "Systematic proof and validation patterns",
+                "`/persist`", "Protocol Shell", "Memory persistence and long-term context strategies",
+                "`/emerge`", "Protocol Shell", "Find hidden connections between concepts",
+                "`/schema`", "Cognitive Schema", "Structure APIs, data models, agent protocols",
+                "`/recurse`", "Protocol Shell", "Iterative self-evolving problem refinement",
+                "`/recall`", "Protocol Shell", "Recover lost context and reconstruct memory",
+                "`/amplify`", "Protocol Shell", "Strengthen weak signals in data and profiling",
+                "`/eval`", "Reference", "Evaluation framework and quality checklists",
+                "`/patterns`", "Reference", "Design patterns catalog",
+                "`/heal`", "Protocol Shell", "Self-repair for semantic inconsistencies"
+            ]
+            custom int display_order = 2
+        }
+
+        def "WorkflowCommands"
+        {
+            custom string section_type = "table"
+            custom string title = "Workflow Protocols (9)"
+            custom string[] column_headers = ["Command", "Best For"]
+            custom int num_columns = 2
+            custom string[] row_data = [
+                "`/conversation`", "Information extraction, dynamic dialogue, clarification, debate",
+                "`/document`", "Structured articles, technical writing, documentation, editing",
+                "`/creative`", "Ideation, story development, character building, worldbuilding",
+                "`/research-wf`", "Literature review, systematic inquiry, hypothesis validation",
+                "`/knowledge`", "Knowledge extraction, skill development, learning pathways",
+                "`/meta-recursive`", "Self-improvement, prompt optimization, reflection loops",
+                "`/interpretability`", "Black-box explanation, reasoning reconstruction, decision tracing",
+                "`/collaborative`", "Multi-agent coordination, consensus building, conflict resolution",
+                "`/cross-modal`", "Multimodal reasoning, text-to-image bridging, sensory grounding"
+            ]
+            custom string epilogue = "Source: [Context-Engineering](https://github.com/davidkimai/Context-Engineering) protocol shells, cognitive tools, workflows, and references."
+            custom int display_order = 3
+        }
+    }
+
+    def "ClaudeCodeConfiguration" (
+        kind = "group"
+    )
+    {
+        custom string title = "Claude Code Configuration"
+        custom int display_order = 5
+
+        def "SlashCommandFileNaming"
+        {
+            custom string section_type = "protocol"
+            custom string title = "Slash Command / Skill File Naming"
+            custom string description = "When creating or renaming files for Claude Code slash commands or skills, use the format `SKILL.md` inside a named directory:"
+            custom string list_type = "bullet"
+            custom string[] items = [
+                "Correct: `.claude/commands/research/SKILL.md`",
+                "Wrong: `.claude/commands/research.agent.md` (dotted filenames don't resolve)"
+            ]
+            custom int display_order = 1
+        }
+
+        def "DebuggingContext"
+        {
+            custom string section_type = "text"
+            custom string title = "Debugging Context"
+            custom string content = "When troubleshooting system-level or environment issues, gather OS, shell, and environment info upfront before attempting fixes. On this machine: Windows 11 Pro for Workstations. Use PowerShell for system-level operations (env vars, registry, elevation). Git Bash for git operations only. See the Windows Environment section in `~/CLAUDE.md` for specific shell selection rules and UAC workarounds."
+            custom int display_order = 2
+        }
+    }
+}

@@ -1,0 +1,156 @@
+{
+  "agent_routing_map": {
+    "description": "Routes queries to optimal agents based on query topic",
+    "agents": {
+      "Librarian": {
+        "role": "Documentation search and knowledge retrieval",
+        "strengths": [
+          "Full text search across all documentation",
+          "API reference lookups",
+          "Node descriptions and tutorials",
+          "Feature overview and concepts"
+        ],
+        "primary_folders": [
+          "api_reference/",
+          "node_reference/",
+          "tutorials/",
+          "machine_learning/"
+        ],
+        "query_focus": [
+          "What is X?",
+          "How do I use X?",
+          "Tell me about X"
+        ],
+        "average_relevance": 0.85
+      },
+      "VexAuditor": {
+        "role": "Code pattern analysis and VEX optimization",
+        "strengths": [
+          "VEX syntax and patterns",
+          "Performance optimization",
+          "Code examples and snippets",
+          "Best practices and anti-patterns"
+        ],
+        "primary_folders": [
+          "vex_reference/",
+          "tutorials/best_practices/",
+          "performance_reference/",
+          "api_reference/functions/"
+        ],
+        "query_focus": [
+          "How do I write VEX for X?",
+          "Optimize this code",
+          "What's the pattern for X?"
+        ],
+        "average_relevance": 0.75
+      },
+      "GraphTracer": {
+        "role": "Geometry flow and graph analysis",
+        "strengths": [
+          "Node relationships and data flow",
+          "Geometry operations and constraints",
+          "Attribute system understanding",
+          "Graph structure validation"
+        ],
+        "primary_folders": [
+          "node_reference/",
+          "geometry_reference/",
+          "performance_reference/",
+          "tutorials/workflow_guides/"
+        ],
+        "query_focus": [
+          "How does data flow from X to Y?",
+          "What geometry constraints apply?",
+          "Why isn't my geometry right?"
+        ],
+        "average_relevance": 0.80
+      }
+    },
+    "query_routing": {
+      "multi_agent_triggers": [
+        {
+          "query_pattern": "optimize.*scatter",
+          "agents": ["VexAuditor", "GraphTracer", "Librarian"],
+          "strategy": "Parallel analysis - VEX patterns, geometry flow, documentation"
+        },
+        {
+          "query_pattern": "how.*write.*vex",
+          "agents": ["VexAuditor", "Librarian"],
+          "strategy": "VexAuditor leads with code, Librarian provides reference"
+        },
+        {
+          "query_pattern": "slow.*cook",
+          "agents": ["VexAuditor", "GraphTracer"],
+          "strategy": "Identify bottleneck (VexAuditor), validate geometry flow (GraphTracer)"
+        },
+        {
+          "query_pattern": "what.*difference.*scatter.*copy",
+          "agents": ["Librarian", "GraphTracer"],
+          "strategy": "Librarian explains both, GraphTracer compares data flow"
+        },
+        {
+          "query_pattern": "attribute",
+          "agents": ["GraphTracer", "VexAuditor", "Librarian"],
+          "strategy": "What attributes, access patterns, reference"
+        },
+        {
+          "query_pattern": "vex.*function|function.*vex|pcfind|noise.*vex|chramp",
+          "agents": ["VexAuditor", "Librarian"],
+          "strategy": "VexAuditor provides signatures and usage, Librarian gives context"
+        },
+        {
+          "query_pattern": "vex.*type|quaternion|matrix.*vex|vector4",
+          "agents": ["VexAuditor", "Librarian"],
+          "strategy": "VexAuditor explains types and conversions, Librarian gives reference"
+        },
+        {
+          "query_pattern": "vex.*pattern|vex.*example|snippet|wrangle.*code",
+          "agents": ["VexAuditor", "Librarian", "GraphTracer"],
+          "strategy": "VexAuditor provides code patterns, Librarian context, GraphTracer data flow"
+        },
+        {
+          "query_pattern": "vex.*slow|wrangle.*performance|vex.*optimize",
+          "agents": ["VexAuditor", "GraphTracer"],
+          "strategy": "VexAuditor identifies code bottlenecks, GraphTracer checks geometry flow"
+        }
+      ]
+    },
+    "folder_coverage": {
+      "api_reference": {
+        "Librarian": 0.95,
+        "VexAuditor": 0.6,
+        "GraphTracer": 0.4
+      },
+      "node_reference": {
+        "Librarian": 0.9,
+        "GraphTracer": 0.9,
+        "VexAuditor": 0.5
+      },
+      "vex_reference": {
+        "VexAuditor": 0.95,
+        "Librarian": 0.7,
+        "GraphTracer": 0.3
+      },
+      "tutorials": {
+        "Librarian": 0.85,
+        "GraphTracer": 0.75,
+        "VexAuditor": 0.6
+      },
+      "performance_reference": {
+        "VexAuditor": 0.85,
+        "GraphTracer": 0.8,
+        "Librarian": 0.6
+      },
+      "machine_learning": {
+        "Librarian": 0.85,
+        "VexAuditor": 0.4,
+        "GraphTracer": 0.3
+      },
+      "geometry_reference": {
+        "GraphTracer": 0.95,
+        "VexAuditor": 0.7,
+        "Librarian": 0.8
+      }
+    }
+  }
+}

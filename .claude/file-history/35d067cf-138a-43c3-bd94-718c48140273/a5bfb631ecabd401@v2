@@ -1,0 +1,61 @@
+"""Integration tests for Agent 6: Pipeline."""
+
+from pathlib import Path
+
+from src.lossless.constants import FLOAT_TOLERANCE, PROFILES
+from src.lossless.injection.state import InjectionState
+from src.lossless.integration.pipeline import LosslessPipeline
+from src.lossless.integration.combiner import reconstruct_clean
+from src.lossless.integration.integrity import verify_integrity_block
+
+_ROOT = Path(__file__).resolve().parents[3] / "cognitive_substrate" / "lossless_root.usda"
+
+
+class TestPipeline:
+    def test_pipeline_produces_markdown(self):
+        if not _ROOT.exists():
+            return
+        pipeline = LosslessPipeline(_ROOT)
+        result = pipeline.convert()
+        assert result.markdown
+        assert len(result.markdown) > 100
+
+    def test_pipeline_has_integrity_block(self):
+        if not _ROOT.exists():
+            return
+        pipeline = LosslessPipeline(_ROOT)
+        result = pipeline.convert()
+        assert "LOSSLESS INTEGRITY BLOCK" in result.markdown
+
+    def test_pipeline_none_matches_clean(self):
+        if not _ROOT.exists():
+            return
+        pipeline = LosslessPipeline(_ROOT)
+        result = pipeline.convert()
+        clean_sections = result.clean.get_sections_dict()
+        combined_sections = result.combined.get_sections_dict()
+        for phase in sorted(clean_sections.keys()):
+            assert clean_sections[phase] == combined_sections.get(phase, ""), phase
+
+    def test_pipeline_with_each_profile(self):
+        if not _ROOT.exists():
+            return
+        for name in sorted(PROFILES.keys()):
+            state = InjectionState()
+            if name != "none":
+                state.activate(name)
+                for _ in range(5):
+                    state.advance_exchange()
+            pipeline = LosslessPipeline(_ROOT, state)
+            result = pipeline.convert()
+            assert result.markdown
+            assert result.profile_name == name
+
+    def test_integrity_block_valid(self):
+        if not _ROOT.exists():
+            return
+        pipeline = LosslessPipeline(_ROOT)
+        result = pipeline.convert()
+        verification = verify_integrity_block(result.integrity_block)
+        assert verification["valid"]
+        assert verification.get("fidelity_ok", False)

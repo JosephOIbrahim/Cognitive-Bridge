@@ -1,0 +1,51 @@
+"""Render a 320x240 test frame via karma ROP to verify setup."""
+import asyncio
+import sys
+import os
+
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+CODE = r'''
+import hou
+import os
+import tempfile
+
+rop = hou.node("/out/cinema_karma")
+if rop is None:
+    raise RuntimeError("Karma ROP not found at /out/cinema_karma")
+
+# Override resolution to 320x240
+rop.parm("override_camerares").set(1)
+rop.parm("res_fraction").set("specific")
+rop.parm("res_overridex").set(320)
+rop.parm("res_overridey").set(240)
+
+# Low samples for speed
+rop.parm("samplesperpixel").set(4)
+
+# Set output path
+out_dir = os.path.join(os.environ.get("TEMP", "C:/Temp"), "houdini_test_render")
+os.makedirs(out_dir, exist_ok=True)
+out_path = os.path.join(out_dir, "cinema_rig_test.$F4.exr").replace("\\", "/")
+rop.parm("picture").set(out_path)
+
+# Render current frame
+frame = hou.frame()
+rop.render(frame_range=(frame, frame))
+
+result = {
+    "output": out_path,
+    "resolution": "320x240",
+    "samples": 4,
+    "status": "RENDER_COMPLETE"
+}
+'''
+
+async def main():
+    print("Sending test render command (320x240, 4 samples)...")
+    async with SynapseClient() as client:
+        r = await client.execute_python(CODE, timeout=120.0)
+        print(f"\nResult: {r}")
+
+asyncio.run(main())

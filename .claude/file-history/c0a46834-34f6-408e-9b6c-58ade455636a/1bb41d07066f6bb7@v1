@@ -1,0 +1,51 @@
+# Hero Reel: Thumbnail vs Dark Background
+
+## Analysis
+
+The Vimeo player loading timeline has a fixed bottleneck:
+
+| Phase | Time | Cumulative |
+|-------|------|-----------|
+| `heroRevealed` delay | 400ms | 400ms |
+| Vimeo SDK dynamic import | 150-300ms | 550-700ms |
+| Player `ready()` | 200-500ms | 750-1200ms |
+| Video buffering + first frame | 1000-2000ms | **1750-3200ms** |
+
+**`startTime` is a seek position** (where in the video timeline to begin playback), not a load timing control. Setting it to 0 vs 1 vs 2 doesn't change how fast the video loads — it only changes which frame plays first.
+
+There is no Vimeo API parameter that makes the video buffer faster. The ~1.5-3s gap between page load and first video frame is unavoidable.
+
+## Recommended Approach: Dark Background Overlay
+
+Replace the thumbnail image overlay with a solid `#141414` dark background that matches the site. The video will appear to emerge seamlessly from the page background.
+
+**Why this works well:**
+- The dark overlay is visually identical to the site background — the user sees a smooth, intentional dark area at the top, not a "loading" state
+- When the video starts playing, it fades in from the dark background (cinematic entrance)
+- No Vimeo thumbnail flicker at all
+- Matches the user's original intent: "replace that thumbnail with the website background"
+
+## Changes
+
+### 1. `HeroReel.tsx` — Replace thumbnail overlay with dark background
+- Change the overlay `backgroundImage: url(...)` to just `backgroundColor: '#141414'`
+- Remove `thumbnailUrl` logic (no longer needed)
+- Keep the `opacity: videoPlaying ? 0 : 1` fade behavior — overlay fades away when video starts
+
+### 2. `ProjectHeroReel.tsx` — Same change
+- Mirror the HeroReel change for project pages
+
+### 3. `layout.tsx` — Remove thumbnail preload
+- Remove the `<link rel="preload" href="https://i.vimeocdn.com/video/..." as="image" />` since we're no longer using a thumbnail image
+
+### 4. `lib/projects.ts` — Keep thumbnail field populated
+- Leave the thumbnail URL in the data (it's still used by project cards/grids, just not by the hero reel overlay)
+
+### 5. Commit all uncommitted white-flash fixes + this change
+
+## What the user will see
+
+1. Page loads → dark `#141414` area at top (matches site background exactly)
+2. ~400ms → hero area fades in (still dark, cinematic entrance via `heroRevealed`)
+3. ~1.5-3s → video starts playing, dark overlay fades out over 400ms
+4. Result: video appears to emerge from the page background, no thumbnail ever visible

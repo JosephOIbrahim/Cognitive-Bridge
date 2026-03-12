@@ -1,0 +1,194 @@
+"""CLI entry point for the GPU optimizer.
+
+Usage:
+    python run.py                    # Single optimization cycle
+    python run.py --monitor 60       # Continuous monitoring
+    python run.py --detect           # Show current optimization state
+    python run.py --apply-all        # Apply all high-impact optimizations
+    python run.py --dry-run          # Preview changes
+    python run.py --benchmark        # Run PyTorch benchmark
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+import time
+from pathlib import Path
+
+from .config import get_app_profiles, get_optimization_settings, load_config
+from .models import CycleReport, SystemContext, WorkflowMode
+from .orchestrator import Orchestrator
+from .telemetry import TelemetryProvider
+
+
+def _setup_logging(verbose: bool = False) -> None:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+
+def _print_context(ctx: SystemContext) -> None:
+    """Print system context in a readable format."""
+    print("\n=== System State ===")
+    print(f"  GPU:         {ctx.gpu_name}")
+    print(f"  Driver:      {ctx.driver_version}")
+    print(f"  VRAM:        {ctx.vram_used_mb:.0f} / {ctx.vram_total_mb:.0f} MB ({ctx.vram_used_mb / max(ctx.vram_total_mb, 1) * 100:.0f}%)")
+    print(f"  Temperature: {ctx.gpu_temp_c:.0f}C")
+    print(f"  GPU Util:    {ctx.gpu_util_pct:.0f}%")
+    print(f"  Power:       {ctx.power_draw_w:.0f}W")
+    print(f"  PCIe:        Gen{ctx.pcie_gen} x{ctx.pcie_width}")
+    print(f"  Workflow:    {ctx.workflow_mode.value}")
+    if ctx.active_apps:
+        print(f"  Active apps: {', '.join(ctx.active_apps)}")
+    if ctx.processes:
+        print(f"  GPU processes:")
+        for p in ctx.processes:
+            print(f"    - {p.app} (PID {p.pid}): {p.vram_mb:.0f} MB VRAM")
+    print()
+
+
+def _print_report(report: CycleReport) -> None:
+    """Print optimization cycle report."""
+    _print_context(report.context)
+
+    if report.applied:
+        print("=== Applied Optimizations ===")
+        for result in report.applied:
+            status = "OK" if result.success else "FAIL"
+            score = result.recommendation.score
+            print(f"  [{status}] (score={score:.2f}) {result.message}")
+        print()
+
+    if report.skipped:
+        print(f"=== Skipped ({len(report.skipped)} below cutoff) ===")
+        for rec in report.skipped[:5]:
+            print(f"  (score={rec.score:.2f}) {rec.description}")
+        print()
+
+    if report.errors:
+        print("=== Errors ===")
+        for err in report.errors:
+            print(f"  ! {err}")
+        print()
+
+    total = len(report.applied)
+    ok = sum(1 for r in report.applied if r.success)
+    print(f"Summary: {ok}/{total} optimizations applied, {len(report.errors)} errors")
+
+
+def _run_cutlass_benchmark() -> None:
+    """Run CUTLASS GEMM benchmark and cache results."""
+    try:
+        from benchmarks.cutlass_bench import print_results, run_benchmark
+        from acceleration.cutlass_integration import (
+            CUTLASSBenchmarkCache,
+            CUTLASSBenchmarkResult,
+            save_benchmark_cache,
+        )
+    except ImportError as e:
+        print(f"Could not import benchmark modules: {e}")
+        return
+
+    try:
+        import torch
+    except ImportError:
+        print("PyTorch not installed -- cannot run CUTLASS benchmark")
+        return
+
+    if not torch.cuda.is_available():
+        print("CUDA not available -- cannot run CUTLASS benchmark")
+        return
+
+    print("Running CUTLASS GEMM benchmark...\n")
+    results = run_benchmark()
+
+    if not results:
+        print("Benchmark produced no results.")
+        return
+
+    print_results(results)
+
+    # Cache results
+    import time
+    device = torch.device("cuda:0")
+    cache = CUTLASSBenchmarkCache(
+        gpu_name=torch.cuda.get_device_name(device),
+        driver_version=getattr(torch.cuda, "get_driver_version", lambda: "unknown")() if callable(getattr(torch.cuda, "get_driver_version", None)) else "unknown",
+        cuda_version=torch.version.cuda or "unknown",
+        timestamp=time.time(),
+        results=[CUTLASSBenchmarkResult(**r) for r in results],
+    )
+    cache_path = save_benchmark_cache(cache)
+    print(f"\nBenchmark cache saved to: {cache_path}")
+
+
+def _run_benchmark() -> None:
+    """Run PyTorch benchmark if available."""
+    bench_path = Path(__file__).parent.parent / "benchmarks" / "pytorch_bench.py"
+    if not bench_path.exists():
+        print(f"Benchmark not found: {bench_path}")
+        return
+    import subprocess
+    subprocess.run([sys.executable, str(bench_path)])
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="GPU Optimizer V8 — RTX 4090 Workstation")
+    parser.add_argument("--detect", action="store_true", help="Show current system state")
+    parser.add_argument("--dry-run", action="store_true", help="Preview changes without applying")
+    parser.add_argument("--apply-all", action="store_true", help="Apply all high-impact optimizations")
+    parser.add_argument("--monitor", type=int, metavar="SEC", help="Continuous monitoring interval")
+    parser.add_argument("--benchmark", action="store_true", help="Run PyTorch benchmark")
+    parser.add_argument("--benchmark-cutlass", action="store_true", help="Run CUTLASS GEMM benchmark and cache results")
+    parser.add_argument("--config", type=Path, help="Config file path")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
+    args = parser.parse_args(argv)
+
+    _setup_logging(args.verbose)
+
+    if args.benchmark_cutlass:
+        _run_cutlass_benchmark()
+        return 0
+
+    if args.benchmark:
+        _run_benchmark()
+        return 0
+
+    # Load config
+    cfg = load_config(args.config)
+    profiles = get_app_profiles(cfg)
+    settings = get_optimization_settings(cfg)
+
+    # Init telemetry and orchestrator
+    telemetry = TelemetryProvider(app_profiles=profiles)
+    orchestrator = Orchestrator(
+        telemetry=telemetry,
+        max_recommendations=settings["max_recommendations_per_cycle"],
+        min_confidence=settings["min_confidence"],
+    )
+
+    if args.detect:
+        ctx = orchestrator.detect()
+        _print_context(ctx)
+        return 0
+
+    if args.monitor:
+        print(f"Monitoring every {args.monitor}s (Ctrl+C to stop)")
+        try:
+            while True:
+                report = orchestrator.run_cycle(dry_run=args.dry_run)
+                _print_report(report)
+                time.sleep(args.monitor)
+        except KeyboardInterrupt:
+            print("\nMonitoring stopped.")
+        return 0
+
+    # Single cycle
+    report = orchestrator.run_cycle(dry_run=args.dry_run)
+    _print_report(report)
+    return 0 if not report.errors else 1

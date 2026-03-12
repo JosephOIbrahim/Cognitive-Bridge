@@ -1,0 +1,56 @@
+"use client";
+
+import Link from "next/link";
+import { PlaceholderImage } from "./PlaceholderImage";
+import { MetaTag } from "./MetaTag";
+import type { Project } from "@/lib/types";
+import styles from "./GridCard.module.css";
+
+interface GridCardProps {
+  project: Project;
+  showText: boolean;
+  height: number;
+}
+
+export function GridCard({ project, showText, height }: GridCardProps) {
+  return (
+    <Link href={`/work/${project.slug}`} className={styles.card}>
+      {/* Image */}
+      <div className={styles.imageContainer}>
+        <div className={styles.clipWrapper}>
+          <div className={styles.scaleWrapper}>
+            <PlaceholderImage
+              color={project.color}
+              title={project.title}
+              height={height}
+              style={{ borderRadius: 0 }}
+            />
+          </div>
+        </div>
+
+        {/* Image-only hover overlay */}
+        {!showText && (
+          <div className={styles.hoverOverlay}>
+            <span className={styles.hoverTitle}>{project.title}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Text block with elevator metatags */}
+      {showText && (
+        <div className={styles.textBlock}>
+          <h3 className={styles.title}>{project.title}</h3>
+          <p className={styles.desc}>{project.desc}</p>
+
+          {/* Pentagram elevator metatags */}
+          <div className={styles.metatagWrapper}>
+            <div className={styles.metatagInner}>
+              <MetaTag label={project.category} />
+              <MetaTag label={project.year} />
+            </div>
+          </div>
+        </div>
+      )}
+    </Link>
+  );
+}

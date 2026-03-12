@@ -1,0 +1,309 @@
+"""
+substrate_deployer.py — Apply approved proposals to USD source of truth.
+
+Takes:
+- Approved proposal (JSON)
+- Current substrate (USD source)
+- Converter path (for MD regeneration)
+
+Does:
+1. Reads current USD substrate
+2. Applies each edit in the proposal
+3. Writes updated USD
+4. Triggers markdown regeneration via converter
+5. Logs the applied change to history
+
+SAFETY: This script ONLY applies proposals marked as "approved".
+It will refuse to apply "pending" or "rejected" proposals.
+"""
+
+import json
+import shutil
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+import subprocess
+import sys
+
+from usd_ops import UsdStage, UsdPrim, UsdAttribute, read_stage, write_stage, diff_stages
+
+
+# ── Configuration ────────────────────────────────────────────────────────────
+
+# Default paths (Windows paths from the substrate's References section)
+# These get overridden by CLI args or env vars
+DEFAULT_CONFIG = {
+    "substrate_root": r"C:\Users\User\.claude\cognitive_substrate\cognitive_substrate_root.usda",
+    "substrate_core": r"C:\Users\User\.claude\cognitive_substrate\core_substrate_v7.usda",
+    "converter": r"C:\Users\User\.claude\cognitive_substrate\converter.py",
+    "claude_md": r"C:\Users\User\CLAUDE.md",
+    "history_dir": "./history",
+}
+
+
+def load_config(config_path: Optional[str] = None) -> dict:
+    """Load config from file or return defaults."""
+    config = DEFAULT_CONFIG.copy()
+    if config_path and Path(config_path).exists():
+        overrides = json.loads(Path(config_path).read_text())
+        config.update(overrides)
+    return config
+
+
+# ── Deployment ───────────────────────────────────────────────────────────────
+
+def apply_proposal(proposal_path: str, config: dict, dry_run: bool = False) -> dict:
+    """
+    Apply a single approved proposal to the USD substrate.
+    
+    Returns a result dict with: success, changes_made, errors, backup_path
+    """
+    result = {
+        "success": False,
+        "proposal_id": "",
+        "changes_made": [],
+        "errors": [],
+        "backup_path": "",
+        "diffs": [],
+    }
+    
+    # Load proposal
+    proposal_data = json.loads(Path(proposal_path).read_text(encoding="utf-8"))
+    result["proposal_id"] = proposal_data.get("id", "unknown")
+    
+    # Safety check: only apply approved proposals
+    status = proposal_data.get("status", "pending")
+    if status != "approved":
+        result["errors"].append(f"Proposal status is '{status}', not 'approved'. Refusing to apply.")
+        return result
+    
+    # Load current substrate
+    substrate_path = config["substrate_core"]
+    if not Path(substrate_path).exists():
+        result["errors"].append(f"Substrate not found: {substrate_path}")
+        return result
+    
+    # Backup before changes
+    backup_path = _backup_substrate(substrate_path, config["history_dir"], result["proposal_id"])
+    result["backup_path"] = str(backup_path)
+    
+    if dry_run:
+        print(f"[DRY RUN] Would apply {len(proposal_data.get('edits', []))} edits to {substrate_path}")
+        for edit in proposal_data.get("edits", []):
+            print(f"  {edit['operation']} {edit['target_path']}.{edit.get('target_attr', '')}")
+        result["success"] = True
+        return result
+    
+    # Read substrate
+    stage = read_stage(substrate_path)
+    old_stage_text = stage.to_usda()
+    
+    # Apply edits
+    for edit in proposal_data.get("edits", []):
+        try:
+            _apply_edit(stage, edit)
+            result["changes_made"].append(f"{edit['operation']} {edit['target_path']}.{edit.get('target_attr', '')}")
+        except Exception as e:
+            result["errors"].append(f"Failed to apply edit at {edit['target_path']}: {str(e)}")
+    
+    if result["errors"]:
+        # Rollback: don't write if any edit failed
+        result["errors"].append("Rolled back — no changes written due to errors above.")
+        return result
+    
+    # Write updated substrate
+    write_stage(stage, substrate_path)
+    
+    # Compute diff for logging
+    new_stage = read_stage(substrate_path)
+    old_stage = parse_usda_text(old_stage_text)
+    diffs = diff_stages(old_stage, new_stage)
+    result["diffs"] = [str(d) for d in diffs]
+    
+    # Trigger markdown regeneration
+    regen_result = _regenerate_markdown(config)
+    if not regen_result["success"]:
+        result["errors"].append(f"Markdown regeneration failed: {regen_result.get('error', 'unknown')}")
+        # Don't rollback USD — the source is correct, just regeneration failed
+    
+    # Log to history
+    _log_application(result, config["history_dir"])
+    
+    # Update proposal status
+    proposal_data["status"] = "applied"
+    proposal_data["applied_at"] = datetime.now().isoformat()
+    Path(proposal_path).write_text(json.dumps(proposal_data, indent=2), encoding="utf-8")
+    
+    result["success"] = True
+    return result
+
+
+def parse_usda_text(text: str):
+    """Parse USDA from text string (import helper)."""
+    from usd_ops import parse_usda
+    return parse_usda(text)
+
+
+def _apply_edit(stage: UsdStage, edit: dict):
+    """Apply a single edit to the stage."""
+    path = edit["target_path"]
+    attr = edit.get("target_attr", "")
+    operation = edit["operation"]
+    
+    prim = stage.get_prim(path)
+    
+    if operation == "add":
+        if not prim:
+            # Create the prim
+            stage.set_prim(path, UsdPrim(name=path.split("/")[-1]))
+            prim = stage.get_prim(path)
+        
+        if attr:
+            attr_type = edit.get("attr_type", "string")
+            new_value = edit.get("new_value", "")
+            
+            # If it's a string[] and we're adding to existing
+            existing = prim.get_attr(attr)
+            if existing and existing.type == "string[]" and isinstance(existing.value, list):
+                existing.value.append(str(new_value))
+            else:
+                prim.set_attr(attr, attr_type, new_value)
+    
+    elif operation == "modify" or operation == "set":
+        if not prim:
+            raise ValueError(f"Prim not found: {path}")
+        if attr:
+            attr_type = edit.get("attr_type", "string")
+            new_value = edit.get("new_value", "")
+            prim.set_attr(attr, attr_type, new_value)
+    
+    elif operation == "remove":
+        if prim and attr:
+            if attr in prim.attributes:
+                del prim.attributes[attr]
+        elif prim:
+            # Remove the prim itself — find parent and delete
+            parent_path = "/".join(path.strip("/").split("/")[:-1])
+            parent = stage.get_prim(parent_path)
+            if parent:
+                child_name = path.strip("/").split("/")[-1]
+                if child_name in parent.children:
+                    del parent.children[child_name]
+
+
+def _backup_substrate(substrate_path: str, history_dir: str, proposal_id: str) -> Path:
+    """Create a timestamped backup of the substrate before changes."""
+    history = Path(history_dir)
+    history.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_name = f"backup_{timestamp}_{proposal_id}.usda"
+    backup_path = history / backup_name
+    
+    shutil.copy2(substrate_path, backup_path)
+    return backup_path
+
+
+def _regenerate_markdown(config: dict) -> dict:
+    """Run the converter to regenerate markdown from USD source.
+
+    Generates both Claude Code and Desktop Preferences outputs.
+    """
+    converter = config.get("converter", "")
+    if not converter or not Path(converter).exists():
+        return {"success": False, "error": f"Converter not found: {converter}"}
+
+    try:
+        result = subprocess.run(
+            [sys.executable, converter, "--format", "both"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return {"success": False, "error": result.stderr}
+        return {"success": True, "output": result.stdout}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "Converter timed out (30s)"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _log_application(result: dict, history_dir: str):
+    """Log the application result to history."""
+    history = Path(history_dir)
+    history.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_name = f"applied_{timestamp}_{result['proposal_id']}.json"
+    log_path = history / log_name
+    
+    log_data = {
+        "timestamp": datetime.now().isoformat(),
+        "proposal_id": result["proposal_id"],
+        "success": result["success"],
+        "changes_made": result["changes_made"],
+        "errors": result["errors"],
+        "backup_path": result["backup_path"],
+        "diffs": result["diffs"],
+    }
+    
+    log_path.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
+
+
+# ── Rollback ─────────────────────────────────────────────────────────────────
+
+def rollback(backup_path: str, config: dict) -> dict:
+    """Rollback substrate to a backup version."""
+    result = {"success": False, "errors": []}
+    
+    if not Path(backup_path).exists():
+        result["errors"].append(f"Backup not found: {backup_path}")
+        return result
+    
+    substrate_path = config["substrate_core"]
+    shutil.copy2(backup_path, substrate_path)
+    
+    # Regenerate markdown
+    regen = _regenerate_markdown(config)
+    if not regen["success"]:
+        result["errors"].append(f"Markdown regeneration after rollback failed: {regen.get('error')}")
+    
+    result["success"] = True
+    return result
+
+
+# ── CLI ──────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Apply substrate proposals")
+    parser.add_argument("command", choices=["apply", "rollback", "dry-run"], help="Command to execute")
+    parser.add_argument("target", help="Proposal file (apply/dry-run) or backup file (rollback)")
+    parser.add_argument("--config", default=None, help="Config JSON file")
+    
+    args = parser.parse_args()
+    config = load_config(args.config)
+    
+    if args.command == "apply":
+        result = apply_proposal(args.target, config)
+        if result["success"]:
+            print(f"✅ Applied {result['proposal_id']}")
+            print(f"   Changes: {len(result['changes_made'])}")
+            print(f"   Backup: {result['backup_path']}")
+        else:
+            print(f"❌ Failed to apply {result['proposal_id']}")
+            for err in result["errors"]:
+                print(f"   Error: {err}")
+    
+    elif args.command == "dry-run":
+        result = apply_proposal(args.target, config, dry_run=True)
+    
+    elif args.command == "rollback":
+        result = rollback(args.target, config)
+        if result["success"]:
+            print(f"✅ Rolled back to {args.target}")
+        else:
+            for err in result["errors"]:
+                print(f"   Error: {err}")

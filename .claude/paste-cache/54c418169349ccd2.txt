@@ -1,0 +1,1001 @@
+# SUPER DUPER UI — Production Execution Plan v2
+## VFX Team MoE Dispatch for Claude Code
+
+> **How to use this document:**
+> 1. Drop this file into `comfyui-agent/` root
+> 2. Open Claude Code from `comfyui-agent/`
+> 3. Kick off: `Read SUPERDUPER_UI_PLAN_v2.md. Start Phase 0.`
+> 4. Each phase ends with a **HANDOFF BLOCK** — copy-paste the next dispatch prompt
+> 5. Agent personas live in `.claude/commands/` — invoked as slash commands
+
+---
+
+## VFX Production Team Roles
+
+This is a VFX show. The sidebar is our deliverable. Each agent is a department head
+on the production, speaking their language, working their domain.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    SHOW: SUPER DUPER UI                  │
+│                                                         │
+│  /PRODUCER ─── Production Manager                       │
+│     Schedule, gates, cross-department coordination      │
+│     Owns: Phase 0 (recon), phase transitions, risk      │
+│                                                         │
+│  /VFX_SUPER ── VFX Supervisor                           │
+│     Creative + technical authority. Pipeline design.     │
+│     Owns: Architecture sign-off, Phase 5 (multi-pipe)   │
+│     Reviews: Every phase gate before green-light         │
+│                                                         │
+│  /COMFY_LEAD ─ Lead Technical Director                  │
+│     ComfyUI internals. PromptServer API. Node systems.  │
+│     Owns: Phase 2 (backend bridge), Phase 3 (DISCOVER)  │
+│     Knows: aiohttp routes, /object_info, WebSocket API  │
+│                                                         │
+│  /SYS_ENG ──── Pipeline Engineer / Systems Architect    │
+│     Infrastructure, build systems, extension API.       │
+│     Owns: Phase 1 (sidebar skeleton), Phase 4 (status)  │
+│     Knows: JS module system, DOM, symlinks, packaging   │
+│                                                         │
+│  /NUKE_COMP ── Compositor / QA Lead                     │
+│     Visual quality, output validation, artist UX.       │
+│     Owns: Phase 4 review (diff view, inline preview)    │
+│     Reviews: "Does this feel right to an artist?"       │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Production rule:** No phase ships without `/VFX_SUPER` reviewing the gate.
+`/PRODUCER` tracks schedule. Individual departments execute.
+
+---
+
+## Context (All Agents Read This)
+
+### What Exists
+- `agent/` — 68 tools across UNDERSTAND, DISCOVER, PILOT, VERIFY layers
+- 428 passing tests, clean lint
+- CLI interface works via `agent run`
+- No UI surface yet — the brain has no mouth
+
+### What We're Building
+A ComfyUI sidebar extension that puts the agent brain beside the node graph
+as a conversational copilot. Artist never leaves their workspace.
+
+### Competitive Position
+```
+                ARTIST-FACING
+                     ▲
+      ┌──────────────┼──────────────┐
+      │   SUPER      │              │
+      │   DUPER ●    │              │
+CONVERSATIONAL ──────┼────────── NODE-BASED
+      │              │    ● OpenClaw│
+      │              │  ● LLM_party│
+      └──────────────┼──────────────┘
+                     ▼
+                DEVELOPER-FACING
+```
+Top-left quadrant is empty. That's us.
+
+### Technical Constraints (Memorize These)
+1. **ComfyUI uses aiohttp, NOT FastAPI** — routes mount on `PromptServer.instance.routes`
+2. **JS imports are relative** — `import { app } from '../../scripts/app.js'`
+3. **Agent brain is Python, imported directly** — no HTTP between UI backend and brain
+4. **`WEB_DIRECTORY = "./web"`** — tells ComfyUI to serve `ui/web/` as static assets
+5. **Sidebar API requires ComfyUI frontend ≥ v1.2.4** — `registerSidebarTab`
+
+### File Structure (Target)
+```
+comfyui-agent/
+├── agent/                    # EXISTING — DON'T TOUCH
+│   ├── brain/
+│   ├── tools/
+│   ├── main.py
+│   └── ...
+├── ui/                       # NEW — sidebar extension
+│   ├── __init__.py           # ComfyUI node registration + route mounting
+│   ├── server/
+│   │   ├── __init__.py
+│   │   ├── routes.py         # aiohttp endpoints on PromptServer
+│   │   └── ws_bridge.py      # WebSocket: sidebar ↔ agent brain
+│   └── web/
+│       ├── js/
+│       │   ├── sidebar.js    # registerSidebarTab + panel orchestration
+│       │   ├── chat.js       # Chat input/output component
+│       │   ├── discover.js   # DISCOVER results panel
+│       │   └── status.js     # Execution status + inline preview
+│       └── css/
+│           └── superduper.css
+├── CLAUDE.md                 # UPDATE after Phase 1
+├── SUPERDUPER_UI_PLAN_v2.md  # THIS FILE
+└── .claude/commands/         # Agent team
+    ├── COMFY_LEAD.md
+    ├── SYS_ENG.md
+    ├── VFX_SUPER.md
+    ├── NUKE_COMP.md
+    └── PRODUCER.md
+```
+
+---
+
+## Phase 0: Production Kickoff
+**Department:** `/PRODUCER` — Production Manager
+**Duration:** 10 minutes
+**Deliverable:** Go/No-Go report
+
+### DISPATCH PROMPT (copy-paste into Claude Code):
+```
+/PRODUCER
+
+SHOW: SUPER DUPER UI — Production Kickoff
+
+You are the Production Manager. Before any department starts building,
+you need ground truth. Run the following pre-production checklist:
+
+1. CODEBASE HEALTH
+   - Read CLAUDE.md — understand project state
+   - Run `python -m pytest tests/ -q` — confirm 428+ tests passing
+   - Run `ruff check agent/ tests/` — confirm clean lint
+   - Report: tests passing? lint clean? any red flags?
+
+2. COMFYUI FRONTEND VERSION CHECK
+   This is the critical gate. The sidebar API requires frontend ≥ v1.2.4.
+   - Check if ComfyUI is accessible at localhost:8188
+   - If accessible: GET /system_stats or check the frontend source
+   - If not accessible: note it — we can still scaffold, just can't test
+   - Look for `registerSidebarTab` in ComfyUI's web source if available
+   - Check ComfyUI's package.json version if the install path is known
+     (likely G:\COMFYUI_Database\)
+
+3. CONFLICT CHECK
+   - Does a `ui/` directory already exist in comfyui-agent? 
+   - Does `Custom_Nodes/ComfyUI-SuperDuper` already exist?
+   - Any existing sidebar extensions that might conflict?
+
+4. DELIVERABLE
+   Write a Production Status Report:
+   ```
+   SHOW: SUPER DUPER UI — Pre-Production Report
+   Date: [today]
+   
+   Codebase: [PASS/FAIL] — [test count] tests, lint [clean/issues]
+   Frontend: [PASS/FAIL/UNTESTED] — ComfyUI version [x.x.x]
+   Conflicts: [NONE/LIST]
+   
+   Verdict: [GREENLIGHT / BLOCKED BY: ...]
+   
+   Ready to dispatch: /SYS_ENG for Phase 1
+   ```
+
+Do NOT start building. Your job is assessment only. Report back.
+```
+
+### GATE CRITERIA
+- All tests passing
+- No file conflicts
+- ComfyUI version confirmed OR noted as "test later"
+- `/VFX_SUPER` reviews the report (implicit — the user reads it)
+
+### HANDOFF → Phase 1
+When Phase 0 reports GREENLIGHT, paste the Phase 1 dispatch below.
+
+---
+
+## Phase 1: Sidebar Skeleton
+**Department:** `/SYS_ENG` — Pipeline Engineer
+**Duration:** 30-60 minutes
+**Deliverable:** Visible, interactive sidebar tab in ComfyUI
+**Depends on:** Phase 0 GREENLIGHT
+
+### DISPATCH PROMPT:
+```
+/SYS_ENG
+
+SHOW: SUPER DUPER UI — Phase 1: Sidebar Skeleton
+You are the Pipeline Engineer. Your job is infrastructure and build systems.
+
+CONTEXT: Read SUPERDUPER_UI_PLAN_v2.md section "Context (All Agents Read This)"
+for file structure, technical constraints, and competitive position.
+
+YOUR DELIVERABLE: A working ComfyUI sidebar tab with a hello-world chat input.
+No backend connection yet — just prove the extension API works.
+
+TASKS (sequential — don't skip ahead):
+
+1. SCAFFOLD
+   Create the ui/ directory structure exactly as specified in the plan.
+   Create empty __init__.py files for server/ package.
+   Create placeholder CSS file.
+
+2. REGISTER SIDEBAR TAB
+   Create ui/web/js/sidebar.js:
+   - Import app from ComfyUI's module system
+   - Call app.registerExtension with registerSidebarTab
+   - ID: 'superduper', icon: 'pi pi-bolt', title: 'SUPER DUPER'
+   - Render a flex-column layout with:
+     * Header: "🤖 SUPER DUPER"
+     * Message area: scrollable div, starts with "Ready. Type below."
+     * Input bar: text input + Send button
+   - Wire Send button and Enter key to echo messages locally
+   - Style: dark theme (bg #2a2a2a, text #eee, accent #4a9eff)
+   - Messages echo locally with "Agent: (not connected yet)" placeholder
+
+3. REGISTER AS CUSTOM NODE
+   Create ui/__init__.py:
+   ```python
+   """SUPER DUPER UI — ComfyUI Sidebar Extension"""
+   NODE_CLASS_MAPPINGS = {}
+   NODE_DISPLAY_NAME_MAPPINGS = {}
+   WEB_DIRECTORY = "./web"
+   __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
+   ```
+
+4. CREATE SYMLINK
+   Create a symlink (or document the command) so ComfyUI loads ui/:
+   - Windows: mklink /D "G:\COMFYUI_Database\Custom_Nodes\ComfyUI-SuperDuper" "[repo_path]\ui"
+   - Note: user will need to run this from an admin terminal
+
+5. TEST
+   - If ComfyUI is running: restart it, verify sidebar appears
+   - If ComfyUI is not running: verify file structure is correct,
+     JS has no syntax errors (basic check), Python imports work
+
+6. PHASE REPORT
+   ```
+   PHASE 1 — Pipeline Engineer Report
+   
+   Files created: [list]
+   Symlink: [created/documented]
+   Sidebar test: [PASS — visible and interactive / UNTESTED — ComfyUI not running]
+   
+   HANDOFF TO /COMFY_LEAD:
+   - ui/ package exists at [path]
+   - sidebar.js registers tab with ID 'superduper'
+   - Chat input echoes locally, needs WebSocket connection
+   - Backend route mounting needed in ui/server/routes.py
+   - Agent brain import path: from agent.main import [whatever is needed]
+   
+   Ready for Phase 2: /COMFY_LEAD Backend Bridge
+   ```
+
+IMPORTANT: Do NOT build the backend. Do NOT connect to the agent brain.
+Your scope is the extension skeleton only. /COMFY_LEAD handles the wiring.
+```
+
+### GATE CRITERIA
+- `ui/` directory structure matches plan
+- `sidebar.js` has valid JS (no syntax errors)
+- `ui/__init__.py` exports WEB_DIRECTORY
+- Chat input echoes messages locally
+- Phase report written with handoff block
+
+### HANDOFF → Phase 2
+The Phase 1 report includes a HANDOFF block that tells `/COMFY_LEAD` exactly
+what exists and what they need to build next.
+
+---
+
+## Phase 2: Backend Bridge
+**Department:** `/COMFY_LEAD` — Lead Technical Director
+**Duration:** 1-2 hours
+**Deliverable:** Round-trip chat — user types, agent brain responds through sidebar
+**Depends on:** Phase 1 sidebar skeleton
+
+### DISPATCH PROMPT:
+```
+/COMFY_LEAD
+
+SHOW: SUPER DUPER UI — Phase 2: Backend Bridge
+You are the Lead TD. You know ComfyUI's internals — PromptServer, aiohttp,
+the WebSocket protocol, /object_info, /queue, /history, the whole API surface.
+
+CONTEXT: Read SUPERDUPER_UI_PLAN_v2.md. Read the Phase 1 handoff report
+(it tells you what exists and what needs wiring).
+
+YOUR DELIVERABLE: The sidebar sends a message → agent brain processes it →
+response appears in sidebar. Real data, not echoes.
+
+CRITICAL CONSTRAINT: ComfyUI uses aiohttp. Do NOT import FastAPI.
+Routes mount on PromptServer.instance.routes. This is non-negotiable.
+
+TASKS:
+
+1. MOUNT SERVER ROUTES (ui/server/routes.py)
+   Mount on ComfyUI's PromptServer:
+   - POST /superduper/chat — receive user message, return agent response
+   - GET /superduper/status — current agent/execution state
+   
+   Import pattern:
+   ```python
+   from server import PromptServer  # ComfyUI's module
+   from aiohttp import web
+   
+   routes = PromptServer.instance.routes
+   
+   @routes.post('/superduper/chat')
+   async def handle_chat(request):
+       data = await request.json()
+       user_message = data.get('content', '')
+       # Route to agent brain — import from agent/
+       # Return: {"role": "agent", "content": "...", "stage": "UNDERSTAND"}
+   ```
+   
+   The agent brain lives in agent/. Study agent/main.py and agent/tools/
+   to understand how to invoke it programmatically (not via CLI).
+   You may need to create a thin adapter if the brain only has a CLI entry point.
+
+2. CREATE WEBSOCKET BRIDGE (ui/server/ws_bridge.py)
+   Bidirectional WebSocket for real-time updates:
+   
+   Client → Server protocol:
+   - {"type": "chat", "content": "make it dreamier"}
+   - {"type": "approve", "patch_id": "abc123"}
+   - {"type": "reject", "patch_id": "abc123"}
+   
+   Server → Client protocol:
+   - {"type": "message", "role": "agent", "content": "..."}
+   - {"type": "stage", "stage": "DISCOVER", "detail": "Searching for glow nodes..."}
+   - {"type": "progress", "percent": 45, "node": "KSampler"}
+   - {"type": "result", "image_url": "/view?filename=..."}
+   - {"type": "error", "message": "..."}
+   
+   Mount WebSocket endpoint:
+   ```python
+   @routes.get('/superduper/ws')
+   async def websocket_handler(request):
+       ws = web.WebSocketResponse()
+       await ws.prepare(request)
+       # ... handle messages
+   ```
+   
+   Key decisions:
+   - Tap into ComfyUI's existing WS for generation progress events
+   - Forward progress to sidebar client
+   - Agent brain calls MUST be async — don't block the event loop
+   - If brain is synchronous, wrap in asyncio.to_thread()
+
+3. WIRE ROUTE MOUNTING INTO ui/__init__.py
+   The routes need to be mounted when ComfyUI loads the custom node.
+   Update ui/__init__.py to import and register the server routes.
+   
+   Pattern (check how other custom nodes with server routes do this):
+   ```python
+   from .server.routes import setup_routes
+   setup_routes()  # Called at import time
+   ```
+
+4. UPDATE SIDEBAR JS (ui/web/js/sidebar.js)
+   Replace the "(not connected yet)" echo with actual WebSocket connection:
+   - Connect to ws://localhost:8188/superduper/ws on sidebar load
+   - Send {"type": "chat", "content": text} on user input
+   - Parse incoming JSON messages and render by type:
+     * "message" → show in chat area
+     * "stage" → show stage indicator (UNDERSTAND/DISCOVER/PILOT/VERIFY)
+     * "progress" → show progress bar
+     * "error" → show in red
+   - Handle reconnection if WebSocket drops
+   - Show connection status indicator
+
+5. TEST END-TO-END
+   ```
+   1. Restart ComfyUI (loads new routes)
+   2. Open sidebar
+   3. Type "what nodes do I have for upscaling?"
+   4. Agent should query /object_info, filter, respond in sidebar
+   5. Type "describe this workflow" (with one loaded in ComfyUI)
+   6. Agent should use UNDERSTAND layer, respond with description
+   ```
+
+6. PHASE REPORT
+   ```
+   PHASE 2 — Lead TD Report
+   
+   Routes mounted: POST /superduper/chat, GET /superduper/status, WS /superduper/ws
+   Agent brain adapter: [how the brain is invoked — direct import / adapter class / etc.]
+   WebSocket protocol: [implemented as specified / modifications noted]
+   
+   Test results:
+   - Chat round-trip: [PASS/FAIL]
+   - Agent brain responds with real data: [PASS/FAIL]
+   - Stage transitions visible: [PASS/FAIL]
+   
+   Known issues: [list any]
+   
+   HANDOFF TO /COMFY_LEAD (self, Phase 3):
+   - WebSocket bridge is at ui/server/ws_bridge.py
+   - To send DISCOVER results to sidebar, emit:
+     {"type": "discover", "results": [...]}
+   - Agent brain adapter: [location and usage pattern]
+   - Sidebar renders messages by type — add new types in sidebar.js switch statement
+   
+   Ready for Phase 3: DISCOVER Panel (same department)
+   ```
+
+IMPORTANT: The agent brain already exists in agent/. You are WIRING it to the
+sidebar, not rewriting it. If you need to create an adapter layer between the
+brain and the routes, keep it thin. The intelligence lives in agent/.
+```
+
+### GATE CRITERIA
+- POST /superduper/chat returns real agent responses
+- WebSocket connects and stays connected
+- At least one UNDERSTAND query works end-to-end (e.g., "describe this workflow")
+- No FastAPI imports anywhere
+- Phase report with handoff block
+
+### HANDOFF → Phase 3
+Same department (`/COMFY_LEAD`) continues. The handoff is internal — the Phase 2
+report documents the adapter pattern for Phase 3 to use.
+
+---
+
+## Phase 3: DISCOVER Panel
+**Department:** `/COMFY_LEAD` — Lead Technical Director
+**Duration:** 1-2 hours  
+**Deliverable:** DISCOVER layer results visible and actionable in sidebar
+**Depends on:** Phase 2 backend bridge working
+
+### DISPATCH PROMPT:
+```
+/COMFY_LEAD
+
+SHOW: SUPER DUPER UI — Phase 3: DISCOVER Panel
+You are the Lead TD. You just shipped the backend bridge.
+Now surface the DISCOVER layer — this is the project's moat.
+
+CONTEXT: Read SUPERDUPER_UI_PLAN_v2.md. Read your own Phase 2 report
+for the adapter pattern and WebSocket protocol.
+
+YOUR DELIVERABLE: When the agent runs DISCOVER tools, results appear in
+a dedicated panel below the chat. Missing nodes detected on workflow load.
+
+THE MOAT: No other ComfyUI LLM project has discovery. OpenClaw puts
+the LLM in the graph. We put intelligence BESIDE it. DISCOVER is the
+feature that proves why our approach is better.
+
+TASKS:
+
+1. CREATE DISCOVER PANEL (ui/web/js/discover.js)
+   A panel that renders below (or as a tab alongside) the chat:
+   - Triggers when agent sends {"type": "discover", "results": [...]}
+   - Each result card shows:
+     * Node/model name
+     * Short description
+     * Install status: ✅ Installed / ⬇️ Available / ❌ Not Found
+     * Action button: [Add to Workflow] or [Install] or [Search More]
+   - Results are scrollable, max 10 visible (load more on scroll)
+   - Empty state: "Ask me to find nodes, models, or workflows."
+
+2. WIRE DISCOVER EVENTS
+   In the agent brain adapter (from Phase 2):
+   - When DISCOVER tools return results, emit to WebSocket:
+     {"type": "discover", "results": [
+       {"name": "...", "description": "...", "installed": true/false,
+        "source": "ComfyUI-Manager|HuggingFace|GitHub", "url": "..."}
+     ]}
+   - Map existing DISCOVER tool outputs to this format
+   - The tools to tap: search_huggingface, search_nodes, find_missing_nodes,
+     recommend_models (check agent/tools/comfy_discover.py for exact names)
+
+3. MISSING NODE DETECTION
+   When a workflow is loaded in ComfyUI that references missing nodes:
+   - The agent can detect this via /object_info comparison
+   - Sidebar should automatically show: "⚠️ 3 nodes missing. [Show]"
+   - Expand shows the missing node list with:
+     * Node class name
+     * Which custom node pack provides it (if known)
+     * [Install via ComfyUI-Manager] button (if Manager is installed)
+   - This should trigger on workflow load, not just on user query
+   
+   Implementation options:
+   a) Poll /queue or /prompt for loaded workflow changes
+   b) Hook into ComfyUI's execution events via WebSocket
+   c) Trigger check when user first messages after loading a workflow
+   Pick the most reliable option.
+
+4. INTEGRATE INTO SIDEBAR LAYOUT
+   Update sidebar.js to include the discover panel:
+   - Tab system or accordion: [Chat] [Discover] [Status]
+   - Or: chat on top, discover results slide up from bottom when triggered
+   - The discover panel should NOT obscure the chat — artist needs both visible
+
+5. TEST
+   ```
+   1. Load a workflow with missing nodes (or temporarily rename a custom node folder)
+   2. Sidebar should detect and surface missing nodes
+   3. Type "what's a good model for 3D generation?"
+   4. DISCOVER panel should show HuggingFace results
+   5. Type "find me a soft glow or bloom effect node"
+   6. DISCOVER panel should show node search results
+   7. Verify [Install] / [Add to Workflow] buttons are visible (can be stubs)
+   ```
+
+6. PHASE REPORT
+   ```
+   PHASE 3 — Lead TD Report (DISCOVER)
+   
+   Discover panel: [implemented as tab/accordion/slide-up]
+   Missing node detection: [automatic/on-query/both]
+   DISCOVER tools wired: [list which tools emit to sidebar]
+   
+   Test results:
+   - Missing node detection: [PASS/FAIL]
+   - Node search results in sidebar: [PASS/FAIL]  
+   - Model search results in sidebar: [PASS/FAIL]
+   - Install/Add buttons visible: [PASS/FAIL]
+   
+   HANDOFF TO /SYS_ENG (Phase 4):
+   - Discover panel lives at ui/web/js/discover.js
+   - WebSocket protocol: {"type": "discover", "results": [...]}
+   - Sidebar layout uses [tabs/accordion] — status panel should follow same pattern
+   - Agent brain adapter pattern documented in Phase 2 report
+   - To add new panel types: add case in sidebar.js message handler switch
+   
+   HANDOFF TO /NUKE_COMP (Phase 4 review):
+   - Artist UX review needed on:
+     * Is the discover panel discoverable? Can an artist find it?
+     * Are result cards readable at sidebar width?
+     * Does missing node alert feel helpful or alarming?
+   
+   Ready for Phase 4: /SYS_ENG Status + Preview + /NUKE_COMP UX Review
+   ```
+```
+
+### GATE CRITERIA
+- DISCOVER results render in sidebar when agent searches
+- Missing node detection works (at least on explicit query)
+- Result cards show name, description, install status
+- Layout doesn't obscure chat
+- Phase report with dual handoff (SYS_ENG + NUKE_COMP)
+
+### HANDOFF → Phase 4
+Two departments receive handoffs:
+- `/SYS_ENG` gets the infrastructure task (status panel, WebSocket plumbing)
+- `/NUKE_COMP` gets the UX review task (artist experience)
+
+---
+
+## Phase 4: Status + Preview + Artist UX
+**Department:** `/SYS_ENG` (build) + `/NUKE_COMP` (review)
+**Duration:** 1-2 hours build + 30 min review
+**Deliverable:** Real-time status, inline preview, workflow diff with approve/reject
+**Depends on:** Phase 3 DISCOVER panel
+
+### DISPATCH PROMPT — Build (SYS_ENG):
+```
+/SYS_ENG
+
+SHOW: SUPER DUPER UI — Phase 4: Status + Preview
+You are the Pipeline Engineer. You handle the real-time plumbing.
+
+CONTEXT: Read SUPERDUPER_UI_PLAN_v2.md. Read Phase 2 and Phase 3 reports
+for the WebSocket protocol and sidebar layout pattern.
+
+YOUR DELIVERABLE: Three features that close the artist feedback loop:
+1. Real-time execution status
+2. Inline image/video preview
+3. Workflow diff view with approve/reject
+
+TASKS:
+
+1. STATUS PANEL (ui/web/js/status.js)
+   Shows real-time execution state:
+   - Stage indicator: UNDERSTAND → DISCOVER → PILOT → VERIFY
+     * Light up the active stage, grey out others
+     * Show detail text below: "Searching for upscale nodes..."
+   - Queue position (from ComfyUI's /queue endpoint)
+   - Generation progress:
+     * Tap ComfyUI's native WebSocket progress events
+     * Show node-by-node progress: "KSampler: 45% (step 9/20)"
+     * Overall progress bar
+   - Error display with suggested fixes
+   
+   ComfyUI's native WS events you need to handle:
+   - {"type": "status", "data": {"sid": "...", "status": {...}}}
+   - {"type": "progress", "data": {"value": N, "max": M}}
+   - {"type": "executing", "data": {"node": "ID"}}
+   - {"type": "executed", "data": {"node": "ID", "output": {...}}}
+
+2. INLINE PREVIEW
+   When generation completes:
+   - Fetch result from ComfyUI's /view endpoint:
+     GET /view?filename={name}&subfolder={subfolder}&type=output
+   - Display inline in sidebar:
+     * Image: thumbnail (click to expand in lightbox or new tab)
+     * Video: first frame + play button (HTML5 <video> element)
+     * 3D: show render preview image if available
+   - Show output metadata: filename, dimensions, seed
+
+3. WORKFLOW DIFF VIEW
+   Before agent applies RFC6902 patches:
+   - Intercept the patch set from the agent brain
+   - Display human-readable diff:
+     * "CFG: 7.5 → 4.0"
+     * "Adding node: SoftGlow (after KSampler)"
+     * "Prompt: 'a cat' → 'a dreamy cat in soft light'"
+   - [✅ Approve] [❌ Reject] buttons
+   - On approve: agent applies patches and queues execution
+   - On reject: agent acknowledges, asks for alternative direction
+   
+   WebSocket protocol addition:
+   - Server → Client: {"type": "diff", "patch_id": "abc123", "changes": [
+       {"field": "CFG Scale", "from": 7.5, "to": 4.0, "node": "KSampler"},
+       {"field": "Prompt", "from": "a cat", "to": "a dreamy cat", "node": "CLIPTextEncode"}
+     ]}
+   - Client → Server: {"type": "approve", "patch_id": "abc123"}
+   - Client → Server: {"type": "reject", "patch_id": "abc123", "reason": "optional"}
+
+4. INTEGRATE INTO SIDEBAR LAYOUT
+   Follow the layout pattern from Phase 3 (tabs/accordion):
+   - Status lives at the top (always visible when active)
+   - Diff view appears modally or inline when patches are pending
+   - Preview appears in chat flow after generation completes
+
+5. TEST — THE FULL ARTIST LOOP
+   ```
+   1. Open sidebar, load a workflow in ComfyUI
+   2. Type "make it dreamier and upscale 2x"
+   3. Agent shows: UNDERSTAND stage → parsing intent
+   4. Agent shows: PILOT stage → diff view appears
+   5. Diff shows: "CFG: 7.5 → 4.0" and "Adding Upscale node"
+   6. Click [Approve]
+   7. Status shows: queue position → generation progress (node by node)
+   8. On complete: inline preview appears in sidebar
+   9. Full loop without leaving ComfyUI ✓
+   ```
+
+6. PHASE REPORT
+   ```
+   PHASE 4 — Pipeline Engineer Report
+   
+   Status panel: [stage indicator + progress + queue]
+   Inline preview: [image/video support]
+   Diff view: [human-readable + approve/reject]
+   
+   Test results:
+   - Full artist loop: [PASS/FAIL]
+   - Stage transitions visible: [PASS/FAIL]
+   - Progress updates in real-time: [PASS/FAIL]
+   - Diff approve/reject works: [PASS/FAIL]
+   - Inline preview renders: [PASS/FAIL]
+   
+   HANDOFF TO /NUKE_COMP (UX Review):
+   - Full loop is testable end-to-end
+   - Review focus: Does this feel like a tool an artist would use?
+   - Key question: Is the diff view clear enough for non-technical users?
+   - Key question: Is the progress display informative without being noisy?
+   
+   HANDOFF TO /VFX_SUPER (Architecture Review):
+   - All four sidebar panels now exist: Chat, Discover, Status, Preview
+   - WebSocket protocol has grown — review for consistency
+   - Phase 5 requires multi-workflow state — current architecture supports it? 
+   
+   Ready for: /NUKE_COMP UX Review, then /VFX_SUPER Architecture Review
+   ```
+```
+
+### DISPATCH PROMPT — UX Review (NUKE_COMP):
+```
+/NUKE_COMP
+
+SHOW: SUPER DUPER UI — Phase 4 UX Review
+You are the Compositor / QA Lead. You think like an artist, not an engineer.
+
+Your job is NOT to build. Your job is to REVIEW what was built and report
+on whether it feels right for an artist in production.
+
+REVIEW CHECKLIST:
+
+1. FIRST IMPRESSION (10 seconds)
+   Open the sidebar. Without reading any documentation:
+   - Is it obvious what this does?
+   - Where do I type? Where do results appear?
+   - Does it feel like part of ComfyUI or a bolted-on afterthought?
+
+2. CHAT EXPERIENCE
+   - Send a simple message. Is the response readable at sidebar width?
+   - Is there visual distinction between user messages and agent messages?
+   - Does the typing indicator (if any) feel responsive?
+   - Can I scroll back through history?
+
+3. DISCOVER PANEL
+   - Are result cards readable? Is the text too small at sidebar width?
+   - Do install status indicators make sense at a glance?
+   - Would an artist know what [Add to Workflow] does?
+   - Is the missing node alert helpful or alarming?
+
+4. STATUS + PROGRESS
+   - Is the stage indicator (UNDERSTAND/DISCOVER/PILOT/VERIFY) useful
+     or just noise? Would an artist care?
+   - Is the progress bar informative? "KSampler: 45%" — does this help?
+   - When generation completes, is the preview image immediately visible?
+
+5. DIFF VIEW (Critical)
+   - "CFG: 7.5 → 4.0" — does an artist know what this means?
+   - Should we show artist-friendly labels? ("Detail level: High → Low")
+   - Are Approve/Reject buttons obvious and distinct?
+   - What if I reject — is it clear what happens next?
+
+6. OVERALL FEEL
+   - Does this feel like a Nuke timeline or a web app?
+   - Color palette: does it match ComfyUI's dark theme?
+   - Font sizes: readable? Too small in the sidebar width?
+   - Spacing: cramped or breathable?
+
+DELIVERABLE: UX Report with:
+- PASS / NEEDS WORK / FAIL per section
+- Specific recommendations (not vague — "make the font bigger" not "improve readability")
+- Priority: P1 (blocks ship) / P2 (ship but fix soon) / P3 (nice to have)
+```
+
+### GATE CRITERIA (Combined)
+- `/SYS_ENG` test: full artist loop works
+- `/NUKE_COMP` review: no P1 issues, or P1 issues addressed
+- `/VFX_SUPER` architecture sign-off for Phase 5 readiness
+
+---
+
+## Phase 5: Multi-Workflow Chaining
+**Department:** `/VFX_SUPER` (architecture) + `/COMFY_LEAD` (implementation)
+**Duration:** 2-4 hours
+**Deliverable:** Multi-step pipeline from single conversational prompt
+**Depends on:** Phase 4 complete + Phase A from comfyui-agent-next-phase.md
+
+### PRE-REQUISITE CHECK
+Phase 5 requires the PILOT layer to support multi-workflow chaining
+(output of workflow A feeds into workflow B). This is Phase A from
+`comfyui-agent-next-phase.md`. If Phase A hasn't shipped yet, STOP HERE
+and ship Phase A first.
+
+### DISPATCH PROMPT — Architecture (VFX_SUPER):
+```
+/VFX_SUPER
+
+SHOW: SUPER DUPER UI — Phase 5 Architecture Review
+You are the VFX Supervisor. Creative and technical authority.
+
+Before /COMFY_LEAD implements multi-workflow chaining in the UI, you need
+to sign off on the pipeline architecture. This is comp pipeline thinking —
+you've done this in Nuke for years.
+
+REVIEW:
+
+1. PIPELINE TOPOLOGY
+   A multi-stage pipeline looks like:
+   txt2img → img2img_refine → upscale → glow_post
+   
+   Or for 3D:
+   txt2mesh → texture_apply → UV_unwrap → render_preview
+   
+   Questions to answer:
+   - Is each stage a separate ComfyUI prompt execution? Or one big graph?
+   - If separate: how are file references passed between stages?
+   - If one graph: how does the agent compose multiple workflow templates?
+   - What happens when Stage 2 fails? Retry Stage 2 only? Start over?
+
+2. STATE MANAGEMENT
+   The sidebar needs to track:
+   - Overall pipeline: 3 of 5 stages complete
+   - Per-stage state: pending / running / complete / failed / skipped
+   - Intermediate outputs: images/meshes at each stage
+   - User can re-run individual stages without restarting the whole pipeline
+   
+   Where does this state live? In the WebSocket bridge? In the agent brain?
+   In a new pipeline_state module?
+
+3. ERROR RECOVERY
+   In a Nuke comp, if one node fails, you fix it and re-render from there.
+   Same principle here:
+   - Stage 3 fails → show error → user fixes → re-run Stage 3 only
+   - Stage 3 output is wrong → user says "redo this part" → agent re-runs
+   - Must NOT re-run Stages 1-2 if their outputs are still valid
+
+4. DELIVERABLE
+   Architecture Decision Record:
+   - Pipeline topology: [separate prompts / single graph / hybrid]
+   - State management: [where, schema]  
+   - Error recovery: [strategy]
+   - File passing: [how outputs flow between stages]
+   
+   Then greenlight /COMFY_LEAD to implement.
+```
+
+### DISPATCH PROMPT — Implementation (COMFY_LEAD):
+```
+/COMFY_LEAD
+
+SHOW: SUPER DUPER UI — Phase 5: Multi-Workflow Pipeline UI
+You are the Lead TD. /VFX_SUPER has signed off on the architecture.
+Read their Architecture Decision Record before starting.
+
+YOUR DELIVERABLE: Multi-step pipeline visible and controllable in sidebar.
+
+TASKS:
+
+1. EXECUTION PLAN DISPLAY
+   When agent plans a multi-step pipeline:
+   - Show step list in sidebar:
+     "Step 1: Generate base image ✅"
+     "Step 2: Upscale 2x ⏳ (running...)" 
+     "Step 3: Add soft glow ⏸️ (pending)"
+   - Each step shows: status icon, name, duration when complete
+   - Click a completed step to see its output
+   - Click a failed step to see the error
+
+2. INTER-WORKFLOW FILE PASSING
+   Per /VFX_SUPER's architecture decision:
+   - Implement the file reference passing mechanism
+   - Show intermediate results at each step in sidebar
+   - User can inspect any intermediate before continuing
+
+3. PIPELINE CONTROLS
+   - [⏸️ Pause] — stop after current stage completes
+   - [⏭️ Skip] — skip current stage (mark as skipped, proceed)
+   - [🔄 Retry] — re-run failed or completed stage
+   - [❌ Cancel] — abort entire pipeline
+
+4. TEST — THE DEMO SCENARIO
+   ```
+   1. Type: "make this image dreamier, upscale it 2x, and add a soft glow"
+   2. Agent plans 3-stage pipeline, shows in sidebar
+   3. Stage 1: Modify CFG/sampler → runs → preview appears
+   4. Stage 2: Upscale → runs → larger preview appears
+   5. Stage 3: Add glow node → runs → final result appears
+   6. User says "redo the glow, make it more subtle"
+   7. Agent re-runs ONLY Stage 3 with adjusted parameters
+   8. Final result appears without re-running Stages 1-2
+   ```
+
+   If Hunyuan3D nodes are installed, also test:
+   ```
+   1. "Generate a 3D model of a weathered stone column with moss"
+   2. Agent plans: txt2mesh → texture → render
+   3. Pipeline executes, shows intermediate 3D outputs
+   ```
+
+5. PHASE REPORT
+   ```
+   PHASE 5 — Lead TD Report (Multi-Pipeline)
+   
+   Pipeline display: [step list with status icons]
+   File passing: [mechanism per VFX_SUPER architecture]
+   Pipeline controls: [pause/skip/retry/cancel]
+   Error recovery: [re-run individual stages working]
+   
+   Test results:
+   - 3-stage pipeline from single prompt: [PASS/FAIL]
+   - Intermediate previews visible: [PASS/FAIL]
+   - Re-run individual stage: [PASS/FAIL]
+   - Pipeline controls functional: [PASS/FAIL]
+   
+   HANDOFF TO /PRODUCER (Final Report):
+   All 5 phases complete. Request final production review.
+   ```
+```
+
+### GATE CRITERIA
+- 3-stage pipeline executes from single prompt
+- Intermediate results visible at each stage
+- Individual stage re-run works without restarting pipeline
+- Pipeline controls (at least pause and retry) functional
+
+---
+
+## Final Production Review
+**Department:** `/PRODUCER` — Production Manager
+**Duration:** 15 minutes
+
+### DISPATCH PROMPT:
+```
+/PRODUCER
+
+SHOW: SUPER DUPER UI — Final Production Review
+
+All departments have reported. Compile the final status:
+
+1. Collect all phase reports (Phases 0-5)
+2. Run the full test suite: python -m pytest tests/ -q
+3. Run lint: ruff check agent/ ui/ tests/
+4. Verify all gate criteria met
+
+DELIVERABLE: Show Delivery Report
+```
+SHOW: SUPER DUPER UI — Delivery Report
+Date: [today]
+
+Phase 0 (Recon):       [PASS/FAIL] — /PRODUCER
+Phase 1 (Skeleton):    [PASS/FAIL] — /SYS_ENG
+Phase 2 (Bridge):      [PASS/FAIL] — /COMFY_LEAD
+Phase 3 (DISCOVER):    [PASS/FAIL] — /COMFY_LEAD
+Phase 4 (Status+UX):   [PASS/FAIL] — /SYS_ENG + /NUKE_COMP
+Phase 5 (Multi-Pipe):  [PASS/FAIL] — /VFX_SUPER + /COMFY_LEAD
+
+Tests: [count] passing, lint [clean/issues]
+
+Ship readiness: [SHIP IT / BLOCKED BY: ...]
+
+Post-ship priorities:
+1. [from NUKE_COMP P2 issues]
+2. [from VFX_SUPER architecture notes]
+3. [from COMFY_LEAD known issues]
+
+Update CLAUDE.md with UI section.
+Update README.md with sidebar installation instructions.
+```
+```
+
+---
+
+## Cross-Phase Reference
+
+### WebSocket Protocol (Complete)
+All phases contribute to the WebSocket protocol. Here's the complete spec:
+
+```
+Client → Server:
+  {"type": "chat",    "content": "..."}
+  {"type": "approve", "patch_id": "..."}
+  {"type": "reject",  "patch_id": "...", "reason": "optional"}
+  {"type": "pipeline_control", "action": "pause|skip|retry|cancel", "stage": N}
+
+Server → Client:
+  {"type": "message",  "role": "agent", "content": "..."}
+  {"type": "stage",    "stage": "UNDERSTAND|DISCOVER|PILOT|VERIFY", "detail": "..."}
+  {"type": "discover", "results": [{name, description, installed, source, url}]}
+  {"type": "diff",     "patch_id": "...", "changes": [{field, from, to, node}]}
+  {"type": "progress", "percent": N, "node": "...", "step": "M/N"}
+  {"type": "result",   "image_url": "...", "metadata": {...}}
+  {"type": "pipeline", "stages": [{name, status, output_url}], "current": N}
+  {"type": "error",    "message": "...", "recoverable": bool}
+```
+
+### Department Ownership Matrix
+
+| Component | Owner | Reviewer |
+|-----------|-------|----------|
+| ui/__init__.py | /SYS_ENG | /COMFY_LEAD |
+| ui/server/routes.py | /COMFY_LEAD | /VFX_SUPER |
+| ui/server/ws_bridge.py | /COMFY_LEAD | /SYS_ENG |
+| ui/web/js/sidebar.js | /SYS_ENG | /NUKE_COMP |
+| ui/web/js/chat.js | /SYS_ENG | /NUKE_COMP |
+| ui/web/js/discover.js | /COMFY_LEAD | /NUKE_COMP |
+| ui/web/js/status.js | /SYS_ENG | /NUKE_COMP |
+| ui/web/css/superduper.css | /NUKE_COMP | — |
+| Pipeline architecture | /VFX_SUPER | /COMFY_LEAD |
+| Phase gates | /PRODUCER | /VFX_SUPER |
+
+### Schedule Estimate
+
+| Phase | Optimistic | Realistic | Pessimistic |
+|-------|-----------|-----------|-------------|
+| 0 Recon | 10 min | 15 min | 30 min |
+| 1 Skeleton | 30 min | 1 hr | 2 hr |
+| 2 Bridge | 1 hr | 2 hr | 4 hr |
+| 3 DISCOVER | 1 hr | 2 hr | 3 hr |
+| 4 Status+UX | 1.5 hr | 2.5 hr | 4 hr |
+| 5 Multi-Pipe | 2 hr | 4 hr | 8 hr |
+| **Total** | **6 hr** | **12 hr** | **21 hr** |
+
+Phases 1-4 can ship independently. Phase 5 requires Phase A from the roadmap.
+
+---
+
+## What This Connects To
+
+- **comfyui-agent-next-phase.md** — Phase A (multi-workflow chaining) is prerequisite for Phase 5
+- **comfyui-viewport-capsule.md** — PARKED. Viewport becomes Phase 6+ when unparked
+- **CLAUDE.md** — Update with UI section after Phase 1 ships
+- **.claude/commands/** — Agent team definitions (update if roles evolve)
+
+---
+
+## Quick Start
+
+Drop this file in the repo. Open Claude Code. Paste:
+
+```
+Read SUPERDUPER_UI_PLAN_v2.md. Start Phase 0.
+```
+
+The `/PRODUCER` takes it from there.

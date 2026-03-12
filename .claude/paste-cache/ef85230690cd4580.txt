@@ -1,0 +1,32 @@
+cd C:\Users\User\SYNAPSE
+claude --dangerously-skip-permissions
+```
+
+Paste:
+```
+Resume RELAY-SOLARIS Phase 4 — Houdini is live on ws://localhost:9999 (21.0.631).
+
+Read: synapse/validation/solaris/PHASE4_STATE.md
+Read: synapse/docs/sprints/RELAY-SOLARIS.md
+Read: synapse/mcp/tools/solaris/
+Read: synapse/validation/solaris/verify_component_builder.py
+
+You are AGENT-SUP (VFX Supervisor). Complete Phase 4:
+
+1. Run the component builder verification. IMPORTANT: execute_python
+   chokes on multi-line dict literals. Use simple single-line Python
+   calls. Break complex scripts into sequential single-line executions.
+
+2. Run smoke tests T1-T7 against live Houdini. For each test, use
+   simple sequential execute_python calls rather than large scripts.
+   Document: PASS / FAIL / BLOCKED for each.
+
+3. Write results to: synapse/validation/solaris/smoke_test_results.md
+
+4. BLOCKER tests: T1 (Scene Template), T2 (Component Builder),
+   T4 (Hierarchy), T7 (Render Output — unless BL-007)
+
+5. If all blockers pass: synapse/validation/solaris/.gate_passed
+   Then commit and push.
+
+If something fails, DO NOT pass the gate. Document the failure and stop.

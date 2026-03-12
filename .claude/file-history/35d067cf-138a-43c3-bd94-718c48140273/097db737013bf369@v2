@@ -1,0 +1,80 @@
+"""CLAUDE.md writer with dry-run and diff support.
+
+Takes PipelineResult and writes final CLAUDE.md.
+Integrity block is appended as markdown comments.
+"""
+
+import sys
+from pathlib import Path
+
+from src.lossless.integration.pipeline import LosslessPipeline, PipelineResult
+from src.lossless.injection.state import InjectionState
+
+
+def write_claude_md(
+    result: PipelineResult,
+    output_path: Path,
+    dry_run: bool = False,
+) -> str:
+    """Write pipeline result to CLAUDE.md.
+
+    Args:
+        result: PipelineResult from pipeline.convert().
+        output_path: Path to write CLAUDE.md.
+        dry_run: If True, return output without writing.
+
+    Returns:
+        The output markdown string.
+    """
+    output = result.markdown
+
+    if dry_run:
+        return output
+
+    output_path.write_text(output, encoding='utf-8')
+    return output
+
+
+def diff_claude_md(
+    result: PipelineResult,
+    output_path: Path,
+) -> str:
+    """Compare pipeline result with existing CLAUDE.md.
+
+    Args:
+        result: PipelineResult from pipeline.convert().
+        output_path: Path to existing CLAUDE.md.
+
+    Returns:
+        Unified diff string, or empty string if identical.
+    """
+    import difflib
+    import re
+
+    new_text = result.markdown
+
+    if not output_path.exists():
+        return new_text
+
+    current = output_path.read_text(encoding='utf-8')
+
+    # Strip integrity blocks for comparison
+    def strip_integrity(text):
+        return re.sub(
+            r'<!-- LOSSLESS INTEGRITY BLOCK -->.*?<!-- END INTEGRITY BLOCK -->',
+            '', text, flags=re.DOTALL
+        ).strip()
+
+    new_clean = strip_integrity(new_text)
+    cur_clean = strip_integrity(current)
+
+    if new_clean == cur_clean:
+        return ""
+
+    diff = difflib.unified_diff(
+        cur_clean.splitlines(keepends=True),
+        new_clean.splitlines(keepends=True),
+        fromfile='current CLAUDE.md',
+        tofile='generated',
+    )
+    return ''.join(diff)

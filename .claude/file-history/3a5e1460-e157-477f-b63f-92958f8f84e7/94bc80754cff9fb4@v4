@@ -1,0 +1,63 @@
+# Session Handover
+**Date:** 2026-02-27 19:00
+**Project:** Cinema Camera Rig v4.0 (Houdini 21)
+**Working directory:** C:\Users\User\OneDrive\Documents\houdini21.0
+
+## What Was Done This Session
+
+### Orchestrator HDA Built (G5 PASSED)
+
+`cinema::camera_rig::2.0` built and installed via Synapse.
+
+| HDA | File | Status |
+|-----|------|--------|
+| `cinema::camera_rig::2.0` | `hda/cinema_camera_rig_2.0.hda` | Built + Loaded |
+
+Builder: `builders/build_camera_rig_orchestrator.py` (synced both paths)
+
+**Fixes during build:**
+- Removed `setRenderFlag(True)` calls on ChopNode and CopNode objects (not supported in H21)
+
+**HDA Interface (6 tabs):**
+- Lens: lens_id, focal_length, t_stop, focus_distance, squeeze, entrance_pupil_offset
+- Distortion: k1/k2/k3/p1/p2/squeeze_uniformity
+- Camera Body: body_id, sensor dims, resolution, EI, native ISO
+- Biomechanics: enable, weight, spring/damping/lag, handheld shake, auto-derive
+- Post-Processing: enable flare/noise/stmap, thresholds, intensities
+- Pipeline: Cooke /i metadata, ASWF EXR headers, USD camera path
+
+**Internal wiring:**
+- Camera focal/aperture/resolution driven by promoted parms via ch() expressions
+- Entrance pupil pivot null offset along Z from entrance_pupil_offset_mm
+- CHOPs biomechanics subnet with fetch + output
+- COP post pipeline with placeholder nulls for flare/noise/stmap sub-HDAs
+
+## All 5 HDAs Complete
+
+| # | HDA | Gate |
+|---|-----|------|
+| 1 | `cinema::chops_biomechanics::1.0` | G4 |
+| 2 | `cinema::cop_anamorphic_flare::2.0` | G4 |
+| 3 | `cinema::cop_sensor_noise::1.0` | G4 |
+| 4 | `cinema::cop_stmap_aov::1.0` | G4 |
+| 5 | `cinema::camera_rig::2.0` | G5 |
+
+## What's Next
+
+### G6: Integration Test
+- Create test scene with animated focus pull
+- Wire sub-HDAs into orchestrator's COP placeholders
+- Verify Karma XPU renders correctly
+- Cross-HDA parameter propagation test
+
+### Phase 4: Polish
+- HDA parameter UI refinement
+- Viewport overlay for entrance pupil visualization
+- Example .hip file
+- Documentation
+
+## Prior Sessions Summary
+- Steps 0-3: Environment cleanup (nest_asyncio, path sync, wolfram_oracle patch)
+- Steps 5-7: All Wolfram phases pass (W1-W5) — wolfram_oracle uses sync httpx.Client
+- Step 8: Built 4 sub-HDAs via Synapse
+- synapse_runner.py: SynapseClient() takes no args, returns `result` variable directly

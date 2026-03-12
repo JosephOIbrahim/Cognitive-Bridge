@@ -1,0 +1,74 @@
+"use client";
+
+import Image from "next/image";
+import { useInView } from "@/lib/hooks";
+import { PlaceholderImage } from "./PlaceholderImage";
+import { detailImages } from "@/lib/images";
+import { T } from "@/lib/tokens";
+import type { CaseStudySection as CaseStudySectionType } from "@/lib/types";
+import styles from "./CaseStudySection.module.css";
+
+interface Props {
+  section: CaseStudySectionType;
+  color: string;
+  title: string;
+  slug: string;
+  index: number;
+}
+
+export function CaseStudySection({ section, color, title, slug, index }: Props) {
+  const [ref, inView] = useInView({ threshold: 0.1 });
+  const imgCount = section.images || 2;
+
+  // Get all detail images for this project, then slice for this section
+  const allDetails = detailImages(slug);
+  const startIdx = getStartIndex(index, imgCount);
+  const sectionImages = allDetails.slice(startIdx, startIdx + imgCount);
+
+  return (
+    <div ref={ref} className={styles.section}>
+      <div
+        className={styles.textBlock}
+        style={{
+          opacity: inView ? 1 : 0,
+          transform: inView ? "translateY(0)" : "translateY(20px)",
+          transition: `all 600ms ${T.easeOut}`,
+        }}
+      >
+        <h2 className={styles.heading}>{section.heading}</h2>
+        <p className={styles.body}>{section.body}</p>
+      </div>
+
+      {/* Images -- single column, natural aspect ratios, 11px gap */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+        {sectionImages.map((src, i) => (
+          <Image
+            key={i}
+            src={src}
+            alt={`${title} - ${section.heading}`}
+            width={2400}
+            height={1600}
+            style={{ width: "100%", height: "auto", borderRadius: "var(--img-radius)" }}
+            sizes="(max-width: 768px) 100vw, (max-width: 1400px) 90vw, 1400px"
+          />
+        ))}
+        {/* Fallback placeholders if not enough real images */}
+        {sectionImages.length < imgCount && Array.from({ length: imgCount - sectionImages.length }, (_, i) => (
+          <PlaceholderImage
+            key={`ph-${i}`}
+            color={color}
+            title={`${title} ${index}-${i}`}
+            height={400}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Calculate the starting detail image index for a given section */
+function getStartIndex(sectionIndex: number, _imgCount: number): number {
+  // Sequential allocation based on typical section image counts
+  const offsets = [0, 2, 4, 7, 10, 13];
+  return offsets[sectionIndex] ?? sectionIndex * 3;
+}

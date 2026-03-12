@@ -1,0 +1,138 @@
+# Claude Code Investigation: Orchestra Repo — NEXUS Pipeline & P3 Patent Evidence
+
+## Context
+I'm building a provisional patent for the "Lossless Digital Injection Framework for Cognitive Processing Modulation." I have two other repos already investigated (injection repo v7.1.0 and main spec repo). Orchestra (v5.0.1) is the reference implementation that ties everything together. I need to understand what Orchestra adds that ISN'T in the other repos, especially around the NEXUS pipeline, and how the injection framework integrates at runtime.
+
+**What I already know exists in the injection repo (src/lossless/):**
+- Gain equation: `g = 1 + s_NM * d` (gain.py:49)
+- Anchor immunity: 5-layer defense-in-depth (gain, delta, combiner, mixing, bleeding)
+- Mixing matrix: 6×6 Gauss-Jordan with Kahan summation (mixing.py)
+- Integrity verification: SHA256 hashing, fidelity score (integrity.py, hasher.py)
+- Pharmacokinetic curves: exponential onset/offset (pharmacokinetics.py)
+- 165 passing tests
+- 5-stage pipeline: PARSE → ANCHOR_EXTRACT → CLEAN_CONVERT/INJECT → COMBINE → INTEGRITY
+
+**What I already know does NOT exist in the injection repo:**
+- NEXUS pipeline phases as code (only in README)
+- Safety floors as executable code (only in README)
+- Residual formula as arithmetic blending (string concatenation instead)
+
+## Repo
+Orchestra reference implementation (v5.0.1). Clone if needed — check the main USD Cognitive Substrate repo README for the Orchestra repo URL, or search GitHub for JosephOIbrahim Orchestra.
+
+## Investigation Tasks
+
+### 1. NEXUS PIPELINE — EXACT IMPLEMENTATION
+- Find the NEXUS pipeline implementation in source code
+- README claims 8 phases: RETRIEVE → CLASSIFY → GROUND → DETECT → CASCADE → LOCK → EXECUTE → UPDATE (+ FLUSH)
+- Are these defined as an enum, constant array, class methods, or function sequence?
+- Report EXACT file paths, class names, function names, line numbers
+- How does each phase connect to the next? (function calls, event loop, pipeline pattern?)
+- Is there a pipeline orchestrator class? What triggers each phase?
+
+### 2. NEXUS ↔ INJECTION INTEGRATION
+- How does the injection framework hook into the NEXUS pipeline?
+- At which NEXUS phase(s) does injection modulation occur?
+- Is the injection repo imported? Or is injection logic duplicated in Orchestra?
+- Find any `import` statements referencing injection, lossless, gain, pharmacokinetics, mixing, etc.
+- How does the CASCADE phase relate to the 10 routing phases (KNOWLEDGE, CONSTITUTIONAL, etc.)?
+
+### 3. SAFETY FLOORS — EXECUTABLE IMPLEMENTATION
+- The injection repo has safety floors only in documentation (README: Validator=0.10, Scaffolder=0.05, Restorer=0.05)
+- Does Orchestra implement these as executable code?
+- Search for: safety_floor, SAFETY_FLOOR, floor, minimum_weight, min_score
+- If found: exact file path, line numbers, how they're enforced (hard clamp? threshold? routing priority?)
+
+### 4. EXPERT ROUTING IN PRACTICE
+- How does Orchestra select which Expert (Validator, Scaffolder, Restorer, Refocuser, Celebrator, Socratic, Direct) handles a given exchange?
+- Is there a scoring function? Priority system? Signal matching?
+- Does the expert selection interact with the injection gain values?
+- Find the actual routing/selection code — not documentation
+
+### 5. DETERMINISM INFRASTRUCTURE
+- The injection repo's DETERMINISM.md references Orchestra code (hashlib.sha256, framework_orchestrator.py)
+- Find the actual determinism implementation in Orchestra
+- Checksum computation: where, how, on what data?
+- sort_keys usage? Kahan summation? Fixed evaluation order?
+- COGNITIVE_TILE_SIZE = 32 — does Orchestra use this?
+
+### 6. TEST SUITE DETAILS
+- Run the Orchestra test suite: exact count of passing/failing
+- Expected: 777 tests (from prior session, may have changed)
+- Which test files specifically test:
+  - NEXUS pipeline phase ordering?
+  - Injection integration?
+  - Determinism/reproducibility?
+  - Expert selection?
+  - Safety floor enforcement?
+- List test file names and categories
+
+### 7. RESIDUAL COMBINATION — DOES ORCHESTRA DO IT DIFFERENTLY?
+- The injection repo does string concatenation for `output = clean + delta`
+- Does Orchestra implement arithmetic residual blending anywhere?
+- Search for: `clean + alpha`, `residual`, `delta`, `reconstruct_clean`
+- If Orchestra has a DIFFERENT combination mechanism than the injection repo, report exactly what it does
+
+### 8. STATE MANAGEMENT
+- How does Orchestra track injection state across exchanges?
+- Is there an InjectionState class or equivalent?
+- Does it track: current profile, alpha value, exchange count, onset/offset phase?
+- How does the pharmacokinetic alpha evolve exchange-to-exchange?
+- Is there a `/inject` command handler? How does it activate/deactivate profiles?
+
+### 9. RED STATE OVERRIDE
+- The spec says "RED overrides ALL injection" with hard cutoff (no pharmacokinetic offset delay)
+- Is this implemented in Orchestra?
+- Search for: RED, burnout, crash, emergency, hard_cutoff, override
+- If found: what code path triggers it? Does it zero out alpha instantly?
+
+### 10. DUAL-PATH ROUTING
+- Claim 5 describes parallel clean path (sparse) and dissolved path (dense) under classical profile
+- Does Orchestra implement this?
+- Search for: dual_path, dissolved, dense_evaluation, sparse, parallel_route
+- If found: how are the two paths merged? Which result is used?
+
+### 11. CROSS-EXPERT BLEEDING IN PRACTICE
+- The injection repo has a full MixingTracker (6×6 matrix, Gauss-Jordan inversion)
+- Does Orchestra USE this? Or does it have its own bleeding mechanism?
+- Search for: bleeding, bleed, cross_expert, mixing_matrix, MixingTracker
+- If Orchestra imports from the injection repo, which specific classes/functions?
+
+### 12. OUTPUT FORMAT
+- What does Orchestra actually produce as output?
+- Is the output markdown? JSON? Structured data?
+- How does the "clean channel" manifest in the final output?
+- Can a user of Orchestra actually access the preserved clean signal?
+
+### 13. BATCH INVARIANCE TESTING
+- The injection repo claims batch invariance based on ThinkingMachines (2025)
+- Does Orchestra have reproducibility/determinism tests?
+- Search for: batch_invariant, deterministic, reproducib, bit_identical, checksum
+- If multi-trial tests exist: how many trials? What's verified identical?
+
+### 14. ANYTHING ELSE PATENT-RELEVANT
+- Scan the repo for anything that looks like it belongs in the P3 patent but ISN'T covered by the above
+- Novel algorithms, unique data structures, configuration mechanisms
+- Any .usda file handling that differs from the other two repos
+- Any safety mechanisms not covered above
+
+## Output Format
+
+For EACH task:
+```
+### Task N: [NAME]
+**Status:** FOUND / NOT FOUND / PARTIALLY FOUND
+**File(s):** [exact paths]
+**Line(s):** [exact line numbers]
+**Actual content:** [paste relevant code snippets]
+**Differs from expected:** YES/NO — [explain if yes]
+**Patent relevance:** [how this affects P3 claims]
+```
+
+## CRITICAL RULES
+- If something is NOT in the source code, say "NOT FOUND" — do not infer or fabricate
+- Distinguish between: implemented in executable code, defined in configuration, described in documentation only
+- If Orchestra imports from the injection repo, note the exact import paths
+- If Orchestra has its OWN implementation of something that also exists in the injection repo, note BOTH and flag any differences
+- The expected test count is 777 — if the actual count differs, report the real number
+- Paste actual code snippets, not paraphrases

@@ -1,0 +1,798 @@
+diff --git a/mcp_server.py b/mcp_server.py
+index 7c86017..9a8f67f 100644
+--- a/mcp_server.py
++++ b/mcp_server.py
+@@ -18,8 +18,6 @@ import atexit
+ import logging
+ import os
+ import time
+-import hashlib
+-
+ try:
+     import orjson
+     def _dumps(obj): return orjson.dumps(obj, option=orjson.OPT_SORT_KEYS).decode()
+@@ -128,8 +126,7 @@ _cmd_seq = 0
+ def _cmd_id(cmd_type: str, payload: dict | None) -> str:
+     global _cmd_seq
+     _cmd_seq += 1
+-    content = f"{cmd_type}:{_dumps(payload or {})}:{_cmd_seq}"
+-    return hashlib.sha256(content.encode()).hexdigest()[:16]
++    return f"{cmd_type}-{_cmd_seq}"
+ 
+ # ---------------------------------------------------------------------------
+ # Configuration
+@@ -169,7 +166,7 @@ _recv_task: asyncio.Task | None = None
+ def _is_connected() -> bool:
+     """Check if the WebSocket connection is open."""
+     try:
+-        return _ws_connection is not None and _ws_connection.state.name == "OPEN"
++        return _ws_connection is not None and _ws_connection.state == websockets.connection.State.OPEN
+     except (AttributeError, Exception):
+         return False
+ 
+@@ -1347,18 +1344,22 @@ def _add_memory_payload(args: dict) -> dict:
+     return p
+ 
+ 
++def _identity(a: dict) -> dict:
++    return a
++
++
+ TOOL_DISPATCH: dict[str, tuple[str, callable]] = {
+     "synapse_ping":          ("ping",            _passthrough),
+     "synapse_health":        ("get_health",      _passthrough),
+     "houdini_scene_info":    ("get_scene_info",  _passthrough),
+     "houdini_get_selection": ("get_selection",    _passthrough),
+-    "houdini_create_node":   ("create_node",     lambda a: {k: a[k] for k in a}),
++    "houdini_create_node":   ("create_node",     _identity),
+     "houdini_delete_node":   ("delete_node",     lambda a: {"node": a["node"]}),
+-    "houdini_connect_nodes": ("connect_nodes",   lambda a: {k: a[k] for k in a}),
++    "houdini_connect_nodes": ("connect_nodes",   _identity),
+     "houdini_get_parm":      ("get_parm",        lambda a: {"node": a["node"], "parm": a["parm"]}),
+     "houdini_set_parm":      ("set_parm",        lambda a: {"node": a["node"], "parm": a["parm"], "value": a["value"]}),
+     "houdini_execute_python":("execute_python",  _execute_python_payload),
+-    "houdini_execute_vex":   ("execute_vex",    lambda a: {k: a[k] for k in a}),
++    "houdini_execute_vex":   ("execute_vex",    _identity),
+     "houdini_stage_info":    ("get_stage_info",  _stage_info_payload),
+     "houdini_get_usd_attribute": ("get_usd_attribute", lambda a: {
+         k: a[k] for k in ("node", "prim_path", "attribute_name") if k in a
+@@ -1372,31 +1373,31 @@ TOOL_DISPATCH: dict[str, tuple[str, callable]] = {
+     "houdini_modify_usd_prim": ("modify_usd_prim", lambda a: {
+         k: a[k] for k in ("node", "prim_path", "kind", "purpose", "active") if k in a
+     }),
+-    "houdini_capture_viewport": ("capture_viewport", lambda a: {k: a[k] for k in a}),
+-    "houdini_render":           ("render",           lambda a: {k: a[k] for k in a}),
+-    "houdini_set_keyframe":     ("set_keyframe",     lambda a: {k: a[k] for k in a}),
+-    "houdini_render_settings":  ("render_settings",  lambda a: {k: a[k] for k in a}),
+-    "houdini_wedge":         ("wedge",          lambda a: {k: a[k] for k in a}),
+-    "houdini_reference_usd": ("reference_usd",  lambda a: {k: a[k] for k in a}),
+-    "houdini_create_material":  ("create_material",  lambda a: {k: a[k] for k in a}),
+-    "houdini_assign_material":  ("assign_material",  lambda a: {k: a[k] for k in a}),
+-    "houdini_read_material":    ("read_material",    lambda a: {k: a[k] for k in a}),
++    "houdini_capture_viewport": ("capture_viewport", _identity),
++    "houdini_render":           ("render",           _identity),
++    "houdini_set_keyframe":     ("set_keyframe",     _identity),
++    "houdini_render_settings":  ("render_settings",  _identity),
++    "houdini_wedge":         ("wedge",          _identity),
++    "houdini_reference_usd": ("reference_usd",  _identity),
++    "houdini_create_material":  ("create_material",  _identity),
++    "houdini_assign_material":  ("assign_material",  _identity),
++    "houdini_read_material":    ("read_material",    _identity),
+     "synapse_knowledge_lookup": ("knowledge_lookup", lambda a: {"query": a["query"]}),
+-    "synapse_inspect_selection": ("inspect_selection", lambda a: {k: a[k] for k in a}),
+-    "synapse_inspect_scene":    ("inspect_scene",     lambda a: {k: a[k] for k in a}),
+-    "synapse_inspect_node":     ("inspect_node",      lambda a: {k: a[k] for k in a}),
++    "synapse_inspect_selection": ("inspect_selection", _identity),
++    "synapse_inspect_scene":    ("inspect_scene",     _identity),
++    "synapse_inspect_node":     ("inspect_node",      _identity),
+     "synapse_context":       ("context",         _passthrough),
+     "synapse_search":        ("search",          lambda a: {"query": a["query"]}),
+     "synapse_recall":        ("recall",          lambda a: {"query": a["query"]}),
+     "synapse_decide":        ("decide",          _decide_payload),
+     "synapse_add_memory":    ("add_memory",      _add_memory_payload),
+-    "synapse_batch":         ("batch_commands",  lambda a: {k: a[k] for k in a}),
++    "synapse_batch":         ("batch_commands",  _identity),
+     "synapse_metrics":       ("get_metrics",     _passthrough),
+     "synapse_router_stats":  ("router_stats",    _passthrough),
+     "synapse_list_recipes":  ("list_recipes",    _passthrough),
+-    "synapse_project_setup": ("project_setup",   lambda a: {k: a[k] for k in a}),
+-    "synapse_memory_write":  ("memory_write",    lambda a: {k: a[k] for k in a}),
+-    "synapse_memory_query":  ("memory_query",    lambda a: {k: a[k] for k in a}),
++    "synapse_project_setup": ("project_setup",   _identity),
++    "synapse_memory_write":  ("memory_write",    _identity),
++    "synapse_memory_query":  ("memory_query",    _identity),
+     "synapse_memory_status": ("memory_status",   _passthrough),
+     "synapse_evolve_memory": ("evolve_memory",   _passthrough),
+ }
+diff --git a/python/synapse/__init__.py b/python/synapse/__init__.py
+index 8273f84..87b2e24 100644
+--- a/python/synapse/__init__.py
++++ b/python/synapse/__init__.py
+@@ -105,51 +105,113 @@ from .memory.store import (
+     reset_engram,
+ )
+ 
+-from .memory.context import (
+-    ShotContext,
+-    load_context,
+-    save_context,
+-    get_current_context,
+-    update_context,
+-)
+-
+-from .memory.markdown import (
+-    MarkdownSync,
+-    parse_decisions_md,
+-    render_decisions_md,
+-)
+-
+-# Session management
+-from .session.tracker import (
+-    SynapseSession,
+-    SynapseBridge,
+-    get_bridge,
+-    reset_bridge,
+-    # Backwards compatibility aliases
+-    NexusSession,
+-    NexusBridge,
+-    EngramBridge,
+-)
+-
+-# Agent protocol
+-from .agent.protocol import (
+-    AgentTask,
+-    AgentPlan,
+-    AgentStep,
+-    StepStatus,
+-    PlanStatus,
+-    DEFAULT_GATE_LEVELS,
+-    classify_gate_level,
+-)
+-from .agent.executor import AgentExecutor
+-from .agent.learning import OutcomeTracker
+-
++# Memory context, markdown, session, agent — all deferred to first access via __getattr__
+ # Routing, Server, UI — all deferred to first access via __getattr__
+ # This avoids importing ~3,000 lines of code (regex compilation, websockets,
+ # Qt widgets) on every `import synapse`, keeping Houdini startup fast.
+ 
+ def __getattr__(name):
+     """Lazy-load heavy modules on first attribute access."""
++    # --- Memory context ---
++    _context_names = {
++        'ShotContext', 'load_context', 'save_context',
++        'get_current_context', 'update_context',
++    }
++    if name in _context_names:
++        from .memory.context import (
++            ShotContext as _ShotContext,
++            load_context as _load_context,
++            save_context as _save_context,
++            get_current_context as _get_current_context,
++            update_context as _update_context,
++        )
++        _map = {
++            'ShotContext': _ShotContext,
++            'load_context': _load_context,
++            'save_context': _save_context,
++            'get_current_context': _get_current_context,
++            'update_context': _update_context,
++        }
++        globals().update(_map)
++        return _map[name]
++
++    # --- Memory markdown ---
++    _markdown_names = {
++        'MarkdownSync', 'parse_decisions_md', 'render_decisions_md',
++    }
++    if name in _markdown_names:
++        from .memory.markdown import (
++            MarkdownSync as _MarkdownSync,
++            parse_decisions_md as _parse_decisions_md,
++            render_decisions_md as _render_decisions_md,
++        )
++        _map = {
++            'MarkdownSync': _MarkdownSync,
++            'parse_decisions_md': _parse_decisions_md,
++            'render_decisions_md': _render_decisions_md,
++        }
++        globals().update(_map)
++        return _map[name]
++
++    # --- Session management ---
++    _session_names = {
++        'SynapseSession', 'SynapseBridge', 'get_bridge', 'reset_bridge',
++        'NexusSession', 'NexusBridge', 'EngramBridge',
++    }
++    if name in _session_names:
++        from .session.tracker import (
++            SynapseSession as _SynapseSession,
++            SynapseBridge as _SynapseBridge,
++            get_bridge as _get_bridge,
++            reset_bridge as _reset_bridge,
++            NexusSession as _NexusSession,
++            NexusBridge as _NexusBridge,
++            EngramBridge as _EngramBridge,
++        )
++        _map = {
++            'SynapseSession': _SynapseSession,
++            'SynapseBridge': _SynapseBridge,
++            'get_bridge': _get_bridge,
++            'reset_bridge': _reset_bridge,
++            'NexusSession': _NexusSession,
++            'NexusBridge': _NexusBridge,
++            'EngramBridge': _EngramBridge,
++        }
++        globals().update(_map)
++        return _map[name]
++
++    # --- Agent protocol ---
++    _agent_names = {
++        'AgentTask', 'AgentPlan', 'AgentStep', 'StepStatus', 'PlanStatus',
++        'DEFAULT_GATE_LEVELS', 'classify_gate_level',
++        'AgentExecutor', 'OutcomeTracker',
++    }
++    if name in _agent_names:
++        from .agent.protocol import (
++            AgentTask as _AgentTask,
++            AgentPlan as _AgentPlan,
++            AgentStep as _AgentStep,
++            StepStatus as _StepStatus,
++            PlanStatus as _PlanStatus,
++            DEFAULT_GATE_LEVELS as _DEFAULT_GATE_LEVELS,
++            classify_gate_level as _classify_gate_level,
++        )
++        from .agent.executor import AgentExecutor as _AgentExecutor
++        from .agent.learning import OutcomeTracker as _OutcomeTracker
++        _map = {
++            'AgentTask': _AgentTask,
++            'AgentPlan': _AgentPlan,
++            'AgentStep': _AgentStep,
++            'StepStatus': _StepStatus,
++            'PlanStatus': _PlanStatus,
++            'DEFAULT_GATE_LEVELS': _DEFAULT_GATE_LEVELS,
++            'classify_gate_level': _classify_gate_level,
++            'AgentExecutor': _AgentExecutor,
++            'OutcomeTracker': _OutcomeTracker,
++        }
++        globals().update(_map)
++        return _map[name]
++
+     # --- Routing ---
+     _routing_names = {
+         'TieredRouter', 'RoutingResult', 'RoutingTier', 'RoutingConfig',
+diff --git a/python/synapse/core/aliases.py b/python/synapse/core/aliases.py
+index be8cd63..d2930cc 100644
+--- a/python/synapse/core/aliases.py
++++ b/python/synapse/core/aliases.py
+@@ -133,15 +133,6 @@ USD_PARM_ALIASES: Dict[str, str] = {
+ 
+ 
+ 
+-# Pre-computed reverse map: alias -> canonical (O(1) lookup)
+-_REVERSE_ALIASES: Dict[str, str] = {}
+-for _canonical, _aliases in sorted(PARAM_ALIASES.items()):
+-    for _alias in _aliases:
+-        # First writer wins — earlier entries in PARAM_ALIASES take priority
+-        if _alias not in _REVERSE_ALIASES:
+-            _REVERSE_ALIASES[_alias] = _canonical
+-
+-
+ def resolve_param(payload: Dict, canonical: str, required: bool = True) -> Any:
+     """
+     Resolve a parameter from payload using aliasing.
+diff --git a/python/synapse/core/protocol.py b/python/synapse/core/protocol.py
+index 0493ffe..1a95bf7 100644
+--- a/python/synapse/core/protocol.py
++++ b/python/synapse/core/protocol.py
+@@ -7,7 +7,7 @@ Provides backwards compatibility with Nexus v3.x and Synapse v2.x protocol.
+ 
+ import json
+ import time
+-from dataclasses import dataclass, field, asdict
++from dataclasses import dataclass, field
+ from typing import Dict, Any, Optional
+ from enum import Enum
+ 
+@@ -15,9 +15,13 @@ try:
+     import orjson
+     def _to_json_str(data: dict) -> str:
+         return orjson.dumps(data, option=orjson.OPT_SORT_KEYS).decode()
++    def _from_json(s: str) -> dict:
++        return orjson.loads(s)
+ except ImportError:
+     def _to_json_str(data: dict) -> str:
+         return json.dumps(data, sort_keys=True)
++    def _from_json(s: str) -> dict:
++        return json.loads(s)
+ 
+ # Protocol version - bumped to 4.0.0 for standalone Synapse
+ PROTOCOL_VERSION = "4.0.0"
+@@ -122,11 +126,18 @@ class SynapseCommand:
+     protocol_version: str = PROTOCOL_VERSION
+ 
+     def to_json(self) -> str:
+-        return _to_json_str(asdict(self))
++        return _to_json_str({
++            "id": self.id,
++            "payload": self.payload,
++            "protocol_version": self.protocol_version,
++            "sequence": self.sequence,
++            "timestamp": self.timestamp,
++            "type": self.type,
++        })
+ 
+     @classmethod
+     def from_json(cls, data: str) -> 'SynapseCommand':
+-        parsed = json.loads(data)
++        parsed = _from_json(data)
+         return cls(
+             type=parsed.get("type", ""),
+             id=parsed.get("id", ""),
+@@ -159,11 +170,19 @@ class SynapseResponse:
+     protocol_version: str = PROTOCOL_VERSION
+ 
+     def to_json(self) -> str:
+-        return _to_json_str(asdict(self))
++        return _to_json_str({
++            "data": self.data,
++            "error": self.error,
++            "id": self.id,
++            "protocol_version": self.protocol_version,
++            "sequence": self.sequence,
++            "success": self.success,
++            "timestamp": self.timestamp,
++        })
+ 
+     @classmethod
+     def from_json(cls, data: str) -> 'SynapseResponse':
+-        parsed = json.loads(data)
++        parsed = _from_json(data)
+         return cls(
+             id=parsed.get("id", ""),
+             success=parsed.get("success", False),
+diff --git a/python/synapse/memory/store.py b/python/synapse/memory/store.py
+index f47534a..2b93f3a 100644
+--- a/python/synapse/memory/store.py
++++ b/python/synapse/memory/store.py
+@@ -260,35 +260,43 @@ class MemoryStore:
+                         content = f.read()
+                     if crypto:
+                         content = crypto.decrypt_file_content(content)
+-                    self._index = json.loads(content)
++                    loaded = json.loads(content)
++                    # Convert lists to sets for by_type/by_tag/by_keyword
++                    for section in ("by_type", "by_tag", "by_keyword"):
++                        if section in loaded:
++                            loaded[section] = {
++                                k: set(v) if isinstance(v, list) else v
++                                for k, v in loaded[section].items()
++                            }
++                    self._index = loaded
+                 except Exception as e:
+                     logger.warning("Failed to load index: %s", e)
+ 
+         logger.info("Loaded %d memories from %s", len(self._memories), self.storage_dir)
+         self._loaded.set()
++        # After load completes, replace _wait_loaded with a no-op to skip
++        # the Event.is_set() check on every subsequent read call
++        self._wait_loaded = lambda timeout=2.0: None
+ 
+     def _index_memory(self, memory: Memory):
+-        """Add memory to in-memory indices."""
++        """Add memory to in-memory indices (sets for O(1) membership)."""
+         # Index by type
+         type_key = memory.memory_type.value
+         if type_key not in self._index["by_type"]:
+-            self._index["by_type"][type_key] = []
+-        if memory.id not in self._index["by_type"][type_key]:
+-            self._index["by_type"][type_key].append(memory.id)
++            self._index["by_type"][type_key] = set()
++        self._index["by_type"][type_key].add(memory.id)
+ 
+         # Index by tags
+         for tag in memory.tags:
+             if tag not in self._index["by_tag"]:
+-                self._index["by_tag"][tag] = []
+-            if memory.id not in self._index["by_tag"][tag]:
+-                self._index["by_tag"][tag].append(memory.id)
++                self._index["by_tag"][tag] = set()
++            self._index["by_tag"][tag].add(memory.id)
+ 
+         # Index by keywords
+         for keyword in memory.keywords:
+             if keyword not in self._index["by_keyword"]:
+-                self._index["by_keyword"][keyword] = []
+-            if memory.id not in self._index["by_keyword"][keyword]:
+-                self._index["by_keyword"][keyword].append(memory.id)
++                self._index["by_keyword"][keyword] = set()
++            self._index["by_keyword"][keyword].add(memory.id)
+ 
+         # Index links
+         for link in memory.links:
+@@ -317,9 +325,15 @@ class MemoryStore:
+                         line = crypto.encrypt_line(line)
+                     f.write(line + "\n")
+ 
+-            # Write index
+-            self._index["updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+-            index_content = json.dumps(self._index, indent=2, sort_keys=True)
++            # Write index — convert sets to sorted lists for JSON serialization
++            serializable_index = dict(self._index)
++            for section in ("by_type", "by_tag", "by_keyword"):
++                serializable_index[section] = {
++                    k: sorted(v) if isinstance(v, set) else v
++                    for k, v in self._index[section].items()
++                }
++            serializable_index["updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
++            index_content = json.dumps(serializable_index, indent=2, sort_keys=True)
+             if crypto:
+                 index_content = crypto.encrypt_file_content(index_content)
+             with open(self.index_file, 'w', encoding='utf-8') as f:
+diff --git a/python/synapse/routing/cache.py b/python/synapse/routing/cache.py
+index 14e27d4..3563e16 100644
+--- a/python/synapse/routing/cache.py
++++ b/python/synapse/routing/cache.py
+@@ -164,15 +164,18 @@ class ResponseCache:
+         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+ 
+     def _evict_one(self):
+-        """Evict the least-recently-used (lowest hits, oldest) entry."""
++        """Evict expired entry (O(n) scan) or LRU fallback (O(n) min)."""
+         if not self._cache:
+             return
+-        # Evict expired first
+-        for key, entry in sorted(self._cache.items()):
+-            if entry.expired:
+-                del self._cache[key]
+-                self._evictions += 1
+-                return
++        # Evict first expired entry found (no sort needed)
++        expired_key = next(
++            (k for k, e in self._cache.items() if e.expired),
++            None,
++        )
++        if expired_key is not None:
++            del self._cache[expired_key]
++            self._evictions += 1
++            return
+         # Otherwise evict oldest with fewest hits
+         victim = min(
+             self._cache,
+diff --git a/python/synapse/routing/knowledge.py b/python/synapse/routing/knowledge.py
+index 8fc0e49..2c25b17 100644
+--- a/python/synapse/routing/knowledge.py
++++ b/python/synapse/routing/knowledge.py
+@@ -55,6 +55,8 @@ class KnowledgeIndex:
+         self._keyword_to_topics: Dict[str, List[str]] = {}
+         self._reference_files: Dict[str, str] = {}
+         self._agent_relevance: Dict[str, Any] = {}
++        # Pre-indexed section headers: word -> [(file_stem, line_index, lines)]
++        self._section_index: Dict[str, List[tuple]] = {}
+ 
+         if self._rag_root:
+             self._load_semantic_index()
+@@ -89,7 +91,7 @@ class KnowledgeIndex:
+                     self._keyword_to_topics[kw_lower].append(topic_name)
+ 
+     def _load_reference_files(self):
+-        """Load .md reference files from skills directory."""
++        """Load .md reference files from skills directory and pre-index headers."""
+         if not self._rag_root:
+             return
+         ref_dir = self._rag_root / "skills" / "houdini21-reference"
+@@ -103,6 +105,18 @@ class KnowledgeIndex:
+             except OSError:
+                 continue
+ 
++        # Pre-index section headers for O(1) word lookup
++        for file_stem, content in self._reference_files.items():
++            lines = content.split("\n")
++            for i, line in enumerate(lines):
++                if not line.startswith("#"):
++                    continue
++                header_words = set(line.lstrip("#").strip().lower().split())
++                for word in header_words:
++                    if word not in self._section_index:
++                        self._section_index[word] = []
++                    self._section_index[word].append((file_stem, i, lines))
++
+     def _load_agent_relevance(self):
+         """Load agent_relevance_map.json if available."""
+         if not self._rag_root:
+@@ -227,49 +241,53 @@ class KnowledgeIndex:
+     def _match_reference_sections(
+         self, query_lower: str, query_words: set
+     ) -> Optional[KnowledgeLookupResult]:
+-        """Search reference files by section headers."""
+-        if not self._reference_files:
++        """Search reference files by section headers using pre-built index."""
++        if not self._section_index:
+             return None
+ 
+-        best_match = None
+-        best_score = 0
++        # Gather candidate headers from index (only headers with overlapping words)
++        candidates: Dict[tuple, int] = {}  # (file_stem, line_idx) -> overlap count
++        candidate_lines: Dict[tuple, list] = {}  # (file_stem, line_idx) -> lines ref
+ 
+-        for file_stem, content in sorted(self._reference_files.items()):
+-            lines = content.split("\n")
+-            for i, line in enumerate(lines):
+-                if not line.startswith("#"):
+-                    continue
+-                header_lower = line.lstrip("#").strip().lower()
+-                header_words = set(header_lower.split())
+-
+-                # Score by word overlap
+-                overlap = len(query_words & header_words)
+-                if overlap > best_score:
+-                    best_score = overlap
+-                    # Extract section content (up to next header or 500 chars)
+-                    section_lines = [line]
+-                    char_count = len(line)
+-                    for j in range(i + 1, len(lines)):
+-                        if lines[j].startswith("#"):
+-                            break
+-                        section_lines.append(lines[j])
+-                        char_count += len(lines[j])
+-                        if char_count > 500:
+-                            break
+-                    best_match = (file_stem, "\n".join(section_lines))
+-
+-        if best_match and best_score >= 1:
+-            file_stem, section_text = best_match
+-            confidence = min(0.7, 0.3 + 0.15 * best_score)
+-            return KnowledgeLookupResult(
+-                found=True,
+-                answer=section_text,
+-                sources=[f"reference:{file_stem}"],
+-                confidence=confidence,
+-                topic=file_stem,
+-            )
+-
+-        return None
++        for word in query_words:
++            for file_stem, line_idx, lines in self._section_index.get(word, []):
++                key = (file_stem, line_idx)
++                candidates[key] = candidates.get(key, 0) + 1
++                if key not in candidate_lines:
++                    candidate_lines[key] = lines
++
++        if not candidates:
++            return None
++
++        # Find best match
++        best_key = max(candidates, key=lambda k: candidates[k])
++        best_score = candidates[best_key]
++
++        if best_score < 1:
++            return None
++
++        file_stem, line_idx = best_key
++        lines = candidate_lines[best_key]
++
++        # Extract section content (up to next header or 500 chars)
++        section_lines = [lines[line_idx]]
++        char_count = len(lines[line_idx])
++        for j in range(line_idx + 1, len(lines)):
++            if lines[j].startswith("#"):
++                break
++            section_lines.append(lines[j])
++            char_count += len(lines[j])
++            if char_count > 500:
++                break
++
++        confidence = min(0.7, 0.3 + 0.15 * best_score)
++        return KnowledgeLookupResult(
++            found=True,
++            answer="\n".join(section_lines),
++            sources=[f"reference:{file_stem}"],
++            confidence=confidence,
++            topic=file_stem,
++        )
+ 
+     def _match_memory(self, query: str) -> Optional[KnowledgeLookupResult]:
+         """Search memory as final fallback."""
+diff --git a/python/synapse/routing/router.py b/python/synapse/routing/router.py
+index 42ab214..2c85e6c 100644
+--- a/python/synapse/routing/router.py
++++ b/python/synapse/routing/router.py
+@@ -787,8 +787,12 @@ class TieredRouter:
+         """Hash context dict for cache keying."""
+         if not context:
+             return ""
+-        raw = json.dumps(context, sort_keys=True, default=str)
+-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
++        try:
++            import orjson
++            raw = orjson.dumps(context, option=orjson.OPT_SORT_KEYS, default=str)
++        except (ImportError, TypeError):
++            raw = json.dumps(context, sort_keys=True, default=str).encode()
++        return hashlib.sha256(raw).hexdigest()[:16]
+ 
+     # ------------------------------------------------------------------
+     # Metrics
+diff --git a/python/synapse/server/handlers.py b/python/synapse/server/handlers.py
+index ba5eb15..43b755c 100644
+--- a/python/synapse/server/handlers.py
++++ b/python/synapse/server/handlers.py
+@@ -146,13 +146,8 @@ class CommandHandlerRegistry:
+         self._handlers[command_type] = handler
+ 
+     def get(self, command_type: str) -> Optional[Callable]:
+-        """Get handler for a command type."""
+-        # Try exact match first, then normalized
+-        handler = self._handlers.get(command_type)
+-        if handler is None:
+-            normalized = normalize_command_type(command_type)
+-            handler = self._handlers.get(normalized)
+-        return handler
++        """Get handler for a command type (expects pre-normalized type)."""
++        return self._handlers.get(command_type)
+ 
+     def has(self, command_type: str) -> bool:
+         """Check if a handler exists for a command type."""
+@@ -203,7 +198,7 @@ class SynapseHandler(NodeHandlerMixin, UsdHandlerMixin, RenderHandlerMixin, Memo
+             SynapseResponse with the result
+         """
+         try:
+-            cmd_type = command.normalized_type()
++            cmd_type = normalize_command_type(command.type)
+             handler = self._registry.get(cmd_type)
+ 
+             if handler is None:
+@@ -218,25 +213,7 @@ class SynapseHandler(NodeHandlerMixin, UsdHandlerMixin, RenderHandlerMixin, Memo
+ 
+             # Log action asynchronously — don't block the response path
+             if cmd_type not in _READ_ONLY_COMMANDS:
+-                bridge = self._get_bridge()
+-                if bridge and self._session_id:
+-                    sid = self._session_id
+-                    _log_executor.submit(
+-                        bridge.log_action,
+-                        f"Executed: {cmd_type}",
+-                        session_id=sid,
+-                    )
+-
+-                # Audit log — fire-and-forget via existing thread pool
+-                _log_executor.submit(
+-                    audit_log().log,
+-                    operation=cmd_type,
+-                    message=f"Executed {cmd_type}",
+-                    level=AuditLevel.AGENT_ACTION,
+-                    category=_CMD_CATEGORY.get(cmd_type, AuditCategory.SYNAPSE),
+-                    input_data=command.payload,
+-                    output_data=result if isinstance(result, dict) else {},
+-                )
++                self._submit_logs(cmd_type, command.payload, result)
+ 
+             return SynapseResponse(
+                 id=command.id,
+@@ -277,6 +254,27 @@ class SynapseHandler(NodeHandlerMixin, UsdHandlerMixin, RenderHandlerMixin, Memo
+                 sequence=command.sequence,
+             )
+ 
++    def _submit_logs(self, cmd_type: str, payload: Dict, result: Any):
++        """Submit bridge + audit log in a single executor call."""
++        bridge = self._get_bridge()
++        sid = self._session_id
++        category = _CMD_CATEGORY.get(cmd_type, AuditCategory.SYNAPSE)
++        output = result if isinstance(result, dict) else {}
++
++        def _do_log():
++            if bridge and sid:
++                bridge.log_action(f"Executed: {cmd_type}", session_id=sid)
++            audit_log().log(
++                operation=cmd_type,
++                message=f"Executed {cmd_type}",
++                level=AuditLevel.AGENT_ACTION,
++                category=category,
++                input_data=payload,
++                output_data=output,
++            )
++
++        _log_executor.submit(_do_log)
++
+     def _register_handlers(self):
+         """Register all built-in command handlers."""
+         reg = self._registry
+diff --git a/python/synapse/server/resilience.py b/python/synapse/server/resilience.py
+index 0ca8958..f7f0e11 100644
+--- a/python/synapse/server/resilience.py
++++ b/python/synapse/server/resilience.py
+@@ -64,9 +64,8 @@ class RateLimiter:
+         self._total_requests = 0
+         self._rejected_requests = 0
+ 
+-    def _refill_global(self):
++    def _refill_global(self, now: float):
+         """Refill global token bucket based on elapsed time."""
+-        now = time.time()
+         elapsed = now - self._last_refill
+         self._tokens = min(
+             self.bucket_size,
+@@ -74,10 +73,8 @@ class RateLimiter:
+         )
+         self._last_refill = now
+ 
+-    def _refill_client(self, client_id: str) -> float:
++    def _refill_client(self, client_id: str, now: float) -> float:
+         """Refill client bucket, return current tokens."""
+-        now = time.time()
+-
+         if client_id not in self._client_buckets:
+             self._client_buckets[client_id] = (float(self.per_client_bucket), now)
+             return float(self.per_client_bucket)
+@@ -100,8 +97,9 @@ class RateLimiter:
+         """
+         with self._lock:
+             self._total_requests += 1
+-            self._refill_global()
+-            client_tokens = self._refill_client(client_id)
++            now = time.time()
++            self._refill_global(now)
++            client_tokens = self._refill_client(client_id, now)
+ 
+             # Check global limit
+             if self._tokens < tokens:
+diff --git a/python/synapse/server/websocket.py b/python/synapse/server/websocket.py
+index 76ac296..da2fabe 100644
+--- a/python/synapse/server/websocket.py
++++ b/python/synapse/server/websocket.py
+@@ -36,6 +36,7 @@ from ..core.protocol import (
+     COMMAND_TIMEOUT,
+     MAX_PORT_RETRIES,
+     PORT_RETRY_DELAY,
++    _to_json_str,
+ )
+ from ..core.queue import DeterministicCommandQueue, ResponseDeliveryQueue
+ from .auth import get_auth_key, authenticate, AUTH_COMMAND_TYPE, AUTH_REQUIRED_TYPE
+@@ -271,39 +272,39 @@ class SynapseServer:
+             auth_key = get_auth_key()
+             if auth_key is not None:
+                 # Tell client auth is required
+-                websocket.send(json.dumps({
++                websocket.send(_to_json_str({
+                     "type": AUTH_REQUIRED_TYPE,
+                     "message": "Authentication required",
+                     "protocol_version": PROTOCOL_VERSION,
+-                }, sort_keys=True))
++                }))
+ 
+                 # Wait for auth message
+                 try:
+                     auth_msg = json.loads(next(iter([websocket.recv()])))
+                     token = auth_msg.get("payload", {}).get("key", "")
+                     if auth_msg.get("type") != AUTH_COMMAND_TYPE or not authenticate(token, auth_key):
+-                        websocket.send(json.dumps({
++                        websocket.send(_to_json_str({
+                             "type": "auth_failed",
+                             "success": False,
+                             "error": "Invalid API key",
+                             "protocol_version": PROTOCOL_VERSION,
+-                        }, sort_keys=True))
++                        }))
+                         logger.warning("Auth failed for client %s", client_id)
+                         return
+                 except (json.JSONDecodeError, StopIteration):
+-                    websocket.send(json.dumps({
++                    websocket.send(_to_json_str({
+                         "type": "auth_failed",
+                         "success": False,
+                         "error": "Expected authenticate command",
+                         "protocol_version": PROTOCOL_VERSION,
+-                    }, sort_keys=True))
++                    }))
+                     return
+ 
+-                websocket.send(json.dumps({
++                websocket.send(_to_json_str({
+                     "type": "auth_success",
+                     "success": True,
+                     "protocol_version": PROTOCOL_VERSION,
+-                }, sort_keys=True))
++                }))
+                 logger.info("Client authenticated: %s", client_id)
+ 
+             for message in websocket:

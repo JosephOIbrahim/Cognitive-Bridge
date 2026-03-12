@@ -1,0 +1,40 @@
+"""Query available LOP node types to find correct names."""
+import asyncio, sys, os
+sys.path.insert(0, os.path.expanduser("~/.synapse/agent"))
+from synapse_ws import SynapseClient
+
+CODE = r'''
+import hou
+stage = hou.node("/stage")
+cat = stage.childTypeCategory()
+
+# Find cinema-related types
+cinema_types = [t for t in cat.nodeTypes().keys() if "cinema" in t.lower()]
+
+# Find light-related types
+light_types = [t for t in cat.nodeTypes().keys() if "light" in t.lower()]
+
+# Find karma-related types
+karma_types = [t for t in cat.nodeTypes().keys() if "karma" in t.lower()]
+
+# Find area light specifically
+area_types = [t for t in cat.nodeTypes().keys() if "area" in t.lower()]
+
+# Find merge
+merge_types = [t for t in cat.nodeTypes().keys() if "merge" in t.lower()]
+
+result = {
+    "cinema": sorted(cinema_types),
+    "light": sorted(light_types),
+    "karma": sorted(karma_types),
+    "area": sorted(area_types),
+    "merge": sorted(merge_types),
+}
+'''
+
+async def main():
+    async with SynapseClient() as client:
+        r = await client.execute_python(CODE, timeout=15.0)
+        print(r)
+
+asyncio.run(main())

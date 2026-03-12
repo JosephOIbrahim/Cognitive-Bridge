@@ -1,0 +1,31 @@
+cd C:\Users\User\SYNAPSE
+claude --dangerously-skip-permissions
+```
+
+Then paste:
+```
+Houdini is live on ws://localhost:9999. 
+
+1. Run synapse/validation/solaris/verify_component_builder.py against live Houdini via execute_python. Report the result: NATIVE, SUBNET, or MANUAL.
+
+2. Then execute Phase 4 — Live Validation. You are AGENT-SUP (VFX Supervisor).
+
+Read the sprint plan: synapse/docs/sprints/RELAY-SOLARIS.md
+Read Phase 3 implementations: synapse/mcp/tools/solaris/
+Read Phase 3 tests: synapse/tests/solaris/
+
+Run smoke tests T1-T7 against LIVE Houdini via the Synapse WebSocket.
+
+For each test:
+  - Execute the tool through execute_python
+  - Document: PASS / FAIL / BLOCKED
+  - If FAIL: capture error, identify root cause, write fix recommendation
+  - If BLOCKED by BL-007 or BL-008: document but don't count as tool failure
+
+Write results to: synapse/validation/solaris/smoke_test_results.md
+
+BLOCKER tests (must pass): T1 (Scene Template), T2 (Component Builder), T4 (Hierarchy), T7 (Render Output — unless BL-007)
+
+When all blockers pass: synapse/validation/solaris/.gate_passed
+
+You have final sign-off authority. If something is wrong, DO NOT pass the gate.

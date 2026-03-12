@@ -1,0 +1,43 @@
+---
+type: protocol
+---
+# Weekly Review Protocol
+
+## Timer: START NOW (15 min)
+
+### Tangent Triage (0:00-5:00)
+
+```dataview
+TABLE status, source_project, created
+FROM "_tangents"
+WHERE status = "parked"
+SORT created DESC
+LIMIT 10
+```
+
+For each: change status to `exploring`, `integrated`, or `dead`.
+
+### Graph Check (5:00-10:00)
+
+Open graph (Ctrl+G). Look for:
+- [ ] New clusters forming?
+- [ ] Any tangent connecting to current FOCUS project?
+- [ ] Anything surprising?
+
+Close graph.
+
+### Framework Scan (10:00-15:00)
+
+```dataview
+TABLE domain, status
+FROM "_frameworks"
+WHERE status = "dormant"
+SORT file.cday ASC
+LIMIT 5
+```
+
+Any of these relevant to current work? If yes, change status. See [[MOC-Frameworks]] for full index.
+
+### DONE. CLOSE OBSIDIAN.
+
+Return to [[cockpit]]. Then close Obsidian. See [[usage-protocol]] if unclear.

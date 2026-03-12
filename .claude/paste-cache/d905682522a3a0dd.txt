@@ -1,0 +1,57 @@
+The internal pattern that makes it not tank performance: decouple render rate from AI rate
+4) Insert a rate-decoupling “pixel bus”
+
+Epic’s PixelCapture plugin is explicitly a framework for capturing pixel buffers “while allowing for disconnected produce/consume rates.”
+
+That is exactly what you want for an AI observer:
+
+GPU produces frames at 60–120 fps
+
+AI consumes frames at 1–10 fps (or bursty)
+
+Neither should stall the other
+
+So the internal architecture is likely:
+
+Producer (Backbuffer/SceneViewport) → PixelCapture (adapt/convert/throttle) → Consumer(s) (Encoder / AI / Recorder)
+
+PixelCapture also depends on MediaIOFramework.
+
+5) Convert/adapt frames to match the chosen encoder/consumer
+
+Pixel Streaming’s FPixelStreamingVideoInput notes that input buffers “might need to be converted/adapted to suit the selected video encoder,” and CreateAdaptProcess builds an adapter process.
+
+Epic would reuse that concept for AI: if the consumer wants RGB, NV12, linear, tonemapped, smaller resolution, etc., you build/plug an adapter.
+
+What would Epic actually ship as the integration point?
+6) Piggyback on Pixel Streaming / Media Capture instead of inventing “AI viewport”
+
+If Epic needed a system to let something external “watch the viewport,” they already have two shipping paths:
+
+Pixel Streaming: a live video stream path with a backbuffer input.
+
+Media Capture (MediaIOFramework): capture SceneViewport/RenderTarget and send to “external media device.”
+
+So an internal “Codex viewer” would likely be a consumer hanging off one of these pipelines, not a brand-new capture mechanism.
+
+The “Epic-quality” extra: don’t rely on pixels alone
+
+This is where you outgrow “a model watching a video feed.”
+
+Epic would almost certainly accompany frames with metadata (timestamp, camera transform, FOV, exposure, selected actor IDs, etc.) because they already have strong patterns in Virtual Production for keeping media + state aligned—and when that alignment breaks, people notice (and complain) loudly.
+
+So the internal “AI perception packet” is:
+
+Frame + timing + camera state + scene tags (optional masks/depth)
+
+That’s how you get useful machine perception instead of “guess what those pixels mean.”
+
+Translation for your custom rig in UE 5.7
+
+If you want to do it the way Epic’s architecture wants you to:
+
+Backbuffer/SceneViewport capture → PixelCapture (rate decouple + convert) → (A) WebRTC stream OR (B) local frame queue for AI → attach metadata → Codex
+
+All the nouns in that sentence are already real engine components.
+
+If you want, I can sketch a “minimal Epic-shaped module layout” (C++ plugin boundaries + threading model + where throttling lives) that keeps your viewport at 60fps while your AI samples at, say, 5fps without stalls.

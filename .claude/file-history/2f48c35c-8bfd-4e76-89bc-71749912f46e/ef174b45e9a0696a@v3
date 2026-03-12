@@ -1,0 +1,78 @@
+import { AnimatedText } from "@/components/AnimatedText";
+import { EditorialGrid } from "@/components/EditorialGrid";
+import { GRID_ROWS_HOME } from "@/lib/projects";
+import Link from "next/link";
+
+export default function Home() {
+  return (
+    <div style={{ paddingTop: "var(--nav-h)" }}>
+      {/* Hero statement */}
+      <div style={{ padding: "clamp(48px, 10vh, 120px) var(--pad) clamp(32px, 4vh, 56px)" }}>
+        <div style={{ maxWidth: "var(--max-w)", margin: "0 auto" }}>
+          <AnimatedText
+            text="I'm Jaime Ibrahim. I help brands discover visual clarity and I've been doing it for 25 years."
+            as="p"
+            delay={200}
+            style={{
+              fontSize: "clamp(22px, 2.4vw, 34px)",
+              fontWeight: 400,
+              lineHeight: 1.45,
+              letterSpacing: "-0.01em",
+              color: "var(--text)",
+              maxWidth: 680,
+              margin: 0,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* "Featured Work" label */}
+      <div style={{ padding: "0 var(--pad) 24px" }}>
+        <div style={{ maxWidth: "var(--max-w)", margin: "0 auto" }}>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 400,
+              color: "var(--muted)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            Featured Work
+          </span>
+        </div>
+      </div>
+
+      {/* Editorial grid */}
+      <div style={{ padding: "0 var(--pad)" }}>
+        <EditorialGrid rows={GRID_ROWS_HOME} />
+      </div>
+
+      {/* View all work link */}
+      <div
+        style={{
+          maxWidth: "var(--max-w)",
+          margin: "0 auto",
+          padding: "clamp(32px, 4vh, 56px) var(--pad)",
+          textAlign: "center",
+        }}
+      >
+        <Link
+          href="/work"
+          className="link-muted"
+          style={{
+            fontSize: 13,
+            fontWeight: 400,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+          }}
+        >
+          View All Work
+        </Link>
+      </div>
+
+      {/* Spacer before footer */}
+      <div style={{ height: "clamp(48px, 6vh, 80px)" }} />
+    </div>
+  );
+}

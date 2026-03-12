@@ -1,0 +1,76 @@
+import { ImageResponse } from "next/og";
+import { getProject } from "@/lib/projects";
+
+export const alt = "Jaime Ibrahim - Project";
+export const size = { width: 1200, height: 630 };
+export const contentType = "image/png";
+
+export default async function OGImage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const project = getProject(slug);
+  const title = project?.title ?? "Project";
+  const category = project?.category ?? "";
+
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          backgroundColor: "#EEEEEC",
+          fontFamily: "Inter, Helvetica, Arial, sans-serif",
+          padding: "80px 100px",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {/* Grid lines */}
+        {[0, 1 / 6, 1 / 3, 1 / 2, 2 / 3, 5 / 6, 1].map((pos, i) => (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: `${pos * 100}%`,
+              width: "1px",
+              backgroundColor: "rgba(0,0,0,0.055)",
+            }}
+          />
+        ))}
+
+        {/* Top: Nameplate */}
+        <div style={{ display: "flex", alignItems: "center", gap: "18px", position: "relative", zIndex: 1 }}>
+          <div style={{ width: "1px", height: "16px", backgroundColor: "rgba(0,0,0,0.15)" }} />
+          <div style={{ fontSize: "14px", fontWeight: 500, letterSpacing: "0.14em", color: "#1A1A1A", textTransform: "uppercase" as const }}>
+            Jaime Ibrahim
+          </div>
+          <div style={{ width: "1px", height: "16px", backgroundColor: "rgba(0,0,0,0.15)" }} />
+        </div>
+
+        {/* Center: Project title */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px", position: "relative", zIndex: 1 }}>
+          <div style={{ fontSize: "56px", fontWeight: 400, lineHeight: 1.15, letterSpacing: "-0.02em", color: "#1A1A1A", maxWidth: "800px" }}>
+            {title}
+          </div>
+        </div>
+
+        {/* Bottom: Category pill */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", position: "relative", zIndex: 1 }}>
+          <div style={{ fontSize: "12px", letterSpacing: "0.06em", color: "#999999", textTransform: "uppercase" as const }}>
+            Brand Design Director
+          </div>
+          {category && (
+            <div style={{ padding: "6px 14px", borderRadius: "4px", backgroundColor: "#E0E0DC", color: "#767676", fontSize: "11px", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase" as const }}>
+              {category}
+            </div>
+          )}
+        </div>
+      </div>
+    ),
+    { ...size }
+  );
+}

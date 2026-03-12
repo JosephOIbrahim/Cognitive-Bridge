@@ -1,0 +1,961 @@
+# ComfyUI Agent — UI Native Refactor Sprint
+# Sprint: NATIVE-UX-001
+# Date: 2026-02-24
+# Status: READY TO EXECUTE
+
+---
+
+## PRE-FLIGHT: Read Before Anything
+
+Before ANY implementation, read these files and internalize their conventions:
+
+```bash
+cat C:/Users/User/comfyui-agent/CLAUDE.md
+cat C:/Users/User/comfyui-agent/ui/web/css/superduper.css
+cat C:/Users/User/comfyui-agent/ui/web/js/chat.js
+cat C:/Users/User/comfyui-agent/ui/web/js/sidebar.js
+cat C:/Users/User/comfyui-agent/ui/server/routes.py
+cat C:/Users/User/comfyui-agent/docs/COMFYUI_AGENT_DESIGN_SYSTEM.md
+```
+
+Report what you find. Do NOT proceed until you understand:
+- The existing CSS custom property system (`:root` tokens)
+- How `renderText()` in chat.js builds DOM via createElement (NO innerHTML)
+- How `createPanel()` assembles structured panels from backend JSON
+- How `_forward_event()` in routes.py streams tool calls to the WebSocket
+- The `_classify_slot()` function and `_SLOT_HEX` color map in routes.py
+- How `buildSidebar()` wires up the message flow in sidebar.js
+- ComfyUI's native dark theme colors: canvas `#1e1e1e`, panel `#2b2b2b`, text `#ddd`, border `#4e4e4e`, accent blue `#4e9bcd`
+
+---
+
+## STATUS REPORTING PROTOCOL
+
+**MANDATORY:** After completing each task, print the status bar in this EXACT format.
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SUPER DUPER — NATIVE-UX-001 STATUS                        ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: NATIVE SKIN       [░░░░░░░░░░]  0%               ║
+║    CSS   ◆ C1 ○  C2 ○  C3 ○  C4 ○                          ║
+║    JS    ⟡ J1 ○  J2 ○                                       ║
+║                                                              ║
+║  Phase 2: BREATHE            [░░░░░░░░░░]  0%               ║
+║    CSS   ◆ C5 ○  C6 ○  C7 ○                                ║
+║    JS    ⟡ J3 ○  J4 ○                                       ║
+║                                                              ║
+║  Phase 3: NODE PILLS         [░░░░░░░░░░]  0%               ║
+║    BACK  ◈ B1 ○  B2 ○                                       ║
+║    JS    ⟡ J5 ○  J6 ○  J7 ○                                 ║
+║    CSS   ◆ C8 ○                                              ║
+║                                                              ║
+║  Overall: [░░░░░░░░░░░░░░░░░░░░]  0%  (0/16 tasks)         ║
+║  Legend: ✓ done  ▶ active  ○ pending  ✗ failed              ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+**Rules:**
+- Print after EVERY completed task (not just phases)
+- Update symbols: ○ → ▶ (when starting) → ✓ (when done) or ✗ (on failure)
+- If a task FAILS (✗), report the error message before the status bar
+
+---
+
+## ARCHITECTURE DECISIONS (NON-NEGOTIABLE)
+
+### 1. ComfyUI Native Color Inheritance
+ComfyUI's LiteGraph dark theme uses specific CSS variables and raw hex values. Our panel must inherit from these rather than defining a parallel brand system. The jade green `#00BB81` is GONE as a brand color. We adopt ComfyUI's native accent blue `#4e9bcd` for interactive elements and rely on slot colors for visual richness.
+
+```
+ComfyUI Native Palette (source of truth):
+  Canvas bg:    #1e1e1e (or var(--comfy-menu-bg) when available)
+  Panel bg:     #2b2b2b / #353535 (elevated)
+  Input bg:     #222 / #1a1a1a
+  Text primary: #ddd
+  Text muted:   #999 / #888
+  Border:       #4e4e4e / #3a3a3a
+  Accent:       #4e9bcd (links, focus rings)
+  Hover bg:     #3a3a3a
+  Selection:    #4e9bcd33 (accent at 20%)
+```
+
+### 2. No innerHTML Removal
+All DOM construction via createElement + textContent. This is a security requirement. DO NOT introduce innerHTML anywhere.
+
+### 3. Node Pill Protocol
+When the backend detects tool calls that reference specific nodes (by class_type or node_id), it enriches the WebSocket event with a `nodes_touched` array. The frontend renders these as inline colored pills using ComfyUI slot colors. Pills are interactive — hover highlights the node on canvas via ComfyUI's `app.canvas.selectNodes()` API.
+
+```
+Backend event enrichment:
+  tool_call event gets new field:
+    "nodes_touched": [
+      {"node_id": "3", "class_type": "KSampler", "slot_type": "sampler"},
+      {"node_id": "6", "class_type": "CheckpointLoaderSimple", "slot_type": "model"}
+    ]
+
+Frontend rendering:
+  Stage bar shows: "PILOT · Using set_input... [KSampler] [CheckpointLoader]"
+  where [KSampler] is a colored pill using sampler slot color (#ECB4B4)
+```
+
+---
+
+## FILE OWNERSHIP TABLE
+
+**Every file has exactly ONE owner. Violation = merge conflicts = sprint failure.**
+
+| Agent | Role (MOE) | Exclusive Write | Read Only |
+|-------|------------|-----------------|-----------|
+| CSS ◆ | Visual Design + ComfyUI Native Theming | `ui/web/css/superduper.css` | chat.js, sidebar.js, routes.py |
+| JS ⟡ | Frontend DOM + Interaction Engineer | `ui/web/js/chat.js`, `ui/web/js/sidebar.js` | superduper.css, routes.py |
+| BACK ◈ | Backend Data Enrichment + Node Extraction | `ui/server/routes.py` | chat.js, sidebar.js, superduper.css |
+
+**Patch protocol:** If Agent A needs a change in Agent B's file:
+1. Agent A writes the change to a `.patch` description in their task output
+2. Orchestrator applies the patch after Agent B's current task completes
+3. Agent B's next task incorporates the change
+
+---
+
+## PHASE 1: NATIVE SKIN
+
+**Goal:** Replace the "branded app inside an app" look with a panel that feels like native ComfyUI furniture. Same weight, same darkness, same border language.
+
+Run CSS ◆ and JS ⟡ agents **in parallel** via Task tool.
+
+### ═══ Agent CSS ◆ — Visual Design + ComfyUI Native Theming ═══
+
+**MOE Expertise:** CSS custom properties, color theory, ComfyUI's LiteGraph dark theme. You understand that "native" means matching the weight, warmth, and density of surrounding UI — not just copying hex codes.
+**You OWN:** `ui/web/css/superduper.css`
+**DO NOT TOUCH:** `ui/web/js/chat.js`, `ui/web/js/sidebar.js`, `ui/server/routes.py`
+
+**Task C1: Replace brand color system with ComfyUI native palette**
+
+Replace the entire `:root` custom property block. Remove `--sd-brand` and all jade green references. Adopt ComfyUI's native dark theme:
+
+```css
+:root {
+  /* ComfyUI Native Surfaces (match LiteGraph dark theme) */
+  --sd-canvas: #1e1e1e;        /* Main background — matches ComfyUI canvas */
+  --sd-panel: #2b2b2b;         /* Panel/sidebar background */
+  --sd-card: #353535;           /* Elevated card surfaces */
+  --sd-card-hover: #3a3a3a;    /* Hover state */
+  --sd-elevated: #404040;      /* Popovers, tooltips */
+  --sd-input: #1a1a1a;         /* Input fields */
+
+  /* ComfyUI Native Text */
+  --sd-text-primary: #ddd;     /* Titles, key values */
+  --sd-text-secondary: #aaa;   /* Body text */
+  --sd-text-muted: #888;       /* Labels, timestamps */
+  --sd-text-accent: #ccc;      /* Emphasis within body */
+
+  /* ComfyUI Native Borders */
+  --sd-border: #4e4e4e;        /* Standard border */
+  --sd-border-subtle: #3a3a3a; /* Subtle separation */
+
+  /* Accent (ComfyUI's native blue — replaces jade green) */
+  --sd-accent: #4e9bcd;
+  --sd-accent-dim: #4e9bcd33;
+  --sd-accent-subtle: #4e9bcd18;
+
+  /* Keep ALL slot colors unchanged — these ARE ComfyUI native */
+  --sd-slot-clip: #FFD500;
+  --sd-slot-clip-vision: #A8DADC;
+  --sd-slot-conditioning: #FFA931;
+  --sd-slot-controlnet: #6EE7B7;
+  --sd-slot-image: #64B5F6;
+  --sd-slot-latent: #FF9CF9;
+  --sd-slot-mask: #81C784;
+  --sd-slot-model: #B39DDB;
+  --sd-slot-style-model: #C2FFAE;
+  --sd-slot-vae: #FF6E6E;
+  --sd-slot-noise: #B0B0B0;
+  --sd-slot-guider: #66FFFF;
+  --sd-slot-sampler: #ECB4B4;
+  --sd-slot-sigmas: #CDFFCD;
+
+  /* Typography — keep Inter + JetBrains Mono */
+  --sd-font-sans: "Inter", "SF Pro Display", system-ui, -apple-system, sans-serif;
+  --sd-font-mono: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace;
+
+  /* Spacing — will be expanded in Phase 2 */
+  --sd-space-xs: 4px;
+  --sd-space-sm: 6px;
+  --sd-space-md: 8px;
+  --sd-space-lg: 12px;
+  --sd-space-xl: 16px;
+
+  --sd-transition: 150ms ease;
+}
+```
+
+Then do a find-and-replace through the entire CSS file:
+- `var(--sd-brand)` → `var(--sd-accent)`
+- `var(--sd-brand-dim)` → `var(--sd-accent-dim)`
+- `var(--sd-brand-subtle)` → `var(--sd-accent-subtle)`
+- `var(--sd-text-brand)` → `var(--sd-accent)`
+- `var(--sd-dark)` → `#1a1a1a` (send button text on accent bg)
+- Remove the `--sd-dark` variable entirely
+
+**Task C2: Restyle header to match ComfyUI's native toolbar pattern**
+
+ComfyUI's toolbars are low-contrast, same-weight as the panel. No bold brand colors in headers.
+
+Change `.sd-header`:
+- `background` → `var(--sd-panel)` (already is, keep)
+- `font-weight: 700` → `font-weight: 500`
+- `font-size: 14px` → `font-size: 13px`
+- `color: var(--sd-text-brand)` → `color: var(--sd-text-primary)` (no accent color on title)
+- `letter-spacing: 0.5px` → `letter-spacing: 0.02em`
+- `border-bottom` → `1px solid var(--sd-border-subtle)` (lighter)
+
+Change `.sd-header__status--connecting` to use `#e6a23c` (warm amber, ComfyUI warning style).
+Change `.sd-header__status--disconnected` to use `#f56c6c` (ComfyUI error red).
+
+**Task C3: Restyle stage bar to feel like a native progress indicator**
+
+Change `.sd-stage-bar`:
+- `background: var(--sd-brand-subtle)` → `background: var(--sd-accent-subtle)` (already handled by C1 replacement)
+- `border-bottom` → `1px solid var(--sd-border-subtle)`
+
+Change `.sd-stage__label`:
+- `color: var(--sd-text-brand)` → `color: var(--sd-accent)` (already handled by C1)
+
+Keep the pulse animation — it's good UX for "thinking" state.
+
+**Task C4: Restyle input bar and send button**
+
+Change `.sd-send-btn`:
+- `background: var(--sd-brand)` → `background: var(--sd-accent)` (handled by C1)
+- `color: var(--sd-dark)` → `color: #1a1a1a` (dark text on blue button — good contrast)
+
+Change `.sd-input:focus`:
+- `border-color: var(--sd-brand)` → `border-color: var(--sd-accent)` (handled by C1)
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent JS ⟡ — Frontend DOM + Interaction Engineer ═══
+
+**MOE Expertise:** Vanilla JS DOM manipulation, WebSocket protocols, ComfyUI extension API. You build fast, accessible UIs without frameworks.
+**You OWN:** `ui/web/js/chat.js`, `ui/web/js/sidebar.js`
+**DO NOT TOUCH:** `ui/web/css/superduper.css`, `ui/server/routes.py`
+
+**Task J1: Update brand references in JavaScript**
+
+In `chat.js`:
+- In the `SLOT_COLORS` object, no changes needed (slot colors are already ComfyUI native)
+- But if any hardcoded `#00BB81` exists as fallback defaults in JS, replace with `#4e9bcd`
+
+In `sidebar.js`:
+- Change `SIDEBAR_TITLE` from `"SUPER DUPER"` to `"Super Duper"` (title case, less shouty — native apps don't scream)
+- In `buildSidebar()`, change the `sd-header__title` text to use the updated title
+- Update the tooltip in `registerSidebarTab` from `"SUPER DUPER AI Co-pilot"` to `"Super Duper AI Co-pilot"`
+
+**Task J2: Update system welcome message**
+
+In `buildSidebar()`, change the initial system message from:
+```
+"Ready. Type below."
+```
+to:
+```
+"What would you like to do with your workflow?"
+```
+
+This is warmer and more actionable — tells the artist we're about workflows, not a generic chatbot.
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 1 GATE ═══
+
+**Run BEFORE starting Phase 2. Gate is HARD — no skip.**
+
+```bash
+# CSS file has no references to --sd-brand (old jade green system removed)
+! grep -q "sd-brand" C:/Users/User/comfyui-agent/ui/web/css/superduper.css || echo "CSS: brand removed OK"
+
+# CSS file uses --sd-accent (new system present)
+grep -q "sd-accent" C:/Users/User/comfyui-agent/ui/web/css/superduper.css && echo "CSS: accent present OK"
+
+# No #00BB81 anywhere in UI code
+! grep -rq "00BB81" C:/Users/User/comfyui-agent/ui/web/ || echo "No jade green remnants OK"
+
+# JS files still valid (no syntax errors) — basic check
+node -e "import('file:///C:/Users/User/comfyui-agent/ui/web/js/chat.js').catch(e => { console.error(e.message); process.exit(1); })" && echo "chat.js: syntax OK"
+
+# Python routes.py still imports cleanly
+python -c "import ast; ast.parse(open('C:/Users/User/comfyui-agent/ui/server/routes.py', encoding='utf-8').read()); print('routes.py: syntax OK')"
+```
+
+**ALL checks must pass. If ANY fail, fix before proceeding.**
+
+Print status bar after gate check.
+
+---
+
+## PHASE 2: BREATHE
+
+**Goal:** Transform the chat from a dense wall-of-text nightmare into a spacious, scannable conversation that neurodivergent AND neurotypical users can comfortably read. The key insight: whitespace is not wasted space — it's cognitive breathing room.
+
+Run CSS ◆ and JS ⟡ agents **in parallel** via Task tool.
+
+### ═══ Agent CSS ◆ — Visual Design + ComfyUI Native Theming ═══
+
+**You OWN:** `ui/web/css/superduper.css`
+**DO NOT TOUCH:** JS files, routes.py
+
+**Task C5: Expand spacing tokens and message gaps**
+
+Add new spacing tokens to `:root`:
+```css
+  /* Expanded spacing for readability */
+  --sd-space-2xl: 24px;
+  --sd-space-3xl: 32px;
+  --sd-msg-gap: 20px;       /* Gap between chat messages */
+  --sd-para-gap: 12px;      /* Gap between paragraphs within a message */
+```
+
+Update `.sd-messages`:
+- `padding: var(--sd-space-lg)` → `padding: var(--sd-space-xl) var(--sd-space-lg)` (more vertical padding)
+- `gap: var(--sd-space-md)` → `gap: var(--sd-msg-gap)` (20px between messages, was 8px)
+
+**Task C6: Improve message bubble readability**
+
+Update `.sd-message`:
+- `gap: 2px` → `gap: var(--sd-space-sm)` (6px between label and body)
+- `padding: var(--sd-space-md) 10px` → `padding: var(--sd-space-lg) var(--sd-space-xl)` (12px 16px — more breathing room)
+- `line-height: 1.5` → `line-height: 1.7` (more space between lines — critical for ADHD readability)
+- `font-size: 12px` → `font-size: 13px` (slightly larger for comfort)
+- `border-radius: 6px` → `border-radius: 8px` (softer, more modern)
+
+Update `.sd-message__label`:
+- Add `margin-bottom: 2px` (tiny bit more separation from body)
+- `font-size: 10px` → `font-size: 10.5px` (hair larger)
+
+Update `.sd-text-body`:
+- `font-size: 12px` → `font-size: 13px` (match message)
+- `line-height: 1.5` → `line-height: 1.7` (match)
+
+Update `.sd-text-body p`:
+- `margin: 0 0 var(--sd-space-md) 0` → `margin: 0 0 var(--sd-para-gap) 0` (12px between paragraphs, was 8px)
+
+Update `.sd-code-block`:
+- `font-size: 11px` → `font-size: 11.5px`
+- `line-height: 1.5` → `line-height: 1.65` (code blocks need air too)
+- `padding` → `var(--sd-space-lg) var(--sd-space-xl)` (12px 16px)
+- `margin: var(--sd-space-md) 0` → `margin: var(--sd-space-lg) 0` (12px vertical margin)
+
+Update `.sd-code-inline`:
+- `padding: 1px 5px` → `padding: 2px 7px` (slightly more cushion)
+
+**Task C7: Add visual message separators and soften user bubbles**
+
+Add a new rule for visual separation between agent response blocks. Add after `.sd-message--system`:
+
+```css
+/* Visual breathing line between consecutive agent messages */
+.sd-message--agent + .sd-message--agent {
+  padding-top: var(--sd-space-xl);
+  border-top: 1px solid var(--sd-border-subtle);
+  margin-top: var(--sd-space-xs);
+}
+
+/* User messages: softer, more recessed look */
+.sd-message--user {
+  background: var(--sd-card);
+  border: 1px solid var(--sd-border-subtle);
+}
+
+/* Agent messages: slightly elevated from canvas for contrast */
+.sd-message--agent {
+  background: var(--sd-panel);
+  border-left: 2px solid var(--sd-accent-dim);
+}
+```
+
+Also update `.sd-input-bar`:
+- `padding: 10px var(--sd-space-lg)` → `padding: var(--sd-space-lg) var(--sd-space-xl)` (more air around input)
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent JS ⟡ — Frontend DOM + Interaction Engineer ═══
+
+**You OWN:** `ui/web/js/chat.js`, `ui/web/js/sidebar.js`
+**DO NOT TOUCH:** CSS, routes.py
+
+**Task J3: Add visual paragraph chunking to renderText()**
+
+In `chat.js`, update `renderText()` to add subtle spacing between content blocks. When rendering paragraphs, if a paragraph is longer than 200 characters, split it into the paragraph element but add `class="sd-para-long"` so CSS can add extra margin. This enables the CSS agent to optionally style long paragraphs differently.
+
+In the paragraph loop, after creating `p` element:
+```javascript
+if (trimmed.length > 200) {
+  p.classList.add("sd-para-long");
+}
+```
+
+Add this CSS class handling in the message body creation. This is a tiny change but enables CSS-driven readability improvements.
+
+**Task J4: Add aria-labels for accessibility**
+
+In `sidebar.js`, in `buildSidebar()`:
+- Add `role="log"` and `aria-live="polite"` to the `sd-messages` div (so screen readers announce new messages)
+- Add `aria-label="Chat with Super Duper AI"` to the messages container
+- Add `aria-label="Send message"` to the send button
+
+In the HTML template string in `buildSidebar()`, update:
+```html
+<div class="sd-messages" id="sd-messages" role="log" aria-live="polite" aria-label="Chat with Super Duper AI">
+```
+and:
+```html
+<button id="sd-send" class="sd-send-btn" aria-label="Send message">Send</button>
+```
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 2 GATE ═══
+
+**Run BEFORE starting Phase 3. Gate is HARD — no skip.**
+
+```bash
+# Spacing tokens expanded
+grep -q "sd-msg-gap" C:/Users/User/comfyui-agent/ui/web/css/superduper.css && echo "CSS: msg-gap token OK"
+grep -q "sd-space-2xl" C:/Users/User/comfyui-agent/ui/web/css/superduper.css && echo "CSS: 2xl token OK"
+
+# Line height is >= 1.6 for messages
+grep -q "1.7" C:/Users/User/comfyui-agent/ui/web/css/superduper.css && echo "CSS: generous line-height OK"
+
+# Accessibility attributes present
+grep -q "aria-live" C:/Users/User/comfyui-agent/ui/web/js/sidebar.js && echo "JS: aria-live OK"
+grep -q "aria-label" C:/Users/User/comfyui-agent/ui/web/js/sidebar.js && echo "JS: aria-label OK"
+
+# Python still parses
+python -c "import ast; ast.parse(open('C:/Users/User/comfyui-agent/ui/server/routes.py', encoding='utf-8').read()); print('routes.py: still valid OK')"
+```
+
+**ALL checks must pass. Fix before Phase 3.**
+
+Print status bar after gate check.
+
+---
+
+## PHASE 3: NODE PILLS
+
+**Goal:** When the agent uses tools that touch specific workflow nodes, the chat UI shows colored pills indicating exactly which nodes are being interacted with. This closes the feedback loop — the artist sees "the agent is modifying KSampler" not just "the agent is using set_input."
+
+Run BACK ◈ first (provides data), then JS ⟡ + CSS ◆ in parallel.
+
+### ═══ Agent BACK ◈ — Backend Data Enrichment + Node Extraction ═══
+
+**MOE Expertise:** Python backend, tool dispatch, WebSocket event protocols. You enrich data streams without breaking existing contracts.
+**You OWN:** `ui/server/routes.py`
+**DO NOT TOUCH:** `ui/web/js/chat.js`, `ui/web/js/sidebar.js`, `ui/web/css/superduper.css`
+
+**Task B1: Add node extraction from tool inputs**
+
+Add a new function `_extract_nodes_touched()` that inspects tool_name and tool_input to determine which nodes the tool is interacting with. Add it after the `_infer_stage()` function:
+
+```python
+def _extract_nodes_touched(tool_name: str, tool_input: dict, conv: ConversationState) -> list[dict]:
+    """Extract which nodes a tool call is interacting with.
+
+    Returns list of {"node_id": str, "class_type": str, "slot_type": str}
+    """
+    nodes_touched = []
+
+    # Tools that directly reference nodes
+    node_tools = {
+        "set_input": ["node_id"],
+        "connect_nodes": ["source_node_id", "target_node_id", "from_node", "to_node"],
+        "add_node": ["class_type"],
+        "get_node_info": ["class_type", "node_type"],
+        "apply_workflow_patch": [],  # parse from patch ops
+    }
+
+    if tool_name not in node_tools and tool_name not in (
+        "load_workflow", "validate_workflow", "get_editable_fields",
+        "preview_workflow_patch", "validate_before_execute",
+    ):
+        return nodes_touched
+
+    # Get current workflow from PILOT state (if available)
+    wf_nodes = {}
+    if conv.workflow_summary:
+        try:
+            from agent.tools.workflow_patch import _state
+            wf = _state.get("working")
+            if isinstance(wf, dict):
+                wf_nodes = wf
+        except Exception:
+            pass
+
+    # Extract node_id references from tool input
+    node_id_keys = node_tools.get(tool_name, [])
+    for key in node_id_keys:
+        val = tool_input.get(key)
+        if val is None:
+            continue
+
+        if key == "class_type":
+            # add_node: we know class_type but not node_id yet
+            nodes_touched.append({
+                "node_id": None,
+                "class_type": str(val),
+                "slot_type": _classify_slot(str(val)),
+            })
+        else:
+            # node_id reference — look up class_type from workflow
+            nid = str(val)
+            ndata = wf_nodes.get(nid, {})
+            ct = ndata.get("class_type", f"Node {nid}")
+            nodes_touched.append({
+                "node_id": nid,
+                "class_type": ct,
+                "slot_type": _classify_slot(ct),
+            })
+
+    # For patch tools, extract node_ids from RFC6902 paths
+    if tool_name == "apply_workflow_patch":
+        patches = tool_input.get("patches") or tool_input.get("patch") or []
+        if isinstance(patches, list):
+            seen_ids = set()
+            for op in patches:
+                path = op.get("path", "")
+                # Path format: /node_id/inputs/field_name
+                parts = path.strip("/").split("/")
+                if parts and parts[0] not in seen_ids:
+                    nid = parts[0]
+                    seen_ids.add(nid)
+                    ndata = wf_nodes.get(nid, {})
+                    ct = ndata.get("class_type", f"Node {nid}")
+                    nodes_touched.append({
+                        "node_id": nid,
+                        "class_type": ct,
+                        "slot_type": _classify_slot(ct),
+                    })
+
+    return nodes_touched
+```
+
+**Task B2: Enrich tool_call events with nodes_touched data**
+
+In `_run_agent_sync()`, update the `on_tool()` callback to include nodes_touched. Change:
+
+```python
+def on_tool(name, inp):
+    stage = _infer_stage(name)
+    msg_queue.put({
+        "type": "tool_call",
+        "tool": name,
+        "stage": stage,
+    })
+```
+
+to:
+
+```python
+def on_tool(name, inp):
+    stage = _infer_stage(name)
+    nodes = _extract_nodes_touched(name, inp, conv)
+    msg_queue.put({
+        "type": "tool_call",
+        "tool": name,
+        "stage": stage,
+        "nodes_touched": nodes,
+    })
+```
+
+Then update `_forward_event()` to forward the nodes_touched data in the stage event. Change the `tool_call` case:
+
+```python
+elif etype == "tool_call":
+    event_data = {
+        "type": "stage",
+        "stage": event.get("stage", "THINKING"),
+        "detail": f"Using {event['tool']}...",
+    }
+    nodes = event.get("nodes_touched", [])
+    if nodes:
+        event_data["nodes_touched"] = nodes
+    await ws.send_json(event_data)
+```
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 3A GATE (Backend Ready) ═══
+
+```bash
+# routes.py parses
+python -c "import ast; ast.parse(open('C:/Users/User/comfyui-agent/ui/server/routes.py', encoding='utf-8').read()); print('routes.py: syntax OK')"
+
+# _extract_nodes_touched function exists
+grep -q "_extract_nodes_touched" C:/Users/User/comfyui-agent/ui/server/routes.py && echo "Function exists OK"
+
+# nodes_touched in forward event
+grep -q "nodes_touched" C:/Users/User/comfyui-agent/ui/server/routes.py && echo "Event enrichment OK"
+```
+
+Now run JS ⟡ and CSS ◆ **in parallel**.
+
+---
+
+### ═══ Agent JS ⟡ — Frontend DOM + Interaction Engineer ═══
+
+**You OWN:** `ui/web/js/chat.js`, `ui/web/js/sidebar.js`
+**DO NOT TOUCH:** CSS, routes.py
+**DEPENDS ON:** BACK ◈ (B1, B2 must be done)
+
+**Task J5: Create node pill renderer in chat.js**
+
+Add a new exported function `createNodePill()` in `chat.js`, after the `createSlotTag` function:
+
+```javascript
+/**
+ * Create an interactive node pill for inline display in messages/stage bar.
+ * Shows node class_type with slot-appropriate color.
+ * Hover/click highlights the node on ComfyUI canvas.
+ *
+ * @param {string} classType - Node class_type (e.g., "KSampler")
+ * @param {string} slotType - Slot type key (e.g., "sampler")
+ * @param {string|null} nodeId - Node ID for canvas highlighting (null if unknown)
+ */
+export function createNodePill(classType, slotType, nodeId) {
+  const color = _slotColor(slotType);
+  const pill = document.createElement("span");
+  pill.className = "sd-node-pill";
+  pill.style.setProperty("--pill-color", color);
+
+  // Colored dot
+  const dot = document.createElement("span");
+  dot.className = "sd-node-pill__dot";
+  pill.appendChild(dot);
+
+  // Label — use short display name (strip common suffixes)
+  const shortName = classType
+    .replace(/Simple$/, "")
+    .replace(/Advanced$/, "")
+    .replace(/Loader$/, "")
+    .replace(/^ComfyUI_/, "");
+  const label = document.createTextNode(shortName);
+  pill.appendChild(label);
+
+  // Interactive: highlight node on canvas
+  if (nodeId) {
+    pill.style.cursor = "pointer";
+    pill.title = `${classType} (node #${nodeId}) — click to select on canvas`;
+
+    pill.addEventListener("click", () => {
+      try {
+        // ComfyUI app API: select node on canvas
+        const graph = app.graph;
+        if (graph) {
+          const node = graph.getNodeById(parseInt(nodeId, 10));
+          if (node) {
+            app.canvas.deselectAllNodes();
+            app.canvas.selectNode(node);
+            app.canvas.centerOnNode(node);
+          }
+        }
+      } catch (e) {
+        console.warn("[Super Duper] Could not highlight node:", e);
+      }
+    });
+
+    pill.addEventListener("mouseenter", () => {
+      try {
+        const graph = app.graph;
+        if (graph) {
+          const node = graph.getNodeById(parseInt(nodeId, 10));
+          if (node) {
+            // Temporarily highlight with a colored border
+            node._sd_orig_color = node.color;
+            node.color = color;
+            app.canvas.setDirty(true, true);
+          }
+        }
+      } catch (e) { /* silent */ }
+    });
+
+    pill.addEventListener("mouseleave", () => {
+      try {
+        const graph = app.graph;
+        if (graph) {
+          const node = graph.getNodeById(parseInt(nodeId, 10));
+          if (node && node._sd_orig_color !== undefined) {
+            node.color = node._sd_orig_color;
+            delete node._sd_orig_color;
+            app.canvas.setDirty(true, true);
+          }
+        }
+      } catch (e) { /* silent */ }
+    });
+  } else {
+    pill.title = classType;
+  }
+
+  return pill;
+}
+```
+
+**Task J6: Render node pills in stage bar**
+
+In `sidebar.js`, update the `handleAgentMessage` function's `"stage"` case AND the `setStage()` function.
+
+First, add import of `createNodePill` at the top of sidebar.js:
+```javascript
+import { renderText, createTypingIndicator, createPanel, createNodePill } from "./chat.js";
+```
+
+Then update `setStage()` to accept and render node pills:
+
+```javascript
+function setStage(stage, detail, nodesTouched) {
+    if (stage === "DONE" || !stage) {
+      stageBar.style.display = "none";
+      return;
+    }
+    stageBar.style.display = "flex";
+    stageLabel.textContent = stage;
+    stageDetail.textContent = detail || "";
+
+    // Render node pills if provided
+    // Remove existing pills first
+    const existingPills = stageBar.querySelectorAll(".sd-node-pill");
+    existingPills.forEach(p => p.remove());
+
+    if (nodesTouched && nodesTouched.length > 0) {
+      for (const node of nodesTouched) {
+        const pill = createNodePill(
+          node.class_type,
+          node.slot_type,
+          node.node_id
+        );
+        stageBar.appendChild(pill);
+      }
+    }
+  }
+```
+
+Update the stage handler in `handleAgentMessage()`:
+```javascript
+case "stage":
+    setStage(data.stage, data.detail, data.nodes_touched);
+    // ... rest unchanged
+```
+
+**Task J7: Render node pills inline in agent messages**
+
+In `sidebar.js`, update the `handleAgentMessage` `"tool_call"` / `"stage"` case to also inject a small inline node reference into the chat message stream when nodes are touched.
+
+After the stage update in the `"stage"` case of `handleAgentMessage`, if `data.nodes_touched` is present and has items, create a small system-like message showing the nodes being interacted with:
+
+Add this logic inside the `"stage"` case, BEFORE the `if (data.stage === "DONE")` block:
+
+```javascript
+// Show node interaction indicator in chat when tools touch nodes
+if (data.nodes_touched && data.nodes_touched.length > 0 && data.stage !== "DONE") {
+  const nodeMsg = document.createElement("div");
+  nodeMsg.className = "sd-message sd-message--node-activity";
+
+  const activityLabel = document.createElement("span");
+  activityLabel.className = "sd-node-activity__label";
+  activityLabel.textContent = data.stage === "PILOT" ? "Modifying" : "Inspecting";
+  nodeMsg.appendChild(activityLabel);
+
+  for (const node of data.nodes_touched) {
+    const pill = createNodePill(
+      node.class_type,
+      node.slot_type,
+      node.node_id
+    );
+    nodeMsg.appendChild(pill);
+  }
+
+  messagesEl.appendChild(nodeMsg);
+  scrollToBottom();
+}
+```
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ Agent CSS ◆ — Visual Design + ComfyUI Native Theming ═══
+
+**You OWN:** `ui/web/css/superduper.css`
+**DEPENDS ON:** JS ⟡ J5 (provides the class names to style)
+
+**Task C8: Style node pills and node activity messages**
+
+Add these new CSS rules at the end of the file, after the `.sd-slot-tags` rule:
+
+```css
+/* ── Node Pills (inline interactive node indicators) ─────────────── */
+
+.sd-node-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px 2px 7px;
+  border-radius: 10px;
+  font-family: var(--sd-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  background: color-mix(in srgb, var(--pill-color) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pill-color) 25%, transparent);
+  color: var(--pill-color);
+  transition: background var(--sd-transition), border-color var(--sd-transition);
+  white-space: nowrap;
+  margin: 0 3px;
+  vertical-align: middle;
+}
+
+.sd-node-pill:hover {
+  background: color-mix(in srgb, var(--pill-color) 22%, transparent);
+  border-color: color-mix(in srgb, var(--pill-color) 45%, transparent);
+}
+
+.sd-node-pill[style*="cursor: pointer"]:active {
+  transform: scale(0.97);
+}
+
+.sd-node-pill__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pill-color);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--pill-color) 55%, transparent);
+  flex-shrink: 0;
+}
+
+/* Node activity message (shown in chat when tools touch nodes) */
+.sd-message--node-activity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: var(--sd-space-sm) var(--sd-space-xl);
+  background: transparent;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.sd-node-activity__label {
+  font-family: var(--sd-font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--sd-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-right: 4px;
+}
+
+/* Node pills inside the stage bar */
+.sd-stage-bar .sd-node-pill {
+  font-size: 10px;
+  padding: 1px 7px 1px 5px;
+  margin-left: 4px;
+}
+
+/* Long paragraphs get extra bottom margin for scanability */
+.sd-para-long {
+  margin-bottom: var(--sd-space-xl) !important;
+}
+```
+
+After completing all tasks, print the status bar.
+
+---
+
+### ═══ PHASE 3 GATE (FINAL) ═══
+
+**Run after all Phase 3 tasks complete.**
+
+```bash
+# Node pill function exists in chat.js
+grep -q "createNodePill" C:/Users/User/comfyui-agent/ui/web/js/chat.js && echo "JS: createNodePill OK"
+
+# Node pill CSS exists
+grep -q "sd-node-pill" C:/Users/User/comfyui-agent/ui/web/css/superduper.css && echo "CSS: node-pill styles OK"
+
+# Node activity message class exists
+grep -q "sd-message--node-activity" C:/Users/User/comfyui-agent/ui/web/css/superduper.css && echo "CSS: node-activity OK"
+
+# Backend enrichment wired
+grep -q "nodes_touched" C:/Users/User/comfyui-agent/ui/server/routes.py && echo "BACK: enrichment OK"
+
+# Import updated in sidebar.js
+grep -q "createNodePill" C:/Users/User/comfyui-agent/ui/web/js/sidebar.js && echo "JS: import wired OK"
+
+# All files parse cleanly
+python -c "import ast; ast.parse(open('C:/Users/User/comfyui-agent/ui/server/routes.py', encoding='utf-8').read()); print('routes.py: OK')"
+node -e "import('file:///C:/Users/User/comfyui-agent/ui/web/js/chat.js').catch(e => { console.error(e.message); process.exit(1); })" && echo "chat.js: OK"
+node -e "import('file:///C:/Users/User/comfyui-agent/ui/web/js/sidebar.js').catch(e => { console.error(e.message); process.exit(1); })" && echo "sidebar.js: OK"
+
+# No innerHTML anywhere
+! grep -rq "innerHTML" C:/Users/User/comfyui-agent/ui/web/js/ || echo "Security: no innerHTML OK"
+```
+
+**ALL checks must pass.**
+
+Print status bar after gate check.
+
+---
+
+## FINAL STATUS BAR
+
+Print after the last phase gate passes:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SUPER DUPER — NATIVE-UX-001 — COMPLETE                    ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Phase 1: NATIVE SKIN       [██████████] 100% ✓            ║
+║    CSS   ◆ C1 ✓  C2 ✓  C3 ✓  C4 ✓                          ║
+║    JS    ⟡ J1 ✓  J2 ✓                                       ║
+║                                                              ║
+║  Phase 2: BREATHE            [██████████] 100% ✓            ║
+║    CSS   ◆ C5 ✓  C6 ✓  C7 ✓                                ║
+║    JS    ⟡ J3 ✓  J4 ✓                                       ║
+║                                                              ║
+║  Phase 3: NODE PILLS         [██████████] 100% ✓            ║
+║    BACK  ◈ B1 ✓  B2 ✓                                       ║
+║    JS    ⟡ J5 ✓  J6 ✓  J7 ✓                                 ║
+║    CSS   ◆ C8 ✓                                              ║
+║                                                              ║
+║  Overall: [████████████████████] 100%  (16/16 tasks)         ║
+║                                                              ║
+║  New files:    0                                             ║
+║  Modified:     4 (superduper.css, chat.js, sidebar.js,       ║
+║                   routes.py)                                 ║
+║  Tests added:  0 (UI-only changes, manual verification)      ║
+║  Regressions:  0                                             ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## SAFETY RULES (ALL AGENTS — NON-NEGOTIABLE)
+
+1. **Read before write:** Always read existing code and match conventions
+2. **File ownership:** NEVER write to another agent's files
+3. **Regression zero:** Existing tests must keep passing
+4. **Status reporting:** Print status bar after EVERY task completion
+5. **No innerHTML:** All DOM construction via createElement + textContent. Security requirement.
+6. **No new dependencies:** No npm packages, no new Python imports beyond what's already used
+7. **Slot colors are sacred:** The 14 ComfyUI slot colors in SLOT_COLORS and _SLOT_HEX must NOT change — they are ComfyUI's official dark theme palette
+8. **Backward compatible WebSocket:** New fields (nodes_touched) are additive. Old message types still work unchanged. Frontend must handle missing nodes_touched gracefully.

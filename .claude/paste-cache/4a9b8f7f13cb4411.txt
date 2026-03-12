@@ -1,0 +1,45 @@
+[2026/Feb/21|09:49:46] [warning] V-Ray for Houdini is compiled for HDK API version 21.0.512, but is running on a build with API version 21.0.630 - plugin may behave unstable (or even crash).
+==================================================
+Houdini 21 Launch Script (123.py)
+==================================================
+Pref dir: C:/Users/User/houdini21.0
+
+Loading BreakdownMaker shelf...
+  + Loaded: C:/Users/User/houdini21.0\toolbar\breakdownmaker.shelf
+  + Added Python path: C:/Users/User/houdini21.0\packages\BreakdownMaker\python
+
+==================================================
+123.py complete. Right-click shelf tab > Shelves > Breakdown
+==================================================
+Cannot determine preloaded icons for shelf: <hou.Shelf 'radiantsuite'>
+Greyscalegorilla Connect v1.5.1 - Info: Running on port 8912
+opening handshake failed
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Roaming\Python\Python311\site-packages\websockets\http11.py", line 138, in parse
+    request_line = yield from parse_line(read_line)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Roaming\Python\Python311\site-packages\websockets\http11.py", line 320, in parse_line
+    line = yield from read_line(MAX_LINE_LENGTH)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Roaming\Python\Python311\site-packages\websockets\streams.py", line 46, in read_line
+    raise EOFError(f"stream ends after {p} bytes, before end of line")
+EOFError: stream ends after 0 bytes, before end of line
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Roaming\Python\Python311\site-packages\websockets\server.py", line 547, in parse
+    request = yield from Request.parse(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Roaming\Python\Python311\site-packages\websockets\http11.py", line 140, in parse
+    raise EOFError("connection closed while reading HTTP request line") from exc
+EOFError: connection closed while reading HTTP request line
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Roaming\Python\Python311\site-packages\websockets\sync\server.py", line 592, in conn_handler
+    connection.handshake(
+  File "C:\Users\User\AppData\Roaming\Python\Python311\site-packages\websockets\sync\server.py", line 189, in handshake
+    raise self.protocol.handshake_exc
+websockets.exceptions.InvalidMessage: did not receive a valid HTTP request

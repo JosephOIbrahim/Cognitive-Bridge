@@ -1,0 +1,264 @@
+"""Tests for Agent 3: Injection Engine.
+
+Covers gain, delta, mixing matrix, pharmacokinetics, and state.
+"""
+
+from src.lossless.constants import (
+    ANCHOR_PHASES,
+    FLOAT_TOLERANCE,
+    MAX_CONDITION_NUMBER,
+    MODULATED_PHASES,
+    PHASES,
+    PROFILES,
+)
+from src.lossless.injection.gain import compute_gain, compute_gains_for_profile
+from src.lossless.injection.delta import InjectionDelta, compute_delta
+from src.lossless.injection.mixing import MixingTracker
+from src.lossless.injection.pharmacokinetics import compute_alpha
+from src.lossless.injection.state import InjectionState
+
+
+# ── Identity Tests ───────────────────────────────────────────────────
+
+
+class TestIdentity:
+    def test_gain_identity_at_zero(self):
+        """gain(any_phase, 0.0) == 1.0"""
+        for phase in PHASES:
+            assert abs(compute_gain(phase, 0.0) - 1.0) < FLOAT_TOLERANCE
+
+    def test_delta_at_none_is_empty(self):
+        """Delta at profile 'none' is empty for all phases."""
+        sections = {p: f"content for {p}" for p in PHASES}
+        delta = compute_delta(sections, "none")
+        for phase, d in delta.get_deltas_dict().items():
+            assert d == "", f"Phase {phase} has non-empty delta at 'none'"
+
+    def test_alpha_none_always_zero(self):
+        """alpha('none', any, any) == 0.0"""
+        for t in range(20):
+            assert abs(compute_alpha("none", t, 0, True)) < FLOAT_TOLERANCE
+            assert abs(compute_alpha("none", 0, t, False)) < FLOAT_TOLERANCE
+
+
+# ── Anchor Invariance Tests ──────────────────────────────────────────
+
+
+class TestAnchorInvariance:
+    def test_gain_anchor_at_classical(self):
+        """gain(anchor_phase, 0.025) == 1.0 for all anchor phases."""
+        for phase in sorted(ANCHOR_PHASES):
+            assert abs(compute_gain(phase, 0.025) - 1.0) < FLOAT_TOLERANCE
+
+    def test_gain_anchor_at_all_profiles(self):
+        """gain(anchor, any_s) == 1.0 at all profiles."""
+        for phase in sorted(ANCHOR_PHASES):
+            for name, cfg in sorted(PROFILES.items()):
+                g = compute_gain(phase, cfg["s_NM"])
+                assert abs(g - 1.0) < FLOAT_TOLERANCE, f"{phase}@{name}"
+
+    def test_delta_anchor_empty_at_all_profiles(self):
+        """Delta for anchor phases is empty at all profiles."""
+        sections = {p: f"content for {p}" for p in PHASES}
+        for name in sorted(PROFILES.keys()):
+            delta = compute_delta(sections, name)
+            deltas = delta.get_deltas_dict()
+            for phase in sorted(ANCHOR_PHASES):
+                assert deltas[phase] == "", f"{phase}@{name}"
+
+
+# ── Gain Properties ──────────────────────────────────────────────────
+
+
+class TestGainProperties:
+    def test_gain_always_gte_one(self):
+        for phase in PHASES:
+            for s in [0.0, 0.005, 0.01, 0.015, 0.025]:
+                assert compute_gain(phase, s) >= 1.0 - FLOAT_TOLERANCE
+
+    def test_gains_for_profile(self):
+        gains = compute_gains_for_profile(0.025)
+        assert len(gains) == len(PHASES)
+        for phase in sorted(ANCHOR_PHASES):
+            assert abs(gains[phase] - 1.0) < FLOAT_TOLERANCE
+
+    def test_gain_continuity(self):
+        """Small s_NM change -> small gain change."""
+        for phase in PHASES:
+            g1 = compute_gain(phase, 0.024)
+            g2 = compute_gain(phase, 0.026)
+            assert abs(g1 - g2) < 0.01
+
+    def test_unknown_phase_raises(self):
+        try:
+            compute_gain("NONEXISTENT", 0.01)
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+
+# ── Mixing Matrix Tests ──────────────────────────────────────────────
+
+
+class TestMixingTracker:
+    def test_identity_matrix_invertible(self):
+        mt = MixingTracker()
+        assert mt.is_invertible()
+
+    def test_identity_condition_number(self):
+        mt = MixingTracker()
+        assert abs(mt.condition_number() - 1.0) < 0.01
+
+    def test_invertible_at_all_profiles(self):
+        """MixingTracker is invertible at all defined profiles."""
+        for name, cfg in sorted(PROFILES.items()):
+            state = InjectionState()
+            state.activate(name)
+            mt = state.mixing_tracker
+            assert mt.is_invertible(), f"Not invertible at {name}"
+
+    def test_condition_number_bounded(self):
+        """condition_number < MAX_CONDITION_NUMBER at all profiles."""
+        for name, cfg in sorted(PROFILES.items()):
+            state = InjectionState()
+            state.activate(name)
+            mt = state.mixing_tracker
+            cn = mt.condition_number()
+            assert cn < MAX_CONDITION_NUMBER, f"{name}: cn={cn}"
+
+    def test_round_trip_inversion(self):
+        """invert(mix(signal)) == signal within tolerance."""
+        mt = MixingTracker()
+        # Add some bleeds
+        mod_phases = sorted(MODULATED_PHASES)
+        if len(mod_phases) >= 2:
+            mt.record_bleed(mod_phases[0], mod_phases[1], 0.1)
+
+        signal = [float(i + 1) for i in range(len(mod_phases))]
+        mixed = mt.mix(signal)
+        recovered = mt.invert(mixed)
+
+        for i in range(len(signal)):
+            assert abs(recovered[i] - signal[i]) < FLOAT_TOLERANCE * 100
+
+    def test_reject_anchor_bleed(self):
+        mt = MixingTracker()
+        try:
+            mt.record_bleed("SAFETY", sorted(MODULATED_PHASES)[0], 0.1)
+            assert False, "Should reject anchor source"
+        except ValueError:
+            pass
+
+    def test_reject_invalid_coefficient(self):
+        mt = MixingTracker()
+        mod = sorted(MODULATED_PHASES)
+        try:
+            mt.record_bleed(mod[0], mod[1], 1.0)
+            assert False, "Should reject coefficient >= 1.0"
+        except ValueError:
+            pass
+
+    def test_to_dict_has_required_keys(self):
+        mt = MixingTracker()
+        d = mt.to_dict()
+        assert "dimensions" in d
+        assert "determinant" in d
+        assert "is_invertible" in d
+        assert "condition_number" in d
+        assert "phases" in d
+        assert "matrix" in d
+
+
+# ── Pharmacokinetics Tests ───────────────────────────────────────────
+
+
+class TestPharmacokinetics:
+    def test_onset_reaches_high(self):
+        for name in sorted(PROFILES.keys()):
+            if name == "none":
+                continue
+            from src.lossless.constants import ONSET_EXCHANGES
+            onset = ONSET_EXCHANGES[name]
+            a = compute_alpha(name, onset, 0, True)
+            assert a > 0.95 - FLOAT_TOLERANCE, f"{name}: alpha={a}"
+
+    def test_offset_drops_low(self):
+        for name in sorted(PROFILES.keys()):
+            if name == "none":
+                continue
+            from src.lossless.constants import OFFSET_EXCHANGES
+            offset = OFFSET_EXCHANGES[name]
+            a = compute_alpha(name, 0, offset, False)
+            assert a < 0.05 + FLOAT_TOLERANCE, f"{name}: alpha={a}"
+
+    def test_onset_monotonic(self):
+        for name in sorted(PROFILES.keys()):
+            if name == "none":
+                continue
+            prev = 0.0
+            for t in range(20):
+                a = compute_alpha(name, t, 0, True)
+                assert a >= prev - FLOAT_TOLERANCE
+                prev = a
+
+    def test_offset_monotonic(self):
+        for name in sorted(PROFILES.keys()):
+            if name == "none":
+                continue
+            prev = 1.0
+            for t in range(20):
+                a = compute_alpha(name, 0, t, False)
+                assert a <= prev + FLOAT_TOLERANCE
+                prev = a
+
+
+# ── State Tests ──────────────────────────────────────────────────────
+
+
+class TestInjectionState:
+    def test_initial_state_inactive(self):
+        state = InjectionState()
+        assert not state.active
+        assert state.profile == "none"
+        assert abs(state.alpha) < FLOAT_TOLERANCE
+
+    def test_activate_sets_profile(self):
+        state = InjectionState()
+        state.activate("microdose")
+        assert state.active
+        assert state.profile == "microdose"
+
+    def test_deactivate(self):
+        state = InjectionState()
+        state.activate("microdose")
+        state.deactivate()
+        assert not state.active
+
+    def test_advance_exchange(self):
+        state = InjectionState()
+        state.activate("microdose")
+        old_alpha = state.alpha
+        state.advance_exchange()
+        # Alpha should increase during onset
+        assert state.alpha >= old_alpha - FLOAT_TOLERANCE
+
+    def test_get_gain_inactive(self):
+        state = InjectionState()
+        for phase in PHASES:
+            assert abs(state.get_gain(phase) - 1.0) < FLOAT_TOLERANCE
+
+    def test_unknown_profile_raises(self):
+        state = InjectionState()
+        try:
+            state.activate("nonexistent")
+            assert False, "Should have raised"
+        except ValueError:
+            pass
+
+    def test_to_dict_has_required_keys(self):
+        state = InjectionState()
+        d = state.to_dict()
+        assert "profile" in d
+        assert "active" in d
+        assert "alpha" in d
+        assert "mixing" in d

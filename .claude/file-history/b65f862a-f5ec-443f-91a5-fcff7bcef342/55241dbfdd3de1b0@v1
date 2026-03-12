@@ -1,0 +1,139 @@
+# Phase 1: Frame Validator (`synapse_validate_frame`)
+
+## Context
+
+SYNAPSE v5.3.0 has 43 MCP tools but no post-render quality validation. Artists render frames and manually check for black frames, fireflies, NaN pixels, and other common issues. Phase 1 of the TOPS Blueprint adds a standalone Frame Validator — a new MCP tool that uses OpenImageIO (ships with Houdini) to perform fast C++-level pixel analysis and return structured pass/fail results.
+
+No PDG dependency. No new external dependencies. Pure read-only analysis tool.
+
+## Design Decisions
+
+- **MCP tool name**: `synapse_validate_frame` (analysis tool, not a Houdini mutation — `synapse_` prefix)
+- **Command type**: `validate_frame`
+- **No `render_intent` field in Phase 1** — keep it pure technical validation. The output schema is forward-compatible for Phase 3 to add `intent_checks` alongside `checks`.
+- **OIIO graceful degradation** — if OpenImageIO is unavailable, return file-integrity-only results instead of crashing.
+- **Performance** — use `ImageBufAlgo.computePixelStats()` (C++ fast) for stats. Only call `get_pixels()` (numpy) for checks that need per-pixel access (clipping, saturation). Downsample 2x for images > 8MP.
+
+## Files to Modify (5 existing + 1 new)
+
+### 1. `python/synapse/core/protocol.py` — Add CommandType
+
+Add `VALIDATE_FRAME = "validate_frame"` to the enum, in the Utility section after `GET_HEALTH`:
+
+```python
+    # Quality validation
+    VALIDATE_FRAME = "validate_frame"
+```
+
+### 2. `python/synapse/core/aliases.py` — Add parameter aliases
+
+Add to `PARAM_ALIASES` dict:
+
+```python
+    "image_path": ["image_path", "image", "file_path", "frame_path"],
+    "checks": ["checks", "validations", "check_list"],
+    "thresholds": ["thresholds", "threshold_overrides", "limits"],
+```
+
+### 3. `python/synapse/server/handlers_render.py` — Core implementation
+
+Add module-level constants and `_handle_validate_frame()` to `RenderHandlerMixin` after `_handle_read_material()` (line 563).
+
+**Constants:**
+```python
+_VALIDATE_CHECKS = ("file_integrity", "black_frame", "nan_check",
+                     "clipping", "underexposure", "saturation")
+
+_VALIDATE_DEFAULTS = {
+    "black_frame_mean": 0.001,
+    "clipping_pct": 0.5,
+    "underexposure_mean": 0.05,
+    "saturation_pct": 0.1,
+    "saturation_multiplier": 10.0,
+}
+```
+
+**Handler flow:**
+1. `resolve_param()` for `image_path` (required), `checks` (optional), `thresholds` (optional)
+2. File integrity check (os.path.isfile, os.path.getsize) — always runs, no OIIO needed
+3. Try `import OpenImageIO as oiio` → if fails, try `import oiio` → if fails, return file-integrity-only result with `oiio_available: false`
+4. Open image via `oiio.ImageInput.open()`, read spec (width, height, channels, format)
+5. `oiio.ImageBufAlgo.computePixelStats()` for mean/NaN/Inf per-channel stats
+6. `buf.get_pixels(oiio.FLOAT)` → numpy array for clipping/saturation checks (downsample if > 8MP)
+7. Run each requested check, build results dict
+8. Return structured result with `valid`, `resolution`, `checks` (sorted keys), `summary`
+
+**Six checks:**
+| Check | What it detects | OIIO data source | Default threshold |
+|-------|----------------|-------------------|-------------------|
+| `file_integrity` | Missing/empty/corrupt files | `os.stat` + `ImageInput.open()` | file must exist, >0 bytes |
+| `black_frame` | All-black render output | `stats.avg` → mean luminance | mean < 0.001 |
+| `nan_check` | NaN/Inf in float images | `stats.nancount`, `stats.infcount` | any NaN/Inf = fail |
+| `clipping` | Overexposed/blown highlights | `get_pixels()` → % at max | > 0.5% = fail |
+| `underexposure` | Too dark overall | `stats.avg` → mean luminance | mean < 0.05 |
+| `saturation` | Firefly pixels | `get_pixels()` → % > 10x mean | > 0.1% = fail |
+
+**Return format:**
+```python
+{
+    "valid": bool,          # all checks passed
+    "image_path": str,
+    "resolution": [w, h],
+    "channels": int,
+    "format": str,          # "float", "half", "uint8", etc.
+    "checks": {             # sorted keys (He2025)
+        "black_frame": {"passed": bool, "value": float, "threshold": float, "detail": str},
+        ...
+    },
+    "summary": str,         # "Frame looks good" or "Frame has 2 issue(s): black_frame, nan_check"
+    "oiio_available": bool,
+}
+```
+
+### 4. `python/synapse/server/handlers.py` — Registration (3 spots)
+
+1. Add to `_CMD_CATEGORY` dict: `"validate_frame": AuditCategory.RENDER`
+2. Add to `_READ_ONLY_COMMANDS` frozenset: `"validate_frame"`
+3. Add to `_register_handlers()`: `reg.register("validate_frame", self._handle_validate_frame)`
+
+### 5. `mcp_server.py` — MCP tool exposure (3 spots)
+
+1. Add `Tool(name="synapse_validate_frame", ...)` to `list_tools()` after the render tool (~line 764)
+2. Add `"validate_frame": 30.0` to `_SLOW_COMMANDS` dict (line 146)
+3. Add `"synapse_validate_frame": ("validate_frame", _identity)` to `TOOL_DISPATCH` dict
+
+### 6. `tests/test_frame_validator.py` — New test file (~350 lines)
+
+**Bootstrap pattern** (same as test_render.py):
+- `hou` stub via `types.ModuleType`
+- Load handlers via `importlib.util.spec_from_file_location`
+- Capture `_handlers_hou = handlers_mod.hou`
+- Fixture: `handler()` → `SynapseHandler()` with `_bridge = MagicMock()`
+
+**OIIO mock helper**: `_make_oiio_mock(width, height, channels, format_str, avg, nancount, infcount, max_vals)` → creates mock OpenImageIO module with configurable `computePixelStats` return values and `get_pixels()` numpy arrays.
+
+**Test classes:**
+- `TestFileIntegrity` — missing file, empty file, OIIO unavailable graceful degradation
+- `TestBlackFrame` — all-black detected, normal frame passes
+- `TestNaN` — NaN detected in float, Inf detected, skipped for uint8
+- `TestClipping` — overexposure detected, normal range passes
+- `TestUnderexposure` — too dark detected, adequate passes
+- `TestSaturation` — fireflies detected, smooth image passes
+- `TestIntegration` — all pass → valid=true, multiple failures, selective checks, invalid check name, threshold overrides, output keys present, sorted keys (He2025)
+- `TestAliases` — `image` resolves to `image_path`
+
+## Implementation Order
+
+1. `protocol.py` — enum value (no deps)
+2. `aliases.py` — parameter aliases (no deps)
+3. `handlers_render.py` — handler method + constants (depends on aliases)
+4. `handlers.py` — registration + read-only + audit category
+5. `mcp_server.py` — tool definition + dispatch + timeout
+6. `test_frame_validator.py` — full test suite
+
+## Verification
+
+1. `python -m pytest tests/test_frame_validator.py -v` — new tests pass
+2. `python -m pytest tests/ -v` — full suite still passes (no regressions)
+3. `python -c "from synapse.core.protocol import CommandType; print(CommandType.VALIDATE_FRAME)"` — enum exists
+4. If Houdini connected: `synapse_validate_frame` with a rendered image path to test end-to-end

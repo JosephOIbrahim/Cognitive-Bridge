@@ -1,0 +1,158 @@
+"""Tests for Agent 5: Expert System.
+
+Covers registry, selector, bleeding, and execution.
+"""
+
+from src.lossless.constants import (
+    ANCHOR_PHASES,
+    EXPERT_COUNT,
+    EXPERTS,
+    FLOAT_TOLERANCE,
+    MODULATED_PHASES,
+    PHASES,
+    PROFILES,
+)
+from src.lossless.injection.state import InjectionState
+from src.lossless.experts.registry import (
+    Expert,
+    get_expert_names,
+    get_expert_registry,
+    get_experts_by_priority,
+)
+from src.lossless.experts.selector import select_expert
+from src.lossless.experts.bleeding import apply_bleeding, get_bleeding_coefficient
+from src.lossless.experts.execution import execute_expert
+from src.lossless.routing.cascade import SignalFingerprint, evaluate_cascade
+
+
+# ── Registry Tests ───────────────────────────────────────────────────
+
+
+class TestRegistry:
+    def test_registry_has_all_experts(self):
+        registry = get_expert_registry()
+        assert set(registry.keys()) == set(EXPERTS)
+
+    def test_expert_count(self):
+        registry = get_expert_registry()
+        assert len(registry) == EXPERT_COUNT
+
+    def test_priority_order_matches_constants(self):
+        """Expert priority order follows EXPERTS list."""
+        experts = get_experts_by_priority()
+        names = [e.name for e in experts]
+        assert names == EXPERTS
+
+    def test_priority_order_identical_at_all_profiles(self):
+        """Expert priority order is the same regardless of profile."""
+        baseline = get_expert_names()
+        for _ in range(10):
+            names = get_expert_names()
+            assert names == baseline
+
+    def test_expert_is_frozen(self):
+        expert = Expert(name="Test", priority=0, description="test")
+        try:
+            expert.name = "Other"
+            assert False, "Should have raised"
+        except AttributeError:
+            pass
+
+
+# ── Selector Tests ───────────────────────────────────────────────────
+
+
+class TestSelector:
+    def test_select_returns_valid_expert(self):
+        signal = SignalFingerprint()
+        cascade = evaluate_cascade(signal)
+        expert = select_expert(cascade)
+        assert expert.name in EXPERTS
+
+    def test_select_deterministic_100x(self):
+        """Same signal -> same expert, 100 times."""
+        signal = SignalFingerprint(
+            emotional_valence="calm",
+            domain_signal="vfx",
+            energy_level="high",
+            urgency="normal",
+        )
+        cascade = evaluate_cascade(signal)
+        baseline = select_expert(cascade)
+        for _ in range(100):
+            expert = select_expert(cascade)
+            assert expert.name == baseline.name
+
+    def test_weights_affect_selection(self):
+        """Expert weights can change selection."""
+        signal = SignalFingerprint()
+        cascade = evaluate_cascade(signal)
+        # Heavily weight Direct
+        weights = {name: 0.01 for name in EXPERTS}
+        weights["Direct"] = 100.0
+        expert = select_expert(cascade, expert_weights=weights)
+        assert expert.name == "Direct"
+
+
+# ── Bleeding Tests ───────────────────────────────────────────────────
+
+
+class TestBleeding:
+    def test_no_bleeding_at_none_profile(self):
+        assert abs(get_bleeding_coefficient("none")) < FLOAT_TOLERANCE
+
+    def test_bleeding_coefficient_at_classical(self):
+        coeff = get_bleeding_coefficient("classical")
+        assert abs(coeff - 0.30) < FLOAT_TOLERANCE
+
+    def test_anchor_phases_unchanged_after_bleeding(self):
+        """Bleeding does not modify anchor phase contributions."""
+        state = InjectionState()
+        state.activate("classical")
+        for _ in range(5):
+            state.advance_exchange()
+
+        contributions = {p: 1.0 for p in PHASES}
+        result = apply_bleeding(contributions, state)
+
+        for phase in sorted(ANCHOR_PHASES):
+            assert abs(result[phase] - 1.0) < FLOAT_TOLERANCE, phase
+
+    def test_bleeding_uses_mixing_tracker(self):
+        """Bleeding coefficients match profile definitions."""
+        for name in sorted(PROFILES.keys()):
+            expected = PROFILES[name]["cross_expert"]
+            actual = get_bleeding_coefficient(name)
+            assert abs(actual - expected) < FLOAT_TOLERANCE, name
+
+
+# ── Execution Tests ──────────────────────────────────────────────────
+
+
+class TestExecution:
+    def test_execute_returns_result(self):
+        signal = SignalFingerprint()
+        cascade = evaluate_cascade(signal)
+        state = InjectionState()
+        result = execute_expert(cascade, state)
+        assert result.selected_expert.name in EXPERTS
+        assert not result.bleeding_applied
+
+    def test_execute_with_injection(self):
+        signal = SignalFingerprint()
+        cascade = evaluate_cascade(signal)
+        state = InjectionState()
+        state.activate("classical")
+        for _ in range(5):
+            state.advance_exchange()
+        result = execute_expert(cascade, state)
+        assert result.bleeding_applied
+        assert result.profile_name == "classical"
+
+    def test_expert_scores_cover_all_phases(self):
+        signal = SignalFingerprint()
+        cascade = evaluate_cascade(signal)
+        state = InjectionState()
+        result = execute_expert(cascade, state)
+        scores_dict = dict(result.expert_scores)
+        assert set(scores_dict.keys()) == set(PHASES)

@@ -1,0 +1,19 @@
+"""Integration: full pipeline orchestrator, combiner, integrity, and CLI.
+
+Ties together clean channel, injection engine, and routing into the
+5-stage lossless pipeline. Provides residual combination (clean + alpha
+* delta), integrity block generation with SHA256 hashes, CLAUDE.md
+writer with diff support, and a CLI interface.
+"""
+
+from src.lossless.integration.combiner import CombinedResult, combine
+from src.lossless.integration.integrity import generate_integrity_block
+from src.lossless.integration.pipeline import LosslessPipeline, PipelineResult
+
+__all__ = [
+    "CombinedResult",
+    "LosslessPipeline",
+    "PipelineResult",
+    "combine",
+    "generate_integrity_block",
+]

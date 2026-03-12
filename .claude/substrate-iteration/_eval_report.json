@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-02-18T12:34:58.008718",
+  "sessions_analyzed": 3,
+  "date_range": [
+    "2026-02-15",
+    "2026-02-17"
+  ],
+  "findings": [
+    {
+      "category": "momentum",
+      "severity": "critical",
+      "evidence": "3/3 sessions ended with a crash",
+      "substrate_path": "/CognitiveSubstrate/MomentumEngine",
+      "description": "More than half of sessions are ending in crashes \u2014 momentum management or energy alignment may be failing",
+      "suggested_action": "Review energy curve alignment: is hard work being scheduled too late? Are crash prediction signals being missed? Is the recovery menu effective?",
+      "proposal_type": "MODIFY"
+    },
+    {
+      "category": "momentum",
+      "severity": "high",
+      "evidence": "Crash trigger 'stopped' appeared 3 times",
+      "substrate_path": "/CognitiveSubstrate/EnergySignature",
+      "description": "Recurring crash trigger 'stopped' \u2014 substrate crash prediction may not be catching this early enough",
+      "suggested_action": "Add this trigger to crash prediction warning signs if not already present, or lower the intervention threshold for this signal.",
+      "proposal_type": "TUNE"
+    }
+  ],
+  "summary": "Analyzed 3 sessions. Found 2 issues: 1 critical, 1 high."
+}

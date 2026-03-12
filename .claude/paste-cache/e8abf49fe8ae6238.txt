@@ -1,0 +1,12 @@
+I need you to answer 3 specific questions about the Orchestra codebase. Be precise — include actual code signatures, types, and field names. No summaries, just the technical details.
+
+**Question 1: What does routing_result look like?**
+Show me the full data structure / class that comes out of the routing pipeline — the object that produces the anchor `[EXEC:a3f2b8|direct|Cortex|30000ft|standard]`. I need every field, their types, and any enums they reference (Expert, PayloadRouter, Altitude, ThinkingDepth, etc). Look in cognitive_orchestrator.py and expert_router.py.
+
+**Question 2: How does the hook inject into Claude Code?**
+In hooks/cognitive_hook.py (or wherever the hook entry point lives), show me exactly HOW the routing result gets injected into Claude Code's context. Does it prepend to system prompt? Modify user message? Use a specific Claude Code hook API? Show the injection mechanism — the actual code that puts the routing output into Claude's awareness.
+
+**Question 3: What structured data does PRISM expose?**
+In prism_detector.py, show me the full output structure of signal detection. I need to see every signal category, the priority ordering, and the data types. Specifically: what fields are available on the detection result that downstream code can key off of?
+
+Format your response as three code blocks with the relevant class/function definitions. Include imports and enums where referenced.

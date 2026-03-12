@@ -1,0 +1,137 @@
+# Web UI Build Plan — ComfyUI Agent Sidebar
+
+## Context
+
+The sidebar extension has a working backend (WebSocket chat, workflow injection, stage inference) and a basic frontend shell (chat bubbles, text-only rendering, wrong colors). The design system spec at `docs/COMFYUI_AGENT_DESIGN_SYSTEM.md` defines 7 component types, a brand color system (#00BB81), slot colors, typography (Inter + JetBrains Mono), and three rendering tiers. The gap: everything visual needs to be rebuilt to match.
+
+**Approach:** Vanilla JS, no framework, no build step. Two rendering paths — text (conversational) and panels (structured tool results). Phase 1 ships a demoable chat UI with correct design tokens and text rendering. Phase 2 adds structured panels for workflow analysis, discovery, and execution.
+
+---
+
+## Phase 1: CSS + Text Rendering + Chat Restyle
+
+### 1. Rewrite `ui/web/css/superduper.css`
+
+Complete rewrite. Structure:
+
+- **@import** Google Fonts (Inter 400/500/600/700, JetBrains Mono 400/600)
+- **:root tokens** — brand (#00BB81, dim, subtle), 6 surface levels, 4 text levels, 14 slot colors, font stacks, spacing scale, transition timing
+- **Layout shell** — header, stage bar, messages area, input bar. All current selectors preserved but colors switched from hardcoded hex to `var(--sd-*)` tokens. Key changes: `#4a9eff` -> `var(--sd-brand)` everywhere, message backgrounds -> surface tokens, send button -> brand green with dark text
+- **Text rendering classes** — `.sd-text-body` (sans, 12px, secondary), `.sd-text-body p` spacing, `.sd-code-inline` (mono, elevated bg), `.sd-code-block` (mono, input-bg, border), `.sd-text-bold` (600, primary)
+- **Typing indicator** — `.sd-typing` pulsing dot (brand green)
+- **Scrollbar** — 3px width per spec (currently 6px)
+- **Panel component classes** — all 7 components defined in CSS (panel header, collapsible section with chevron rotation, slot tag, flow chain, detail row, capability row, action footer). These are dead CSS in Phase 1 but ready for Phase 2 DOM
+
+### 2. Write `ui/web/js/chat.js`
+
+New file. ES module exporting:
+
+- **`renderText(rawText)`** — returns DocumentFragment. Parses: triple-backtick code blocks (regex split), inline \`code\` spans, \*\*bold\*\* spans, double-newline paragraph breaks. Uses `document.createElement` + `textContent` throughout — no innerHTML, no XSS surface. Helper functions: `_appendInlineText(parent, text)`, `_appendInlineMarkup(parent, text)`
+- **`SLOT_COLORS`** — map of slot type string -> CSS variable reference
+- **Component factory stubs** (return null in Phase 1): `createPanel`, `createSlotTag`, `createFlowChain`, `createDetailRow`, `createCapabilityRow`, `createCollapsibleSection`, `createActionFooter`
+
+### 3. Update `ui/web/js/sidebar.js`
+
+Minimal changes:
+
+- Add `import { renderText, createPanel } from "./chat.js"`
+- **`createMessageEl`**: change body from `<span>` to `<div>`, agent messages call `body.appendChild(renderText(text))` instead of `body.textContent = text`. User/system messages stay as `textContent`
+- **Streaming**: during `text_delta` events, show a typing indicator dot. Accumulate text in `streamingEl.dataset.accum`. On `message` event, clear indicator and call `renderText(data.content)` for the final render. This avoids broken regex on partial code blocks mid-stream
+- **Panel case**: add `case "panel"` to the message handler switch. Calls `createPanel(data.panel)` — returns null in Phase 1, renders panel DOM in Phase 2
+- **Font link**: remove since fonts load via CSS @import
+
+---
+
+## Phase 2: Structured Panels
+
+### 4. Add `on_tool_result` callback to `agent/main.py`
+
+Add parameter to `run_agent_turn` signature:
+
+```python
+on_tool_result: callable = None,  # (name: str, input: dict, result: str) -> None
+```
+
+Call it in two places:
+- **Parallel path** (line ~391): after `results_map` is populated, loop `tool_calls` and call `on_tool_result(tc.name, tc.input, results_map[tc.id])`
+- **Single path** (line ~404): after `result = handle_tool(...)`, call `on_tool_result(tc.name, tc.input, result)`
+
+### 5. Add panel builders to `ui/server/routes.py`
+
+New functions:
+
+- **`_build_panel_for_tool(name, input, result_json)`** — dispatcher. Returns panel dict or None
+- **`_panel_workflow_analysis(result)`** — maps load_workflow/validate_workflow output to panel schema. Classifies nodes by slot type (model/clip/sampler/vae/image/other), builds flow chains via BFS from root nodes, groups into collapsible sections
+- **`_panel_discovery(result, input)`** — maps discover results to panel schema. Max 5 results, each as a section with slot tags and detail rows
+- **`_classify_slot(class_type)`** — keyword-based class_type -> slot type string
+- **`_extract_flow_chain(nodes, connections)`** — BFS from roots, max 8 nodes, returns [{label, slotType}]
+
+Wire in `_run_agent_sync`:
+```python
+def on_result(name, inp, result_json):
+    panel = _build_panel_for_tool(name, inp, result_json)
+    if panel:
+        msg_queue.put({"type": "panel", "panel": panel})
+```
+
+Add to `_forward_event`:
+```python
+elif etype == "panel":
+    await ws.send_json({"type": "panel", "panel": event["panel"]})
+```
+
+### 6. Implement component factories in `ui/web/js/chat.js`
+
+Replace stubs with real implementations:
+
+- **`createSlotTag(label, slotType)`** — colored chip with glowing dot. Dynamic color via inline styles referencing CSS variables
+- **`createCollapsibleSection(title, dotColor, count, defaultOpen, buildBody)`** — trigger button with dot + title + count + chevron. Body is lazy-built on first expand (avoids rendering collapsed DOM). 150ms chevron rotation
+- **`createFlowChain(nodes)`** — flex-wrap row of mono-colored node names with arrow separators
+- **`createDetailRow(label, value)`** — sans label + dotted leader + mono value
+- **`createCapabilityRow(label, desc, color)`** — dot + label + separator + description
+- **`createActionFooter(status, actions)`** — status label + button pair
+- **`createPanel(panelData)`** — top-level dispatcher. Builds header, iterates sections with type-appropriate body builders (flow_chain, slot_tags, capability_rows, detail_rows), adds footer
+
+### Panel data schema (backend -> frontend):
+
+```json
+{
+  "type": "workflow_analysis|discovery|execution|error",
+  "header": { "label", "badge", "title", "summary", "stats": [{"value","label"}] },
+  "sections": [{
+    "title", "dotColor", "count", "defaultOpen",
+    "type": "flow_chain|slot_tags|capability_rows|detail_rows",
+    "data": { ... type-specific ... }
+  }],
+  "footer": { "status", "actions": [{"label","variant"}] }
+}
+```
+
+---
+
+## Files Modified
+
+| File | Phase | Change |
+|------|-------|--------|
+| `ui/web/css/superduper.css` | 1 | Complete rewrite — tokens, text classes, panel CSS |
+| `ui/web/js/chat.js` | 1+2 | New — text renderer (P1), component factories (P2) |
+| `ui/web/js/sidebar.js` | 1+2 | Evolve — import chat.js, renderText, panel case |
+| `agent/main.py` | 2 | Add on_tool_result callback param (~5 lines) |
+| `ui/server/routes.py` | 2 | Panel builders + on_tool_result wiring (~150 lines) |
+
+## Key Decisions
+
+- **Vanilla JS, no framework** — matches every production ComfyUI extension
+- **No innerHTML in text renderer** — createElement + textContent prevents XSS
+- **Stream accumulate, render on complete** — avoids regex breakage on partial code blocks
+- **Panel data built server-side** — classification logic in Python where it's testable
+- **on_tool_result callback** — clean seam, one new parameter, no monkey-patching
+- **Slot colors as inline styles** — 14 dynamic colors with alpha variants can't be CSS classes
+
+## Verification
+
+**Phase 1:** Open ComfyUI, click SUPER DUPER sidebar tab. Chat renders with Inter font, brand green accents, proper surface colors. Agent text shows inline `code`, **bold**, code blocks with correct typography. Typing indicator pulses during streaming.
+
+**Phase 2:** Ask agent "what's in this workflow?" Panel renders below text: header with stats, Signal Flow section open with colored flow chain, Models/Sampling/VAE sections collapsed with correct slot colors and counts. Click to expand. Ask agent to search — discovery panel renders with results.
+
+**Tests:** Add tests for `_panel_workflow_analysis`, `_panel_discovery`, `_classify_slot`, `_extract_flow_chain` in `tests/test_routes_panels.py`. Text renderer tested manually in browser (no Jest/Node setup).

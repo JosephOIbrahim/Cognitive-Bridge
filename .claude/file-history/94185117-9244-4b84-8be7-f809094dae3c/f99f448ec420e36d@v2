@@ -1,0 +1,370 @@
+import { notFound } from 'next/navigation';
+import Link from 'next/link';
+import { getProcessPost, processPosts } from '@/lib/process-posts';
+import { getProject } from '@/lib/projects';
+
+/**
+ * Process Post Detail Page
+ *
+ * Renders full content for case studies, tools, research, experiments.
+ * Includes breakdown video embed for case studies.
+ * Links back to related project when projectSlug is set.
+ */
+
+// Generate static paths for all process posts
+export async function generateStaticParams() {
+  return processPosts.map((post) => ({
+    slug: post.slug,
+  }));
+}
+
+// Generate metadata
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const post = getProcessPost(slug);
+
+  if (!post) {
+    return { title: 'Not Found' };
+  }
+
+  return {
+    title: `${post.title} | Process`,
+    description: post.excerpt,
+    openGraph: {
+      title: post.title,
+      description: post.excerpt,
+      url: `https://josephibrahim.com/process/${slug}`,
+      type: 'article',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.title,
+      description: post.excerpt,
+    },
+    alternates: {
+      canonical: `https://josephibrahim.com/process/${slug}`,
+    },
+  };
+}
+
+export default async function ProcessPostPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const post = getProcessPost(slug);
+
+  if (!post) {
+    notFound();
+  }
+
+  // Get related project if exists
+  const relatedProject = post.projectSlug ? getProject(post.projectSlug) : null;
+
+  // Build Vimeo embed URL
+  const vimeoEmbedUrl = post.breakdownVideoId
+    ? `https://player.vimeo.com/video/${post.breakdownVideoId}${post.breakdownVideoHash ? `?h=${post.breakdownVideoHash}` : ''}&autoplay=0&loop=0&title=0&byline=0&portrait=0`
+    : null;
+
+  // Parse content into paragraphs (simple markdown-like parsing)
+  const contentSections = post.content.split('\n\n').map((paragraph, index) => {
+    // Handle headers
+    if (paragraph.startsWith('**') && paragraph.endsWith('**')) {
+      const headerText = paragraph.slice(2, -2);
+      return (
+        <h3
+          key={index}
+          style={{
+            color: '#c0c0c0',
+            fontFamily: 'var(--font-display)',
+            fontSize: '13px',
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            marginTop: '32px',
+            marginBottom: '12px'
+          }}
+        >
+          {headerText}
+        </h3>
+      );
+    }
+
+    // Handle bullet lists
+    if (paragraph.includes('\n- ')) {
+      const lines = paragraph.split('\n');
+      const header = lines[0];
+      const items = lines.slice(1).filter(l => l.startsWith('- ')).map(l => l.slice(2));
+
+      return (
+        <div key={index}>
+          {header.startsWith('**') && (
+            <h3
+              style={{
+                color: '#c0c0c0',
+                fontFamily: 'var(--font-display)',
+                fontSize: '13px',
+                fontWeight: 600,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                marginTop: '32px',
+                marginBottom: '12px'
+              }}
+            >
+              {header.replace(/\*\*/g, '')}
+            </h3>
+          )}
+          <ul style={{ margin: '12px 0', paddingLeft: '20px' }}>
+            {items.map((item, i) => (
+              <li
+                key={i}
+                style={{
+                  color: '#8a8a8a',
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '15px',
+                  lineHeight: 1.7,
+                  marginBottom: '8px'
+                }}
+              >
+                {item.replace(/\*\*([^*]+)\*\*/g, '$1')}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    // Regular paragraph
+    return (
+      <p
+        key={index}
+        style={{
+          color: '#8a8a8a',
+          fontFamily: 'var(--font-display)',
+          fontSize: '15px',
+          lineHeight: 1.7,
+          marginBottom: '16px'
+        }}
+      >
+        {paragraph}
+      </p>
+    );
+  });
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: '#141414' }}>
+      <main
+        className="mx-auto pb-32"
+        style={{
+          maxWidth: '800px',
+          paddingTop: 'clamp(100px, 8vw + 60px, 180px)',
+          paddingLeft: 'var(--side-padding)',
+          paddingRight: 'var(--side-padding)'
+        }}
+      >
+        {/* Back link - min-h-[44px] for touch-friendly tap target */}
+        <Link
+          href="/process"
+          className="inline-flex items-center gap-2 mb-8 sm:mb-12 group min-h-[44px]"
+          style={{
+            color: '#5a5a5a',
+            fontFamily: 'var(--font-display)',
+            fontSize: '12px',
+            fontWeight: 500,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase'
+          }}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            style={{ transition: 'transform 200ms ease' }}
+            className="group-hover:-translate-x-1"
+          >
+            <path d="M10 4L6 8L10 12" />
+          </svg>
+          Process
+        </Link>
+
+        {/* Category + Date */}
+        <div className="flex items-center gap-4 mb-6">
+          <span
+            style={{
+              color: '#4a4a4a',
+              fontFamily: 'var(--font-display)',
+              fontSize: '11px',
+              fontWeight: 600,
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase'
+            }}
+          >
+            {post.category.replace('-', ' ')}
+          </span>
+          <span style={{ color: '#3a3a3a' }}>•</span>
+          <span
+            style={{
+              color: '#4a4a4a',
+              fontFamily: 'var(--font-display)',
+              fontSize: '12px'
+            }}
+          >
+            {new Date(post.date).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+          </span>
+        </div>
+
+        {/* Title */}
+        <h1
+          style={{
+            color: '#e8e8e8',
+            fontFamily: 'var(--font-display)',
+            fontWeight: 400,
+            fontSize: 'clamp(28px, 4vw, 42px)',
+            lineHeight: 1.2,
+            letterSpacing: '0.01em',
+            marginBottom: '24px'
+          }}
+        >
+          {post.title}
+        </h1>
+
+        {/* Excerpt */}
+        <p
+          style={{
+            color: '#7a7a7a',
+            fontFamily: 'var(--font-display)',
+            fontSize: '17px',
+            lineHeight: 1.6,
+            marginBottom: '40px'
+          }}
+        >
+          {post.excerpt}
+        </p>
+
+        {/* Related Project Link - min-h-[44px] for touch target */}
+        {relatedProject && (
+          <Link
+            href={`/projects/${relatedProject.slug}`}
+            className="inline-flex items-center gap-3 mb-8 sm:mb-12 px-4 py-3 group min-h-[44px] flex-wrap"
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '6px'
+            }}
+          >
+            <span
+              style={{
+                color: '#5a5a5a',
+                fontFamily: 'var(--font-display)',
+                fontSize: '11px',
+                fontWeight: 500,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase'
+              }}
+            >
+              View Project
+            </span>
+            <span
+              style={{
+                color: '#a0a0a0',
+                fontFamily: 'var(--font-display)',
+                fontSize: '15px'
+              }}
+              className="group-hover:text-white transition-colors"
+            >
+              {relatedProject.title}
+            </span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              style={{ color: '#5a5a5a', transition: 'transform 200ms ease' }}
+              className="group-hover:translate-x-1"
+            >
+              <path d="M6 4L10 8L6 12" />
+            </svg>
+          </Link>
+        )}
+
+        {/* Breakdown Video */}
+        {vimeoEmbedUrl && (
+          <div className="mb-8 sm:mb-12">
+            <p
+              style={{
+                color: '#5a5a5a',
+                fontFamily: 'var(--font-display)',
+                fontSize: '11px',
+                fontWeight: 600,
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                marginBottom: '16px'
+              }}
+            >
+              Breakdown
+            </p>
+            <div
+              style={{
+                position: 'relative',
+                paddingBottom: '56.25%', // 16:9
+                height: 0,
+                overflow: 'hidden',
+                borderRadius: '6px',
+                backgroundColor: '#0a0a0a'
+              }}
+            >
+              <iframe
+                src={vimeoEmbedUrl}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  border: 0
+                }}
+                allow="autoplay; fullscreen; picture-in-picture"
+                allowFullScreen
+                title="Breakdown video"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="mb-8 sm:mb-12">
+          {contentSections}
+        </div>
+
+        {/* Tags */}
+        {post.tags && post.tags.length > 0 && (
+          <div className="flex flex-wrap gap-2 pt-8 border-t" style={{ borderColor: 'rgba(255, 255, 255, 0.06)' }}>
+            {post.tags.map((tag) => (
+              <span
+                key={tag}
+                style={{
+                  color: '#4a4a4a',
+                  fontFamily: 'var(--font-display)',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  letterSpacing: '0.05em',
+                  padding: '4px 10px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                  borderRadius: '4px'
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

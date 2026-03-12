@@ -1,0 +1,53 @@
+# Fix: Broken Thumbnails in Chatbot Project Cards
+
+## Context
+
+The chatbot at josephibrahim.com renders inline project cards when the AI references a project (via `[PROJECT:slug]` markers). These cards show a thumbnail, title, client, and a link arrow. The problem: 10 of 11 projects have `thumbnail: ''` (empty string) in `lib/projects.ts`, so the `<img src="">` renders as a broken image icon with alt text visible.
+
+Screenshot shows "Apple Vision Pro" and "iPhone 14 Pro Max" cards with broken image placeholders.
+
+## Approach: Conditionally Hide Thumbnail
+
+Rather than populating all 11 thumbnail URLs (many projects don't have readily available Vimeo thumbnails), make the card gracefully handle missing thumbnails by simply not rendering the image container when `thumbnail` is empty.
+
+This is the minimal, correct fix -- no new dependencies, no placeholder images, no layout shift.
+
+## Changes
+
+### 1. `components/ChatProjectCard.tsx` (lines 49-69)
+
+Wrap the thumbnail `<div>` in a conditional: only render when `project.thumbnail` is truthy.
+
+```tsx
+// Before (always renders img, broken when empty):
+<div style={{ width: '80px', ... }}>
+  <img src={project.thumbnail} ... />
+</div>
+
+// After (skip thumbnail entirely when empty):
+{project.thumbnail && (
+  <div style={{ width: '80px', ... }}>
+    <img src={project.thumbnail} ... />
+  </div>
+)}
+```
+
+The card layout already uses flexbox with `gap: 16px`, so removing the thumbnail div will just shift the title/client leftward -- clean and intentional.
+
+### 2. Performance note (`transition: all`)
+
+The card has `transition: 'all 0.2s ease'` on line 38. Per Vercel best practices (`rerender-` rules), this should be `transition: 'background-color 0.2s ease, border-color 0.2s ease'` since only those two properties change on hover. This is a minor fix but worth doing while we're in this file.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `components/ChatProjectCard.tsx` | Conditional thumbnail render + narrow transition property |
+
+## Verification
+
+1. `npx next build` -- confirm clean build
+2. Open chatbot, ask about AI or Apple projects
+3. Confirm cards render without broken images -- just title + client + arrow
+4. Confirm the one project with a thumbnail (general-reel) still shows its image
+5. Hover over cards -- confirm hover effect still works

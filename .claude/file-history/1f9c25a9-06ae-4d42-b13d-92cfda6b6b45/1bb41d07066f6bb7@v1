@@ -1,0 +1,87 @@
+# Fix: 1px White Line at Top of Video Thumbnails on Hover
+
+## Context
+
+When hovering over project thumbnails in the video gallery, a 1px white line appears at the top of each video. This happens when the Vimeo iframe fades in over the static thumbnail. The white line is from the Vimeo player's internal rendering — Vimeo's `background: true` mode injects an iframe whose content has a thin white artifact at the top edge (likely an internal UI element or anti-aliasing seam).
+
+The site background is `#141414`, so even 1px of white is very noticeable.
+
+## Root Cause
+
+In `components/VideoThumbnail.tsx`, the video layer container (lines 326-341) has `overflow: hidden` and `borderRadius: 6px`, but the Vimeo iframe sits flush against the top edge (`top-0`). The white pixel is the Vimeo player's own top-edge artifact bleeding through.
+
+## Approach: Clip the Top Edge with `inset`
+
+Use CSS `inset` to pull the iframe container down by 1px at the top, effectively cropping away the white artifact. The parent already has `overflow: hidden`, so this clips cleanly.
+
+This is better than alternatives like:
+- Negative margin (shifts layout)
+- CSS `clip-path` (extra rendering layer)
+- `top: -1px` with increased height (fragile)
+
+## Changes
+
+### 1. `components/VideoThumbnail.tsx` (line 337-340)
+
+Change the inner container ref div from `inset-0` to explicit inset values that crop 1px off the top:
+
+```tsx
+// Before:
+<div
+  ref={containerRef}
+  className="absolute inset-0 w-full h-full"
+/>
+
+// After:
+<div
+  ref={containerRef}
+  className="absolute w-full h-full"
+  style={{ top: '-1px', left: 0, right: 0, bottom: 0 }}
+/>
+```
+
+By setting `top: -1px`, the iframe content shifts up 1px inside the `overflow: hidden` parent, cropping the white artifact off the top. The bottom extends 1px below but is also clipped by the parent's overflow.
+
+### 2. `app/globals.css` — Belt-and-suspenders iframe rule
+
+Add `border: none` and `display: block` to the existing Vimeo iframe rule. Some browsers add a default 1-2px border on iframes, and `display: inline` can cause sub-pixel gaps:
+
+```css
+/* Before: */
+iframe[src*="vimeo"],
+iframe[src*="player.vimeo"] {
+  background-color: #141414;
+}
+
+/* After: */
+iframe[src*="vimeo"],
+iframe[src*="player.vimeo"] {
+  background-color: #141414;
+  border: none;
+  display: block;
+}
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `components/VideoThumbnail.tsx` | Shift inner container 1px up to crop Vimeo's top-edge artifact |
+| `app/globals.css` | Add `border: none; display: block` to Vimeo iframe rule |
+
+## Also Pending (from earlier in this session)
+
+The previous card spacing + font size changes are already staged but uncommitted:
+- `components/ChatProjectCard.tsx` — increased card margins (20px top, 12px bottom)
+- `components/ChatBot.tsx` — bot reply font 17px -> 16.5px
+
+These will be committed alongside the thumbnail fix.
+
+## Verification
+
+1. `npx next build` — confirm clean build
+2. Open site, hover over gallery thumbnails
+3. Confirm no white pixel line at the top of any video
+4. Confirm video still plays smoothly on hover and stops on leave
+5. Check that border-radius corners still look clean (no sharp edges)
+6. Test the one cinematic-ratio project to ensure the `2.39:1` aspect ratio still works

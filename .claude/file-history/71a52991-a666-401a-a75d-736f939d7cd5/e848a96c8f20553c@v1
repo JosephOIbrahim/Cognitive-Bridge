@@ -1,0 +1,77 @@
+---
+title: "MPM Friction and Stickiness"
+category: tutorials
+subcategory: workflow_guides
+keywords: ["mpm", "friction", "stickiness", "material_properties", "collision", "adhesion"]
+agent_relevance:
+  Librarian: 0.90
+  GraphTracer: 0.75
+  VexAuditor: 0.45
+related_documents:
+  - path: "tutorials/workflow_guides/mpm_continuous_emission.md"
+    reason: "Previous in series: MPM Continuous Emission"
+  - path: "tutorials/workflow_guides/mpm_deforming_colliders.md"
+    reason: "Next in series: MPM Deforming Colliders"
+common_queries:
+  - "How does friction and stickiness work in MPM?"
+  - "MPM friction and stickiness tutorial"
+  - "Houdini 21 friction and stickiness setup"
+source:
+  type: youtube_video
+  url: "https://www.youtube.com/watch?v=UYj3sUThg-0"
+  series: "SideFX MPM H21 Masterclass"
+  part: 4
+  total_parts: 18
+  presenter: "Alex Wevinger"
+---
+
+# MPM Friction and Stickiness
+
+**Source:** [SideFX MPM H21 Masterclass - Part 4](https://www.youtube.com/watch?v=UYj3sUThg-0)
+**Presenter:** Alex Wevinger
+
+## Overview
+
+Okay, moving on to varying friction and stickiness. So, here we have this very simple scene. This is going to be a collider and this is going to be a source. And I don't know if you remember from the previous release of MPM, if you wanted to have some part of this collider to have stronger friction than other parts, you would need to separate this collider into different MPM collider, So again just dropping our MPM configure recipe. Key topics include collision, friction, emission.
+
+## Key Concepts
+
+### Collision
+
+Okay, moving on to varying friction and stickiness. So, here we have this very simple scene. This is going to be a collider and this is going to be a source. And I don't know if you remember from the previous release of MPM, if you wanted to have some part of this collider to have stronger friction than other parts, you would need to separate this collider into different MPM collider, So again just dropping our MPM configure recipe. So what you would do is you have this collider here and you say I want for example I want this part of the collider to have a different friction.
+
+### Friction
+
+Okay, moving on to varying friction and stickiness. So, here we have this very simple scene. This is going to be a collider and this is going to be a source. And I don't know if you remember from the previous release of MPM, if you wanted to have some part of this collider to have stronger friction than other parts, you would need to separate this collider into different MPM collider, So again just dropping our MPM configure recipe. So what you would do is you have this collider here and you say I want for example I want this part of the collider to have a different friction.
+
+### Emission
+
+Okay, moving on to varying friction and stickiness. So, here we have this very simple scene. This is going to be a collider and this is going to be a source. And I don't know if you remember from the previous release of MPM, if you wanted to have some part of this collider to have stronger friction than other parts, you would need to separate this collider into different MPM collider, So again just dropping our MPM And then I'm merging these two collider together. This is my source.
+
+### Workflow
+
+configure recipe. So what you would do is you have this collider here and you say I want for example I want this part of the collider to have a different friction. So, I'm I'm poly capping both sides and then okay, this is going to be one of them and this is going to be the other one. great because right now it's very easy pattern. It's just AV friction, no friction, AV friction.
+
+## Nodes & Parameters
+
+| Node | Purpose | Key Parameters |
+|------|---------|----------------|
+| Group | Referenced 6x in transcript |  |
+| MPM Collider | Referenced 4x in transcript |  |
+| MPM Configure | Referenced 1x in transcript |  |
+| Delete | Referenced 1x in transcript |  |
+
+## Workflow Steps
+
+1. and then okay, this is going to be one of them and this is going to be the other one.
+2. And then I'm merging these two collider together.
+3. first time that you're going to run this.
+
+## Tips & Insights
+
+- you might want something more intricate and it can add some overhead if you split that into a bunch of different MPM colliders.
+- make sure that you have a point attribute from the get- go.
+- keep in mind that you have the exact same tooling if you want to play also with the stickiness.
+
+---
+*Full transcript: [04_friction_stickiness.md](../../_raw_documentation/mpm_masterclass/04_friction_stickiness.md)*

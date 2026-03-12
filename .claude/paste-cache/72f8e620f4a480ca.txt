@@ -1,0 +1,232 @@
+# Converter Extension: Dual-Output Desktop Preferences
+
+## Run From
+```
+cd C:\Users\User\.claude\cognitive_substrate
+```
+
+## What You're Doing
+
+The converter currently outputs one format: Claude Code's `~/CLAUDE.md` (operational layer — reasoning protocols, workflow scaffolds, code protocols, slash commands).
+
+You need to extend it to also output a **Desktop Preferences** format — the v7.2.0 behavioral substrate that gets pasted into Claude Desktop's Settings → Profile → User Preferences.
+
+These are two completely different documents serving two different Claudes:
+- **Claude Code CLAUDE.md** = how to write code, debug, plan, use tools
+- **Desktop Preferences** = how to think with a specific human — ADHD architecture, momentum engine, burst protocol, energy signatures, communication contract, trust signals, dopamine map
+
+## The Current State
+
+### Source of truth (USD):
+```
+C:\Users\User\.claude\cognitive_substrate\
+├── cognitive_substrate_root.usda    ← root stage
+├── core_substrate_v7.usda           ← operational content
+├── grafts\
+│   └── graft_deepseek_v32.usda      ← DeepSeek research graft
+└── converter.py                      ← current converter (outputs Claude Code MD only)
+```
+
+### Current converter behavior:
+```bash
+python converter.py --direction usd-to-md
+```
+Reads USD → writes `~\CLAUDE.md` (Claude Code format)
+
+### What the Desktop Preferences look like:
+The user's current Desktop preferences are the massive v7.2.0 spec. It contains these sections (in order):
+1. TL;DR (compact reference block)
+2. Desktop Adaptation
+3. Constitutional (Never Violate) + Hard Constitutional Constraints + Constitutional Negatives
+4. Cognitive Profile (CCQ Calibration Data) — processing mode, info density, working memory bottlenecks, hyperfocus signature, ADHD failure modes
+5. Domain Expertise Map — expert domains, learning domains, guardrail domains
+6. Energy Signature — session phase energy curve, crash triggers, recovery pattern, dopamine map, life context
+7. Signal → Response table (first match wins)
+8. Communication Contract — response lengths, tone spectrum, shut-up signal, code style, explanation depth, debugging mode
+9. Trust & Interaction Boundaries — trust builders, trust destroyers, emotional intelligence, challenge tolerance
+10. AlphaProof Search Layer — AND/OR decomposition, value = hardest subtask, too-easy heuristic, test-time adaptation, scalable search depth
+11. DeepSeek Sparse Routing — lightning indexer, thinking-in-tool-use, expert reward signals, synthetic environment awareness
+12. Cognitive Batch Invariance
+13. Conversation Memory (state encoding)
+14. Momentum Engine (5-phase)
+15. Burst Protocol
+16. Tangent Budget
+17. Grounding Layer
+18. Formal Verification Mindset
+19. MicroCommitment Engine
+20. Stuck Taxonomy (6 types)
+21. Crash Prediction
+22. Anti-Spiral Protocol
+23. Permission Engine
+24. Burnout Levels
+25. Altitude System
+26. Fallback Thinking Strategies
+27. Project Orchestrator
+28. Learning Systems
+29. Session Capture Block format
+30. Desktop Protocols
+31. Routing Cascade (9 phases)
+32. Anti-Patterns
+33. Context
+34. Research Lineage
+35. References
+
+## Your Task
+
+### Step 1: Read the current converter
+```bash
+cat converter.py
+```
+Understand how it reads USD and generates the Claude Code markdown. Note the structure — it likely walks prims and formats attributes into markdown sections.
+
+### Step 2: Read the current Desktop Preferences
+The full v7.2.0 preferences spec is currently loaded as user preferences in Claude Desktop conversations. A reference copy should exist at:
+```
+C:\Users\User\CLAUDE.md
+```
+This is the TARGET FORMAT. Your new output must match this structure.
+
+### Step 3: Map USD prims to Desktop Preferences sections
+The USD has prims like:
+```
+Header
+ReasoningProtocols
+WorkflowProtocols
+CodeProtocols
+SlashCommandAgents
+ClaudeCodeConfiguration
+```
+
+These map to the **Claude Code** output. You need to identify or create USD prims that map to the **Desktop Preferences** sections. Some content already exists in the USD (the DeepSeek graft has routing, momentum preservation, expert reward signals). Other content may need to be backfilled from the current preferences markdown.
+
+The key insight: the Desktop Preferences contain BEHAVIORAL rules (how to interact with the user) while the Claude Code CLAUDE.md contains OPERATIONAL rules (how to write code and use tools). They draw from different parts of the substrate.
+
+### Step 4: Extend the converter
+
+Add a new output direction or format flag:
+```bash
+# Existing
+python converter.py --direction usd-to-md              # Claude Code CLAUDE.md
+
+# New
+python converter.py --direction usd-to-md --format desktop   # Desktop Preferences
+python converter.py --direction usd-to-md --format both      # Generate both
+```
+
+Or a simpler approach — a separate output flag:
+```bash
+python converter.py --direction usd-to-md --desktop-output desktop_preferences.md
+```
+
+### Step 5: The Desktop output must include ALL sections
+
+The converter must walk the USD and produce markdown matching the v7.2.0 structure. Every section listed above (1-35) must appear in the output. For sections that don't yet have USD prims, you have two choices:
+
+**Option A (recommended):** Backfill the USD first. Create new prims for:
+- Constitutional (hard constraints, negatives)
+- CognitiveProfile (processing mode, info density, bottlenecks, hyperfocus, ADHD failure modes)
+- DomainExpertise (expert/learning/guardrail domains)
+- EnergySignature (session phases, crash triggers, recovery, dopamine map)
+- SignalResponse (expert routing table)
+- CommunicationContract (lengths, tones, shut-up signal)
+- TrustBoundaries (builders, destroyers, emotional model)
+- MomentumEngine (5 phases + negatives)
+- BurstProtocol (phases + body check + continuity)
+- TangentBudget (formula + productive tangent detection)
+- GroundingLayer (source modes)
+- FormalVerification (output types + verification)
+- MicroCommitmentEngine
+- StuckTaxonomy (6 types + search mapping)
+- CrashPrediction (warning signs + negatives)
+- AntiSpiral (indicators + intervention + negatives)
+- PermissionEngine (triggers + grants + negatives)
+- BurnoutLevels (GREEN/YELLOW/ORANGE/RED)
+- AltitudeSystem (30k/15k/5k/Ground)
+- FallbackThinking (StructuredMultiPass, AND/OR, MultiResponse)
+- ProjectOrchestrator (statuses, capsule format, negatives)
+- RoutingCascade (9 phases with indexer)
+- AntiPatterns (full list)
+- AlphaProofSearch (AND/OR, too-easy, test-time, scalable depth)
+- BatchInvariance (violations + fixes)
+- ResearchLineage
+
+Then the converter walks ALL prims and produces the Desktop format.
+
+**Option B (faster):** For sections without USD prims, embed the current markdown directly as string attributes in a "DesktopPreferences" scope prim. The converter extracts and formats them. Less elegant but ships today.
+
+### Step 6: Backfill strategy (if Option A)
+
+Read the current preferences markdown. For each section, create a USD prim with attributes capturing the structured data. Example:
+
+```usda
+def Xform "MomentumEngine" {
+    custom string[] phases = ["cold_start", "building", "rolling", "peak", "crashed"]
+    
+    def Xform "cold_start" {
+        custom string signals = "First task, after break"
+        custom string response = "Start small, no complex work"
+        custom string never = "Never assign complex work. Never reference previous momentum."
+    }
+    
+    def Xform "building" {
+        custom string signals = "2-3 tasks done"
+        custom string response = "Protect this. Same topic."
+        custom string never = "Never switch topics. Never introduce new projects."
+    }
+    # ... etc
+}
+```
+
+The converter then reads these prims and formats them into the markdown table format the Desktop preferences use.
+
+### Step 7: Test
+
+After extending the converter:
+
+1. Generate both outputs:
+```bash
+python converter.py --direction usd-to-md --format both
+```
+
+2. Diff the Desktop output against the current preferences:
+```bash
+# The current preferences are at:
+# C:\Users\User\CLAUDE.md (or wherever the reference copy lives)
+```
+
+3. Verify: every section from the v7.2.0 spec appears in the output. No data loss.
+
+4. Verify: the Claude Code output is unchanged (you didn't break the existing format).
+
+### Step 8: Update the iteration system
+
+Once the converter supports dual output, update `substrate_deployer.py` to trigger both outputs after applying changes:
+
+In `C:\Users\User\.claude\substrate-iteration\scripts\substrate_deployer.py`, the `_run_converter` function should generate both formats. Then the Desktop preferences markdown is ready to paste — or even better, the deployer prints the path so the user knows where to find it.
+
+## Constraints
+
+- USD remains source of truth. Both markdown outputs are GENERATED.
+- Never lose data. The Desktop output must contain everything currently in the v7.2.0 preferences.
+- The Claude Code output must not change. Only ADD the Desktop output.
+- The converter must be idempotent — running it twice produces identical output.
+- All prims must round-trip: USD → MD → USD → MD produces identical MD.
+
+## Success Criteria
+
+After this work:
+```bash
+cd C:\Users\User\.claude\cognitive_substrate
+python converter.py --direction usd-to-md --format both
+```
+
+Produces:
+1. `~\CLAUDE.md` — Claude Code operational layer (unchanged from current)
+2. `desktop_preferences.md` (or similar) — Full v7.2.0 behavioral substrate, ready to paste into Claude Desktop Settings → Profile → User Preferences
+
+The iteration system then becomes:
+```
+Session captures → evaluate → propose → approve → apply to USD → converter → BOTH outputs
+```
+
+User copies Desktop output → pastes into Claude Desktop → done.

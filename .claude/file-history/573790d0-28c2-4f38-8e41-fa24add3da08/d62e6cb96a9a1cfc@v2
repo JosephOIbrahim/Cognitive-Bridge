@@ -1,0 +1,47 @@
+"""
+Shared utility to locate system tool paths on Windows.
+
+On Linux/Mac these are typically on PATH already.
+On Windows after winget install, PATH may not be updated in the current process.
+"""
+
+import os
+import shutil
+from pathlib import Path
+
+# Known Windows install locations (winget defaults)
+_FFMPEG_CANDIDATES = [
+    Path(os.environ.get("FFMPEG_PATH", "")) if os.environ.get("FFMPEG_PATH") else None,
+    Path(r"C:\Users\User\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin\ffmpeg.exe"),
+]
+
+_TESSERACT_CANDIDATES = [
+    Path(os.environ.get("TESSERACT_CMD", "")) if os.environ.get("TESSERACT_CMD") else None,
+    Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
+]
+
+
+def find_tool(name, candidates=None):
+    """Find a tool binary, checking PATH first, then known locations."""
+    # Check PATH
+    found = shutil.which(name)
+    if found:
+        return found
+
+    # Check candidate paths
+    if candidates:
+        for p in candidates:
+            if p and p.exists():
+                return str(p)
+
+    raise FileNotFoundError(
+        f"Could not find '{name}'. Install it or set its path in the environment."
+    )
+
+
+def ffmpeg():
+    return find_tool("ffmpeg", _FFMPEG_CANDIDATES)
+
+
+def tesseract():
+    return find_tool("tesseract", _TESSERACT_CANDIDATES)

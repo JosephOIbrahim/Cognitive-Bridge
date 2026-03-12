@@ -1,0 +1,81 @@
+"use client";
+
+import { useInView } from "@/lib/hooks";
+import { PlaceholderImage } from "./PlaceholderImage";
+import { T } from "@/lib/tokens";
+import type { CaseStudySection as CaseStudySectionType } from "@/lib/types";
+import styles from "./CaseStudySection.module.css";
+
+interface Props {
+  section: CaseStudySectionType;
+  color: string;
+  title: string;
+  index: number;
+}
+
+export function CaseStudySection({ section, color, title, index }: Props) {
+  const [ref, inView] = useInView({ threshold: 0.1 });
+  const imgCount = section.images || 2;
+
+  return (
+    <div ref={ref} className={styles.section}>
+      <div
+        className={styles.textBlock}
+        style={{
+          opacity: inView ? 1 : 0,
+          transform: inView ? "translateY(0)" : "translateY(20px)",
+          transition: `all 600ms ${T.easeOut}`,
+        }}
+      >
+        <h2 className={styles.heading}>{section.heading}</h2>
+        <p className={styles.body}>{section.body}</p>
+      </div>
+
+      {imgCount === 1 ? (
+        <PlaceholderImage color={color} title={section.heading} height="clamp(240px, 40vh, 480px)" />
+      ) : imgCount === 2 ? (
+        <div
+          className="grid-pair"
+          style={{
+            display: "grid",
+            gridTemplateColumns: index % 2 === 0 ? "2fr 1fr" : "1fr 2fr",
+            gap: 20,
+            alignItems: "start",
+          }}
+        >
+          {[0, 1].map((i) => (
+            <PlaceholderImage
+              key={i}
+              color={color}
+              title={`${title} ${index}-${i}`}
+              height={i === (index % 2 === 0 ? 0 : 1) ? 400 : 300}
+            />
+          ))}
+        </div>
+      ) : (
+        <div>
+          <PlaceholderImage color={color} title={`${title} hero`} height="clamp(240px, 40vh, 480px)" />
+          <div
+            className="grid-pair"
+            style={{
+              display: "grid",
+              gridTemplateColumns: index % 2 === 0 ? "1fr 2fr" : "2fr 1fr",
+              gap: 20,
+              marginTop: 20,
+              alignItems: "start",
+            }}
+          >
+            {[0, 1].map((i) => (
+              <PlaceholderImage
+                key={i}
+                color={color}
+                title={`${title} ${index}-${i}`}
+                height={i === (index % 2 === 0 ? 1 : 0) ? 380 : 280}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

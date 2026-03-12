@@ -1,0 +1,175 @@
+import type { Metadata } from "next";
+import { Inter, Open_Sans, Lora, DM_Sans } from "next/font/google";
+import "./globals.css";
+import { Navigation } from "@/components/Navigation";
+import { Footer } from "@/components/Footer";
+import { PerceptionLayer } from "@/components/PerceptionLayer";
+import { ViewTransitions } from "@/components/ViewTransitions";
+import { DeferredOverlays } from "@/components/DeferredOverlays";
+
+// Inter: Helvetica Neue alternative - neo-grotesque, clean, neutral
+// Optimized: only weights actually used (saves ~15-20KB)
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+  weight: ["400", "500", "600"], // Regular, Medium, Semibold (navigation, headings)
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-dm-sans",
+  weight: ["400", "500"], // Regular, Medium
+});
+
+const openSans = Open_Sans({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-open-sans",
+  weight: ["300", "400"], // Light (body), Regular
+});
+
+const lora = Lora({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-lora",
+  weight: ["400"], // Regular only (used with italic for editorial)
+  style: ["normal", "italic"],
+});
+
+export const metadata: Metadata = {
+  metadataBase: new URL('https://josephibrahim.com'),
+  title: "Joseph Ibrahim — Problems of Light",
+  description: "Lighting Technical Director with 16 years at MPC, Framestore, The Mill, and Method Studios delivering photorealistic CG lighting for feature films and commercials.",
+  keywords: ["VFX", "Visual Effects", "Lighting TD", "Houdini", "Solaris", "USD", "Unreal Engine", "Real-time", "Feature Film"],
+  authors: [{ name: "Joseph Ibrahim" }],
+  creator: "Joseph Ibrahim",
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://josephibrahim.com",
+    title: "Joseph Ibrahim — Problems of Light",
+    description: "Sixteen years of lighting for feature films, commercials, and real-time engines. From Disney's Cinderella to Apple campaigns—each frame a problem of light solved in pixels.",
+    siteName: "Joseph Ibrahim",
+    images: [
+      {
+        url: "https://josephibrahim.com/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Joseph Ibrahim — Problems of Light",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Joseph Ibrahim — Problems of Light",
+    description: "Sixteen years of lighting for feature films, commercials, and real-time engines. From Disney's Cinderella to Apple campaigns—each frame a problem of light solved in pixels.",
+    creator: "@josephibrahim",
+    images: ["https://josephibrahim.com/og-image.png"],
+  },
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" className={`${inter.variable} ${openSans.variable} ${lora.variable} ${dmSans.variable}`}>
+      <head>
+        {/* Preconnect to Vimeo domains - saves ~300-500ms on first video load */}
+        <link rel="preconnect" href="https://player.vimeo.com" />
+        <link rel="preconnect" href="https://i.vimeocdn.com" />
+        <link rel="preconnect" href="https://f.vimeocdn.com" />
+        <link rel="preconnect" href="https://vod-progressive.akamaized.net" />
+        <link rel="preconnect" href="https://vumbnail.com" />
+
+        {/* DNS prefetch as fallback for browsers that don't support preconnect */}
+        <link rel="dns-prefetch" href="https://player.vimeo.com" />
+        <link rel="dns-prefetch" href="https://i.vimeocdn.com" />
+        <link rel="dns-prefetch" href="https://f.vimeocdn.com" />
+        <link rel="dns-prefetch" href="https://vod-progressive.akamaized.net" />
+        <link rel="dns-prefetch" href="https://vumbnail.com" />
+
+        {/* Preload hero video thumbnail for instant display */}
+        <link rel="preload" href="https://vumbnail.com/1057290380.jpg" as="image" />
+
+        {/* Schema.org structured data for SEO */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Person",
+              "name": "Joseph Ibrahim",
+              "jobTitle": "Senior Lighting Technical Director",
+              "description": "VFX Lighting Technical Director with 16 years experience at MPC, Framestore, The Mill, and Method Studios. Specializing in Houdini, Solaris, USD workflows, and AI-integrated creative pipelines.",
+              "url": "https://josephibrahim.com",
+              "email": "jomar.ibrahim@gmail.com",
+              "sameAs": [
+                "https://www.linkedin.com/in/josephibrahim/",
+                "https://vimeo.com/josephibrahim"
+              ],
+              "knowsAbout": [
+                "VFX Lighting",
+                "Houdini",
+                "Solaris",
+                "USD",
+                "Karma Renderer",
+                "Katana",
+                "Renderman",
+                "Unreal Engine 5",
+                "Real-time Rendering"
+              ],
+              "alumniOf": [
+                {
+                  "@type": "EducationalOrganization",
+                  "name": "New York University",
+                  "degree": "MS"
+                },
+                {
+                  "@type": "EducationalOrganization",
+                  "name": "University of Delaware",
+                  "degree": "BFA"
+                }
+              ],
+              "worksFor": [
+                { "@type": "Organization", "name": "MPC Montreal" },
+                { "@type": "Organization", "name": "Framestore" },
+                { "@type": "Organization", "name": "The Mill" },
+                { "@type": "Organization", "name": "Apple Marcom" },
+                { "@type": "Organization", "name": "Hornet Animation" }
+              ]
+            })
+          }}
+        />
+      </head>
+      <body className={`${inter.className} antialiased`} style={{backgroundColor: '#141414', color: '#a0a0a0'}}>
+        {/* Skip link for keyboard navigation - accessibility */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[200] focus:px-4 focus:py-2 focus:bg-[#141414] focus:text-white focus:outline focus:outline-2 focus:outline-white"
+          style={{ fontFamily: 'var(--font-display)' }}
+        >
+          Skip to main content
+        </a>
+        <ViewTransitions>
+          <PerceptionLayer>
+            <DeferredOverlays />
+            <Navigation />
+            <main id="main-content">
+              {children}
+            </main>
+            <Footer />
+          </PerceptionLayer>
+        </ViewTransitions>
+      </body>
+    </html>
+  );
+}
