@@ -351,7 +351,8 @@ def export_stage_to_json(stage: CompositionStage) -> str:
         "project_name": stage.project_name,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "assertions": {
-            k: v.model_dump(mode="json") for k, v in stage.assertions.items()
+            k: {**v.model_dump(mode="json"), "embedding": v.embedding}
+            for k, v in stage.assertions.items()
         },
         "conflicts": {
             k: v.model_dump(mode="json") for k, v in stage.conflicts.items()

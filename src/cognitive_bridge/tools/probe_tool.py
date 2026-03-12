@@ -22,12 +22,13 @@ from typing import Optional
 from fastmcp import Context
 
 from cognitive_bridge.tools._common import get_active_stage
+from cognitive_bridge.engine.sensitivity import apply_kernel_tuning, format_tuning_report
 from cognitive_bridge.models import (
     CompositionStage,
     IndividualKernel,
     _now_utc,
 )
-from cognitive_bridge.server import mcp
+from cognitive_bridge.server import mcp, save_stage_to_db
 from cognitive_bridge.storage.converters import kernel_to_row, row_to_kernel
 from cognitive_bridge.storage.sqlite_store import KernelRow, SQLiteStore
 
@@ -231,7 +232,16 @@ async def cb_probe_user(
     _KERNELS[pid] = kernel
     _save_kernel(store, kernel, pid)
 
-    return (
+    # Auto-tune parameters based on updated kernel
+    stage = ctx.lifespan_context["active_stages"].get(pid)
+    changes: dict[str, str] = {}
+    if stage:
+        new_params, changes = apply_kernel_tuning(kernel, stage.parameters)
+        if changes:
+            stage.parameters = new_params
+            save_stage_to_db(store, stage)
+
+    response = (
         f"Kernel updated for '{pid}'.\n"
         f"Probe: {probe_type} ({field_name})\n"
         f"Raw value: {value}\n"
@@ -244,3 +254,13 @@ async def cb_probe_user(
         f"  autonomy_boundary:  {kernel.autonomy_boundary}\n"
         f"  energy_level:       {kernel.energy_level}"
     )
+
+    if stage and changes:
+        tuning_lines = ["\nAuto-tuning applied:"]
+        for param, change in changes.items():
+            tuning_lines.append(f"  {param}: {change}")
+        response += "\n".join(tuning_lines)
+    else:
+        response += "\nNo parameter changes needed."
+
+    return response
