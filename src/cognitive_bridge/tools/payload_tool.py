@@ -26,48 +26,7 @@ from cognitive_bridge.models import (
     CompositionStage,
 )
 from cognitive_bridge.server import mcp
-
-# ═══════════════════════════════════════════════════════════════
-# Internal Helpers
-# ═══════════════════════════════════════════════════════════════
-
-
-def _get_active_stage(
-    ctx: Context, project_id: Optional[str] = None
-) -> tuple[str, CompositionStage]:
-    """Get the active stage from the lifespan context.
-
-    Args:
-        ctx: FastMCP context carrying lifespan_context with store and active_stages.
-        project_id: Optional explicit project to look up.
-
-    Returns:
-        Tuple of (project_id, CompositionStage).
-
-    Raises:
-        ValueError: If no projects are active, the named project is not active,
-            or multiple projects are active and project_id was not provided.
-    """
-    active_stages: dict[str, CompositionStage] = ctx.lifespan_context["active_stages"]
-    if not active_stages:
-        raise ValueError(
-            "No active project. Call cb_manage_project(action='create') first."
-        )
-    if project_id:
-        if project_id not in active_stages:
-            raise ValueError(
-                f"Project '{project_id}' is not active. Load it first with "
-                f"cb_manage_project(action='load', project_id='{project_id}')."
-            )
-        return project_id, active_stages[project_id]
-    if len(active_stages) == 1:
-        pid = next(iter(active_stages))
-        return pid, active_stages[pid]
-    raise ValueError(
-        f"Multiple active projects. Specify project_id. "
-        f"Active: {list(active_stages.keys())}"
-    )
-
+from cognitive_bridge.tools._common import get_active_stage
 
 # ═══════════════════════════════════════════════════════════════
 # Tool
@@ -108,7 +67,7 @@ async def cb_payload_check(
         project_id: Optional — omit if only one project is active.
     """
     try:
-        _pid, stage = _get_active_stage(ctx, project_id)
+        _pid, stage = get_active_stage(ctx, project_id)
     except ValueError as e:
         return f"ERROR: {e}"
 

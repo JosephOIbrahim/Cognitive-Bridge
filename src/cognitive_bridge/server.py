@@ -59,9 +59,43 @@ from cognitive_bridge.storage.sqlite_store import (
 
 DEFAULT_DB_DIR: Path = Path.home() / ".cognitive_bridge" / "projects"
 
-# Module-level active stage registry. Tests can inject a separate dict via
-# the lifespan context; production uses this singleton.
+MAX_CAPSULE_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Module-level active stage registry. NOT thread-safe — assumes single
+# request handler per project (FastMCP processes one request at a time
+# per connection). For multi-threaded concurrency, wrap access with
+# threading.Lock().
 _ACTIVE_STAGES: dict[str, CompositionStage] = {}
+
+# ═══════════════════════════════════════════════════════════════
+# Upsert Column Lists
+# ═══════════════════════════════════════════════════════════════
+# These must be kept in sync with their corresponding SQLModel tables.
+# If you add a field to a model and its Row, add the column name here.
+
+_PARAMS_UPDATE_COLS = (
+    "conflict_sensitivity", "semantic_threshold", "cross_path_detection",
+    "exploration_budget", "ai_default_arc", "payload_surfacing",
+    "red_team_threshold", "cascade_auto_challenge",
+)
+
+_ASSERTION_UPDATE_COLS = (
+    "topic_path", "content", "arc", "author", "evidence_json",
+    "evidence_type", "depends_on_paths_json", "falsifiable_if",
+    "assumption_status", "active", "retracted_at", "confidence",
+    "embedding_json", "tags_json",
+)
+
+_CONFLICT_UPDATE_COLS = (
+    "status", "resolution_chosen", "resolution_evidence",
+    "resolution_note", "steelman_of_opponent", "experiment_protocol",
+    "experiment_result", "resolved_at", "produced_variant_set_id",
+)
+
+_VARIANT_SET_UPDATE_COLS = (
+    "variants_json", "resolved", "resolved_variant_name",
+    "resolution_evidence", "resolved_at",
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -86,10 +120,13 @@ async def lifespan(server: Any):
     db_dir.mkdir(parents=True, exist_ok=True)
     db_path = str(db_dir / "cognitive_bridge.db")
     store = SQLiteStore(db_path)
-    yield {
-        "store": store,
-        "active_stages": _ACTIVE_STAGES,
-    }
+    try:
+        yield {
+            "store": store,
+            "active_stages": _ACTIVE_STAGES,
+        }
+    finally:
+        store.engine.dispose()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -160,17 +197,7 @@ def save_stage_to_db(store: SQLiteStore, stage: CompositionStage) -> None:
         existing_params = session.get(ParametersRow, stage.project_id)
         params_row = parameters_to_row(stage.parameters, stage.project_id)
         if existing_params:
-            _PARAMS_COLS = [
-                "conflict_sensitivity",
-                "semantic_threshold",
-                "cross_path_detection",
-                "exploration_budget",
-                "ai_default_arc",
-                "payload_surfacing",
-                "red_team_threshold",
-                "cascade_auto_challenge",
-            ]
-            for col in _PARAMS_COLS:
+            for col in _PARAMS_UPDATE_COLS:
                 setattr(existing_params, col, getattr(params_row, col))
         else:
             session.add(params_row)
@@ -180,23 +207,7 @@ def save_stage_to_db(store: SQLiteStore, stage: CompositionStage) -> None:
             row = assertion_to_row(ast, stage.project_id)
             existing_ast = session.get(AssertionRow, ast.id)
             if existing_ast:
-                _AST_COLS = [
-                    "topic_path",
-                    "content",
-                    "arc",
-                    "author",
-                    "evidence_json",
-                    "evidence_type",
-                    "depends_on_paths_json",
-                    "falsifiable_if",
-                    "assumption_status",
-                    "active",
-                    "retracted_at",
-                    "confidence",
-                    "embedding_json",
-                    "tags_json",
-                ]
-                for col in _AST_COLS:
+                for col in _ASSERTION_UPDATE_COLS:
                     setattr(existing_ast, col, getattr(row, col))
             else:
                 session.add(row)
@@ -206,18 +217,7 @@ def save_stage_to_db(store: SQLiteStore, stage: CompositionStage) -> None:
             row = conflict_to_row(cfl, stage.project_id)
             existing_cfl = session.get(ConflictRow, cfl.id)
             if existing_cfl:
-                _CFL_COLS = [
-                    "status",
-                    "resolution_chosen",
-                    "resolution_evidence",
-                    "resolution_note",
-                    "steelman_of_opponent",
-                    "experiment_protocol",
-                    "experiment_result",
-                    "resolved_at",
-                    "produced_variant_set_id",
-                ]
-                for col in _CFL_COLS:
+                for col in _CONFLICT_UPDATE_COLS:
                     setattr(existing_cfl, col, getattr(row, col))
             else:
                 session.add(row)
@@ -227,14 +227,7 @@ def save_stage_to_db(store: SQLiteStore, stage: CompositionStage) -> None:
             row = variant_set_to_row(vs, stage.project_id)
             existing_vs = session.get(VariantSetRow, vs.id)
             if existing_vs:
-                _VS_COLS = [
-                    "variants_json",
-                    "resolved",
-                    "resolved_variant_name",
-                    "resolution_evidence",
-                    "resolved_at",
-                ]
-                for col in _VS_COLS:
+                for col in _VARIANT_SET_UPDATE_COLS:
                     setattr(existing_vs, col, getattr(row, col))
             else:
                 session.add(row)
@@ -392,6 +385,12 @@ def import_stage_from_json(json_str: str) -> CompositionStage:
         pydantic.ValidationError: If any component fails schema validation.
         KeyError: If required capsule fields are missing.
     """
+    if len(json_str) > MAX_CAPSULE_SIZE:
+        raise ValueError(
+            f"JSON capsule too large ({len(json_str)} bytes). "
+            f"Maximum allowed: {MAX_CAPSULE_SIZE} bytes (10MB)."
+        )
+
     from cognitive_bridge.models import (
         Assertion,
         CognitiveParameters,
@@ -569,7 +568,7 @@ async def cb_manage_project(
             stage = import_stage_from_json(project_name)
         except json.JSONDecodeError as exc:
             return f"ERROR: Invalid JSON — {exc}"
-        except Exception as exc:
+        except (ValueError, KeyError, TypeError) as exc:
             return f"ERROR: Failed to parse capsule — {exc}"
 
         # Allow caller to override the project_id from the capsule

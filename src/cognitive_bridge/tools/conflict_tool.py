@@ -12,6 +12,7 @@ from typing import Optional
 from fastmcp import Context
 
 from cognitive_bridge.engine.resolver import resolve_conflict
+from cognitive_bridge.tools._common import get_active_stage
 from cognitive_bridge.models import (
     AssertionAuthor,
     CompositionStage,
@@ -21,37 +22,6 @@ from cognitive_bridge.models import (
     ResolutionPath,
 )
 from cognitive_bridge.server import mcp, save_stage_to_db
-
-# ═══════════════════════════════════════════════════════════════
-# Internal Helpers
-# ═══════════════════════════════════════════════════════════════
-
-
-def _get_active_stage(
-    ctx: Context, project_id: Optional[str] = None
-) -> tuple[str, CompositionStage]:
-    """Return the (project_id, stage) pair for the active project.
-
-    Raises ValueError if no project is active, the specified project is not
-    active, or multiple projects are active without a project_id to disambiguate.
-    """
-    active_stages = ctx.lifespan_context["active_stages"]
-    if not active_stages:
-        raise ValueError(
-            "No active project. Call cb_manage_project(action='create') first."
-        )
-    if project_id:
-        if project_id not in active_stages:
-            raise ValueError(f"Project '{project_id}' is not active.")
-        return project_id, active_stages[project_id]
-    if len(active_stages) == 1:
-        pid = next(iter(active_stages))
-        return pid, active_stages[pid]
-    raise ValueError(
-        f"Multiple active projects ({', '.join(active_stages)}). "
-        "Specify project_id to disambiguate."
-    )
-
 
 # ═══════════════════════════════════════════════════════════════
 # cb_manage_conflict Tool
@@ -127,7 +97,7 @@ async def cb_manage_conflict(
         project_id: Optional when only one project is active in memory.
     """
     try:
-        pid, stage = _get_active_stage(ctx, project_id)
+        pid, stage = get_active_stage(ctx, project_id)
     except ValueError as exc:
         return f"ERROR: {exc}"
 

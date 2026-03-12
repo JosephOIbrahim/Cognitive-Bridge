@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastmcp import Context
 
+from cognitive_bridge.tools._common import get_active_stage
 from cognitive_bridge.models import (
     AssertionAuthor,
     CognitiveParameters,
@@ -18,36 +19,6 @@ from cognitive_bridge.models import (
     EventType,
 )
 from cognitive_bridge.server import mcp, save_stage_to_db
-
-# ═══════════════════════════════════════════════════════════════
-# Internal Helpers
-# ═══════════════════════════════════════════════════════════════
-
-
-def _get_active_stage(
-    ctx: Context, project_id: Optional[str] = None
-) -> tuple[str, CompositionStage]:
-    """Resolve the active stage from context.
-
-    Returns (project_id, CompositionStage). Raises ValueError when no active
-    project is found or when project_id is ambiguous.
-    """
-    active_stages = ctx.lifespan_context["active_stages"]
-    if not active_stages:
-        raise ValueError(
-            "No active project. Call cb_manage_project(action='create') first."
-        )
-    if project_id:
-        if project_id not in active_stages:
-            raise ValueError(f"Project '{project_id}' is not active.")
-        return project_id, active_stages[project_id]
-    if len(active_stages) == 1:
-        pid = next(iter(active_stages))
-        return pid, active_stages[pid]
-    raise ValueError(
-        f"Multiple active projects: {list(active_stages.keys())}. Specify project_id."
-    )
-
 
 # ═══════════════════════════════════════════════════════════════
 # cb_tune_parameters Tool
@@ -114,7 +85,7 @@ async def cb_tune_parameters(
     - project_id: Disambiguates when multiple projects are active.
     """
     try:
-        pid, stage = _get_active_stage(ctx, project_id)
+        pid, stage = get_active_stage(ctx, project_id)
     except ValueError as exc:
         return f"ERROR: {exc}"
 

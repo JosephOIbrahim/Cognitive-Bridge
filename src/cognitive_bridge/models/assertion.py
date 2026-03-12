@@ -43,7 +43,7 @@ class Assertion(BaseModel):
         description="Hierarchical path (USD prim path). E.g., '/architecture/database/engine'",
         pattern=r"^(/[a-z][a-z0-9_]*)+$",
     )
-    content: str = Field(..., description="The claim itself")
+    content: str = Field(..., max_length=10000, description="The claim itself")
     arc: CompositionArc = Field(..., description="Composition strength (lower int = stronger)")
     author: AssertionAuthor = Field(...)
 
@@ -62,6 +62,7 @@ class Assertion(BaseModel):
     )
     falsifiable_if: Optional[str] = Field(
         default=None,
+        max_length=2000,
         description=(
             "REQUIRED for arc=LOCAL (10). What specific, observable condition would "
             "prove this assertion wrong? Must be concrete and testable."
