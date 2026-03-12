@@ -19,6 +19,12 @@ from cognitive_bridge.models.stage import CompositionStage
 def get_events_for_target(stage: CompositionStage, target_id: str) -> list[Event]:
     """Get all events related to a specific target (assertion, conflict, etc.).
 
+    This function serves as the implementation of assertion lifecycle history
+    (patent: state_history). Rather than storing a denormalized state_history
+    field on each assertion, lifecycle transitions are recorded as immutable
+    Event objects in the append-only audit log. This approach provides richer
+    provenance (actor, timestamp, detail) than a simple state list would.
+
     Args:
         stage: The composition stage to query.
         target_id: The ID of the target entity.

@@ -353,9 +353,9 @@ class TestValidationRejections:
 
     @pytest.mark.asyncio
     async def test_exploration_budget_above_max_returns_error(self) -> None:
-        """exploration_budget=11 violates le=10 and returns an error."""
+        """exploration_budget=21 violates le=20 and returns an error."""
         _, _, ctx = _make_active_project()
-        result = await cb_tune_parameters(ctx=ctx, exploration_budget=11)
+        result = await cb_tune_parameters(ctx=ctx, exploration_budget=21)
         assert "ERROR" in result
 
     @pytest.mark.asyncio

@@ -21,6 +21,9 @@ class CognitiveParameters(BaseModel):
         le=1.0,
         description="How aggressively to flag potential conflicts. 0=permissive, 1=strict.",
     )
+    # Range [0.5, 0.99]: values below 0.5 produce excessive noise;
+    # values at 1.0 would require exact embedding match (unreachable).
+    # Patent aligned to this implementation range.
     semantic_threshold: float = Field(
         default=0.80,
         ge=0.5,
@@ -36,7 +39,7 @@ class CognitiveParameters(BaseModel):
     exploration_budget: int = Field(
         default=3,
         ge=1,
-        le=10,
+        le=20,
         description="Maximum number of active VARIANT_SET branches allowed per topic path.",
     )
 
@@ -51,6 +54,9 @@ class CognitiveParameters(BaseModel):
     )
 
     # v3.0: Anti-echo-chamber controls
+    # Range [3, 20]: below 3 triggers on trivial assertion counts;
+    # above 20 effectively disables red-teaming for most projects.
+    # Patent aligned to this implementation range.
     red_team_threshold: int = Field(
         default=8,
         ge=3,
