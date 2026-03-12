@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastmcp import Context
 
-from cognitive_bridge.tools._common import get_active_stage
+from cognitive_bridge.tools._common import auto_export_usda, get_active_stage
 from cognitive_bridge.models import (
     AssertionAuthor,
     CompositionStage,
@@ -160,6 +160,7 @@ async def cb_manage_variant(
             },
         )
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
 
         lines = [
             f"Variant set created: {vs.id}",
@@ -223,6 +224,7 @@ async def cb_manage_variant(
             },
         )
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
 
         lines = [
             f"Evidence recorded for variant '{variant_name}' in {variant_set_id}.",
@@ -280,6 +282,7 @@ async def cb_manage_variant(
             },
         )
         save_stage_to_db(store, stage)
+        auto_export_usda(stage)
 
         lines = [
             f"Variant set '{vs.name}' resolved.",

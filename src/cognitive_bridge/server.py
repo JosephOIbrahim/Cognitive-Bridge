@@ -462,9 +462,13 @@ async def cb_manage_project(
     - import_json: Reconstruct a stage from a JSON capsule (produced by export)
       and persist it to SQLite. The project_id in the capsule is used; pass the
       capsule JSON as the project_name parameter.
+    - usda_export: Generate .usda files for the active project in the project's
+      usda/ subdirectory. Files represent each LIVRPS arc layer and a root
+      stage.usda that composes them. Use stage://{project_id}/composition to
+      inspect the result and verify consistency.
 
     Args:
-        action: One of: create, load, save, list, export, import_json.
+        action: One of: create, load, save, list, export, import_json, usda_export.
         project_id: Required for create, load, save, export. Not needed for list.
           For import_json, overrides the project_id stored in the capsule when
           provided; otherwise the capsule's project_id is used.
@@ -594,10 +598,35 @@ async def cb_manage_project(
             f"Decisions: {len(stage.decisions)}"
         )
 
+    elif action == "usda_export":
+        if not project_id:
+            return "ERROR: project_id required for usda_export."
+        if project_id not in active_stages:
+            return f"ERROR: Project '{project_id}' not active. Load it first."
+
+        stage = active_stages[project_id]
+
+        db_dir = Path(os.environ.get("CB_DB_DIR", str(DEFAULT_DB_DIR)))
+        usda_dir = db_dir / project_id / "usda"
+
+        from cognitive_bridge.bridge.usda_export import export_stage_to_usda
+
+        written = export_stage_to_usda(stage, usda_dir)
+
+        lines = [
+            f"USDA export complete for '{project_id}'.",
+            f"Directory: {usda_dir}",
+            f"Files: {len(written)}",
+        ]
+        for fname in sorted(written.keys()):
+            lines.append(f"  {fname}")
+
+        return "\n".join(lines)
+
     else:
         return (
             f"ERROR: Unknown action '{action}'. "
-            "Valid actions: create, load, save, list, export, import_json."
+            "Valid actions: create, load, save, list, export, import_json, usda_export."
         )
 
 

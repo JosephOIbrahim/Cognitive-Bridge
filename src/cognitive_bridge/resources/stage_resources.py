@@ -1,13 +1,14 @@
 """MCP Resources — read-only endpoints exposing composition stage state.
 
-Seven resources expose the current project's epistemic state without mutation:
-- stage://{project_id}/resolved  — LIVRPS-resolved winners per topic path
-- stage://{project_id}/conflicts — All conflicts (active, resolved, deferred)
-- stage://{project_id}/variants  — All variant sets (open and resolved)
-- stage://{project_id}/audit     — Event counts and recent activity log
+Eight resources expose the current project's epistemic state without mutation:
+- stage://{project_id}/resolved     — LIVRPS-resolved winners per topic path
+- stage://{project_id}/conflicts    — All conflicts (active, resolved, deferred)
+- stage://{project_id}/variants     — All variant sets (open and resolved)
+- stage://{project_id}/audit        — Event counts and recent activity log
 - stage://{project_id}/dependencies — Dependency DAG view
-- stage://{project_id}/payloads  — Pending PAYLOADS-arc assertions
-- kernel://{project_id}          — COS Individual Kernel (user profile)
+- stage://{project_id}/payloads     — Pending PAYLOADS-arc assertions
+- stage://{project_id}/composition  — USD composition structure + consistency check
+- kernel://{project_id}             — COS Individual Kernel (user profile)
 
 All resource handlers are read-only and never modify stage state.
 """
@@ -313,6 +314,107 @@ async def get_payloads_view(project_id: str, ctx: Context) -> str:
     lines.append(
         "These are known unknowns. Gather evidence to promote or dismiss them."
     )
+    return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════
+# stage://{project_id}/composition
+# ═══════════════════════════════════════════════════════════════
+
+
+@mcp.resource("stage://{project_id}/composition")
+async def get_composition_view(project_id: str, ctx: Context) -> str:
+    """Get the USD composition structure — how assertions are layered.
+
+    Shows which .usda files exist, how many prims per layer, and the
+    sublayer ordering that produces LIVRPS resolution. This is the
+    introspection view that shows HOW assertions resolve, not just
+    the result.
+
+    Also runs a consistency check comparing SQL-based resolution against
+    text-based USDA resolution to verify the composition model is correct.
+    Use cb_manage_project(action='usda_export') to generate the USDA files
+    if they do not yet exist.
+    """
+    import os
+    from pathlib import Path
+
+    stage = _get_stage(ctx, project_id)
+    if not stage:
+        return (
+            f"Project '{project_id}' not loaded. "
+            "Use cb_manage_project action='load' first."
+        )
+
+    db_dir = Path(
+        os.environ.get(
+            "CB_DB_DIR",
+            str(Path.home() / ".cognitive_bridge" / "projects"),
+        )
+    )
+    usda_dir = db_dir / project_id / "usda"
+
+    if not usda_dir.exists():
+        return (
+            f"No USDA files found for '{project_id}'. "
+            "Trigger export with cb_manage_project(action='usda_export')."
+        )
+
+    from cognitive_bridge.bridge.usda_export import ARC_FILE_MAP, SUBLAYER_ORDER
+
+    lines = [
+        f"USD Composition Structure for '{project_id}':",
+        f"Directory: {usda_dir}",
+        "",
+        "Sublayer ordering (LIVRPS — strongest first):",
+    ]
+
+    for filename in SUBLAYER_ORDER:
+        filepath = usda_dir / filename
+        exists = filepath.exists()
+
+        prim_count = 0
+        if exists:
+            text = filepath.read_text(encoding="utf-8")
+            prim_count = text.count("cb:assertion_id")
+
+        arc_name = ""
+        for arc, (fname, _doc) in ARC_FILE_MAP.items():
+            if fname == filename:
+                arc_name = f"{arc.name} (arc={arc.value})"
+                break
+
+        status = f"{prim_count} prims" if exists else "not generated"
+        lines.append(f"  {filename:35s} {arc_name:25s} {status}")
+
+    stage_file = usda_dir / "stage.usda"
+    if stage_file.exists():
+        lines.append("")
+        lines.append("Root stage file: stage.usda")
+        lines.append(stage_file.read_text(encoding="utf-8"))
+
+    try:
+        from cognitive_bridge.bridge.usda_resolve import (
+            check_consistency,
+            resolve_via_text,
+        )
+
+        usda_resolved = resolve_via_text(usda_dir)
+        sql_resolved = stage.resolve()
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+
+        lines.append("")
+        if not discrepancies:
+            lines.append(
+                "Consistency: PASS — SQL and USDA resolution agree on all paths."
+            )
+        else:
+            lines.append(f"Consistency: FAIL — {len(discrepancies)} discrepancies:")
+            for d in discrepancies:
+                lines.append(f"  - {d}")
+    except Exception as exc:
+        lines.append(f"\nConsistency check failed: {exc}")
+
     return "\n".join(lines)
 
 
