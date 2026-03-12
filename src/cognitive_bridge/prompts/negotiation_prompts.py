@@ -117,20 +117,19 @@ async def coworker_posture(project_id: str, ctx: Context) -> str:
     ):
         posture = "RED_TEAMING"
         guidance = (
-            f"You are in RED_TEAMING mode. {stats['local_count']} LOCAL assertions "
-            f"with zero active conflicts. This may indicate a consensus echo chamber.\n"
+            "You are in RED_TEAMING mode. The stage is suspiciously stable "
+            f"-- {stats['local_count']} LOCAL assertions with zero active "
+            "conflicts. This may indicate consensus or groupthink.\n"
             "Your job is to hunt blind spots:\n"
-            "1. Challenge your strongest LOCAL assertions. What evidence would falsify them?\n"
-            "2. Create variant sets for alternatives you have not considered.\n"
-            "3. Review falsifiable_if conditions — has any evidence emerged?\n"
-            "4. Look for missing dependencies in the DAG.\n"
-            "5. Ask: what would a hostile expert say about this stage?\n"
-            "RED_TEAMING directives:\n"
-            "- Devil's advocate is a mechanical requirement, not a personality trait.\n"
-            "- Suspiciously stable stages are dangerous. Conflict-free does not mean correct.\n"
-            "- Generate at least one VariantSet for a path you are currently certain about."
+            "1. Challenge your strongest LOCAL assertions. What could go wrong?\n"
+            "2. Create variant sets for alternatives you haven't considered.\n"
+            "3. Check falsifiable_if conditions -- has any evidence emerged?\n"
+            "4. Look for missing dependencies in the DAG.\n\n"
+            "EXIT CRITERIA: RED_TEAMING ends when you have created at least "
+            "one new conflict or variant set. The goal is to stress-test, "
+            "not to manufacture disagreement."
         )
-    else:
+    elif stats["local_count"] >= 3:
         posture = "AUTHORITATIVE"
         guidance = (
             "You are in AUTHORITATIVE mode. Strong positions established.\n"
@@ -142,6 +141,14 @@ async def coworker_posture(project_id: str, ctx: Context) -> str:
             "- Map second-order effects before every decision.\n"
             "- Ensure every LOCAL assertion has a falsifiable_if condition.\n"
             "- Check: which assumptions in this stage have never been challenged?"
+        )
+    else:
+        posture = "LEARNING"
+        guidance = (
+            "Building understanding. You have assertions but few verified "
+            "LOCAL positions. Focus on gathering evidence and promoting "
+            "claims to LOCAL with falsifiable conditions. "
+            "Default to REFERENCES or SPECIALIZES arc levels."
         )
 
     return (
@@ -229,13 +236,20 @@ async def conflict_negotiation(
         f"{steelman_note}\n"
         f"\n"
         f"Available resolution paths:\n"
-        f"  ACCEPT         — Accept the stronger position as-is.\n"
-        f"  PROMOTE        — Promote the weaker position with new evidence.\n"
-        f"  CHALLENGE      — Challenge (REQUIRES steelman_summary of the view you oppose).\n"
-        f"  SYNTHESIZE     — Merge both positions into a new unified claim.\n"
-        f"  PROPOSE_EXPERIMENT — Settle with data (REQUIRES experiment_protocol).\n"
-        f"  DEFER          — Table for later (state when and why you will revisit).\n"
-        f"  DISMISS        — False alarm: these do not actually conflict.\n"
+        f"  ACCEPT: Accept the stronger position. The weaker assertion "
+        f"remains in shadow stack but no longer wins.\n"
+        f"  PROMOTE: Provide new evidence to strengthen the weaker position. "
+        f"May flip the winner and trigger cascading conflicts.\n"
+        f"  CHALLENGE: Contest the opposing view. REQUIRES steelman_summary "
+        f"first — articulate their best argument before disagreeing.\n"
+        f"  SYNTHESIZE: Merge both positions into a new understanding. "
+        f"Creates a VariantSet to explore the merged hypothesis.\n"
+        f"  PROPOSE_EXPERIMENT: Settle with data. REQUIRES experiment_protocol "
+        f"— a concrete, executable test that both parties accept.\n"
+        f"  DEFER: Table for later. Must state WHEN and WHY you will revisit. "
+        f"Conflict moves to DEFERRED status.\n"
+        f"  DISMISS: False alarm — these assertions don't actually conflict. "
+        f"Conflict is permanently closed.\n"
         f"\n"
         f"RULES:\n"
         f"1. Before CHALLENGE: call cb_manage_conflict with action='challenge' and\n"
@@ -296,8 +310,10 @@ async def stage_summary(project_id: str, ctx: Context) -> str:
         and stats["active_conflicts"] == 0
     ):
         posture = "RED_TEAMING"
-    else:
+    elif stats["local_count"] >= 3:
         posture = "AUTHORITATIVE"
+    else:
+        posture = "LEARNING"
 
     lines.append(f"Current posture: {posture}")
     lines.append("")

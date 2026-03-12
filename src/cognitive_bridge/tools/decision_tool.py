@@ -20,6 +20,7 @@ from typing import Optional
 
 from fastmcp import Context
 
+from cognitive_bridge.tools._common import get_active_stage
 from cognitive_bridge.models import (
     Assertion,
     AssertionAuthor,
@@ -29,48 +30,6 @@ from cognitive_bridge.models import (
     EventType,
 )
 from cognitive_bridge.server import mcp, save_stage_to_db
-
-# ═══════════════════════════════════════════════════════════════
-# Internal Helpers
-# ═══════════════════════════════════════════════════════════════
-
-
-def _get_active_stage(
-    ctx: Context, project_id: Optional[str] = None
-) -> tuple[str, CompositionStage]:
-    """Get the active stage from the lifespan context.
-
-    Args:
-        ctx: FastMCP context carrying lifespan_context with store and active_stages.
-        project_id: Optional explicit project to look up.
-
-    Returns:
-        Tuple of (project_id, CompositionStage).
-
-    Raises:
-        ValueError: If no projects are active, the named project is not active,
-            or multiple projects are active and project_id was not provided.
-    """
-    active_stages: dict[str, CompositionStage] = ctx.lifespan_context["active_stages"]
-    if not active_stages:
-        raise ValueError(
-            "No active project. Call cb_manage_project(action='create') first."
-        )
-    if project_id:
-        if project_id not in active_stages:
-            raise ValueError(
-                f"Project '{project_id}' is not active. Load it first with "
-                f"cb_manage_project(action='load', project_id='{project_id}')."
-            )
-        return project_id, active_stages[project_id]
-    if len(active_stages) == 1:
-        pid = next(iter(active_stages))
-        return pid, active_stages[pid]
-    raise ValueError(
-        f"Multiple active projects. Specify project_id. "
-        f"Active: {list(active_stages.keys())}"
-    )
-
 
 # ═══════════════════════════════════════════════════════════════
 # Tool
@@ -117,6 +76,10 @@ async def cb_decide(
     Load that evidence first — committing before reading known unknowns is
     an epistemically indefensible shortcut.
 
+    IMPORTANT: Decisions are immutable once recorded. Second-order effects
+    become INHERITS assertions that persist independently. To reverse a
+    decision, assert a new overriding position at the same path.
+
     Arguments:
         topic_path: The hierarchical path this decision governs (e.g., '/architecture/database').
         decision: What was decided (state the outcome clearly).
@@ -136,7 +99,7 @@ async def cb_decide(
         project_id: Optional — omit if only one project is active.
     """
     try:
-        pid, stage = _get_active_stage(ctx, project_id)
+        pid, stage = get_active_stage(ctx, project_id)
     except ValueError as e:
         return f"ERROR: {e}"
 

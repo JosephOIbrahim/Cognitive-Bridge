@@ -38,16 +38,18 @@ class Conflict(BaseModel):
         default_factory=lambda: list(ResolutionPath)
     )
     resolution_chosen: Optional[ResolutionPath] = Field(default=None)
-    resolution_evidence: Optional[str] = Field(default=None)
-    resolution_note: Optional[str] = Field(default=None)
+    resolution_evidence: Optional[str] = Field(default=None, max_length=5000)
+    resolution_note: Optional[str] = Field(default=None, max_length=5000)
 
     # v3.0: Critical thinking resolution metadata
     steelman_of_opponent: Optional[str] = Field(
         default=None,
+        max_length=5000,
         description="The strongest version of the opposing view. Required before CHALLENGE.",
     )
     experiment_protocol: Optional[str] = Field(
         default=None,
+        max_length=5000,
         description=(
             "Concrete test to settle the debate empirically. "
             "Required for PROPOSE_EXPERIMENT."
@@ -55,6 +57,7 @@ class Conflict(BaseModel):
     )
     experiment_result: Optional[str] = Field(
         default=None,
+        max_length=5000,
         description="What the experiment actually showed (populated after execution).",
     )
 

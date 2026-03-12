@@ -19,6 +19,7 @@ from typing import Optional
 from fastmcp import Context
 
 from cognitive_bridge.engine.conflict_detector import detect_semantic_conflicts
+from cognitive_bridge.tools._common import get_active_stage
 from cognitive_bridge.engine.resolver import (
     ResolutionResult,
     add_assertion,
@@ -39,43 +40,6 @@ from cognitive_bridge.storage.sqlite_store import SQLiteStore
 # ═══════════════════════════════════════════════════════════════
 # Internal Helpers
 # ═══════════════════════════════════════════════════════════════
-
-
-def _get_active_stage(
-    ctx: Context, project_id: Optional[str] = None
-) -> tuple[str, CompositionStage]:
-    """Get the active stage. If project_id is None, use the first (or only) active project.
-
-    Args:
-        ctx: FastMCP context carrying lifespan_context with store and active_stages.
-        project_id: Optional explicit project to look up.
-
-    Returns:
-        Tuple of (project_id, CompositionStage).
-
-    Raises:
-        ValueError: If no projects are active, the named project is not active,
-            or multiple projects are active and project_id was not provided.
-    """
-    active_stages: dict[str, CompositionStage] = ctx.lifespan_context["active_stages"]
-    if not active_stages:
-        raise ValueError(
-            "No active project. Call cb_manage_project(action='create') first."
-        )
-    if project_id:
-        if project_id not in active_stages:
-            raise ValueError(
-                f"Project '{project_id}' is not active. Load it first with "
-                f"cb_manage_project(action='load', project_id='{project_id}')."
-            )
-        return project_id, active_stages[project_id]
-    if len(active_stages) == 1:
-        pid = next(iter(active_stages))
-        return pid, active_stages[pid]
-    raise ValueError(
-        f"Multiple active projects. Specify project_id. "
-        f"Active: {list(active_stages.keys())}"
-    )
 
 
 def _infer_evidence_type(evidence: Optional[str], arc: CompositionArc) -> EvidenceType:
@@ -208,6 +172,22 @@ async def cb_manage_assertion(
     - You recognize a domain pattern: arc=20 (INHERITS) + depends_on_paths
     - You know evidence exists but have not loaded it: arc=50 (PAYLOADS)
 
+    Arc selection guide:
+    - LOCAL (10): Direct observation + you can define a falsifiable condition.
+      "I verified this. Here is what would prove me wrong."
+    - INHERITS (20): Domain pattern or logical derivation from other assertions.
+      "Given X, this follows. If X changes, re-evaluate."
+    - REFERENCES (40): User preference, external citation, or stated requirement.
+      "The user/stakeholder said this. It's their call."
+    - PAYLOADS (50): Evidence exists but you haven't loaded it yet.
+      "I know there's data about this but I haven't checked it."
+    - SPECIALIZES (60): Baseline training knowledge. Always overridable.
+      "This is my default assumption. Override freely."
+
+    Delimiter conventions:
+    - depends_on_paths: comma-separated (e.g., "/db/engine,/db/hosting")
+    - tags: comma-separated (e.g., "critical,database")
+
     CRITICAL THINKING REQUIREMENTS:
     - LOCAL (arc=10) requires falsifiable_if. No exceptions. A claim without
       a falsification condition is dogma, not knowledge.
@@ -255,7 +235,7 @@ async def cb_manage_assertion(
         project_id: Optional if only one project is active.
     """
     try:
-        pid, stage = _get_active_stage(ctx, project_id)
+        pid, stage = get_active_stage(ctx, project_id)
     except ValueError as e:
         return f"ERROR: {e}"
 

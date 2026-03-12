@@ -22,8 +22,8 @@ class Decision(BaseModel):
         ...,
         description="Hierarchical path of the domain this decision governs",
     )
-    decision: str = Field(..., description="What was decided")
-    rationale: str = Field(..., description="Why this was decided")
+    decision: str = Field(..., max_length=10000, description="What was decided")
+    rationale: str = Field(..., max_length=10000, description="Why this was decided")
 
     assertion_ids: list[str] = Field(
         default_factory=list,

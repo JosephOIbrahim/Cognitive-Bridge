@@ -11,10 +11,13 @@ v3.0 additions:
 - Assumption health tracking
 """
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 from cognitive_bridge.models.arcs import (
     AssertionAuthor,
@@ -152,18 +155,22 @@ class CompositionStage(BaseModel):
             if a.active and topic_path in a.depends_on_paths
         ]
 
-    def get_dependency_chain(self, assertion_id: str) -> List[str]:
+    def get_dependency_chain(
+        self, assertion_id: str, max_depth: int = 50
+    ) -> List[str]:
         """Recursively trace all dependencies of an assertion.
 
         Performs a depth-first traversal of the dependency DAG starting from
         the given assertion. For each dependency path, finds the winning active
         assertion at that path and recursively traces its dependencies.
 
-        Cycle detection: tracked via visited assertion IDs. If a cycle is
-        detected the traversal silently stops at that node rather than looping.
+        Cycle detection: tracked via visited assertion IDs. A warning is logged
+        and traversal stops at that node rather than looping.
 
         Args:
             assertion_id: ID of the assertion whose dependency chain to trace.
+            max_depth: Maximum recursion depth before emitting a warning and
+                stopping traversal. Default is 50.
 
         Returns:
             List of topic_path strings that this assertion transitively depends
@@ -174,9 +181,20 @@ class CompositionStage(BaseModel):
         visited: set = set()
         chain: List[str] = []
 
-        def _trace(ast_id: str) -> None:
+        def _trace(ast_id: str, depth: int = 0) -> None:
             if ast_id in visited:
-                return  # Cycle detected — break to prevent infinite recursion
+                logger.warning(
+                    "Cycle detected in dependency chain: assertion %s "
+                    "already visited while tracing %s",
+                    ast_id, assertion_id,
+                )
+                return
+            if depth > max_depth:
+                logger.warning(
+                    "Dependency chain exceeded max_depth=%d for assertion %s",
+                    max_depth, assertion_id,
+                )
+                return
             visited.add(ast_id)
             ast = self.assertions.get(ast_id)
             if not ast:
@@ -186,7 +204,7 @@ class CompositionStage(BaseModel):
                 # Find the winning assertion at dep_path and trace its dependencies
                 for a in self.assertions.values():
                     if a.active and a.topic_path == dep_path:
-                        _trace(a.id)
+                        _trace(a.id, depth + 1)
 
         _trace(assertion_id)
         return chain
