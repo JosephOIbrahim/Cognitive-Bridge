@@ -252,7 +252,12 @@ async def cb_manage_assertion(
                 "50=PAYLOADS, 60=SPECIALIZES."
             )
 
-        target_arc = CompositionArc(arc)
+        try:
+            target_arc = CompositionArc(arc)
+        except ValueError:
+            valid = ", ".join(f"{a.value}={a.name}" for a in CompositionArc)
+            return f"ERROR: Invalid arc value {arc}. Valid: {valid}"
+
         dep_paths = (
             [p.strip() for p in depends_on_paths.split(",") if p.strip()]
             if depends_on_paths
@@ -284,8 +289,33 @@ async def cb_manage_assertion(
         # and calls cb_manage_conflict(action="create") to escalate real conflicts.
         result.semantic_warnings = detect_semantic_conflicts(stage, new_ast)
 
+        # Check for dependency paths with no active assertions
+        orphan_deps: list[str] = []
+        if new_ast.depends_on_paths:
+            for dep_path in new_ast.depends_on_paths:
+                has_assertion = any(
+                    a.active and a.topic_path == dep_path
+                    for a in stage.assertions.values()
+                    if a.id != new_ast.id
+                )
+                if not has_assertion:
+                    orphan_deps.append(dep_path)
+
         save_stage_to_db(store, stage)
-        return _format_resolution_result(result, "ASSERT")
+        response = _format_resolution_result(result, "ASSERT")
+        if orphan_deps:
+            dep_warning = (
+                f"\nNOTE: {len(orphan_deps)} dependency path(s) have no "
+                f"active assertions yet:\n"
+            )
+            for dp in orphan_deps:
+                dep_warning += f"  - {dp}\n"
+            dep_warning += (
+                "Cascading conflicts will not fire for these paths "
+                "until assertions are added there."
+            )
+            response += dep_warning
+        return response
 
     # ── promote ─────────────────────────────────────────────────
     elif action == "promote":
