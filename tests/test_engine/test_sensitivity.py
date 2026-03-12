@@ -154,11 +154,11 @@ class TestComputeSuggestedParameters:
         assert suggestions["ai_default_arc"] == 60
 
     def test_high_energy_raises_budget_and_lowers_threshold(self):
-        """energy_level=0.9 → exploration_budget=5, red_team_threshold=5."""
+        """energy_level=0.9 → exploration_budget=7, red_team_threshold=5."""
         kernel = _kernel(energy_level=0.9)
         suggestions = compute_suggested_parameters(kernel)
 
-        assert suggestions["exploration_budget"] == 5
+        assert suggestions["exploration_budget"] == 7
         assert suggestions["red_team_threshold"] == 5
 
     def test_low_energy_lowers_budget_and_raises_threshold(self):
@@ -319,12 +319,12 @@ class TestApplyKernelTuning:
             assert 0.0 <= updated.conflict_sensitivity <= 1.0
 
     def test_high_energy_kernel_increases_exploration_budget(self):
-        """High energy kernel sets exploration_budget=5 on default params."""
+        """High energy kernel sets exploration_budget=7 on default params."""
         kernel = _kernel(energy_level=0.9)
         params = _default_params()
         updated, changes = apply_kernel_tuning(kernel, params)
 
-        assert updated.exploration_budget == 5
+        assert updated.exploration_budget == 7
         assert "exploration_budget" in changes
 
     def test_original_params_not_mutated(self):

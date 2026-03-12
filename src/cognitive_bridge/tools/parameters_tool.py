@@ -18,6 +18,7 @@ from cognitive_bridge.models import (
     CompositionStage,
     EventType,
 )
+from cognitive_bridge.models.injection import InjectionProfile, PROFILE_PARAMS
 from cognitive_bridge.server import mcp, save_stage_to_db
 
 # ═══════════════════════════════════════════════════════════════
@@ -36,6 +37,7 @@ from cognitive_bridge.server import mcp, save_stage_to_db
 )
 async def cb_tune_parameters(
     ctx: Context,
+    profile: Optional[str] = None,
     conflict_sensitivity: Optional[float] = None,
     semantic_threshold: Optional[float] = None,
     cross_path_detection: Optional[bool] = None,
@@ -63,14 +65,25 @@ async def cb_tune_parameters(
     Only supplied parameters are updated. All others remain unchanged. Every
     update is recorded as a PARAMETERS_TUNED event in the audit trail.
 
+    Injection profiles (preset parameter bundles):
+    - none: Default conservative settings (sensitivity=0.5, budget=3)
+    - microdose: Slightly elevated (sensitivity=0.6, budget=4)
+    - perceptual: Moderate with cross-path detection (sensitivity=0.7, budget=5)
+    - classical: High exploration, aggressive red-teaming (sensitivity=0.9, budget=8)
+    - mdma: Elevated empathy, wider acceptance arc (arc=40, budget=5)
+
+    Individual parameters override profile values when both are provided.
+
     Parameters:
+    - profile (str): Apply a preset bundle. One of: none, microdose, perceptual,
+      classical, mdma.
     - conflict_sensitivity (0.0–1.0): How aggressively to flag potential
       conflicts. 0 = permissive, 1 = strict. Default: 0.5.
     - semantic_threshold (0.5–0.99): Cosine similarity threshold for Layer 2
       semantic conflict detection. Higher = fewer false positives. Default: 0.80.
     - cross_path_detection (bool): Enable Layer 2 detection across different
       topic paths. Default: False.
-    - exploration_budget (1–10): Max active variant sets per topic path.
+    - exploration_budget (1–20): Max active variant sets per topic path.
       Default: 3.
     - ai_default_arc (int): Default arc strength for AI assertions as a
       CompositionArc integer value. Valid values: 10 (LOCAL), 20 (INHERITS),
@@ -91,6 +104,24 @@ async def cb_tune_parameters(
 
     store = ctx.lifespan_context["store"]
     params = stage.parameters
+
+    # Apply injection profile if provided (before individual overrides)
+    profile_applied: Optional[InjectionProfile] = None
+    if profile is not None:
+        try:
+            injection = InjectionProfile(profile)
+        except ValueError:
+            valid = ", ".join(p.value for p in InjectionProfile)
+            return f"ERROR: Invalid profile '{profile}'. Valid: {valid}"
+
+        profile_applied = injection
+        preset = PROFILE_PARAMS[injection]
+
+        # Reconstruct params from profile preset — individual overrides applied below
+        try:
+            params = CognitiveParameters(**preset)
+        except ValueError as exc:
+            return f"ERROR: Profile preset invalid — {exc}"
 
     # Collect which parameters were explicitly provided
     updates: dict = {}
@@ -123,8 +154,8 @@ async def cb_tune_parameters(
     if cascade_auto_challenge is not None:
         updates["cascade_auto_challenge"] = cascade_auto_challenge
 
-    # No updates requested — return current settings as a read-only view
-    if not updates:
+    # No updates requested and no profile — return current settings as a read-only view
+    if not updates and profile_applied is None:
         lines = [
             f"Current parameters for project '{pid}':",
             f"  conflict_sensitivity:  {params.conflict_sensitivity}",
@@ -139,7 +170,8 @@ async def cb_tune_parameters(
         ]
         return "\n".join(lines)
 
-    # Apply updates via model reconstruction so Pydantic validators fire
+    # Apply individual overrides on top of the current (or profile) base via
+    # model reconstruction so Pydantic validators fire.
     try:
         current_dict = params.model_dump()
         current_dict.update(updates)
@@ -149,20 +181,36 @@ async def cb_tune_parameters(
 
     stage.parameters = new_params
 
+    # Build event detail: profile name if applied, plus any individual overrides
+    event_detail: dict = {}
+    if profile_applied is not None:
+        event_detail["profile"] = profile_applied.value
+    if updates:
+        event_detail["updates"] = {k: str(v) for k, v in updates.items()}
+
     stage.record_event(
         EventType.PARAMETERS_TUNED,
         AssertionAuthor.AI,
         pid,
-        {"updates": {k: str(v) for k, v in updates.items()}},
+        event_detail,
     )
     save_stage_to_db(store, stage)
 
-    # Format response showing only the changed keys
-    lines = [f"Parameters updated for project '{pid}':"]
-    for key, value in updates.items():
-        if isinstance(value, CompositionArc):
-            lines.append(f"  {key}: {value.name} ({value.value})")
+    # Format response: profile header first, then any individual overrides
+    lines = []
+    if profile_applied is not None:
+        lines.append(f"Profile applied: {profile_applied.value}")
+    if updates:
+        if not lines:
+            lines.append(f"Parameters updated for project '{pid}':")
         else:
-            lines.append(f"  {key}: {value}")
+            lines.append(f"Parameters updated for project '{pid}':")
+        for key, value in updates.items():
+            if isinstance(value, CompositionArc):
+                lines.append(f"  {key}: {value.name} ({value.value})")
+            else:
+                lines.append(f"  {key}: {value}")
+    elif profile_applied is not None:
+        lines.append(f"Parameters updated for project '{pid}':")
 
     return "\n".join(lines)

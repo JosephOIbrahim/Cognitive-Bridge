@@ -101,9 +101,9 @@ class TestExplorationBudgetBounds:
         p = CognitiveParameters(exploration_budget=1)
         assert p.exploration_budget == 1
 
-    def test_upper_bound_ten_accepted(self) -> None:
-        p = CognitiveParameters(exploration_budget=10)
-        assert p.exploration_budget == 10
+    def test_upper_bound_twenty_accepted(self) -> None:
+        p = CognitiveParameters(exploration_budget=20)
+        assert p.exploration_budget == 20
 
     def test_below_lower_bound_raises(self) -> None:
         with pytest.raises(ValidationError):
@@ -111,7 +111,7 @@ class TestExplorationBudgetBounds:
 
     def test_above_upper_bound_raises(self) -> None:
         with pytest.raises(ValidationError):
-            CognitiveParameters(exploration_budget=11)
+            CognitiveParameters(exploration_budget=21)
 
 
 class TestAiDefaultArc:

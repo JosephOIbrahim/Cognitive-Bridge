@@ -31,7 +31,7 @@ def compute_suggested_parameters(
     - autonomy_boundary → ai_default_arc (high autonomy > 0.7 = INHERITS (20),
       medium 0.3–0.7 = REFERENCES (40), low < 0.3 = SPECIALIZES (60))
     - energy_level → exploration_budget + red_team_threshold (high energy > 0.7
-      = budget 5 / threshold 5; medium 0.3–0.7 = budget 3 / threshold 8;
+      = budget 7 / threshold 5; medium 0.3–0.7 = budget 3 / threshold 8;
       low < 0.3 = budget 1 / threshold 15)
 
     Returns a dict of parameter names to suggested values.
@@ -73,7 +73,7 @@ def compute_suggested_parameters(
     # Medium (0.3–0.7) = normal capacity = default budget and threshold.
     # Low (< 0.3) = depleted = smaller budget, higher threshold (less pressure).
     if kernel.energy_level > 0.7:
-        suggestions["exploration_budget"] = 5
+        suggestions["exploration_budget"] = 7  # was 5, expanded range allows more
         suggestions["red_team_threshold"] = 5
     elif kernel.energy_level > 0.3:
         suggestions["exploration_budget"] = 3
