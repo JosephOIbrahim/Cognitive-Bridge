@@ -26,6 +26,7 @@ from cognitive_bridge.resources.stage_resources import (
     get_audit_trail,
     get_conflicts_state,
     get_dependencies_view,
+    get_kernel_state,
     get_payloads_view,
     get_resolved_state,
     get_variants_state,
@@ -662,3 +663,101 @@ async def test_stage_summary_open_variant_sets():
     result = await stage_summary(PROJECT_ID, ctx)
     assert "OPEN VARIANT SETS" in result
     assert "Caching Strategy" in result
+
+
+# ═══════════════════════════════════════════════════════════════
+# kernel://{project_id}
+# ═══════════════════════════════════════════════════════════════
+
+
+class _MockCtxWithStore:
+    """Mock context with a real in-memory SQLiteStore for kernel tests."""
+
+    def __init__(
+        self, active_stages: dict, store: "SQLiteStore"
+    ) -> None:
+        self.lifespan_context = {
+            "active_stages": active_stages,
+            "store": store,
+        }
+
+
+class TestKernelResource:
+    """Tests for the kernel://{project_id} resource."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_kernel_cache(self) -> None:
+        from cognitive_bridge.tools.probe_tool import _KERNELS
+        _KERNELS.clear()
+        yield
+        _KERNELS.clear()
+
+    def _make_ctx_with_store(
+        self, project_id: str = PROJECT_ID
+    ) -> _MockCtxWithStore:
+        from cognitive_bridge.storage.sqlite_store import SQLiteStore
+
+        store = SQLiteStore(":memory:")
+        stage = _make_stage(project_id)
+        return _MockCtxWithStore(
+            active_stages={project_id: stage}, store=store
+        )
+
+    @pytest.mark.asyncio
+    async def test_project_not_loaded(self) -> None:
+        from cognitive_bridge.storage.sqlite_store import SQLiteStore
+
+        store = SQLiteStore(":memory:")
+        ctx = _MockCtxWithStore(active_stages={}, store=store)
+        result = await get_kernel_state("missing", ctx)
+        assert "not loaded" in result
+
+    @pytest.mark.asyncio
+    async def test_fresh_kernel_returns_defaults(self) -> None:
+        ctx = self._make_ctx_with_store()
+        result = await get_kernel_state(PROJECT_ID, ctx)
+        assert "entropy_tolerance" in result
+        assert "process_purity" in result
+        assert "autonomy_boundary" in result
+        assert "energy_level" in result
+        assert "0.5" in result  # Default value
+
+    @pytest.mark.asyncio
+    async def test_kernel_shows_probe_count(self) -> None:
+        ctx = self._make_ctx_with_store()
+        result = await get_kernel_state(PROJECT_ID, ctx)
+        assert "Probe count:" in result
+        assert "0" in result  # No probes yet
+
+    @pytest.mark.asyncio
+    async def test_kernel_shows_last_probed_never(self) -> None:
+        ctx = self._make_ctx_with_store()
+        result = await get_kernel_state(PROJECT_ID, ctx)
+        assert "never" in result
+
+    @pytest.mark.asyncio
+    async def test_kernel_after_probe(self) -> None:
+        import asyncio
+        from cognitive_bridge.tools.probe_tool import cb_probe_user
+
+        ctx = self._make_ctx_with_store()
+        # Probe to update kernel
+        await cb_probe_user(
+            probe_type="entropy", value=0.9, ctx=ctx
+        )
+        result = await get_kernel_state(PROJECT_ID, ctx)
+        # Should show smoothed value, not 0.5 default
+        assert "0.5" not in result or "Probe count:  1" in result
+        assert "Probe count:  1" in result
+
+    @pytest.mark.asyncio
+    async def test_kernel_contains_header(self) -> None:
+        ctx = self._make_ctx_with_store()
+        result = await get_kernel_state(PROJECT_ID, ctx)
+        assert f"COS Individual Kernel for '{PROJECT_ID}'" in result
+
+    @pytest.mark.asyncio
+    async def test_kernel_mentions_auto_tuning(self) -> None:
+        ctx = self._make_ctx_with_store()
+        result = await get_kernel_state(PROJECT_ID, ctx)
+        assert "auto-tuning" in result

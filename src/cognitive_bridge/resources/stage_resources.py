@@ -1,12 +1,13 @@
 """MCP Resources — read-only endpoints exposing composition stage state.
 
-Six resources expose the current project's epistemic state without mutation:
+Seven resources expose the current project's epistemic state without mutation:
 - stage://{project_id}/resolved  — LIVRPS-resolved winners per topic path
 - stage://{project_id}/conflicts — All conflicts (active, resolved, deferred)
 - stage://{project_id}/variants  — All variant sets (open and resolved)
 - stage://{project_id}/audit     — Event counts and recent activity log
 - stage://{project_id}/dependencies — Dependency DAG view
 - stage://{project_id}/payloads  — Pending PAYLOADS-arc assertions
+- kernel://{project_id}          — COS Individual Kernel (user profile)
 
 All resource handlers are read-only and never modify stage state.
 """
@@ -313,3 +314,55 @@ async def get_payloads_view(project_id: str, ctx: Context) -> str:
         "These are known unknowns. Gather evidence to promote or dismiss them."
     )
     return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════
+# kernel://{project_id}
+# ═══════════════════════════════════════════════════════════════
+
+
+@mcp.resource("kernel://{project_id}")
+async def get_kernel_state(project_id: str, ctx: Context) -> str:
+    """Get the COS Individual Kernel — the user's cognitive profile.
+
+    The kernel captures four dimensions of the user's working style,
+    updated via cb_probe_user. These dimensions drive sensitivity
+    auto-tuning and posture selection.
+    """
+    from cognitive_bridge.tools.probe_tool import get_kernel
+
+    store = ctx.lifespan_context.get("store")
+    if not store:
+        return f"Project '{project_id}' not loaded."
+
+    # Verify project is active
+    active_stages = ctx.lifespan_context.get("active_stages", {})
+    if project_id not in active_stages:
+        return (
+            f"Project '{project_id}' not loaded. "
+            "Use cb_manage_project action='load' first."
+        )
+
+    kernel = get_kernel(store, project_id)
+
+    last_probed_str = (
+        kernel.last_probed.strftime("%Y-%m-%d %H:%M:%S")
+        if kernel.last_probed
+        else "never"
+    )
+
+    return (
+        f"COS Individual Kernel for '{project_id}':\n"
+        f"\n"
+        f"  entropy_tolerance:  {kernel.entropy_tolerance}\n"
+        f"  process_purity:     {kernel.process_purity}\n"
+        f"  autonomy_boundary:  {kernel.autonomy_boundary}\n"
+        f"  energy_level:       {kernel.energy_level}\n"
+        f"\n"
+        f"  Probe count:  {kernel.probe_count}\n"
+        f"  Last probed:  {last_probed_str}\n"
+        f"\n"
+        f"Dimensions range 0.0 to 1.0. Updated via cb_probe_user.\n"
+        f"These values drive sensitivity auto-tuning "
+        f"(see cb_tune_parameters)."
+    )
