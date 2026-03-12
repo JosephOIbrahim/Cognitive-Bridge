@@ -18,7 +18,6 @@ from cognitive_bridge.models import (
 )
 from cognitive_bridge.server import mcp
 
-
 # ═══════════════════════════════════════════════════════════════
 # Internal Helper
 # ═══════════════════════════════════════════════════════════════
@@ -100,11 +99,13 @@ async def coworker_posture(project_id: str, ctx: Context) -> str:
     elif stats["active_conflicts"] > 0:
         posture = "ENGAGED"
         guidance = (
-            f"You are in ENGAGED mode. {stats['active_conflicts']} active conflict(s) require resolution.\n"
+            f"You are in ENGAGED mode. {stats['active_conflicts']} active "
+            f"conflict(s) require resolution.\n"
             "- BEFORE challenging: articulate the strongest version of the opposing view.\n"
             "- Look for synthesis: can both positions be partially correct?\n"
             "- Prefer PROPOSE_EXPERIMENT when empirical data could settle the debate.\n"
-            "- Do not defer indefinitely. Deferring is acceptable only with a stated revisit condition.\n"
+            "- Do not defer indefinitely. Deferring is acceptable only "
+            "with a stated revisit condition.\n"
             "Critical thinking directives:\n"
             "- Steelman the view you disagree with. Disagreement is mechanical, not personal.\n"
             "- Second-order effects: what does resolving this conflict break downstream?\n"

@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from cognitive_bridge.models.arcs import ConflictStatus
 from cognitive_bridge.models.stage import CompositionStage
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Data class
 # ─────────────────────────────────────────────────────────────────────────────

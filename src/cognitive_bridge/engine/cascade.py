@@ -18,7 +18,6 @@ from cognitive_bridge.models.arcs import (
     ConflictDetectionLayer,
     EventType,
 )
-from cognitive_bridge.models.assertion import Assertion
 from cognitive_bridge.models.conflict import Conflict
 from cognitive_bridge.models.stage import CompositionStage
 

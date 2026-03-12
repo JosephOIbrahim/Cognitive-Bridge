@@ -30,7 +30,6 @@ from cognitive_bridge.models import (
 )
 from cognitive_bridge.server import mcp, save_stage_to_db
 
-
 # ═══════════════════════════════════════════════════════════════
 # Internal Helpers
 # ═══════════════════════════════════════════════════════════════
@@ -124,10 +123,12 @@ async def cb_decide(
         rationale: Why this was decided (the reasoning, not a restatement of the decision).
         alternatives_rejected: Pipe-separated alternatives. Each entry should read
             'Alternative description — rejected because reason'. Minimum 1 required.
-            Example: 'MongoDB — rejected because ACID guarantees needed | Redis — rejected because persistence model wrong'.
+            Example: 'MongoDB — rejected because ACID guarantees needed |
+            Redis — rejected because persistence model wrong'.
         second_order_effects: Pipe-separated downstream effects. Each entry describes
             a constraint or risk this decision creates. Minimum 1 required.
-            Example: 'Schema migrations required on every model change | Horizontal scaling requires sharding strategy'.
+            Example: 'Schema migrations required on every model change |
+            Horizontal scaling requires sharding strategy'.
         assertion_ids: Optional comma-separated assertion IDs that informed this decision.
         conflict_ids: Optional comma-separated conflict IDs resolved by this decision.
         reversibility: How reversible is this decision?
@@ -159,7 +160,8 @@ async def cb_decide(
     if not alt_list:
         return (
             "ERROR: 'alternatives_rejected' must contain at least one alternative. "
-            "Use pipe-separated format: 'Option A — rejected because X | Option B — rejected because Y'. "
+            "Use pipe-separated format: "
+            "'Option A — rejected because X | Option B — rejected because Y'. "
             "If you cannot name what you are giving up, you have not thought enough."
         )
     if not effect_list:

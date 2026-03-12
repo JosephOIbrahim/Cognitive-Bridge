@@ -27,7 +27,6 @@ from cognitive_bridge.models import (
 )
 from cognitive_bridge.server import mcp
 
-
 # ═══════════════════════════════════════════════════════════════
 # Internal Helpers
 # ═══════════════════════════════════════════════════════════════

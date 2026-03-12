@@ -4,10 +4,9 @@ All enums used across models are defined here to avoid circular imports.
 Composition arcs follow USD-inspired LIVRPS ordering where lower integer = stronger.
 """
 
-from datetime import datetime, timezone
-from enum import IntEnum, Enum
 import uuid
-
+from datetime import datetime, timezone
+from enum import Enum, IntEnum
 
 # ═══════════════════════════════════════════════════════════════
 # Utilities

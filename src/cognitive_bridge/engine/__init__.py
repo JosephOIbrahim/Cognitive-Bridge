@@ -1,12 +1,12 @@
 """Cognitive Bridge engine — conflict detection, resolution, cascading, provenance, trust."""
 
-from cognitive_bridge.engine.conflict_detector import (
-    detect_structural_conflict,
-    detect_semantic_conflicts,
-)
 from cognitive_bridge.engine.cascade import (
     check_falsification,
     detect_cascading_conflicts,
+)
+from cognitive_bridge.engine.conflict_detector import (
+    detect_semantic_conflicts,
+    detect_structural_conflict,
 )
 from cognitive_bridge.engine.provenance import (
     count_events_by_type,
@@ -18,6 +18,14 @@ from cognitive_bridge.engine.provenance import (
     get_events_for_target,
     get_events_in_range,
 )
+from cognitive_bridge.engine.red_team import (
+    find_missing_dependencies,
+    find_unchallenged_locals,
+    find_unfalsifiable_locals,
+    generate_red_team_report,
+    record_red_team_trigger,
+    should_trigger_red_team,
+)
 from cognitive_bridge.engine.resolver import (
     ResolutionResult,
     add_assertion,
@@ -27,25 +35,17 @@ from cognitive_bridge.engine.resolver import (
     resolve_conflict,
     retract_assertion,
 )
+from cognitive_bridge.engine.sensitivity import (
+    apply_kernel_tuning,
+    compute_suggested_parameters,
+    format_tuning_report,
+)
 from cognitive_bridge.engine.trust import (
     TrustScore,
     compute_trust_scores,
     format_trust_report,
     get_subtree_trust,
     get_trust_for_path,
-)
-from cognitive_bridge.engine.sensitivity import (
-    apply_kernel_tuning,
-    compute_suggested_parameters,
-    format_tuning_report,
-)
-from cognitive_bridge.engine.red_team import (
-    find_missing_dependencies,
-    find_unchallenged_locals,
-    find_unfalsifiable_locals,
-    generate_red_team_report,
-    record_red_team_trigger,
-    should_trigger_red_team,
 )
 
 __all__ = [

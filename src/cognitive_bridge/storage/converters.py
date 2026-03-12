@@ -16,8 +16,8 @@ from cognitive_bridge.models.arcs import (
     CompositionArc,
     ConflictDetectionLayer,
     ConflictStatus,
-    EvidenceType,
     EventType,
+    EvidenceType,
     ResolutionPath,
 )
 from cognitive_bridge.models.assertion import Assertion
@@ -36,7 +36,6 @@ from cognitive_bridge.storage.sqlite_store import (
     ParametersRow,
     VariantSetRow,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # Assertion converters

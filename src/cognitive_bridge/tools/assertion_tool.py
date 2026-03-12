@@ -36,7 +36,6 @@ from cognitive_bridge.models import (
 from cognitive_bridge.server import mcp, save_stage_to_db
 from cognitive_bridge.storage.sqlite_store import SQLiteStore
 
-
 # ═══════════════════════════════════════════════════════════════
 # Internal Helpers
 # ═══════════════════════════════════════════════════════════════
@@ -137,8 +136,8 @@ def _format_resolution_result(result: ResolutionResult, action: str) -> str:
         lines.append(f"  Between: {c.assertion_a_id} vs {c.assertion_b_id}")
         lines.append(f"  At path: {c.topic_path}")
         lines.append(
-            f"  Resolution required. Use cb_manage_conflict to resolve, challenge, "
-            f"defer, or propose an experiment."
+            "  Resolution required. Use cb_manage_conflict to resolve, challenge, "
+            "defer, or propose an experiment."
         )
 
     if result.winner_changed:
@@ -267,7 +266,11 @@ async def cb_manage_assertion(
         if not content:
             return "ERROR: 'content' is required for action='assert'."
         if arc is None:
-            return "ERROR: 'arc' is required for action='assert'. Use 10=LOCAL, 20=INHERITS, 40=REFERENCES, 50=PAYLOADS, 60=SPECIALIZES."
+            return (
+                "ERROR: 'arc' is required for action='assert'. "
+                "Use 10=LOCAL, 20=INHERITS, 40=REFERENCES, "
+                "50=PAYLOADS, 60=SPECIALIZES."
+            )
 
         target_arc = CompositionArc(arc)
         dep_paths = (
@@ -333,7 +336,10 @@ async def cb_manage_assertion(
         if not assertion_id:
             return "ERROR: 'assertion_id' is required for action='falsify'."
         if not observed_condition:
-            return "ERROR: 'observed_condition' is required for action='falsify'. What was actually observed?"
+            return (
+                "ERROR: 'observed_condition' is required for "
+                "action='falsify'. What was actually observed?"
+            )
         try:
             result = falsify_assertion(stage, assertion_id, observed_condition)
         except ValueError as e:

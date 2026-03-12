@@ -17,6 +17,8 @@ Design notes:
 from dataclasses import dataclass, field
 from typing import Optional
 
+from cognitive_bridge.engine.cascade import check_falsification, detect_cascading_conflicts
+from cognitive_bridge.engine.conflict_detector import detect_structural_conflict
 from cognitive_bridge.models.arcs import (
     AssertionAuthor,
     AssumptionStatus,
@@ -29,8 +31,6 @@ from cognitive_bridge.models.arcs import (
 from cognitive_bridge.models.assertion import Assertion
 from cognitive_bridge.models.conflict import Conflict
 from cognitive_bridge.models.stage import CompositionStage
-from cognitive_bridge.engine.conflict_detector import detect_structural_conflict
-from cognitive_bridge.engine.cascade import detect_cascading_conflicts, check_falsification
 
 
 @dataclass

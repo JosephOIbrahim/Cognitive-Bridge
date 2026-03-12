@@ -4,12 +4,10 @@ One table per model type. Complex fields (lists, dicts) are stored as JSON strin
 Embeddings are stored as JSON string of float list (nullable).
 """
 
-import json
 from datetime import datetime
 from typing import Optional
 
-from sqlmodel import Field, SQLModel, Session, create_engine, select
-
+from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 # ═══════════════════════════════════════════════════════════════
 # Table Definitions

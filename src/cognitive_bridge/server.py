@@ -53,7 +53,6 @@ from cognitive_bridge.storage.sqlite_store import (
     VariantSetRow,
 )
 
-
 # ═══════════════════════════════════════════════════════════════
 # Constants
 # ═══════════════════════════════════════════════════════════════
@@ -608,16 +607,15 @@ async def cb_manage_project(
 
 # Importing these modules causes their @mcp.tool decorators to fire,
 # binding each tool to the shared FastMCP instance declared above.
-import cognitive_bridge.tools.assertion_tool  # noqa: F401
-import cognitive_bridge.tools.conflict_tool  # noqa: F401
-import cognitive_bridge.tools.variant_tool  # noqa: F401
-import cognitive_bridge.tools.decision_tool  # noqa: F401
-import cognitive_bridge.tools.parameters_tool  # noqa: F401
-import cognitive_bridge.tools.payload_tool  # noqa: F401
-import cognitive_bridge.tools.probe_tool  # noqa: F401
-import cognitive_bridge.resources.stage_resources  # noqa: F401
-import cognitive_bridge.prompts.negotiation_prompts  # noqa: F401
-
+import cognitive_bridge.prompts.negotiation_prompts  # noqa: E402, F401
+import cognitive_bridge.resources.stage_resources  # noqa: E402, F401
+import cognitive_bridge.tools.assertion_tool  # noqa: E402, F401
+import cognitive_bridge.tools.conflict_tool  # noqa: E402, F401
+import cognitive_bridge.tools.decision_tool  # noqa: E402, F401
+import cognitive_bridge.tools.parameters_tool  # noqa: E402, F401
+import cognitive_bridge.tools.payload_tool  # noqa: E402, F401
+import cognitive_bridge.tools.probe_tool  # noqa: E402, F401
+import cognitive_bridge.tools.variant_tool  # noqa: E402, F401
 
 # ═══════════════════════════════════════════════════════════════
 # Entry Point

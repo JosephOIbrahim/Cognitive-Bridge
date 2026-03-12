@@ -19,7 +19,6 @@ from cognitive_bridge.models import (
 )
 from cognitive_bridge.server import mcp, save_stage_to_db
 
-
 # ═══════════════════════════════════════════════════════════════
 # Internal Helpers
 # ═══════════════════════════════════════════════════════════════
@@ -161,7 +160,8 @@ async def cb_tune_parameters(
             f"  semantic_threshold:    {params.semantic_threshold}",
             f"  cross_path_detection:  {params.cross_path_detection}",
             f"  exploration_budget:    {params.exploration_budget}",
-            f"  ai_default_arc:        {params.ai_default_arc.name} ({params.ai_default_arc.value})",
+            f"  ai_default_arc:        "
+            f"{params.ai_default_arc.name} ({params.ai_default_arc.value})",
             f"  payload_surfacing:     {params.payload_surfacing}",
             f"  red_team_threshold:    {params.red_team_threshold}",
             f"  cascade_auto_challenge:{params.cascade_auto_challenge}",
