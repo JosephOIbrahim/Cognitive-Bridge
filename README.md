@@ -3,10 +3,11 @@
 **An MCP server that gives AI a compositional mind.**
 
 Persistent epistemic state. Automatic conflict detection. Structured disagreement
-as a generative force. Built on USD-inspired composition arc semantics.
+as a generative force. Built on USD composition arc semantics -- not inspired by
+USD, mechanically verified against it.
 
 ```
-1024 tests | Python 3.11+ | SQLite storage | Claude Desktop ready
+1168 tests | Python 3.11+ | SQLite + USDA export | Claude Desktop ready
 ```
 
 ---
@@ -17,6 +18,7 @@ as a generative force. Built on USD-inspired composition arc semantics.
 - [Installation](#installation)
 - [Claude Desktop Setup](#claude-desktop-setup)
 - [How It Works](#how-it-works)
+- [USD Composition Bridge](#usd-composition-bridge)
 - [Tools](#tools)
 - [Resources and Prompts](#resources-and-prompts)
 - [Examples](#examples)
@@ -219,13 +221,50 @@ The system adapts its behavior based on how much it knows:
 
 ---
 
+## USD Composition Bridge
+
+The LIVRPS naming is not metaphorical -- it maps directly to USD (Universal
+Scene Description) composition arc semantics. The bridge module proves this
+mechanically by exporting the epistemic state as valid `.usda` files.
+
+Each composition arc maps to a sublayer file:
+
+| Arc | File | USD Role |
+|-----|------|----------|
+| LOCAL (10) | `session_local.usda` | Strongest sublayer (listed first) |
+| INHERITS (20) | `domain_inherits.usda` | Domain patterns |
+| VARIANT_SET (30) | `hypothesis_variants.usda` | USD `variantSet` blocks |
+| REFERENCES (40) | `evidence_refs.usda` | External citations |
+| PAYLOADS (50) | `deferred_payloads.usda` | Known unknowns |
+| SPECIALIZES (60) | `safety_specializes.usda` | Baseline (listed last) |
+
+The root `stage.usda` sublayers these 6 files in LIVRPS order. USD resolves
+sublayer opinions in order -- first listed wins. This is mechanically identical
+to the IntEnum sorting in `CompositionStage.resolve()`.
+
+**Consistency verification:** The `stage://{project_id}/composition` resource
+runs both SQL and USDA resolution and confirms zero discrepancies. If they
+ever disagree, it's a bug.
+
+**Auto-export:** Every assertion, conflict, and variant mutation automatically
+regenerates the `.usda` files. The export is best-effort and never blocks
+the tool.
+
+**topic_path = prim path:** The assertion regex `^(/[a-z][a-z0-9_]*)+$`
+is valid USD prim path syntax. No transformation needed. This alignment
+is structural, not cosmetic.
+
+Export manually: `cb_manage_project(action="usda_export")`
+
+---
+
 ## Tools
 
 8 tools covering the full argumentation lifecycle:
 
 | Tool | What it does |
 |------|-------------|
-| `cb_manage_project` | Create, load, save, list, export, or import projects. Call this first. |
+| `cb_manage_project` | Create, load, save, list, export, import, or usda_export projects. Call this first. |
 | `cb_manage_assertion` | Record claims, promote with evidence, retract, or mark as falsified. |
 | `cb_manage_conflict` | Resolve conflicts. Challenge (requires steelman), propose experiments, defer, or dismiss. |
 | `cb_manage_variant` | Create parallel hypothesis branches. Add evidence for/against. Resolve when ready. |
@@ -262,6 +301,7 @@ Apply via: `cb_tune_parameters(profile="classical")`
 | `stage://{project_id}/audit` | Event log and activity summary |
 | `stage://{project_id}/dependencies` | Dependency DAG visualization |
 | `stage://{project_id}/payloads` | Known unknowns awaiting evidence |
+| `stage://{project_id}/composition` | USD composition structure + consistency check |
 | `kernel://{project_id}` | User cognitive profile (COS kernel) |
 
 ### Prompts
@@ -311,8 +351,11 @@ src/cognitive_bridge/
     trust.py           Per-subtree trust scores from conflict history
     sensitivity.py     COS kernel -> parameter auto-tuning
     red_team.py        Anti-echo-chamber trigger + blind spot detection
+  bridge/              USD composition layer
+    usda_export.py     Stage -> 7 .usda files (LIVRPS sublayer ordering)
+    usda_resolve.py    Text-based resolver + consistency checker
   tools/               MCP tool implementations (one file per tool)
-  resources/           MCP resource endpoints (7 read-only views)
+  resources/           MCP resource endpoints (8 read-only views)
   prompts/             MCP prompt templates (3 structured generators)
   storage/             SQLModel tables + Pydantic <-> SQLModel converters
 ```
@@ -332,6 +375,11 @@ dependency graph, no circular imports.
 
 **Append-only provenance.** Every mutation records an Event with actor, timestamp,
 and detail dict. The event log is the source of truth for lifecycle history.
+
+**Mechanically verified composition.** The USDA bridge exports the epistemic state
+as valid USD files. Both SQL and USDA resolution produce identical winners at
+every path -- formally verified by `check_consistency()`. The composition model
+IS USD, not just inspired by it.
 
 ---
 
@@ -393,6 +441,8 @@ solution spaces.
 9. Decision impact mapping with alternative enumeration
 10. Anti-echo-chamber mechanism (RED_TEAMING posture)
 11. Cognitive Operating Signature integration (user profiling)
+12. Mechanical USD composition verification (LIVRPS = sublayer ordering)
+13. VariantSet-to-USD-variantSet mapping for non-destructive hypothesis exploration
 
 Full specification: [`docs/blueprint-v3.md`](docs/blueprint-v3.md)
 
