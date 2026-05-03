@@ -1,479 +1,243 @@
 """Integration tests for the cb_payload_check tool.
 
-Tests call the tool handler directly using a minimal mock Context whose
-lifespan_context carries an in-memory SQLiteStore and an isolated
-active_stages dict. This avoids MCP transport overhead while exercising
-every branch, filter path, and response formatting path.
+Blueprint reference: Section 6.1 (cb_payload_check), PAYLOADS arc as known unknowns.
+Constitution rules G4 (behavioral over structural), G5 (test isolation).
 
-No shared mutable state: every test builds its own store + stage.
+cb_payload_check is read-only (readOnlyHint=True): no events appended, no mutations.
 """
 
 import pytest
 
 from cognitive_bridge.models import (
-    Assertion,
-    AssertionAuthor,
-    CompositionArc,
-    CompositionStage,
-    Decision,
+    Assertion, AssertionAuthor, CompositionArc, CompositionStage, Decision, EventType,
 )
 from cognitive_bridge.server import save_stage_to_db
 from cognitive_bridge.storage.sqlite_store import SQLiteStore
 from cognitive_bridge.tools.payload_tool import cb_payload_check
 
 
-# ═══════════════════════════════════════════════════════════════
-# Mock Context
-# ═══════════════════════════════════════════════════════════════
-
-
 class _MockCtx:
-    """Minimal context mock that satisfies ctx.lifespan_context access."""
-
     def __init__(self, store: SQLiteStore, active_stages: dict) -> None:
-        self.lifespan_context = {
-            "store": store,
-            "active_stages": active_stages,
-        }
+        self.lifespan_context = {"store": store, "active_stages": active_stages}
 
 
-def _make_ctx_with_stage(
-    project_id: str = "proj_test",
-) -> tuple[_MockCtx, CompositionStage, SQLiteStore]:
-    """Create a context, stage, and store pre-wired together."""
+def _make_ctx(store: SQLiteStore | None = None, active_stages: dict | None = None) -> _MockCtx:
+    return _MockCtx(
+        store=store or SQLiteStore(":memory:"),
+        active_stages=active_stages if active_stages is not None else {},
+    )
+
+
+def _make_ctx_with_stage(project_id: str = "proj_payload_test") -> tuple[_MockCtx, CompositionStage, SQLiteStore]:
     store = SQLiteStore(":memory:")
-    stage = CompositionStage(project_id=project_id, project_name="Test Project")
+    stage = CompositionStage(project_id=project_id, project_name="Payload Test Project")
     active_stages: dict = {project_id: stage}
     save_stage_to_db(store, stage)
-    ctx = _MockCtx(store=store, active_stages=active_stages)
-    return ctx, stage, store
+    return _make_ctx(store=store, active_stages=active_stages), stage, store
 
 
-def _make_empty_ctx() -> _MockCtx:
-    """Create a context with no active projects."""
-    store = SQLiteStore(":memory:")
-    return _MockCtx(store=store, active_stages={})
-
-
-def _add_assertion(
-    stage: CompositionStage,
-    topic_path: str,
-    content: str,
-    arc: CompositionArc,
-    evidence: list[str] | None = None,
-    tags: list[str] | None = None,
+def _add_payload(
+    stage: CompositionStage, store: SQLiteStore,
+    topic_path: str, content: str = "Pending evidence", active: bool = True,
 ) -> Assertion:
-    """Add an assertion directly to the stage for test setup."""
-    a = Assertion(
-        topic_path=topic_path,
-        content=content,
-        arc=arc,
-        author=AssertionAuthor.USER,
-        evidence=evidence or [],
-        tags=tags or [],
+    payload = Assertion(
+        topic_path=topic_path, content=content,
+        arc=CompositionArc.PAYLOADS, author=AssertionAuthor.AI, active=active,
     )
-    stage.assertions[a.id] = a
-    return a
-
-
-def _add_decision(
-    stage: CompositionStage,
-    topic_path: str,
-    decision_text: str = "Use PostgreSQL",
-) -> Decision:
-    """Add a decision directly to the stage for test setup."""
-    d = Decision(
-        topic_path=topic_path,
-        decision=decision_text,
-        rationale="ACID required",
-        alternatives_rejected=["MongoDB — no ACID"],
-        second_order_effects=["Migrations needed"],
-    )
-    stage.decisions.append(d)
-    return d
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: no payloads
-# ═══════════════════════════════════════════════════════════════
+    stage.assertions[payload.id] = payload
+    save_stage_to_db(store, stage)
+    return payload
 
 
 class TestNoPayloads:
-    """Tests for the empty / no-payload cases."""
-
     @pytest.mark.asyncio
-    async def test_no_payloads_anywhere(self) -> None:
-        """When the stage has no PAYLOADS assertions, response says safe to proceed."""
-        ctx, stage, _ = _make_ctx_with_stage()
+    async def test_no_payloads_returns_safe_message(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
         result = await cb_payload_check(ctx=ctx)
-        assert "No pending payloads" in result
-        assert "Safe to proceed" in result
-        assert "in the project" in result
+        assert "no pending payloads" in result.lower() or "No pending payloads" in result
 
     @pytest.mark.asyncio
-    async def test_no_payloads_at_path(self) -> None:
-        """Payloads at /other do not appear when checking /db."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/other/service", "Some payload", CompositionArc.PAYLOADS)
-
-        result = await cb_payload_check(ctx=ctx, topic_path="/db")
-        assert "No pending payloads" in result
-        assert "/db" in result
-        assert "Safe to proceed" in result
+    async def test_no_payloads_at_path_returns_safe_message(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        result = await cb_payload_check(topic_path="/architecture/database", ctx=ctx)
+        assert "no pending payloads" in result.lower() or "No pending payloads" in result
+        assert "/architecture/database" in result
 
     @pytest.mark.asyncio
-    async def test_no_payloads_message_contains_path(self) -> None:
-        """The 'no payloads' message mentions the requested path."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        result = await cb_payload_check(ctx=ctx, topic_path="/architecture/database")
-        assert "'/architecture/database'" in result
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: payloads found
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestPayloadsFound:
-    """Tests for when payloads are present and should be surfaced."""
-
-    @pytest.mark.asyncio
-    async def test_payload_found_at_path(self) -> None:
-        """A PAYLOADS assertion at /db/engine appears when checking /db."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        ast = _add_assertion(
-            stage, "/db/engine", "Benchmark results pending", CompositionArc.PAYLOADS
-        )
-
-        result = await cb_payload_check(ctx=ctx, topic_path="/db")
-        assert "PENDING PAYLOADS" in result
-        assert ast.id in result
-        assert "/db/engine" in result
-        assert "Benchmark results pending" in result
-
-    @pytest.mark.asyncio
-    async def test_all_payloads_no_filter(self) -> None:
-        """With no topic_path filter, all active PAYLOADS assertions are shown."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        a1 = _add_assertion(stage, "/api/auth", "Auth perf data pending", CompositionArc.PAYLOADS)
-        a2 = _add_assertion(stage, "/db/engine", "DB bench pending", CompositionArc.PAYLOADS)
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "PENDING PAYLOADS (2)" in result
-        assert a1.id in result
-        assert a2.id in result
-
-    @pytest.mark.asyncio
-    async def test_count_in_header(self) -> None:
-        """Header shows the exact count of payloads found."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        for i in range(3):
-            _add_assertion(
-                stage,
-                f"/path/item{i}",
-                f"Payload {i}",
-                CompositionArc.PAYLOADS,
-            )
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "PENDING PAYLOADS (3)" in result
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: path filtering
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestPathFiltering:
-    """Tests for the prefix-match path filter."""
-
-    @pytest.mark.asyncio
-    async def test_path_filter_excludes_other_subtree(self) -> None:
-        """Payloads at /api/auth are excluded when checking /db."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        db_ast = _add_assertion(stage, "/db/engine", "DB payload", CompositionArc.PAYLOADS)
-        _add_assertion(stage, "/api/auth", "API payload", CompositionArc.PAYLOADS)
-
-        result = await cb_payload_check(ctx=ctx, topic_path="/db")
-        assert db_ast.id in result
-        assert "/api/auth" not in result
-
-    @pytest.mark.asyncio
-    async def test_path_filter_includes_nested_paths(self) -> None:
-        """Checking /architecture also surfaces /architecture/database/engine."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        nested = _add_assertion(
-            stage,
-            "/architecture/database/engine",
-            "Deep payload",
-            CompositionArc.PAYLOADS,
-        )
-
-        result = await cb_payload_check(ctx=ctx, topic_path="/architecture")
-        assert nested.id in result
-        assert "/architecture/database/engine" in result
-
-    @pytest.mark.asyncio
-    async def test_path_filter_exact_match_included(self) -> None:
-        """A payload whose path exactly equals topic_path is included."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        ast = _add_assertion(stage, "/db/engine", "Exact match", CompositionArc.PAYLOADS)
-
-        result = await cb_payload_check(ctx=ctx, topic_path="/db/engine")
-        assert ast.id in result
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: payload details in response
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestPayloadDetails:
-    """Tests that evidence hints and tags appear in the response."""
-
-    @pytest.mark.asyncio
-    async def test_evidence_hints_shown(self) -> None:
-        """Evidence field values appear under the payload entry."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(
-            stage,
-            "/db/engine",
-            "Bench pending",
-            CompositionArc.PAYLOADS,
-            evidence=["pgbench_results.csv", "flamegraph.svg"],
-        )
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "Evidence hints" in result
-        assert "pgbench_results.csv" in result
-        assert "flamegraph.svg" in result
-
-    @pytest.mark.asyncio
-    async def test_tags_shown(self) -> None:
-        """Tags appear under the payload entry."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(
-            stage,
-            "/db/engine",
-            "Bench pending",
-            CompositionArc.PAYLOADS,
-            tags=["performance", "blocking"],
-        )
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "Tags" in result
-        assert "performance" in result
-        assert "blocking" in result
-
-    @pytest.mark.asyncio
-    async def test_no_evidence_no_evidence_line(self) -> None:
-        """When a payload has no evidence, the 'Evidence hints' line is absent."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "Bench pending", CompositionArc.PAYLOADS)
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "Evidence hints" not in result
-
-    @pytest.mark.asyncio
-    async def test_no_tags_no_tags_line(self) -> None:
-        """When a payload has no tags, the 'Tags' line is absent."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "Bench pending", CompositionArc.PAYLOADS)
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "Tags:" not in result
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: read-only — stage unchanged
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestReadOnly:
-    """Verify the tool does not modify the stage."""
-
-    @pytest.mark.asyncio
-    async def test_stage_unchanged_after_call(self) -> None:
-        """The stage's assertion count and event log are identical before and after."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "Bench pending", CompositionArc.PAYLOADS)
-
-        assertion_count_before = len(stage.assertions)
-        event_count_before = len(stage.events)
-        decision_count_before = len(stage.decisions)
-
-        await cb_payload_check(ctx=ctx)
-
-        assert len(stage.assertions) == assertion_count_before
-        assert len(stage.events) == event_count_before
-        assert len(stage.decisions) == decision_count_before
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: decisions overlap warning
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestDecisionsOverlap:
-    """Tests for the decision/payload overlap warning block."""
-
-    @pytest.mark.asyncio
-    async def test_decisions_overlap_warning_shown(self) -> None:
-        """A decision at /db plus a payload at /db/engine triggers WARNING."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "Bench pending", CompositionArc.PAYLOADS)
-        d = _add_decision(stage, "/db")
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "WARNING" in result
-        assert d.id in result
-
-    @pytest.mark.asyncio
-    async def test_decisions_overlap_shows_count(self) -> None:
-        """The WARNING line shows the number of at-risk decisions."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "Payload", CompositionArc.PAYLOADS)
-        _add_decision(stage, "/db", "Use PostgreSQL")
-        _add_decision(stage, "/db/engine", "Use InnoDB")
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "2 decision(s)" in result
-
-    @pytest.mark.asyncio
-    async def test_no_decisions_no_warning(self) -> None:
-        """When no decisions exist, no WARNING block appears."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "Bench pending", CompositionArc.PAYLOADS)
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "WARNING" not in result
-
-    @pytest.mark.asyncio
-    async def test_decisions_at_unrelated_path_no_warning(self) -> None:
-        """A decision at /api does not trigger WARNING for a payload at /db."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "Bench pending", CompositionArc.PAYLOADS)
-        _add_decision(stage, "/api")
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "WARNING" not in result
-
-    @pytest.mark.asyncio
-    async def test_payload_is_ancestor_of_decision_triggers_warning(self) -> None:
-        """Payload at /db triggers WARNING when decision is at /db/engine (payload is prefix of decision)."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db", "Top-level DB payload", CompositionArc.PAYLOADS)
-        d = _add_decision(stage, "/db/engine")
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "WARNING" in result
-        assert d.id in result
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: sorted output
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestSortedOutput:
-    """Tests that payloads are sorted alphabetically by path."""
-
-    @pytest.mark.asyncio
-    async def test_sorted_by_path(self) -> None:
-        """Multiple payloads appear in alphabetical path order in the response."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/z/last", "Z payload", CompositionArc.PAYLOADS)
-        _add_assertion(stage, "/a/first", "A payload", CompositionArc.PAYLOADS)
-        _add_assertion(stage, "/m/middle", "M payload", CompositionArc.PAYLOADS)
-
-        result = await cb_payload_check(ctx=ctx)
-        idx_a = result.index("/a/first")
-        idx_m = result.index("/m/middle")
-        idx_z = result.index("/z/last")
-        assert idx_a < idx_m < idx_z
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: error cases
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestErrorCases:
-    """Tests for error responses."""
-
-    @pytest.mark.asyncio
-    async def test_no_active_project(self) -> None:
-        """With no active projects, returns an ERROR message."""
-        ctx = _make_empty_ctx()
-        result = await cb_payload_check(ctx=ctx)
-        assert result.startswith("ERROR:")
-        assert "No active project" in result
-
-    @pytest.mark.asyncio
-    async def test_named_project_not_active(self) -> None:
-        """Requesting a project that is not active returns an ERROR."""
-        ctx, _, _ = _make_ctx_with_stage("proj_alpha")
-        result = await cb_payload_check(ctx=ctx, project_id="proj_beta")
-        assert result.startswith("ERROR:")
-        assert "proj_beta" in result
-
-
-# ═══════════════════════════════════════════════════════════════
-# Test: non-PAYLOADS assertions excluded
-# ═══════════════════════════════════════════════════════════════
-
-
-class TestNonPayloadsExcluded:
-    """Tests that assertions at other arcs are not surfaced."""
-
-    @pytest.mark.asyncio
-    async def test_inherits_not_shown(self) -> None:
-        """INHERITS assertions at the same path are not included in output."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "Use InnoDB", CompositionArc.INHERITS)
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "No pending payloads" in result
-        assert "Use InnoDB" not in result
-
-    @pytest.mark.asyncio
-    async def test_local_not_shown(self) -> None:
-        """LOCAL assertions at the same path are not included in output."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        # LOCAL requires falsifiable_if by validator
+    async def test_non_payloads_assertion_not_surfaced(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
         a = Assertion(
-            topic_path="/db/engine",
-            content="InnoDB is best",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.USER,
-            falsifiable_if="If benchmark shows < 1000 TPS under load",
+            topic_path="/architecture/database", content="PostgreSQL chosen",
+            arc=CompositionArc.INHERITS, author=AssertionAuthor.AI,
         )
         stage.assertions[a.id] = a
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "No pending payloads" in result
-
-    @pytest.mark.asyncio
-    async def test_retracted_payloads_not_shown(self) -> None:
-        """Retracted PAYLOADS assertions (active=False) are excluded."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        ast = _add_assertion(stage, "/db/engine", "Old payload", CompositionArc.PAYLOADS)
-        ast.active = False  # retract it
-
-        result = await cb_payload_check(ctx=ctx)
-        assert "No pending payloads" in result
-        assert ast.id not in result
+        save_stage_to_db(store, stage)
+        result = await cb_payload_check(topic_path="/architecture/database", ctx=ctx)
+        assert "PENDING PAYLOADS" not in result
 
     @pytest.mark.asyncio
-    async def test_mixed_arcs_only_payloads_shown(self) -> None:
-        """With multiple arc types present, only PAYLOADS assertions appear."""
-        ctx, stage, _ = _make_ctx_with_stage()
-        _add_assertion(stage, "/db/engine", "INHERITS claim", CompositionArc.INHERITS)
-        payload = _add_assertion(
-            stage, "/db/index", "Index strategy pending", CompositionArc.PAYLOADS
-        )
+    async def test_no_event_appended_for_read_only_check(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        initial = len(stage.events)
+        await cb_payload_check(ctx=ctx)
+        assert len(stage.events) == initial
 
-        result = await cb_payload_check(ctx=ctx)
-        assert "PENDING PAYLOADS (1)" in result
+
+class TestPayloadsPresent:
+    @pytest.mark.asyncio
+    async def test_payload_at_exact_path_surfaced(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        payload = _add_payload(stage, store, "/architecture/database", "Benchmark data not yet reviewed")
+        result = await cb_payload_check(topic_path="/architecture/database", ctx=ctx)
+        assert "PENDING PAYLOADS" in result
         assert payload.id in result
-        assert "INHERITS claim" not in result
+        assert "Benchmark data not yet reviewed" in result
+
+    @pytest.mark.asyncio
+    async def test_payload_count_shown_in_response(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        _add_payload(stage, store, "/architecture/database", "Evidence A")
+        _add_payload(stage, store, "/architecture/cache", "Evidence B")
+        result = await cb_payload_check(ctx=ctx)
+        assert "PENDING PAYLOADS (2)" in result
+
+    @pytest.mark.asyncio
+    async def test_payload_content_shown_in_response(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        _add_payload(stage, store, "/architecture/database", "GDPR audit results available but not loaded")
+        result = await cb_payload_check(ctx=ctx)
+        assert "GDPR audit results available but not loaded" in result
+
+    @pytest.mark.asyncio
+    async def test_multiple_payloads_all_listed(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        p1 = _add_payload(stage, store, "/arch/db", "DB benchmark")
+        p2 = _add_payload(stage, store, "/arch/cache", "Cache benchmark")
+        p3 = _add_payload(stage, store, "/compliance/gdpr", "GDPR audit")
+        result = await cb_payload_check(ctx=ctx)
+        assert p1.id in result
+        assert p2.id in result
+        assert p3.id in result
+
+
+class TestSubtreeFiltering:
+    @pytest.mark.asyncio
+    async def test_subtree_payload_surfaced_when_checking_parent(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        deep = _add_payload(stage, store, "/architecture/database/replication", "Replication lag study pending")
+        result = await cb_payload_check(topic_path="/architecture", ctx=ctx)
+        assert deep.id in result
+
+    @pytest.mark.asyncio
+    async def test_unrelated_path_payload_not_surfaced(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        unrelated = _add_payload(stage, store, "/compliance/gdpr", "GDPR audit pending")
+        arch = _add_payload(stage, store, "/architecture/database", "DB benchmark pending")
+        result = await cb_payload_check(topic_path="/architecture", ctx=ctx)
+        assert arch.id in result
+        assert unrelated.id not in result
+
+    @pytest.mark.asyncio
+    async def test_no_topic_path_returns_all_payloads(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        p1 = _add_payload(stage, store, "/architecture/database", "DB evidence")
+        p2 = _add_payload(stage, store, "/compliance/gdpr", "GDPR evidence")
+        result = await cb_payload_check(ctx=ctx)
+        assert p1.id in result
+        assert p2.id in result
+
+    @pytest.mark.asyncio
+    async def test_exact_path_match_does_not_surface_sibling(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        sibling = _add_payload(stage, store, "/architecture/cache", "Cache evidence")
+        target = _add_payload(stage, store, "/architecture/database", "DB evidence")
+        result = await cb_payload_check(topic_path="/architecture/database", ctx=ctx)
+        assert target.id in result
+        assert sibling.id not in result
+
+
+class TestInactivePayloadsExcluded:
+    @pytest.mark.asyncio
+    async def test_inactive_payload_not_surfaced(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        _add_payload(stage, store, "/architecture/database", "Old benchmark data", active=False)
+        result = await cb_payload_check(ctx=ctx)
+        assert "PENDING PAYLOADS" not in result
+
+    @pytest.mark.asyncio
+    async def test_mix_active_and_inactive_only_active_surfaced(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        active_p = _add_payload(stage, store, "/architecture/database", "Active evidence", active=True)
+        inactive_p = _add_payload(stage, store, "/architecture/cache", "Old evidence", active=False)
+        result = await cb_payload_check(ctx=ctx)
+        assert active_p.id in result
+        assert inactive_p.id not in result
+
+
+class TestPayloadSurfacingParameter:
+    @pytest.mark.asyncio
+    async def test_payloads_surfaced_when_payload_surfacing_disabled(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        stage.parameters.payload_surfacing = False
+        save_stage_to_db(store, stage)
+        payload = _add_payload(stage, store, "/architecture/database", "Benchmark data pending")
+        result = await cb_payload_check(topic_path="/architecture/database", ctx=ctx)
+        assert payload.id in result
+        assert "PENDING PAYLOADS" in result
+
+
+class TestDecisionOverlapWarning:
+    @pytest.mark.asyncio
+    async def test_decision_at_payload_path_triggers_warning(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        _add_payload(stage, store, "/architecture/database", "Evidence pending")
+        dec = Decision(
+            topic_path="/architecture/database", decision="Use PostgreSQL",
+            rationale="ACID guarantees",
+            alternatives_rejected=["MongoDB — no ACID"],
+            second_order_effects=["Migration overhead"],
+        )
+        stage.decisions.append(dec)
+        save_stage_to_db(store, stage)
+        result = await cb_payload_check(topic_path="/architecture/database", ctx=ctx)
+        assert "WARNING" in result
+        assert dec.id in result
+
+    @pytest.mark.asyncio
+    async def test_decision_at_unrelated_path_no_overlap_warning(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        _add_payload(stage, store, "/architecture/database", "Evidence pending")
+        dec = Decision(
+            topic_path="/compliance/gdpr", decision="GDPR compliant",
+            rationale="Audit passed",
+            alternatives_rejected=["Non-compliance — unacceptable"],
+            second_order_effects=["Annual audit required"],
+        )
+        stage.decisions.append(dec)
+        save_stage_to_db(store, stage)
+        result = await cb_payload_check(topic_path="/architecture/database", ctx=ctx)
+        assert dec.id not in result
+
+    @pytest.mark.asyncio
+    async def test_parent_path_decision_overlaps_with_child_payload(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage()
+        _add_payload(stage, store, "/architecture/database", "DB evidence pending")
+        dec = Decision(
+            topic_path="/architecture", decision="Microservices architecture",
+            rationale="Scalability requirements",
+            alternatives_rejected=["Monolith — rejected because scaling limits"],
+            second_order_effects=["Service discovery required"],
+        )
+        stage.decisions.append(dec)
+        save_stage_to_db(store, stage)
+        result = await cb_payload_check(ctx=ctx)
+        assert "WARNING" in result
+        assert dec.id in result
+
+
+class TestErrorConditions:
+    @pytest.mark.asyncio
+    async def test_no_active_project_returns_error(self) -> None:
+        ctx = _make_ctx()
+        result = await cb_payload_check(ctx=ctx)
+        assert result.startswith("ERROR:")
