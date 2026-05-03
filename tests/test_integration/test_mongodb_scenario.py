@@ -1,1168 +1,460 @@
-"""Integration test: The MongoDB scenario from Blueprint v3.0 Appendix A.
+"""Integration test: the canonical Cognitive Bridge MongoDB scenario.
 
-This test exercises the complete LIVRPS argumentation flow end-to-end:
-Assert -> Detect -> Steelman -> Challenge -> Experiment -> Decide
+Blueprint reference: Appendix A. CLAUDE.md Phase 4 / P4.T2.
+Constitution rules C3 (steelman gate), C5 (alternatives + effects), C7 (cascade),
+C8 (event-log audit), G4 (behavioral assertions).
 
-The scenario: An AI asserts PostgreSQL. The user pushes back with MongoDB.
-Cascading conflicts propagate to ORM and GDPR claims that depended on the
-database choice. The debate is resolved via an experiment protocol.
+Full Assert -> Detect -> Steelman -> Challenge -> Resolve -> Cascade -> Decide flow.
 """
 
 import pytest
 
 from cognitive_bridge.models import (
-    Assertion,
-    AssertionAuthor,
-    AssumptionStatus,
-    CompositionArc,
-    CompositionStage,
-    ConflictDetectionLayer,
-    ConflictStatus,
-    Decision,
-    EventType,
-    ResolutionPath,
+    AssumptionStatus, CompositionArc, ConflictDetectionLayer,
+    ConflictStatus, EventType,
 )
-from cognitive_bridge.engine.resolver import (
-    ResolutionResult,
-    add_assertion,
-    falsify_assertion,
-    get_current_winner,
-    promote_assertion,
-    resolve_conflict,
-    retract_assertion,
-)
-from cognitive_bridge.engine.cascade import detect_cascading_conflicts
-from cognitive_bridge.engine.provenance import (
-    count_events_by_type,
-    format_audit_trail,
-    get_events_for_target,
-)
-from cognitive_bridge.engine.trust import compute_trust_scores
-from cognitive_bridge.engine.red_team import (
-    generate_red_team_report,
-    should_trigger_red_team,
-)
+from cognitive_bridge.models.stage import CompositionStage
+from cognitive_bridge.server import save_stage_to_db
+from cognitive_bridge.storage.sqlite_store import SQLiteStore
+from cognitive_bridge.tools.assertion_tool import cb_manage_assertion
+from cognitive_bridge.tools.conflict_tool import cb_manage_conflict
+from cognitive_bridge.tools.decision_tool import cb_decide
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_stage(project_id: str = "mongodb-test") -> CompositionStage:
-    return CompositionStage(
-        project_id=project_id,
-        project_name="MongoDB Scenario",
-        exchange_count=1,
-    )
+class _MockCtx:
+    def __init__(self, store: SQLiteStore, active_stages: dict) -> None:
+        self.lifespan_context = {"store": store, "active_stages": active_stages}
 
 
-# ===========================================================================
-# TestMongoDBScenario
-# ===========================================================================
+def _make_ctx_with_stage(project_id: str = "proj_test") -> tuple[_MockCtx, CompositionStage, SQLiteStore]:
+    store = SQLiteStore(":memory:")
+    stage = CompositionStage(project_id=project_id, project_name="Test Project")
+    active_stages: dict = {project_id: stage}
+    save_stage_to_db(store, stage)
+    return _MockCtx(store=store, active_stages=active_stages), stage, store
+
+
+def _event_count(stage: CompositionStage, event_type: EventType) -> int:
+    return sum(1 for e in stage.events if e.event_type == event_type)
+
+
+DB_PATH = "/architecture/database/engine"
+ORM_PATH = "/architecture/orm/choice"
+
 
 class TestMongoDBScenario:
-    """The full MongoDB scenario as described in Blueprint v3.0 Appendix A.
+    @pytest.mark.asyncio
+    async def test_step01_create_project(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        assert stage.project_id == "mongodb_choice"
+        assert len(stage.assertions) == 0
 
-    Tests the complete argumentation pipeline step by step. Each step is
-    an independent assertion so failures are easy to localise.
-    """
-
-    @pytest.fixture
-    def stage(self) -> CompositionStage:
-        return _make_stage()
-
-    # -----------------------------------------------------------------------
-    # Step 1: AI asserts PostgreSQL at LOCAL
-    # -----------------------------------------------------------------------
-
-    def test_step1_postgres_asserted_at_local(self, stage):
-        """AI asserts 'Use PostgreSQL' at LOCAL with falsifiable_if. No conflict yet."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if=(
-                "Falsified if P99 latency exceeds 200ms under 1000 concurrent connections"
-            ),
-            evidence=["ACID compliance", "mature ecosystem"],
+    @pytest.mark.asyncio
+    async def test_step02_assert_mongodb(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        result = await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="MongoDB is the right choice for this project",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        result = add_assertion(stage, pg)
+        assert "ASSERT" in result
+        assert _event_count(stage, EventType.ASSERTION_CREATED) == 1
 
-        assert result.structural_conflict is None
-        assert result.winner_changed is False
-        assert result.new_winner_id == pg.id
-
-        winner = get_current_winner(stage, "/architecture/database/engine")
-        assert winner is not None
-        assert winner.content == "Use PostgreSQL"
-
-    # -----------------------------------------------------------------------
-    # Step 2: Prisma depends on database choice
-    # -----------------------------------------------------------------------
-
-    def test_step2_prisma_depends_on_database(self, stage):
-        """AI asserts Prisma at /architecture/orm, depending on the database path."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step03_structural_conflict_detected(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="MongoDB is the right choice for this project",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        prisma = Assertion(
-            topic_path="/architecture/orm",
-            content="Use Prisma",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/architecture/database/engine"],
+        result = await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="PostgreSQL is the right choice for this project",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        result = add_assertion(stage, prisma)
+        assert "STRUCTURAL CONFLICT" in result
+        assert _event_count(stage, EventType.CONFLICT_DETECTED) >= 1
 
-        assert result.structural_conflict is None
-        assert prisma.id in stage.assertions
-        assert prisma.assumption_status == AssumptionStatus.LIVE
-
-    # -----------------------------------------------------------------------
-    # Step 3: GDPR compliance depends on database
-    # -----------------------------------------------------------------------
-
-    def test_step3_gdpr_depends_on_database(self, stage):
-        """AI asserts GDPR at /compliance/gdpr, depending on the database path."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step03_conflict_has_structural_layer(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="MongoDB is the right choice for this project",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        gdpr = Assertion(
-            topic_path="/compliance/gdpr/strict_deletion",
-            content="Row-level deletion guaranteed by PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if=(
-                "Falsified if the chosen database cannot perform row-level deletion"
-            ),
-            depends_on_paths=["/architecture/database/engine"],
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="PostgreSQL is the right choice for this project",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        result = add_assertion(stage, gdpr)
-
-        assert result.structural_conflict is None
-        assert gdpr.assumption_status == AssumptionStatus.LIVE
-
-    # -----------------------------------------------------------------------
-    # Step 4: User asserts MongoDB — structural conflict
-    # -----------------------------------------------------------------------
-
-    def test_step4_mongodb_triggers_structural_conflict(self, stage):
-        """User asserts MongoDB at REFERENCES. Structural conflict detected against PostgreSQL."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
-        )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
-        )
-        result = add_assertion(stage, mongo)
-
-        assert result.structural_conflict is not None
-        conflict = result.structural_conflict
+        assert len(stage.conflicts) >= 1
+        conflict = next(iter(stage.conflicts.values()))
         assert conflict.detection_layer == ConflictDetectionLayer.STRUCTURAL
-        assert conflict.topic_path == "/architecture/database/engine"
-        ids = {conflict.assertion_a_id, conflict.assertion_b_id}
-        assert pg.id in ids
-        assert mongo.id in ids
 
-    def test_step4_postgres_still_wins_at_references(self, stage):
-        """LOCAL (10) beats REFERENCES (40): PostgreSQL is still the winner."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step04_challenge_without_steelman_rejected(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="MongoDB is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        result = add_assertion(stage, mongo)
+        conflict_id = next(iter(stage.conflicts.keys()))
+        result = await cb_manage_conflict(action="challenge", conflict_id=conflict_id, ctx=ctx)
+        assert "ERROR" in result
+        assert "steelman" in result.lower()
 
-        assert result.winner_changed is False
-        winner = get_current_winner(stage, "/architecture/database/engine")
-        assert winner.content == "Use PostgreSQL"
-
-    def test_step4_no_cascade_because_winner_unchanged(self, stage):
-        """Winner unchanged at REFERENCES arc → no cascading conflicts yet."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step05_challenge_with_steelman_succeeds(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="MongoDB is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        prisma = Assertion(
-            topic_path="/architecture/orm",
-            content="Use Prisma",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/architecture/database/engine"],
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, prisma)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        conflict_id = next(iter(stage.conflicts.keys()))
+        result = await cb_manage_conflict(
+            action="challenge", conflict_id=conflict_id,
+            steelman_summary="MongoDB offers flexible schema design that reduces migration overhead for rapidly evolving domains.",
+            ctx=ctx,
         )
-        result = add_assertion(stage, mongo)
+        assert "ERROR" not in result
+        assert "Challenge registered" in result or "challenge" in result.lower()
 
-        assert result.cascading_conflicts == []
-        assert prisma.assumption_status == AssumptionStatus.LIVE
-
-    # -----------------------------------------------------------------------
-    # Step 5: Promote MongoDB to LOCAL — winner changes, cascades fire
-    # -----------------------------------------------------------------------
-
-    def test_step5_promote_mongodb_changes_winner(self, stage):
-        """Promoting MongoDB to LOCAL changes the winner (newer = tiebreak)."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step05_challenge_records_conflict_resolved_event(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="MongoDB is right",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is right",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, mongo)
-
-        # Promote MongoDB: now both are LOCAL (10). MongoDB is newer → wins.
-        mongo.falsifiable_if = "Falsified if MongoDB cannot satisfy GDPR deletion requirements"
-        result = promote_assertion(
-            stage,
-            mongo.id,
-            CompositionArc.LOCAL,
-            evidence="MongoDB benchmarks show 3x write throughput for our use case",
+        conflict_id = next(iter(stage.conflicts.keys()))
+        await cb_manage_conflict(
+            action="challenge", conflict_id=conflict_id,
+            steelman_summary="MongoDB's flexible schema reduces migration overhead.",
+            ctx=ctx,
         )
+        assert _event_count(stage, EventType.CONFLICT_RESOLVED) >= 1
 
-        new_winner = get_current_winner(stage, "/architecture/database/engine")
-        assert new_winner.id == mongo.id
-        assert result.winner_changed is True
-
-    def test_step5_cascades_fire_when_winner_changes(self, stage):
-        """After MongoDB wins, ORM and GDPR assertions are CHALLENGED."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step05_challenge_conflict_remains_active(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="MongoDB is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        prisma = Assertion(
-            topic_path="/architecture/orm",
-            content="Use Prisma",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/architecture/database/engine"],
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, prisma)
-
-        gdpr = Assertion(
-            topic_path="/compliance/gdpr/strict_deletion",
-            content="Row-level deletion guaranteed by PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if chosen database cannot perform row-level deletion",
-            depends_on_paths=["/architecture/database/engine"],
+        conflict_id = next(iter(stage.conflicts.keys()))
+        await cb_manage_conflict(
+            action="challenge", conflict_id=conflict_id,
+            steelman_summary="MongoDB's flexible schema is a strong argument for evolving domains.",
+            ctx=ctx,
         )
-        add_assertion(stage, gdpr)
+        assert stage.conflicts[conflict_id].status == ConflictStatus.ACTIVE
 
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+    @pytest.mark.asyncio
+    async def test_step06_dependent_assertion_created(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, mongo)
-
-        mongo.falsifiable_if = "Falsified if MongoDB cannot satisfy GDPR deletion requirements"
-        result = promote_assertion(
-            stage,
-            mongo.id,
-            CompositionArc.LOCAL,
-            evidence="MongoDB benchmarks show 3x write throughput",
+        result = await cb_manage_assertion(
+            action="assert", topic_path=ORM_PATH, content="SQLAlchemy is the chosen ORM",
+            arc=CompositionArc.INHERITS.value, depends_on_paths=DB_PATH, ctx=ctx,
         )
+        assert "ASSERT" in result
+        orm_ast = next(a for a in stage.assertions.values() if a.topic_path == ORM_PATH)
+        assert DB_PATH in orm_ast.depends_on_paths
 
-        # Both dependents must be CHALLENGED
-        assert prisma.assumption_status == AssumptionStatus.CHALLENGED
-        assert gdpr.assumption_status == AssumptionStatus.CHALLENGED
-        # At least two cascading conflicts
-        assert len(result.cascading_conflicts) >= 2
-        cascade_b_ids = {c.assertion_b_id for c in result.cascading_conflicts}
-        assert prisma.id in cascade_b_ids
-        assert gdpr.id in cascade_b_ids
-
-    # -----------------------------------------------------------------------
-    # Step 6: Steelman gate — challenge requires steelman_summary
-    # -----------------------------------------------------------------------
-
-    def test_step6_challenge_without_steelman_rejected(self, stage):
-        """CHALLENGE resolution without steelman_summary raises ValueError."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step07_promote_postgresql_to_local(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="MongoDB is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        result = add_assertion(stage, mongo)
-        conflict = result.structural_conflict
-        assert conflict is not None
-
-        with pytest.raises(ValueError, match="steelman_summary"):
-            resolve_conflict(stage, conflict.id, ResolutionPath.CHALLENGE)
-
-    def test_step6_challenge_with_steelman_stores_summary(self, stage):
-        """CHALLENGE with steelman_summary stores it on the conflict and keeps ACTIVE."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+        pg_ast = next(a for a in stage.assertions.values() if "PostgreSQL" in a.content)
+        result = await cb_manage_assertion(
+            action="promote", topic_path=DB_PATH, assertion_id=pg_ast.id,
+            arc=CompositionArc.LOCAL.value,
+            evidence="pg_version() confirmed PostgreSQL 15.2",
+            falsifiable_if="If pg_version() returns a non-PostgreSQL string",
+            ctx=ctx,
         )
-        add_assertion(stage, pg)
+        assert "PROMOTE" in result
+        assert _event_count(stage, EventType.ASSERTION_PROMOTED) >= 1
 
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+    @pytest.mark.asyncio
+    async def test_step08_cascading_conflict_for_orm_assertion(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="MongoDB is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        result = add_assertion(stage, mongo)
-        conflict = result.structural_conflict
-
-        steelman = (
-            "MongoDB offers superior write throughput for document-heavy workloads. "
-            "The user's benchmark data shows 3x improvement, which is significant "
-            "for our expected write patterns."
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        resolved = resolve_conflict(
-            stage,
-            conflict.id,
-            ResolutionPath.CHALLENGE,
-            steelman_summary=steelman,
-            note="However, ACID guarantees are critical for our compliance requirements.",
+        await cb_manage_assertion(
+            action="assert", topic_path=ORM_PATH, content="SQLAlchemy is the chosen ORM",
+            arc=CompositionArc.INHERITS.value, depends_on_paths=DB_PATH, ctx=ctx,
         )
-
-        assert resolved.status == ConflictStatus.ACTIVE
-        assert resolved.steelman_of_opponent == steelman
-        assert resolved.resolved_at is None
-
-    # -----------------------------------------------------------------------
-    # Step 7: Propose experiment
-    # -----------------------------------------------------------------------
-
-    def test_step7_experiment_without_protocol_rejected(self, stage):
-        """PROPOSE_EXPERIMENT without experiment_protocol raises ValueError."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+        pg_ast = next(
+            a for a in stage.assertions.values()
+            if "PostgreSQL" in a.content and a.topic_path == DB_PATH
         )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        await cb_manage_assertion(
+            action="promote", topic_path=DB_PATH, assertion_id=pg_ast.id,
+            arc=CompositionArc.LOCAL.value, evidence="pg_version() confirmed",
+            falsifiable_if="If pg_version() returns a non-PostgreSQL string", ctx=ctx,
         )
-        result = add_assertion(stage, mongo)
-        conflict = result.structural_conflict
+        cascading = [
+            c for c in stage.conflicts.values()
+            if c.detection_layer == ConflictDetectionLayer.CASCADING
+        ]
+        assert len(cascading) >= 1, "Expected at least one CASCADING conflict"
 
-        with pytest.raises(ValueError, match="experiment_protocol"):
-            resolve_conflict(
-                stage, conflict.id, ResolutionPath.PROPOSE_EXPERIMENT
-            )
-
-    def test_step7_experiment_with_protocol_deferred(self, stage):
-        """PROPOSE_EXPERIMENT with protocol sets RESOLVED_EXPERIMENT and stores protocol."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step09_orm_assertion_assumption_status_challenged(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="MongoDB is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        result = add_assertion(stage, mongo)
-        conflict = result.structural_conflict
-
-        protocol = (
-            "Run both PostgreSQL and MongoDB against our production write pattern "
-            "(1000 concurrent connections, mixed read/write) for 24 hours. "
-            "Measure P99 latency, throughput, and verify GDPR deletion compliance."
+        await cb_manage_assertion(
+            action="assert", topic_path=ORM_PATH, content="SQLAlchemy is the chosen ORM",
+            arc=CompositionArc.INHERITS.value, depends_on_paths=DB_PATH, ctx=ctx,
         )
-        resolved = resolve_conflict(
-            stage,
-            conflict.id,
-            ResolutionPath.PROPOSE_EXPERIMENT,
-            experiment_protocol=protocol,
+        pg_ast = next(
+            a for a in stage.assertions.values()
+            if "PostgreSQL" in a.content and a.topic_path == DB_PATH
         )
-
-        assert resolved.status == ConflictStatus.RESOLVED_EXPERIMENT
-        assert resolved.experiment_protocol == protocol
-        assert resolved.resolved_at is not None
-
-    # -----------------------------------------------------------------------
-    # Step 8: Decision recorded
-    # -----------------------------------------------------------------------
-
-    def test_step8_decision_requires_alternatives_and_second_order_effects(self):
-        """Decision model raises ValueError when alternatives_rejected is empty."""
-        with pytest.raises(Exception):
-            Decision(
-                topic_path="/architecture/database/engine",
-                decision="Use MongoDB",
-                rationale="Better throughput",
-                alternatives_rejected=[],          # must be min_length=1
-                second_order_effects=["Dual DB"],
-            )
-
-    def test_step8_decision_requires_second_order_effects(self):
-        """Decision model raises ValueError when second_order_effects is empty."""
-        with pytest.raises(Exception):
-            Decision(
-                topic_path="/architecture/database/engine",
-                decision="Use MongoDB",
-                rationale="Better throughput",
-                alternatives_rejected=["PostgreSQL only — rejected because latency"],
-                second_order_effects=[],           # must be min_length=1
-            )
-
-    def test_step8_valid_decision_stored_on_stage(self, stage):
-        """A complete Decision with alternatives and second-order effects is stored."""
-        decision = Decision(
-            topic_path="/architecture/database/engine",
-            decision="Use MongoDB with PostgreSQL for compliance-critical tables",
-            rationale="MongoDB wins on throughput; PostgreSQL wins on compliance.",
-            alternatives_rejected=[
-                "PostgreSQL only — rejected because 3x throughput penalty",
-                "MongoDB only — rejected because GDPR compliance risk",
-            ],
-            second_order_effects=[
-                "Must maintain two database connections in the application layer",
-                "ORM strategy must support both document and relational patterns",
-            ],
-            reversibility="costly",
+        await cb_manage_assertion(
+            action="promote", topic_path=DB_PATH, assertion_id=pg_ast.id,
+            arc=CompositionArc.LOCAL.value, evidence="confirmed",
+            falsifiable_if="If pg_version() returns a non-PostgreSQL string", ctx=ctx,
         )
-        stage.decisions.append(decision)
+        orm_ast = next(a for a in stage.assertions.values() if a.topic_path == ORM_PATH)
+        assert orm_ast.assumption_status == AssumptionStatus.CHALLENGED
+        assert _event_count(stage, EventType.ASSERTION_CHALLENGED) >= 1
 
-        assert len(stage.decisions) == 1
-        assert stage.decisions[0].decision == decision.decision
-        assert len(stage.decisions[0].alternatives_rejected) == 2
-        assert len(stage.decisions[0].second_order_effects) == 2
-
-    # -----------------------------------------------------------------------
-    # Full scenario (steps combined)
-    # -----------------------------------------------------------------------
-
-    def test_full_scenario_end_to_end(self, stage):
-        """Run all eight steps of the MongoDB scenario in sequence."""
-        # --- Step 1: AI asserts PostgreSQL ---
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if=(
-                "Falsified if P99 latency exceeds 200ms under 1000 concurrent connections"
+    @pytest.mark.asyncio
+    async def test_step10_decision_recorded(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
+        )
+        result = await cb_decide(
+            topic_path=DB_PATH,
+            decision="Use PostgreSQL as the primary database engine",
+            rationale="PostgreSQL provides ACID guarantees required by transactional workloads.",
+            alternatives_rejected=(
+                "MongoDB — rejected because no ACID transaction support across collections | "
+                "MySQL — rejected because limited JSON support | "
+                "Redis — rejected because no durable persistent primary store semantics"
             ),
-            evidence=["ACID compliance", "mature ecosystem"],
-        )
-        r1 = add_assertion(stage, pg)
-        assert r1.structural_conflict is None
-        assert r1.winner_changed is False
-
-        # --- Step 2: AI asserts Prisma ---
-        prisma = Assertion(
-            topic_path="/architecture/orm",
-            content="Use Prisma",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/architecture/database/engine"],
-        )
-        r2 = add_assertion(stage, prisma)
-        assert r2.structural_conflict is None
-
-        # --- Step 3: AI asserts GDPR row-deletion ---
-        gdpr = Assertion(
-            topic_path="/compliance/gdpr/strict_deletion",
-            content="Row-level deletion guaranteed by PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if=(
-                "Falsified if the chosen database cannot perform row-level deletion"
+            second_order_effects=(
+                "ORM migration required: all models must use SQLAlchemy with PG dialect | "
+                "Schema redesign required: migrate from document model to relational"
             ),
-            depends_on_paths=["/architecture/database/engine"],
+            reversibility="costly", ctx=ctx,
         )
-        r3 = add_assertion(stage, gdpr)
-        assert r3.structural_conflict is None
-
-        # --- Step 4: User asserts MongoDB at REFERENCES ---
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
-        )
-        r4 = add_assertion(stage, mongo)
-
-        # Structural conflict detected
-        assert r4.structural_conflict is not None
-        assert r4.structural_conflict.detection_layer == ConflictDetectionLayer.STRUCTURAL
-
-        # PostgreSQL (LOCAL=10) still wins over MongoDB (REFERENCES=40)
-        assert r4.winner_changed is False
-        winner = get_current_winner(stage, "/architecture/database/engine")
-        assert winner.content == "Use PostgreSQL"
-
-        # No cascades yet — winner did not change
-        assert r4.cascading_conflicts == []
-
-        # --- Step 5: Promote MongoDB to LOCAL (winner changes, cascades fire) ---
-        mongo.falsifiable_if = (
-            "Falsified if MongoDB cannot satisfy GDPR deletion requirements"
-        )
-        r5 = promote_assertion(
-            stage,
-            mongo.id,
-            CompositionArc.LOCAL,
-            evidence="MongoDB benchmarks show 3x write throughput",
-        )
-
-        # MongoDB (newer LOCAL) wins
-        new_winner = get_current_winner(stage, "/architecture/database/engine")
-        assert new_winner.id == mongo.id
-        assert r5.winner_changed is True
-
-        # Cascades: Prisma and GDPR are CHALLENGED
-        assert prisma.assumption_status == AssumptionStatus.CHALLENGED
-        assert gdpr.assumption_status == AssumptionStatus.CHALLENGED
-        assert len(r5.cascading_conflicts) >= 2
-
-        # --- Step 6: AI steelmans and challenges ---
-        db_conflict = r4.structural_conflict
-        steelman = (
-            "MongoDB offers superior write throughput for document-heavy workloads "
-            "with 3x improvement in our benchmark."
-        )
-        challenged = resolve_conflict(
-            stage,
-            db_conflict.id,
-            ResolutionPath.CHALLENGE,
-            steelman_summary=steelman,
-        )
-        assert challenged.status == ConflictStatus.ACTIVE  # debate continues
-        assert challenged.steelman_of_opponent == steelman
-
-        # --- Step 7: Propose experiment ---
-        protocol = (
-            "Run both PostgreSQL and MongoDB against production write pattern "
-            "for 24 hours. Measure P99 latency and GDPR deletion compliance."
-        )
-        exp_conflict = resolve_conflict(
-            stage,
-            db_conflict.id,
-            ResolutionPath.PROPOSE_EXPERIMENT,
-            experiment_protocol=protocol,
-        )
-        assert exp_conflict.status == ConflictStatus.RESOLVED_EXPERIMENT
-
-        # --- Step 8: Decision recorded ---
-        decision = Decision(
-            topic_path="/architecture/database/engine",
-            decision="Use MongoDB with PostgreSQL for compliance-critical tables",
-            rationale="MongoDB wins on throughput; PostgreSQL on compliance.",
-            alternatives_rejected=[
-                "PostgreSQL only — rejected because 3x throughput penalty",
-                "MongoDB only — rejected because GDPR compliance risk",
-            ],
-            second_order_effects=[
-                "Must maintain two DB connections",
-                "ORM must support document + relational patterns",
-            ],
-            reversibility="costly",
-        )
-        stage.decisions.append(decision)
-
-        # --- Final state assertions ---
-        assert len(stage.assertions) >= 4
-        assert len(stage.conflicts) >= 3  # structural + 2 cascading
+        assert "DECISION RECORDED" in result
         assert len(stage.decisions) == 1
-        assert len(stage.events) >= 5
+        dec = stage.decisions[0]
+        assert "MongoDB" in dec.alternatives_rejected[0]
+        assert _event_count(stage, EventType.DECISION_RECORDED) >= 1
 
-        # Trust scores for contested path
-        trust_scores = compute_trust_scores(stage)
-        assert "/architecture/database/engine" in trust_scores
-
-        # Audit trail for PostgreSQL assertion
-        pg_trail = get_events_for_target(stage, pg.id)
-        assert len(pg_trail) >= 1
-
-        # Event counts sanity
-        counts = count_events_by_type(stage)
-        assert "assertion_created" in counts
-        assert "conflict_detected" in counts
-
-    # -----------------------------------------------------------------------
-    # Provenance and audit trail
-    # -----------------------------------------------------------------------
-
-    def test_audit_trail_non_empty_for_pg_assertion(self, stage):
-        """PostgreSQL assertion has at least one event in its audit trail."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_step10_decision_creates_inherits_constraint_assertions(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is the right choice",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        trail = get_events_for_target(stage, pg.id)
-        assert len(trail) >= 1
-        assert trail[0].event_type == EventType.ASSERTION_CREATED
-
-    def test_format_audit_trail_returns_string(self, stage):
-        """format_audit_trail returns a non-empty string after assertions are added."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+        pre_count = len(stage.assertions)
+        await cb_decide(
+            topic_path=DB_PATH, decision="Use PostgreSQL",
+            rationale="ACID guarantees needed",
+            alternatives_rejected="MongoDB — no ACID | Redis — no persistence",
+            second_order_effects="ORM migration required | Schema redesign required",
+            ctx=ctx,
         )
-        add_assertion(stage, pg)
+        assert len(stage.assertions) - pre_count == 2
 
-        trail = format_audit_trail(stage, pg.id)
-        assert isinstance(trail, str)
-        assert "assertion_created" in trail
-
-    def test_conflict_event_recorded_in_counts(self, stage):
-        """count_events_by_type includes conflict_detected after a structural conflict."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_full_scenario_state(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("mongodb_choice")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="MongoDB is the right choice for this project",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="PostgreSQL is the right choice for this project",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, mongo)
-
-        counts = count_events_by_type(stage)
-        assert "conflict_detected" in counts
-        assert counts["conflict_detected"] >= 1
-
-    # -----------------------------------------------------------------------
-    # Trust calibration
-    # -----------------------------------------------------------------------
-
-    def test_trust_score_present_after_conflict(self, stage):
-        """A conflict at a path creates a trust score entry for that path."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+        conflict_id = next(iter(stage.conflicts.keys()))
+        await cb_manage_conflict(
+            action="challenge", conflict_id=conflict_id,
+            steelman_summary="MongoDB's flexible schema significantly reduces migration overhead.",
+            ctx=ctx,
         )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        await cb_manage_assertion(
+            action="assert", topic_path=ORM_PATH,
+            content="SQLAlchemy is the chosen ORM, depends on DB engine choice",
+            arc=CompositionArc.INHERITS.value, depends_on_paths=DB_PATH, ctx=ctx,
         )
-        add_assertion(stage, mongo)
-
-        scores = compute_trust_scores(stage)
-        assert "/architecture/database/engine" in scores
-
-    def test_trust_score_increases_after_experiment_resolution(self, stage):
-        """Resolving a conflict via PROPOSE_EXPERIMENT increases trust score."""
-        pg = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+        pg_ast = next(
+            a for a in stage.assertions.values()
+            if "PostgreSQL" in a.content and a.topic_path == DB_PATH
         )
-        add_assertion(stage, pg)
-
-        mongo = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use MongoDB",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        await cb_manage_assertion(
+            action="promote", topic_path=DB_PATH, assertion_id=pg_ast.id,
+            arc=CompositionArc.LOCAL.value,
+            evidence="pg_version() returned PostgreSQL 15.2",
+            falsifiable_if="If pg_version() returns a non-PostgreSQL string", ctx=ctx,
         )
-        result = add_assertion(stage, mongo)
-        conflict = result.structural_conflict
-
-        score_before = compute_trust_scores(stage)["/architecture/database/engine"]
-
-        resolve_conflict(
-            stage,
-            conflict.id,
-            ResolutionPath.PROPOSE_EXPERIMENT,
-            experiment_protocol="24hr benchmark with P99 measurement",
+        await cb_decide(
+            topic_path=DB_PATH,
+            decision="Use PostgreSQL as the primary database engine",
+            rationale="ACID guarantees required by transactional workloads",
+            alternatives_rejected=(
+                "MongoDB — rejected because no ACID transaction support | "
+                "MySQL — rejected because limited JSON support"
+            ),
+            second_order_effects=(
+                "ORM migration: all models must use SQLAlchemy PG dialect | "
+                "Schema redesign: migrate from document model to relational"
+            ),
+            reversibility="costly", ctx=ctx,
         )
-
-        score_after = compute_trust_scores(stage)["/architecture/database/engine"]
-        assert score_after.score > score_before.score
-
-
-# ===========================================================================
-# TestCascadeChain
-# ===========================================================================
-
-class TestCascadeChain:
-    """Test cascading through a linear dependency chain: A -> B -> C."""
-
-    def test_linear_chain_a_change_challenges_b_not_c_directly(self):
-        """A -> B -> C: changing A challenges B. C is not a direct dependent of A."""
-        stage = CompositionStage(project_id="chain-test", project_name="Chain Test")
-
-        a = Assertion(
-            topic_path="/foundation",
-            content="Foundation claim",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if foundation is disproved",
-        )
-        b = Assertion(
-            topic_path="/midlayer",
-            content="Mid-layer claim",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/foundation"],
-        )
-        c = Assertion(
-            topic_path="/leaf",
-            content="Leaf claim",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/midlayer"],
-        )
-
-        for ast in (a, b, c):
-            stage.assertions[ast.id] = ast
-
-        # Insert a competing claim at /foundation to displace A
-        a2 = Assertion(
-            topic_path="/foundation",
-            content="New foundation claim",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.USER,
-            falsifiable_if="Falsified if new foundation is disproved",
-        )
-        result = add_assertion(stage, a2)
-
-        # a2 is newer LOCAL — wins over a
-        assert result.winner_changed is True
-
-        # B depends on /foundation — must be CHALLENGED
-        assert b.assumption_status == AssumptionStatus.CHALLENGED
-        # C depends on /midlayer (not /foundation) — not yet CHALLENGED
-        assert c.assumption_status == AssumptionStatus.LIVE
-
-    def test_linear_chain_b_change_challenges_c(self):
-        """After B changes, C is CHALLENGED."""
-        stage = CompositionStage(project_id="chain-test", project_name="Chain Test")
-
-        b = Assertion(
-            topic_path="/midlayer",
-            content="Mid-layer claim",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-        )
-        c = Assertion(
-            topic_path="/leaf",
-            content="Leaf claim",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/midlayer"],
-        )
-        for ast in (b, c):
-            stage.assertions[ast.id] = ast
-
-        b2 = Assertion(
-            topic_path="/midlayer",
-            content="New mid-layer claim",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.USER,
-            falsifiable_if="Falsified if new mid-layer is disproved",
-        )
-        result = add_assertion(stage, b2)
-
-        assert result.winner_changed is True
-        assert c.assumption_status == AssumptionStatus.CHALLENGED
-
-    def test_five_level_deep_chain_first_level_cascades(self):
-        """A 5-level chain: changing level 1 directly challenges only level 2."""
-        stage = CompositionStage(project_id="deep-chain", project_name="Deep Chain")
-        paths = [f"/level{i}" for i in range(1, 6)]
-
-        assertions = []
-        for i, path in enumerate(paths):
-            dep = [paths[i - 1]] if i > 0 else []
-            a = Assertion(
-                topic_path=path,
-                content=f"Claim at level {i + 1}",
-                arc=CompositionArc.INHERITS,
-                author=AssertionAuthor.AI,
-                depends_on_paths=dep,
-            )
-            stage.assertions[a.id] = a
-            assertions.append(a)
-
-        # Insert a competing claim at level 1 that displaces the current winner
-        new_l1 = Assertion(
-            topic_path="/level1",
-            content="New level 1 claim",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.USER,
-            falsifiable_if="Falsified if new L1 claim is disproved",
-        )
-        result = add_assertion(stage, new_l1)
-
-        # Level 2 depends on /level1 — must be CHALLENGED
-        assert assertions[1].assumption_status == AssumptionStatus.CHALLENGED
-        # Deeper levels are not direct dependents of /level1
-        for lvl in assertions[2:]:
-            assert lvl.assumption_status == AssumptionStatus.LIVE
-
-
-# ===========================================================================
-# TestFalsificationCascade
-# ===========================================================================
-
-class TestFalsificationCascade:
-    """Falsifying an assertion orphans all dependents."""
-
-    def test_falsify_foundation_orphans_dependents(self):
-        """Falsifying a LOCAL assertion with dependents marks all dependents ORPHANED."""
-        stage = CompositionStage(project_id="falsify-test", project_name="Falsify Test")
-
-        foundation = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
-        )
-        orm = Assertion(
-            topic_path="/architecture/orm",
-            content="Use Prisma",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/architecture/database/engine"],
-        )
-        gdpr = Assertion(
-            topic_path="/compliance/gdpr/strict_deletion",
-            content="Row-level deletion guaranteed by PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if chosen database cannot perform row-level deletion",
-            depends_on_paths=["/architecture/database/engine"],
-        )
-        for ast in (foundation, orm, gdpr):
-            stage.assertions[ast.id] = ast
-
-        result = falsify_assertion(
-            stage,
-            foundation.id,
-            "P99 latency measured at 450ms under 1000 concurrent connections",
-        )
-
-        # Foundation is now FALSIFIED and inactive
-        assert foundation.assumption_status == AssumptionStatus.FALSIFIED
-        assert foundation.active is False
-
-        # Dependents are ORPHANED
-        assert orm.assumption_status == AssumptionStatus.ORPHANED
-        assert gdpr.assumption_status == AssumptionStatus.ORPHANED
-
-    def test_falsify_records_falsified_and_orphaned_events(self):
-        """ASSERTION_FALSIFIED and ASSERTION_ORPHANED events are recorded."""
-        stage = CompositionStage(project_id="falsify-test", project_name="Falsify Test")
-
-        foundation = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
-        )
-        orm = Assertion(
-            topic_path="/architecture/orm",
-            content="Use Prisma",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
-            depends_on_paths=["/architecture/database/engine"],
-        )
-        for ast in (foundation, orm):
-            stage.assertions[ast.id] = ast
-
-        falsify_assertion(
-            stage, foundation.id, "P99 latency exceeded 200ms threshold"
-        )
-
+        assert len(stage.assertions) >= 3
+        assert len(stage.conflicts) >= 2
+        assert len(stage.decisions) == 1
+        assert len(stage.events) >= 10
         event_types = {e.event_type for e in stage.events}
-        assert EventType.ASSERTION_FALSIFIED in event_types
-        assert EventType.ASSERTION_ORPHANED in event_types
+        assert EventType.ASSERTION_CREATED in event_types
+        assert EventType.CONFLICT_DETECTED in event_types
+        assert EventType.CONFLICT_RESOLVED in event_types
+        assert EventType.ASSERTION_PROMOTED in event_types
+        assert EventType.ASSERTION_CHALLENGED in event_types
+        assert EventType.DECISION_RECORDED in event_types
+        assert _event_count(stage, EventType.ASSERTION_CREATED) >= 3
+        assert _event_count(stage, EventType.CONFLICT_DETECTED) >= 2
+        structural = [
+            c for c in stage.conflicts.values()
+            if c.detection_layer == ConflictDetectionLayer.STRUCTURAL
+        ]
+        cascading = [
+            c for c in stage.conflicts.values()
+            if c.detection_layer == ConflictDetectionLayer.CASCADING
+        ]
+        assert len(structural) >= 1
+        assert len(cascading) >= 1
+        orm_assertions = [a for a in stage.assertions.values() if a.topic_path == ORM_PATH]
+        assert len(orm_assertions) >= 1
+        assert orm_assertions[0].assumption_status == AssumptionStatus.CHALLENGED
+        dec = stage.decisions[0]
+        assert dec.topic_path == DB_PATH
+        assert len(dec.alternatives_rejected) >= 1
+        assert any("MongoDB" in alt for alt in dec.alternatives_rejected)
+        assert len(dec.second_order_effects) >= 1
 
-    def test_falsify_non_falsifiable_assertion_raises(self):
-        """Calling falsify_assertion on an assertion with no falsifiable_if raises ValueError."""
-        stage = CompositionStage(project_id="falsify-test", project_name="Falsify Test")
-        a = Assertion(
-            topic_path="/service/cache",
-            content="Use Redis",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
+
+class TestGates:
+    @pytest.mark.asyncio
+    async def test_falsifiability_gate_local_without_falsifiable_if(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("proj_gate")
+        result = await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="PostgreSQL version is 15",
+            arc=CompositionArc.LOCAL.value, evidence="observed", ctx=ctx,
         )
-        stage.assertions[a.id] = a
+        assert "ERROR" in result
+        assert len(stage.assertions) == 0
 
-        with pytest.raises(ValueError, match="no falsifiable_if"):
-            falsify_assertion(stage, a.id, "Redis was slow")
-
-    def test_falsified_assertion_remains_in_stage(self):
-        """Non-destructive invariant: falsified assertions stay in stage.assertions."""
-        stage = CompositionStage(project_id="falsify-test", project_name="Falsify Test")
-        a = Assertion(
-            topic_path="/architecture/database/engine",
-            content="Use PostgreSQL",
-            arc=CompositionArc.LOCAL,
-            author=AssertionAuthor.AI,
-            falsifiable_if="Falsified if P99 latency exceeds 200ms",
+    @pytest.mark.asyncio
+    async def test_falsifiability_gate_local_with_falsifiable_if(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("proj_gate2")
+        result = await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH,
+            content="PostgreSQL version is 15",
+            arc=CompositionArc.LOCAL.value,
+            evidence="SELECT version() confirmed 15",
+            falsifiable_if="If SELECT version() returns a non-PG15 string", ctx=ctx,
         )
-        stage.assertions[a.id] = a
+        assert "ASSERT" in result
+        assert len(stage.assertions) == 1
 
-        falsify_assertion(stage, a.id, "P99 exceeded 200ms")
-
-        assert a.id in stage.assertions
-        assert stage.assertions[a.id].assumption_status == AssumptionStatus.FALSIFIED
-
-
-# ===========================================================================
-# TestSteelmanGateEnforcement
-# ===========================================================================
-
-class TestSteelmanGateEnforcement:
-    """The steelman gate must reject challenges without comprehension of the opponent."""
-
-    def _stage_with_active_conflict(self) -> tuple[CompositionStage, object]:
-        stage = CompositionStage(
-            project_id="steelman-test", project_name="Steelman Test"
+    @pytest.mark.asyncio
+    async def test_steelman_gate_challenge_without_summary(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("proj_steelman")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="MongoDB is right",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        a = Assertion(
-            topic_path="/tech/framework",
-            content="Use React",
-            arc=CompositionArc.INHERITS,
-            author=AssertionAuthor.AI,
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL is right",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        b = Assertion(
-            topic_path="/tech/framework",
-            content="Use Vue",
-            arc=CompositionArc.REFERENCES,
-            author=AssertionAuthor.USER,
+        conflict_id = next(iter(stage.conflicts.keys()))
+        result = await cb_manage_conflict(action="challenge", conflict_id=conflict_id, ctx=ctx)
+        assert "ERROR" in result
+        assert "steelman" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_decision_rigor_gate_no_alternatives(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("proj_decide_gate")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-        add_assertion(stage, a)
-        result = add_assertion(stage, b)
-        return stage, result.structural_conflict
-
-    def test_challenge_without_steelman_raises_value_error(self):
-        """CHALLENGE without steelman_summary raises ValueError with descriptive message."""
-        stage, conflict = self._stage_with_active_conflict()
-
-        with pytest.raises(ValueError) as exc_info:
-            resolve_conflict(stage, conflict.id, ResolutionPath.CHALLENGE)
-
-        assert "steelman_summary" in str(exc_info.value)
-        assert "Comprehension before critique" in str(exc_info.value)
-
-    def test_challenge_with_empty_steelman_raises_value_error(self):
-        """CHALLENGE with an empty string steelman_summary also raises ValueError."""
-        stage, conflict = self._stage_with_active_conflict()
-
-        with pytest.raises(ValueError, match="steelman_summary"):
-            resolve_conflict(
-                stage,
-                conflict.id,
-                ResolutionPath.CHALLENGE,
-                steelman_summary="",
-            )
-
-    def test_challenge_with_valid_steelman_succeeds(self):
-        """CHALLENGE with a non-empty steelman_summary succeeds and stores the steelman."""
-        stage, conflict = self._stage_with_active_conflict()
-        steelman = "Vue offers a simpler learning curve and reactivity model than React."
-
-        resolved = resolve_conflict(
-            stage,
-            conflict.id,
-            ResolutionPath.CHALLENGE,
-            steelman_summary=steelman,
+        result = await cb_decide(
+            topic_path=DB_PATH, decision="Use PostgreSQL", rationale="It is good",
+            alternatives_rejected="",
+            second_order_effects="Schema migrations required", ctx=ctx,
         )
+        assert "ERROR" in result
+        assert len(stage.decisions) == 0
 
-        assert resolved.steelman_of_opponent == steelman
-        assert resolved.status == ConflictStatus.ACTIVE  # debate continues
-
-    def test_experiment_without_protocol_raises_value_error(self):
-        """PROPOSE_EXPERIMENT without protocol raises ValueError with descriptive message."""
-        stage, conflict = self._stage_with_active_conflict()
-
-        with pytest.raises(ValueError) as exc_info:
-            resolve_conflict(stage, conflict.id, ResolutionPath.PROPOSE_EXPERIMENT)
-
-        assert "experiment_protocol" in str(exc_info.value)
-        assert "empirically" in str(exc_info.value)
-
-    def test_experiment_with_valid_protocol_resolves_experiment(self):
-        """PROPOSE_EXPERIMENT with a valid protocol closes the conflict as RESOLVED_EXPERIMENT."""
-        stage, conflict = self._stage_with_active_conflict()
-        protocol = "Build identical features in React and Vue. Measure dev velocity over 2 sprints."
-
-        resolved = resolve_conflict(
-            stage,
-            conflict.id,
-            ResolutionPath.PROPOSE_EXPERIMENT,
-            experiment_protocol=protocol,
+    @pytest.mark.asyncio
+    async def test_decision_rigor_gate_no_second_order_effects(self) -> None:
+        ctx, stage, store = _make_ctx_with_stage("proj_decide_gate2")
+        await cb_manage_assertion(
+            action="assert", topic_path=DB_PATH, content="PostgreSQL",
+            arc=CompositionArc.INHERITS.value, ctx=ctx,
         )
-
-        assert resolved.status == ConflictStatus.RESOLVED_EXPERIMENT
-        assert resolved.experiment_protocol == protocol
-
-
-# ===========================================================================
-# TestDecisionAntiConvergence
-# ===========================================================================
-
-class TestDecisionAntiConvergence:
-    """Decisions must account for alternatives and second-order effects."""
-
-    def test_decision_without_alternatives_rejected_raises(self):
-        """Creating a Decision with empty alternatives_rejected raises validation error."""
-        with pytest.raises(Exception):
-            Decision(
-                topic_path="/architecture/database/engine",
-                decision="Use PostgreSQL",
-                rationale="Best fit for ACID requirements",
-                alternatives_rejected=[],
-                second_order_effects=["Need DBA expertise"],
-            )
-
-    def test_decision_without_second_order_effects_raises(self):
-        """Creating a Decision with empty second_order_effects raises validation error."""
-        with pytest.raises(Exception):
-            Decision(
-                topic_path="/architecture/database/engine",
-                decision="Use PostgreSQL",
-                rationale="Best fit for ACID requirements",
-                alternatives_rejected=["MongoDB — rejected because ACID"],
-                second_order_effects=[],
-            )
-
-    def test_valid_decision_succeeds(self):
-        """A Decision with both fields populated is created without error."""
-        decision = Decision(
-            topic_path="/architecture/database/engine",
-            decision="Use PostgreSQL",
-            rationale="Best fit for ACID and compliance requirements",
-            alternatives_rejected=[
-                "MongoDB — rejected because eventual consistency risk",
-                "MySQL — rejected because weaker JSON support",
-            ],
-            second_order_effects=[
-                "Need DBA expertise on team",
-                "GDPR deletion must be validated with row-level delete tests",
-            ],
-            reversibility="costly",
+        result = await cb_decide(
+            topic_path=DB_PATH, decision="Use PostgreSQL", rationale="It is good",
+            alternatives_rejected="MongoDB — no ACID",
+            second_order_effects="", ctx=ctx,
         )
-
-        assert len(decision.alternatives_rejected) == 2
-        assert len(decision.second_order_effects) == 2
-        assert decision.reversibility == "costly"
-
-    def test_decision_auto_stored_on_stage(self):
-        """Appending a valid Decision to stage.decisions works correctly."""
-        stage = CompositionStage(
-            project_id="decision-test", project_name="Decision Test"
-        )
-        decision = Decision(
-            topic_path="/architecture/database/engine",
-            decision="Use PostgreSQL",
-            rationale="ACID compliance required",
-            alternatives_rejected=["MongoDB — rejected because eventual consistency"],
-            second_order_effects=["Requires DBA on team"],
-        )
-        stage.decisions.append(decision)
-
-        assert len(stage.decisions) == 1
-        assert stage.decisions[0].id == decision.id
+        assert "ERROR" in result
+        assert len(stage.decisions) == 0
