@@ -1,4 +1,14 @@
-"""Tests for the Decision model."""
+"""Tests for models/decision.py — Decision with anti-convergence enforcement.
+
+Satisfies CLAUDE.md requirement:
+  "v3.0: Decisions must account for what was rejected and what downstream
+   effects are created. This prevents premature convergence."
+
+Blueprint reference: Section 3.6 (Decision model with alternatives + second-order effects).
+Constitution rule C5 (alternatives + effects required), G2 (validator-rejection symmetry).
+"""
+
+from datetime import timezone
 
 import pytest
 from pydantic import ValidationError
@@ -19,95 +29,158 @@ class TestDecisionConstruction:
     def test_basic_construction_succeeds(self) -> None:
         d = Decision(**MINIMAL_VALID)
         assert d.topic_path == "/architecture/database"
-        assert d.decision == "Use PostgreSQL as the primary datastore."
-        assert d.rationale == "Strongest ACID guarantees among evaluated options."
         assert len(d.alternatives_rejected) == 1
         assert len(d.second_order_effects) == 1
 
     def test_id_auto_generated_with_dec_prefix(self) -> None:
         d = Decision(**MINIMAL_VALID)
         assert d.id.startswith("dec_")
-        # prefix "dec_" = 4 chars + 12 hex = 16 total
         assert len(d.id) == 16
 
-    def test_id_uniqueness(self) -> None:
+    def test_id_uniqueness_across_instances(self) -> None:
         ids = {Decision(**MINIMAL_VALID).id for _ in range(50)}
         assert len(ids) == 50
 
     def test_reversibility_defaults_to_unknown(self) -> None:
-        d = Decision(**MINIMAL_VALID)
-        assert d.reversibility == "unknown"
+        assert Decision(**MINIMAL_VALID).reversibility == "unknown"
 
-    def test_reversibility_explicit_value(self) -> None:
-        d = Decision(**MINIMAL_VALID, reversibility="irreversible")
-        assert d.reversibility == "irreversible"
+    def test_reversibility_explicit_trivial(self) -> None:
+        assert Decision(**MINIMAL_VALID, reversibility="trivial").reversibility == "trivial"
 
-    def test_assertion_ids_default_empty(self) -> None:
-        d = Decision(**MINIMAL_VALID)
-        assert d.assertion_ids == []
+    def test_reversibility_explicit_irreversible(self) -> None:
+        assert Decision(**MINIMAL_VALID, reversibility="irreversible").reversibility == "irreversible"
 
-    def test_conflict_ids_default_empty(self) -> None:
-        d = Decision(**MINIMAL_VALID)
-        assert d.conflict_ids == []
+    def test_assertion_ids_default_empty_list(self) -> None:
+        assert Decision(**MINIMAL_VALID).assertion_ids == []
 
-    def test_created_at_is_set(self) -> None:
-        from datetime import timezone
+    def test_conflict_ids_default_empty_list(self) -> None:
+        assert Decision(**MINIMAL_VALID).conflict_ids == []
+
+    def test_created_at_is_timezone_aware_utc(self) -> None:
         d = Decision(**MINIMAL_VALID)
-        assert d.created_at is not None
         assert d.created_at.tzinfo == timezone.utc
 
+    def test_explicit_assertion_ids_stored(self) -> None:
+        d = Decision(**MINIMAL_VALID, assertion_ids=["ast_aabbccddeeff", "ast_112233445566"])
+        assert d.assertion_ids == ["ast_aabbccddeeff", "ast_112233445566"]
+
+    def test_explicit_conflict_ids_stored(self) -> None:
+        d = Decision(**MINIMAL_VALID, conflict_ids=["cfl_aabbccddeeff"])
+        assert d.conflict_ids == ["cfl_aabbccddeeff"]
+
     def test_multiple_alternatives_and_effects(self) -> None:
-        base = {k: v for k, v in MINIMAL_VALID.items()
-                if k not in ("alternatives_rejected", "second_order_effects")}
+        base = {k: v for k, v in MINIMAL_VALID.items() if k not in ("alternatives_rejected", "second_order_effects")}
         d = Decision(
             **base,
             alternatives_rejected=[
                 "MySQL — rejected because weaker JSON support.",
                 "MongoDB — rejected because project requires relational integrity.",
+                "DynamoDB — rejected because cost prohibitive at our scale.",
             ],
             second_order_effects=[
                 "Schema migrations required for every model change.",
                 "ORM must support async drivers.",
             ],
         )
-        assert len(d.alternatives_rejected) == 2
+        assert len(d.alternatives_rejected) == 3
         assert len(d.second_order_effects) == 2
 
+    def test_whitespace_stripped_from_string_fields(self) -> None:
+        d = Decision(
+            topic_path="  /architecture/database  ",
+            decision="  Use PostgreSQL.  ",
+            rationale="  Best option.  ",
+            alternatives_rejected=["  MySQL — rejected.  "],
+            second_order_effects=["  Migration cost.  "],
+        )
+        assert d.topic_path == "/architecture/database"
+        assert d.decision == "Use PostgreSQL."
+        assert d.rationale == "Best option."
 
-class TestDecisionValidation:
-    def test_alternatives_rejected_empty_list_raises(self) -> None:
+    def test_id_can_be_explicitly_provided(self) -> None:
+        assert Decision(**MINIMAL_VALID, id="dec_explicit123456").id == "dec_explicit123456"
+
+
+class TestAlternativesRejectedValidation:
+    def test_empty_list_raises_validation_error(self) -> None:
         with pytest.raises(ValidationError) as exc_info:
             Decision(**{**MINIMAL_VALID, "alternatives_rejected": []})
-        errors = exc_info.value.errors()
-        assert any("alternatives_rejected" in str(e) for e in errors)
+        assert any("alternatives_rejected" in str(e) for e in exc_info.value.errors())
 
-    def test_second_order_effects_empty_list_raises(self) -> None:
-        with pytest.raises(ValidationError) as exc_info:
-            Decision(**{**MINIMAL_VALID, "second_order_effects": []})
-        errors = exc_info.value.errors()
-        assert any("second_order_effects" in str(e) for e in errors)
-
-    def test_alternatives_rejected_missing_raises(self) -> None:
+    def test_missing_field_raises_validation_error(self) -> None:
         payload = {k: v for k, v in MINIMAL_VALID.items() if k != "alternatives_rejected"}
         with pytest.raises(ValidationError):
             Decision(**payload)
 
-    def test_second_order_effects_missing_raises(self) -> None:
+    def test_single_item_list_accepted(self) -> None:
+        d = Decision(**{**MINIMAL_VALID, "alternatives_rejected": ["Option X — rejected because Y."]})
+        assert len(d.alternatives_rejected) == 1
+
+    def test_multiple_item_list_accepted(self) -> None:
+        d = Decision(**{**MINIMAL_VALID, "alternatives_rejected": ["A", "B", "C"]})
+        assert len(d.alternatives_rejected) == 3
+
+    def test_none_value_raises_validation_error(self) -> None:
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "alternatives_rejected": None})
+
+
+class TestSecondOrderEffectsValidation:
+    def test_empty_list_raises_validation_error(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            Decision(**{**MINIMAL_VALID, "second_order_effects": []})
+        assert any("second_order_effects" in str(e) for e in exc_info.value.errors())
+
+    def test_missing_field_raises_validation_error(self) -> None:
         payload = {k: v for k, v in MINIMAL_VALID.items() if k != "second_order_effects"}
         with pytest.raises(ValidationError):
             Decision(**payload)
 
-    def test_topic_path_required(self) -> None:
+    def test_single_item_list_accepted(self) -> None:
+        d = Decision(**{**MINIMAL_VALID, "second_order_effects": ["All teams must adopt SQL."]})
+        assert len(d.second_order_effects) == 1
+
+    def test_multiple_item_list_accepted(self) -> None:
+        d = Decision(**{**MINIMAL_VALID, "second_order_effects": ["A", "B", "C", "D"]})
+        assert len(d.second_order_effects) == 4
+
+    def test_none_value_raises_validation_error(self) -> None:
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "second_order_effects": None})
+
+
+class TestRequiredFieldValidation:
+    def test_missing_topic_path_raises(self) -> None:
         payload = {k: v for k, v in MINIMAL_VALID.items() if k != "topic_path"}
         with pytest.raises(ValidationError):
             Decision(**payload)
 
-    def test_decision_field_required(self) -> None:
+    def test_missing_decision_field_raises(self) -> None:
         payload = {k: v for k, v in MINIMAL_VALID.items() if k != "decision"}
         with pytest.raises(ValidationError):
             Decision(**payload)
 
-    def test_rationale_required(self) -> None:
+    def test_missing_rationale_raises(self) -> None:
         payload = {k: v for k, v in MINIMAL_VALID.items() if k != "rationale"}
         with pytest.raises(ValidationError):
             Decision(**payload)
+
+    def test_none_topic_path_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "topic_path": None})
+
+    def test_none_decision_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "decision": None})
+
+    def test_none_rationale_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "rationale": None})
+
+    def test_all_five_required_fields_present_succeeds(self) -> None:
+        d = Decision(**MINIMAL_VALID)
+        assert d.topic_path is not None
+        assert d.decision is not None
+        assert d.rationale is not None
+        assert d.alternatives_rejected is not None
+        assert d.second_order_effects is not None
