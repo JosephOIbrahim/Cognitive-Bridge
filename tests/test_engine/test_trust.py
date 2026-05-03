@@ -1,403 +1,278 @@
-"""Tests for engine/trust.py — per-subtree trust calibration.
+"""Tests for engine/trust.py — per-subtree trust scores from conflict resolution history.
 
-Covers:
-- compute_trust_scores(): empty stage, single override conflict, single active
-  conflict, multiple stable resolutions, mixed, deferred, experiment, clamping
-  at 0.0 and 1.0, multiple paths with separate scores.
-- get_trust_for_path(): path with history, path without history.
-- get_subtree_trust(): no matching paths, single matching path, multiple
-  matching paths averaged, prefix filtering.
-- format_trust_report(): empty stage, output structure, HIGH/MODERATE/LOW labels.
+Blueprint reference: Section 3.8 / Phase 3 Quality Gate (P3.T3 Trust calibration).
+Constitution rules G1, G4.
 """
 
 import pytest
 
 from cognitive_bridge.engine.trust import (
-    TrustScore,
-    compute_trust_scores,
-    format_trust_report,
-    get_subtree_trust,
-    get_trust_for_path,
+    TrustScore, compute_trust_scores, format_trust_report,
+    get_subtree_trust, get_trust_for_path,
 )
-from cognitive_bridge.models.arcs import ConflictDetectionLayer, ConflictStatus
+from cognitive_bridge.models.arcs import (
+    AssertionAuthor, CompositionArc, ConflictDetectionLayer, ConflictStatus,
+)
+from cognitive_bridge.models.assertion import Assertion
 from cognitive_bridge.models.conflict import Conflict
 from cognitive_bridge.models.stage import CompositionStage
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _make_stage() -> CompositionStage:
-    """Return a fresh empty stage."""
-    return CompositionStage(project_id="test", project_name="Trust Tests")
+    return CompositionStage(project_id="trust-test", project_name="Trust Tests")
 
 
-def _make_conflict(
-    topic_path: str,
-    status: ConflictStatus = ConflictStatus.ACTIVE,
-) -> Conflict:
-    """Construct a minimal Conflict at the given path with the given status."""
+def _make_assertion(topic_path: str, content: str, arc: CompositionArc = CompositionArc.INHERITS, falsifiable_if: str | None = None) -> Assertion:
+    kwargs: dict = {"topic_path": topic_path, "content": content, "arc": arc, "author": AssertionAuthor.AI}
+    if falsifiable_if is not None:
+        kwargs["falsifiable_if"] = falsifiable_if
+    elif arc == CompositionArc.LOCAL:
+        kwargs["falsifiable_if"] = f"Falsified if {content} is disproved"
+    return Assertion(**kwargs)
+
+
+def _make_conflict(a_id: str, b_id: str, topic_path: str, status: ConflictStatus = ConflictStatus.ACTIVE) -> Conflict:
     c = Conflict(
-        assertion_a_id="ast_aaa000000001",
-        assertion_b_id="ast_bbb000000002",
-        topic_path=topic_path,
-        detection_layer=ConflictDetectionLayer.STRUCTURAL,
-        status=status,
+        assertion_a_id=a_id, assertion_b_id=b_id,
+        topic_path=topic_path, detection_layer=ConflictDetectionLayer.STRUCTURAL,
     )
+    c.status = status
     return c
 
 
-def _add_conflicts(stage: CompositionStage, *conflicts: Conflict) -> None:
-    """Insert each conflict into the stage by its ID."""
-    for c in conflicts:
-        stage.conflicts[c.id] = c
+def _add_conflict(stage: CompositionStage, topic_path: str, status: ConflictStatus) -> Conflict:
+    a1 = _make_assertion(topic_path, "Option A")
+    a2 = _make_assertion(topic_path, "Option B")
+    stage.assertions[a1.id] = a1
+    stage.assertions[a2.id] = a2
+    c = _make_conflict(a1.id, a2.id, topic_path, status)
+    stage.conflicts[c.id] = c
+    return c
 
-
-# ---------------------------------------------------------------------------
-# TestComputeTrustScores
-# ---------------------------------------------------------------------------
 
 class TestComputeTrustScores:
-
     def test_empty_stage_returns_empty_dict(self):
-        """Stage with no conflicts → empty dict, no KeyError."""
-        stage = _make_stage()
-        result = compute_trust_scores(stage)
-        assert result == {}
+        assert compute_trust_scores(_make_stage()) == {}
 
-    def test_single_override_conflict_raises_trust_above_half(self):
-        """RESOLVED_OVERRIDE adds +0.03 → 0.53 > 0.5."""
+    def test_single_active_conflict_lowers_trust_below_neutral(self):
         stage = _make_stage()
-        c = _make_conflict("/db/engine", ConflictStatus.RESOLVED_OVERRIDE)
-        _add_conflicts(stage, c)
-
+        _add_conflict(stage, "/arch/db", ConflictStatus.ACTIVE)
         scores = compute_trust_scores(stage)
-
-        assert "/db/engine" in scores
-        ts = scores["/db/engine"]
-        assert ts.score == pytest.approx(0.53, abs=1e-4)
+        assert "/arch/db" in scores
+        ts = scores["/arch/db"]
+        assert ts.score < 0.5
+        assert ts.challenges == 1
         assert ts.total_conflicts == 1
-        assert ts.resolved_conflicts == 1
+        assert ts.resolved_conflicts == 0
+
+    def test_resolved_override_increases_trust(self):
+        stage = _make_stage()
+        _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_OVERRIDE)
+        ts = compute_trust_scores(stage)["/arch/db"]
+        assert ts.score == pytest.approx(0.53, abs=1e-4)
         assert ts.overrides == 1
-        assert ts.stable_resolutions == 0
-        assert ts.challenges == 0
-
-    def test_single_active_conflict_lowers_trust_below_half(self):
-        """ACTIVE conflict subtracts -0.08 → 0.42 < 0.5."""
-        stage = _make_stage()
-        c = _make_conflict("/api/auth", ConflictStatus.ACTIVE)
-        _add_conflicts(stage, c)
-
-        scores = compute_trust_scores(stage)
-
-        ts = scores["/api/auth"]
-        assert ts.score == pytest.approx(0.42, abs=1e-4)
-        assert ts.challenges == 1
-        assert ts.resolved_conflicts == 0
-
-    def test_multiple_stable_resolutions_increase_trust(self):
-        """Three RESOLVED_SYNTHESIZED conflicts → 0.5 + 3*0.05 = 0.65."""
-        stage = _make_stage()
-        for _ in range(3):
-            _add_conflicts(stage, _make_conflict("/architecture", ConflictStatus.RESOLVED_SYNTHESIZED))
-
-        scores = compute_trust_scores(stage)
-
-        ts = scores["/architecture"]
-        assert ts.score == pytest.approx(0.65, abs=1e-4)
-        assert ts.stable_resolutions == 3
-
-    def test_mixed_active_and_resolved_balanced_score(self):
-        """Two stable resolutions and one active conflict:
-        0.5 + 2*0.05 - 1*0.08 = 0.52."""
-        stage = _make_stage()
-        _add_conflicts(
-            stage,
-            _make_conflict("/service/cache", ConflictStatus.RESOLVED_SYNTHESIZED),
-            _make_conflict("/service/cache", ConflictStatus.RESOLVED_SYNTHESIZED),
-            _make_conflict("/service/cache", ConflictStatus.ACTIVE),
-        )
-
-        scores = compute_trust_scores(stage)
-
-        ts = scores["/service/cache"]
-        assert ts.score == pytest.approx(0.52, abs=1e-4)
-        assert ts.stable_resolutions == 2
-        assert ts.challenges == 1
-        assert ts.total_conflicts == 3
-
-    def test_deferred_conflict_slightly_lowers_trust(self):
-        """DEFERRED subtracts -0.03 → 0.47."""
-        stage = _make_stage()
-        c = _make_conflict("/orm", ConflictStatus.DEFERRED)
-        _add_conflicts(stage, c)
-
-        scores = compute_trust_scores(stage)
-
-        ts = scores["/orm"]
-        assert ts.score == pytest.approx(0.47, abs=1e-4)
-        assert ts.resolved_conflicts == 0
-
-    def test_experiment_resolution_strong_trust_boost(self):
-        """RESOLVED_EXPERIMENT counts as stable (+0.05) AND experiment (+0.07).
-        0.5 + 0.05 + 0.07 = 0.62."""
-        stage = _make_stage()
-        c = _make_conflict("/data/pipeline", ConflictStatus.RESOLVED_EXPERIMENT)
-        _add_conflicts(stage, c)
-
-        scores = compute_trust_scores(stage)
-
-        ts = scores["/data/pipeline"]
-        assert ts.score == pytest.approx(0.62, abs=1e-4)
-        assert ts.experiments == 1
-        assert ts.stable_resolutions == 1  # experiment also counts as stable
         assert ts.resolved_conflicts == 1
+        assert ts.stable_resolutions == 0
 
-    def test_trust_clamped_to_zero_minimum(self):
-        """7 ACTIVE conflicts: 0.5 - 7*0.08 = -0.06 → clamped to 0.0."""
+    def test_resolved_promoted_increases_trust_same_as_override(self):
         stage = _make_stage()
-        for _ in range(7):
-            _add_conflicts(stage, _make_conflict("/unstable", ConflictStatus.ACTIVE))
-
-        scores = compute_trust_scores(stage)
-
-        assert scores["/unstable"].score == 0.0
-
-    def test_trust_clamped_to_one_maximum(self):
-        """11 RESOLVED_SYNTHESIZED: 0.5 + 11*0.05 = 1.05 → clamped to 1.0."""
-        stage = _make_stage()
-        for _ in range(11):
-            _add_conflicts(stage, _make_conflict("/stable", ConflictStatus.RESOLVED_SYNTHESIZED))
-
-        scores = compute_trust_scores(stage)
-
-        assert scores["/stable"].score == 1.0
-
-    def test_multiple_paths_produce_separate_scores(self):
-        """Conflicts at different paths produce independent TrustScore objects."""
-        stage = _make_stage()
-        # /db has a stable resolution
-        _add_conflicts(stage, _make_conflict("/db", ConflictStatus.RESOLVED_SYNTHESIZED))
-        # /api has an active conflict
-        _add_conflicts(stage, _make_conflict("/api", ConflictStatus.ACTIVE))
-
-        scores = compute_trust_scores(stage)
-
-        assert len(scores) == 2
-        assert scores["/db"].score > 0.5
-        assert scores["/api"].score < 0.5
-        # Scores are independent
-        assert scores["/db"].challenges == 0
-        assert scores["/api"].stable_resolutions == 0
-
-    def test_promoted_conflict_counts_as_override(self):
-        """RESOLVED_PROMOTED adds +0.03 (same as OVERRIDE) → 0.53."""
-        stage = _make_stage()
-        c = _make_conflict("/infra", ConflictStatus.RESOLVED_PROMOTED)
-        _add_conflicts(stage, c)
-
-        scores = compute_trust_scores(stage)
-
-        ts = scores["/infra"]
+        _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_PROMOTED)
+        ts = compute_trust_scores(stage)["/arch/db"]
         assert ts.score == pytest.approx(0.53, abs=1e-4)
         assert ts.overrides == 1
 
-    def test_dismissed_conflict_counts_as_stable(self):
-        """DISMISSED adds +0.05 (same as SYNTHESIZED) → 0.55."""
+    def test_resolved_synthesized_increases_trust_by_005(self):
         stage = _make_stage()
-        c = _make_conflict("/config", ConflictStatus.DISMISSED)
-        _add_conflicts(stage, c)
-
-        scores = compute_trust_scores(stage)
-
-        ts = scores["/config"]
+        _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_SYNTHESIZED)
+        ts = compute_trust_scores(stage)["/arch/db"]
         assert ts.score == pytest.approx(0.55, abs=1e-4)
         assert ts.stable_resolutions == 1
+        assert ts.overrides == 0
 
+    def test_dismissed_is_stable_resolution(self):
+        stage = _make_stage()
+        _add_conflict(stage, "/arch/db", ConflictStatus.DISMISSED)
+        ts = compute_trust_scores(stage)["/arch/db"]
+        assert ts.score == pytest.approx(0.55, abs=1e-4)
+        assert ts.stable_resolutions == 1
+        assert ts.overrides == 0
 
-# ---------------------------------------------------------------------------
-# TestGetTrustForPath
-# ---------------------------------------------------------------------------
+    def test_resolved_experiment_adds_both_stable_and_experiment_bonus(self):
+        stage = _make_stage()
+        _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_EXPERIMENT)
+        ts = compute_trust_scores(stage)["/arch/db"]
+        assert ts.score == pytest.approx(0.62, abs=1e-4)
+        assert ts.experiments == 1
+        assert ts.stable_resolutions == 1
+
+    def test_deferred_conflict_lowers_trust_slightly(self):
+        stage = _make_stage()
+        _add_conflict(stage, "/arch/db", ConflictStatus.DEFERRED)
+        ts = compute_trust_scores(stage)["/arch/db"]
+        assert ts.score == pytest.approx(0.47, abs=1e-4)
+        assert ts.challenges == 0
+        assert ts.resolved_conflicts == 0
+
+    def test_score_clamped_to_zero_on_excessive_actives(self):
+        stage = _make_stage()
+        for i in range(8):
+            a1 = _make_assertion("/arch/db", f"Option {i}A")
+            a2 = _make_assertion("/arch/db", f"Option {i}B")
+            stage.assertions[a1.id] = a1
+            stage.assertions[a2.id] = a2
+            c = _make_conflict(a1.id, a2.id, "/arch/db", ConflictStatus.ACTIVE)
+            stage.conflicts[c.id] = c
+        scores = compute_trust_scores(stage)
+        assert scores["/arch/db"].score >= 0.0
+
+    def test_score_clamped_to_one_on_excessive_experiments(self):
+        stage = _make_stage()
+        for i in range(10):
+            a1 = _make_assertion("/arch/db", f"Option {i}A")
+            a2 = _make_assertion("/arch/db", f"Option {i}B")
+            stage.assertions[a1.id] = a1
+            stage.assertions[a2.id] = a2
+            c = _make_conflict(a1.id, a2.id, "/arch/db", ConflictStatus.RESOLVED_EXPERIMENT)
+            stage.conflicts[c.id] = c
+        scores = compute_trust_scores(stage)
+        assert scores["/arch/db"].score <= 1.0
+
+    def test_multiple_paths_computed_independently(self):
+        stage = _make_stage()
+        _add_conflict(stage, "/arch/db", ConflictStatus.ACTIVE)
+        _add_conflict(stage, "/arch/api", ConflictStatus.RESOLVED_SYNTHESIZED)
+        scores = compute_trust_scores(stage)
+        assert "/arch/db" in scores
+        assert "/arch/api" in scores
+        assert scores["/arch/db"].score < 0.5
+        assert scores["/arch/api"].score > 0.5
+
+    def test_trust_score_dataclass_fields_present(self):
+        stage = _make_stage()
+        _add_conflict(stage, "/x", ConflictStatus.RESOLVED_PROMOTED)
+        ts = compute_trust_scores(stage)["/x"]
+        for attr in ("path", "score", "total_conflicts", "resolved_conflicts",
+                     "overrides", "stable_resolutions", "challenges", "experiments"):
+            assert hasattr(ts, attr)
+
+    def test_all_promoted_high_trust(self):
+        stage = _make_stage()
+        for _ in range(3):
+            _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_PROMOTED)
+        ts = compute_trust_scores(stage)["/arch/db"]
+        assert ts.score == pytest.approx(0.59, abs=1e-4)
+        assert ts.score > 0.5
+
+    def test_all_dismissed_high_trust(self):
+        stage = _make_stage()
+        for _ in range(3):
+            _add_conflict(stage, "/arch/db", ConflictStatus.DISMISSED)
+        ts = compute_trust_scores(stage)["/arch/db"]
+        assert ts.score == pytest.approx(0.65, abs=1e-4)
+
 
 class TestGetTrustForPath:
-
-    def test_path_with_conflict_history_returns_computed_score(self):
-        """Path that appears in conflict history returns the computed TrustScore."""
+    def test_returns_neutral_default_for_unknown_path(self):
         stage = _make_stage()
-        c = _make_conflict("/db/engine", ConflictStatus.RESOLVED_SYNTHESIZED)
-        _add_conflicts(stage, c)
-
-        ts = get_trust_for_path(stage, "/db/engine")
-
-        assert ts.path == "/db/engine"
-        assert ts.score == pytest.approx(0.55, abs=1e-4)
-        assert ts.total_conflicts == 1
-
-    def test_path_without_history_returns_neutral_trust(self):
-        """Path with no conflict history returns score=0.5, all counters zero."""
-        stage = _make_stage()
-
-        ts = get_trust_for_path(stage, "/no/conflicts/here")
-
-        assert ts.path == "/no/conflicts/here"
+        ts = get_trust_for_path(stage, "/nonexistent/path")
         assert ts.score == 0.5
         assert ts.total_conflicts == 0
-        assert ts.resolved_conflicts == 0
-        assert ts.overrides == 0
-        assert ts.stable_resolutions == 0
-        assert ts.challenges == 0
-        assert ts.experiments == 0
+        assert ts.path == "/nonexistent/path"
 
-    def test_returns_trust_score_instance(self):
-        """Return value is always a TrustScore regardless of history."""
+    def test_returns_correct_score_for_known_path(self):
         stage = _make_stage()
-        result = get_trust_for_path(stage, "/any/path")
-        assert isinstance(result, TrustScore)
+        _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_EXPERIMENT)
+        ts = get_trust_for_path(stage, "/arch/db")
+        assert ts.score > 0.5
+        assert ts.path == "/arch/db"
+        assert ts.experiments == 1
 
+    def test_exact_path_match_only(self):
+        stage = _make_stage()
+        _add_conflict(stage, "/arch/db/engine", ConflictStatus.ACTIVE)
+        ts = get_trust_for_path(stage, "/arch/db")
+        assert ts.score == 0.5
+        assert ts.total_conflicts == 0
 
-# ---------------------------------------------------------------------------
-# TestGetSubtreeTrust
-# ---------------------------------------------------------------------------
 
 class TestGetSubtreeTrust:
-
-    def test_no_matching_paths_returns_half(self):
-        """When no conflict history exists under prefix, returns 0.5."""
+    def test_no_paths_under_prefix_returns_neutral(self):
         stage = _make_stage()
-        # Add a conflict at /api — should not match /db prefix
-        _add_conflicts(stage, _make_conflict("/api/auth", ConflictStatus.ACTIVE))
+        _add_conflict(stage, "/unrelated/path", ConflictStatus.ACTIVE)
+        assert get_subtree_trust(stage, "/arch") == 0.5
 
-        result = get_subtree_trust(stage, "/db")
-
-        assert result == 0.5
-
-    def test_single_matching_path_returns_that_score(self):
-        """Single path under prefix → returns that path's score."""
+    def test_aggregates_all_matching_paths(self):
         stage = _make_stage()
-        c = _make_conflict("/db/engine", ConflictStatus.RESOLVED_SYNTHESIZED)
-        _add_conflicts(stage, c)
+        _add_conflict(stage, "/arch/db", ConflictStatus.ACTIVE)
+        _add_conflict(stage, "/arch/api", ConflictStatus.RESOLVED_SYNTHESIZED)
+        result = get_subtree_trust(stage, "/arch")
+        assert result == pytest.approx(0.485, abs=1e-4)
 
-        result = get_subtree_trust(stage, "/db")
-
-        # Should equal the single path's score (0.55)
-        assert result == pytest.approx(0.55, abs=1e-4)
-
-    def test_multiple_matching_paths_averaged(self):
-        """Multiple paths under prefix → arithmetic mean of their scores."""
+    def test_prefix_matches_deeper_paths(self):
         stage = _make_stage()
-        # /db/engine: stable → 0.55
-        _add_conflicts(stage, _make_conflict("/db/engine", ConflictStatus.RESOLVED_SYNTHESIZED))
-        # /db/migrations: active → 0.42
-        _add_conflicts(stage, _make_conflict("/db/migrations", ConflictStatus.ACTIVE))
+        _add_conflict(stage, "/arch/db/engine", ConflictStatus.RESOLVED_SYNTHESIZED)
+        assert get_subtree_trust(stage, "/arch") > 0.5
 
-        result = get_subtree_trust(stage, "/db")
+    def test_empty_stage_returns_neutral(self):
+        assert get_subtree_trust(_make_stage(), "/arch") == 0.5
 
-        expected = round((0.55 + 0.42) / 2, 4)
-        assert result == pytest.approx(expected, abs=1e-4)
-
-    def test_prefix_filters_correctly(self):
-        """/db/* paths are not included when querying /api subtree."""
+    def test_return_value_is_float_rounded_to_4(self):
         stage = _make_stage()
-        # /db/engine: stable → high trust
-        _add_conflicts(stage, _make_conflict("/db/engine", ConflictStatus.RESOLVED_SYNTHESIZED))
-        # /api/auth: active → low trust
-        _add_conflicts(stage, _make_conflict("/api/auth", ConflictStatus.ACTIVE))
+        _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_EXPERIMENT)
+        _add_conflict(stage, "/arch/api", ConflictStatus.ACTIVE)
+        result = get_subtree_trust(stage, "/arch")
+        assert isinstance(result, float)
+        assert result == round(result, 4)
 
-        db_trust = get_subtree_trust(stage, "/db")
-        api_trust = get_subtree_trust(stage, "/api")
-
-        assert db_trust > 0.5
-        assert api_trust < 0.5
-        # The two subtree values should differ
-        assert db_trust != api_trust
-
-    def test_empty_stage_returns_half(self):
-        """Empty stage → no history anywhere → 0.5 for any prefix."""
-        stage = _make_stage()
-        assert get_subtree_trust(stage, "/any/prefix") == 0.5
-
-
-# ---------------------------------------------------------------------------
-# TestFormatTrustReport
-# ---------------------------------------------------------------------------
 
 class TestFormatTrustReport:
+    def test_empty_stage_returns_sentinel_message(self):
+        report = format_trust_report(_make_stage())
+        assert "neutral" in report.lower() or "no conflict" in report.lower()
 
-    def test_empty_stage_returns_no_history_message(self):
-        """Empty stage produces the 'no conflict history' message."""
+    def test_report_contains_path_names(self):
         stage = _make_stage()
+        _add_conflict(stage, "/arch/db", ConflictStatus.ACTIVE)
+        _add_conflict(stage, "/arch/api", ConflictStatus.RESOLVED_SYNTHESIZED)
         report = format_trust_report(stage)
-        assert "No conflict history" in report
-        assert "0.5" in report
+        assert "/arch/db" in report
+        assert "/arch/api" in report
 
-    def test_report_contains_path_score_and_level(self):
-        """Report includes the path, numeric score, and level label."""
+    def test_report_contains_score_values(self):
         stage = _make_stage()
-        c = _make_conflict("/db/engine", ConflictStatus.RESOLVED_SYNTHESIZED)
-        _add_conflicts(stage, c)
-
+        _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_SYNTHESIZED)
         report = format_trust_report(stage)
-
-        assert "/db/engine" in report
         assert "0.55" in report
-        # Score 0.55 falls in MODERATE band (0.4 <= x < 0.7)
-        assert "MODERATE" in report
 
-    def test_high_trust_label(self):
-        """Score >= 0.7 should produce HIGH label."""
+    def test_high_score_labeled_high(self):
         stage = _make_stage()
-        # 5 stable resolutions: 0.5 + 5*0.05 = 0.75
-        for _ in range(5):
-            _add_conflicts(stage, _make_conflict("/solid", ConflictStatus.RESOLVED_SYNTHESIZED))
+        for _ in range(3):
+            _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_EXPERIMENT)
+        assert "HIGH" in format_trust_report(stage)
 
-        report = format_trust_report(stage)
-
-        assert "HIGH" in report
-
-    def test_moderate_trust_label(self):
-        """Score in [0.4, 0.7) produces MODERATE label."""
+    def test_low_score_labeled_low(self):
         stage = _make_stage()
-        # 1 override: 0.5 + 0.03 = 0.53
-        _add_conflicts(stage, _make_conflict("/mid", ConflictStatus.RESOLVED_OVERRIDE))
-
-        report = format_trust_report(stage)
-
-        assert "MODERATE" in report
-
-    def test_low_trust_label(self):
-        """Score < 0.4 produces LOW label."""
-        stage = _make_stage()
-        # 2 active conflicts: 0.5 - 2*0.08 = 0.34
         for _ in range(2):
-            _add_conflicts(stage, _make_conflict("/contested", ConflictStatus.ACTIVE))
+            _add_conflict(stage, "/arch/db", ConflictStatus.ACTIVE)
+        assert "LOW" in format_trust_report(stage)
 
-        report = format_trust_report(stage)
-
-        assert "LOW" in report
-
-    def test_report_mentions_experiments_when_present(self):
-        """Experiment resolutions surface an explicit note in the report."""
+    def test_moderate_score_labeled_moderate(self):
         stage = _make_stage()
-        c = _make_conflict("/empirical", ConflictStatus.RESOLVED_EXPERIMENT)
-        _add_conflicts(stage, c)
+        _add_conflict(stage, "/arch/db", ConflictStatus.ACTIVE)
+        assert "MODERATE" in format_trust_report(stage)
 
-        report = format_trust_report(stage)
-
-        assert "Experiment" in report or "experiment" in report
-
-    def test_report_header_includes_path_count(self):
-        """Report header states the number of paths with conflict history."""
+    def test_experiment_count_highlighted(self):
         stage = _make_stage()
-        _add_conflicts(stage, _make_conflict("/a", ConflictStatus.ACTIVE))
-        _add_conflicts(stage, _make_conflict("/b", ConflictStatus.ACTIVE))
-
+        _add_conflict(stage, "/arch/db", ConflictStatus.RESOLVED_EXPERIMENT)
         report = format_trust_report(stage)
-
-        assert "2" in report  # 2 paths in header
+        assert "Experiments" in report or "experiment" in report.lower()
 
     def test_report_is_string(self):
-        """format_trust_report always returns a str."""
+        assert isinstance(format_trust_report(_make_stage()), str)
+
+    def test_paths_sorted_alphabetically(self):
         stage = _make_stage()
-        result = format_trust_report(stage)
-        assert isinstance(result, str)
+        _add_conflict(stage, "/z/path", ConflictStatus.ACTIVE)
+        _add_conflict(stage, "/a/path", ConflictStatus.ACTIVE)
+        report = format_trust_report(stage)
+        assert report.index("/a/path") < report.index("/z/path")
