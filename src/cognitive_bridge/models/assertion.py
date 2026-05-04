@@ -9,6 +9,7 @@ v3.0 additions:
 - assumption_status: Tracks whether this assertion's logical foundations still hold.
 """
 
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -22,6 +23,10 @@ from cognitive_bridge.models.arcs import (
     _new_id,
     _now_utc,
 )
+
+# Single source of truth for path syntax. Reused for both topic_path validation
+# (Field pattern) and dependency-path validation (model_validator).
+_TOPIC_PATH_PATTERN = re.compile(r"^(/[a-z][a-z0-9_]*)+$")
 
 
 class Assertion(BaseModel):
@@ -41,7 +46,7 @@ class Assertion(BaseModel):
     topic_path: str = Field(
         ...,
         description="Hierarchical path (USD prim path). E.g., '/architecture/database/engine'",
-        pattern=r"^(/[a-z][a-z0-9_]*)+$",
+        pattern=_TOPIC_PATH_PATTERN.pattern,
     )
     content: str = Field(..., max_length=10000, description="The claim itself")
     arc: CompositionArc = Field(..., description="Composition strength (lower int = stronger)")
@@ -78,7 +83,9 @@ class Assertion(BaseModel):
     created_at: datetime = Field(default_factory=_now_utc)
     retracted_at: Optional[datetime] = Field(default=None)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    embedding: Optional[list[float]] = Field(default=None, exclude=True)
+    # Embeddings are part of canonical state (not excluded from model_dump): the
+    # storage converter and JSON capsule export rely on uniform serialisation.
+    embedding: Optional[list[float]] = Field(default=None)
     tags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -102,16 +109,19 @@ class Assertion(BaseModel):
         """Dependencies must be valid topic paths and cannot be self-referential.
 
         Self-referential dependencies would create trivial cycles in the DAG.
-        All dependency paths must be absolute (start with '/').
+        All dependency paths must match the same regex as topic_path — preventing
+        traversal sequences, embedded nulls, mixed case, and other unsanitised
+        strings from propagating through the DAG via the dependency edge.
         """
         for dep in self.depends_on_paths:
             if dep == self.topic_path:
                 raise ValueError(
                     f"Assertion cannot depend on its own path: {dep}"
                 )
-            if not dep.startswith("/"):
+            if not _TOPIC_PATH_PATTERN.match(dep):
                 raise ValueError(
-                    f"Dependency must be a valid topic path (start with /): {dep}"
+                    f"Dependency path '{dep}' must match topic_path pattern "
+                    f"{_TOPIC_PATH_PATTERN.pattern}"
                 )
         return self
 

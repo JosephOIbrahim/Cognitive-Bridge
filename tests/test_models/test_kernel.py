@@ -3,9 +3,6 @@
 Blueprint reference: Section 3.9 (IndividualKernel / COS profiling) and
 Phase 3.1 (cb_probe_user — Kernel stored as singleton per project).
 Constitution rule G2 (validator-rejection symmetry).
-
-Note: probe_count has no ge=0 constraint. The field is typed as int with default=0.
-Negative integers are accepted by the model — documented as a finding.
 """
 
 from datetime import datetime, timezone
@@ -157,10 +154,11 @@ class TestProbeCount:
     def test_positive_accepted(self) -> None:
         assert _make_kernel(probe_count=100).probe_count == 100
 
-    def test_negative_probe_count_is_accepted_by_model(self) -> None:
-        """DOCUMENTED BEHAVIOR: probe_count has no ge=0 constraint.
+    def test_negative_rejected(self) -> None:
+        """probe_count cannot be negative — the field has ge=0 (P0 fix)."""
+        with pytest.raises(ValidationError):
+            _make_kernel(probe_count=-1)
 
-        This test asserts the current (permissive) behavior. If a ge=0 constraint
-        is added later, change this test to pytest.raises(ValidationError).
-        """
-        assert _make_kernel(probe_count=-1).probe_count == -1
+    def test_large_negative_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            _make_kernel(probe_count=-1000)
