@@ -1,12 +1,13 @@
 """Conflict detection engine — Layer 1 (structural) and Layer 2 (semantic) detection.
 
-Layer 1 (structural): O(1) dict lookup. Fires on every assertion insert.
-    Same topic_path + different content = automatic conflict.
+Layer 1 (structural): O(K) scan over same-path assertions. Fires on every
+    assertion insert. Same topic_path + different content = automatic conflict.
     Same content at same path = agreement (no conflict).
 
 Layer 2 (semantic): Embedding-based similarity across different paths.
-    Uses sentence-transformers (all-MiniLM-L6-v2) to find assertions at
-    different topic_paths that may semantically contradict the new assertion.
+    Uses sentence-transformers (all-MiniLM-L6-v2). All similarities are computed
+    in a single BLAS matmul over a stacked (N, D) embedding matrix; missing
+    embeddings are batch-encoded in one forward pass through the model.
     Gate: only runs if stage.parameters.cross_path_detection == True.
     sentence-transformers is an optional dependency; gracefully degrades if absent.
 
@@ -25,13 +26,14 @@ from cognitive_bridge.models.assertion import Assertion
 from cognitive_bridge.models.conflict import Conflict
 from cognitive_bridge.models.stage import CompositionStage
 
-# Optional sentence-transformers dependency.
+# Optional sentence-transformers + numpy dependency.
+# numpy is bundled with sentence-transformers; both either import or neither does.
 # Install with: pip install cognitive-bridge[semantic]
 _SEMANTIC_AVAILABLE = False
 _MODEL = None
 
 try:
-    import numpy as np  # bundled with sentence-transformers
+    import numpy as np
     from sentence_transformers import SentenceTransformer
     _SEMANTIC_AVAILABLE = True
 except ImportError:
@@ -40,16 +42,15 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
 # Semantic helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
 
 def _get_or_create_model() -> Optional[object]:
     """Lazy-load the sentence-transformers model (all-MiniLM-L6-v2).
 
-    The model is cached in the module-level ``_MODEL`` variable so it is only
-    loaded once per process.  Returns None if sentence-transformers is not
-    installed.
+    Cached in module-level _MODEL so loading happens once per process.
+    Returns None if sentence-transformers is not installed.
     """
     global _MODEL
     if not _SEMANTIC_AVAILABLE:
@@ -59,44 +60,29 @@ def _get_or_create_model() -> Optional[object]:
     return _MODEL
 
 
-def _compute_embedding(text: str) -> Optional[list[float]]:
-    """Encode *text* into a float vector using the cached model.
+def _ensure_embeddings(assertions: list[Assertion]) -> None:
+    """Batch-compute and cache embeddings for any assertions missing one.
 
-    Returns None when sentence-transformers is unavailable.
+    Single forward pass through the model regardless of N (pre-batch fix:
+    N separate model.encode calls). Mutates assertion.embedding in place —
+    embeddings are a cache, not externally-observable state.
     """
     model = _get_or_create_model()
     if model is None:
-        return None
-    embedding = model.encode(text, convert_to_numpy=True)
-    return embedding.tolist()
+        return
+    needs = [a for a in assertions if a.embedding is None]
+    if not needs:
+        return
+    encoded = model.encode(
+        [a.content for a in needs], convert_to_numpy=True,
+    )
+    for a, vec in zip(needs, encoded):
+        a.embedding = vec.tolist()
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Compute the cosine similarity between two float vectors.
-
-    Uses numpy when available (faster); falls back to pure Python otherwise.
-    Returns 0.0 when either vector has zero magnitude.
-    """
-    if _SEMANTIC_AVAILABLE:
-        a_arr = np.array(a)
-        b_arr = np.array(b)
-        norm = float(np.linalg.norm(a_arr) * np.linalg.norm(b_arr))
-        if norm == 0.0:
-            return 0.0
-        return float(np.dot(a_arr, b_arr) / norm)
-
-    # Pure-Python fallback (no numpy)
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return dot / (norm_a * norm_b)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
 # Layer 1: Structural detection
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
 
 def detect_structural_conflict(
     stage: CompositionStage,
@@ -140,7 +126,6 @@ def detect_structural_conflict(
     strongest_existing = sorted(existing)[0]
 
     # Place the stronger of the two in assertion_a_id (winner position).
-    # new_assertion < strongest_existing means new_assertion is stronger.
     if new_assertion < strongest_existing:
         a_id = new_assertion.id
         b_id = strongest_existing.id
@@ -156,9 +141,9 @@ def detect_structural_conflict(
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Layer 2: Semantic detection
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
+# Layer 2: Semantic detection (vectorised)
+# ──────────────────────────────────────────────────────────────────────────
 
 def detect_semantic_conflicts(
     stage: CompositionStage,
@@ -166,19 +151,22 @@ def detect_semantic_conflicts(
 ) -> list[dict]:
     """Layer 2: Semantic similarity detection across different paths.
 
-    Uses sentence-transformers (all-MiniLM-L6-v2) to find assertions at
-    different topic_paths that may semantically contradict the new assertion.
+    All candidate similarities are computed in a single BLAS matmul over a
+    stacked (N, D) embedding matrix. Missing embeddings are batch-encoded
+    in one forward pass through the model. (Pre-vectorisation: this was
+    N separate model.encode calls + N pure-Python or per-pair numpy cosine
+    computations.)
 
     Gate: Only runs if:
     - stage.parameters.cross_path_detection is True
     - sentence-transformers is installed
 
     Returns warning dicts (not Conflict objects) for the tool layer to embed
-    in its response text.  Claude (Layer 3 / delegated) evaluates whether each
+    in its response text. Claude (Layer 3 / delegated) evaluates whether each
     warning represents a true conflict and calls cb_manage_conflict to escalate.
 
-    Side effect: ``embedding`` is computed and stored on both the new assertion
-    and any existing assertion that does not yet have one.  This is intentional
+    Side effect: assertion.embedding is computed and stored on both the new
+    assertion and any candidate that does not yet have one. This is intentional
     — embeddings are cached so that subsequent calls are O(1) per assertion.
 
     Warning dict shape::
@@ -196,7 +184,7 @@ def detect_semantic_conflicts(
 
     Returns:
         List of warning dicts for semantically similar assertions at different
-        paths, sorted by similarity descending.  Empty list when the gate is
+        paths, sorted by similarity descending. Empty list when the gate is
         not passed or no similar assertions are found.
     """
     # Gate 1: cross_path_detection must be enabled
@@ -211,47 +199,53 @@ def detect_semantic_conflicts(
         )
         return []
 
-    # Compute embedding for the new assertion if not already cached
-    if new_assertion.embedding is None:
-        new_assertion.embedding = _compute_embedding(new_assertion.content)
+    # Same-path conflicts are Layer 1's exclusive territory; inactive assertions
+    # are excluded; self-comparison is excluded.
+    candidates = [
+        a for a in stage.assertions.values()
+        if a.id != new_assertion.id
+        and a.active
+        and a.topic_path != new_assertion.topic_path
+    ]
+    if not candidates:
+        return []
 
+    # Batch-encode the new assertion + every candidate that lacks an embedding.
+    # Single forward pass through the model regardless of N.
+    _ensure_embeddings([new_assertion] + candidates)
     if new_assertion.embedding is None:
         return []
 
+    # Defensive: drop candidates whose embedding still failed to materialise.
+    candidates = [a for a in candidates if a.embedding is not None]
+    if not candidates:
+        return []
+
     threshold = stage.parameters.semantic_threshold
-    warnings: list[dict] = []
+    new_vec = np.asarray(new_assertion.embedding, dtype=np.float32)
+    matrix = np.asarray(
+        [a.embedding for a in candidates], dtype=np.float32,
+    )
 
-    for existing in stage.assertions.values():
-        # Skip self, inactive assertions, and same-path assertions
-        # (same-path conflicts are handled exclusively by Layer 1)
-        if existing.id == new_assertion.id:
-            continue
-        if not existing.active:
-            continue
-        if existing.topic_path == new_assertion.topic_path:
-            continue
+    # Single BLAS matmul: similarities[i] = (matrix[i] · new_vec) / (||matrix[i]|| * ||new_vec||)
+    new_norm = float(np.linalg.norm(new_vec))
+    if new_norm == 0.0:
+        return []
+    candidate_norms = np.linalg.norm(matrix, axis=1)
+    candidate_norms[candidate_norms == 0.0] = 1.0  # avoid div-by-zero; resulting similarity 0
+    similarities = (matrix @ new_vec) / (candidate_norms * new_norm)
 
-        # Compute embedding for the existing assertion if not already cached
-        if existing.embedding is None:
-            existing.embedding = _compute_embedding(existing.content)
-
-        if existing.embedding is None:
-            continue
-
-        similarity = _cosine_similarity(new_assertion.embedding, existing.embedding)
-
-        if similarity >= threshold:
-            warnings.append(
-                {
-                    "assertion_id": existing.id,
-                    "topic_path": existing.topic_path,
-                    "content": existing.content,
-                    "similarity_score": round(similarity, 4),
-                }
-            )
-
-    # Surface highest-similarity warnings first so Claude sees the most
-    # likely true conflicts at the top of the response.
+    warnings = [
+        {
+            "assertion_id": a.id,
+            "topic_path": a.topic_path,
+            "content": a.content,
+            "similarity_score": round(float(s), 4),
+        }
+        for a, s in zip(candidates, similarities)
+        if s >= threshold
+    ]
+    # Surface highest-similarity warnings first so Claude sees the most likely
+    # true conflicts at the top of the response.
     warnings.sort(key=lambda w: w["similarity_score"], reverse=True)
-
     return warnings
