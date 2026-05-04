@@ -61,6 +61,7 @@ class IndividualKernel(BaseModel):
     # Metadata
     probe_count: int = Field(
         default=0,
+        ge=0,
         description="How many probes have updated this kernel.",
     )
     last_probed: Optional[datetime] = Field(default=None)

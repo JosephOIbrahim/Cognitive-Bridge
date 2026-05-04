@@ -1,9 +1,5 @@
 """Tests for models/decision.py — Decision with anti-convergence enforcement.
 
-Satisfies CLAUDE.md requirement:
-  "v3.0: Decisions must account for what was rejected and what downstream
-   effects are created. This prevents premature convergence."
-
 Blueprint reference: Section 3.6 (Decision model with alternatives + second-order effects).
 Constitution rule C5 (alternatives + effects required), G2 (validator-rejection symmetry).
 """
@@ -124,6 +120,36 @@ class TestAlternativesRejectedValidation:
         with pytest.raises(ValidationError):
             Decision(**{**MINIMAL_VALID, "alternatives_rejected": None})
 
+    def test_whitespace_only_alternative_rejected(self) -> None:
+        """Whitespace-only items must be rejected (P0 fix).
+
+        Without the per-item validator, ['  '] would pass min_length=1 and the
+        anti-convergence gate would be satisfied without enumerating any real
+        alternative.
+        """
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "alternatives_rejected": ["   "]})
+
+    def test_empty_string_alternative_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "alternatives_rejected": [""]})
+
+    def test_alternatives_stripped_in_place(self) -> None:
+        """Surviving items have leading/trailing whitespace removed."""
+        d = Decision(**{
+            **MINIMAL_VALID,
+            "alternatives_rejected": ["  MySQL — rejected.  "],
+        })
+        assert d.alternatives_rejected == ["MySQL — rejected."]
+
+    def test_one_blank_one_real_rejected(self) -> None:
+        """Even one blank entry among real ones causes rejection."""
+        with pytest.raises(ValidationError):
+            Decision(**{
+                **MINIMAL_VALID,
+                "alternatives_rejected": ["MySQL — rejected.", "   "],
+            })
+
 
 class TestSecondOrderEffectsValidation:
     def test_empty_list_raises_validation_error(self) -> None:
@@ -147,6 +173,21 @@ class TestSecondOrderEffectsValidation:
     def test_none_value_raises_validation_error(self) -> None:
         with pytest.raises(ValidationError):
             Decision(**{**MINIMAL_VALID, "second_order_effects": None})
+
+    def test_whitespace_only_effect_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "second_order_effects": ["   "]})
+
+    def test_empty_string_effect_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            Decision(**{**MINIMAL_VALID, "second_order_effects": [""]})
+
+    def test_effects_stripped_in_place(self) -> None:
+        d = Decision(**{
+            **MINIMAL_VALID,
+            "second_order_effects": ["  Migration cost.  "],
+        })
+        assert d.second_order_effects == ["Migration cost."]
 
 
 class TestRequiredFieldValidation:

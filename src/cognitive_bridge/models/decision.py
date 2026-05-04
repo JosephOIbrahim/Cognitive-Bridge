@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from cognitive_bridge.models.arcs import _new_id, _now_utc
 
@@ -60,3 +60,24 @@ class Decision(BaseModel):
     )
 
     created_at: datetime = Field(default_factory=_now_utc)
+
+    @field_validator("alternatives_rejected", "second_order_effects")
+    @classmethod
+    def _no_blank_items(cls, v: list[str]) -> list[str]:
+        """Reject empty or whitespace-only items.
+
+        Pydantic's str_strip_whitespace runs on top-level string fields, not on
+        items inside list fields. Without this validator ['  '] would pass
+        min_length=1 — satisfying the anti-convergence gate without enumerating
+        any real alternative.
+
+        Side effect: items are stripped in-place. This is documented behaviour;
+        callers should not rely on preserved leading/trailing whitespace.
+        """
+        cleaned = [s.strip() for s in v]
+        if any(not s for s in cleaned):
+            raise ValueError(
+                "List items cannot be empty or whitespace-only. "
+                "Each entry must describe a concrete alternative or effect."
+            )
+        return cleaned
