@@ -161,20 +161,23 @@ def format_audit_trail(stage: CompositionStage, target_id: str) -> str:
     return "\n".join(lines)
 
 
-def count_events_by_type(stage: CompositionStage) -> dict[str, int]:
+def count_events_by_type(stage: CompositionStage) -> dict[EventType, int]:
     """Count events grouped by event type.
+
+    Keys are EventType enum instances (not their string values). Callers that
+    pattern-match on EventType members get correct hits without round-tripping
+    through .value.
 
     Args:
         stage: The composition stage to query.
 
     Returns:
-        Dict mapping event type values (strings) to their occurrence counts.
+        Dict mapping EventType enum members to their occurrence counts.
         Types with zero events are omitted.
     """
-    counts: dict[str, int] = {}
+    counts: dict[EventType, int] = {}
     for evt in stage.events:
-        key = evt.event_type.value
-        counts[key] = counts.get(key, 0) + 1
+        counts[evt.event_type] = counts.get(evt.event_type, 0) + 1
     return counts
 
 
