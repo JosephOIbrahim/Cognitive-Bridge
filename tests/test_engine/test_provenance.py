@@ -333,6 +333,8 @@ class TestGetCascadeHistory:
 
 
 class TestCountEventsByType:
+    """Keys are EventType enum members (P0-3 fix — was previously str)."""
+
     def test_empty_stage_returns_empty_dict(self):
         assert count_events_by_type(_make_stage()) == {}
 
@@ -340,7 +342,7 @@ class TestCountEventsByType:
         stage = _make_stage()
         _record(stage, EventType.ASSERTION_CREATED, AssertionAuthor.AI, "ast_001")
         _record(stage, EventType.ASSERTION_CREATED, AssertionAuthor.AI, "ast_002")
-        assert count_events_by_type(stage)[EventType.ASSERTION_CREATED.value] == 2
+        assert count_events_by_type(stage)[EventType.ASSERTION_CREATED] == 2
 
     def test_counts_multiple_event_types(self):
         stage = _make_stage()
@@ -349,20 +351,30 @@ class TestCountEventsByType:
         _record(stage, EventType.CONFLICT_DETECTED, AssertionAuthor.SYSTEM, "cfl_002")
         _record(stage, EventType.RED_TEAM_TRIGGERED, AssertionAuthor.SYSTEM, "proj")
         counts = count_events_by_type(stage)
-        assert counts[EventType.ASSERTION_CREATED.value] == 1
-        assert counts[EventType.CONFLICT_DETECTED.value] == 2
-        assert counts[EventType.RED_TEAM_TRIGGERED.value] == 1
+        assert counts[EventType.ASSERTION_CREATED] == 1
+        assert counts[EventType.CONFLICT_DETECTED] == 2
+        assert counts[EventType.RED_TEAM_TRIGGERED] == 1
 
-    def test_returns_string_keyed_dict(self):
+    def test_returns_event_type_keyed_dict(self):
+        """P0-3 verification: keys are EventType enum members, not strings."""
         stage = _make_stage()
         _record(stage, EventType.ASSERTION_CREATED, AssertionAuthor.AI, "ast_001")
         for key in count_events_by_type(stage):
-            assert isinstance(key, str)
+            assert isinstance(key, EventType)
+            assert not isinstance(key, str)
+
+    def test_string_value_lookup_does_not_match(self):
+        """String values are NOT keys after the migration; this guards regressions."""
+        stage = _make_stage()
+        _record(stage, EventType.ASSERTION_CREATED, AssertionAuthor.AI, "ast_001")
+        counts = count_events_by_type(stage)
+        # The string "assertion_created" is NOT a key; only the enum member is.
+        assert EventType.ASSERTION_CREATED.value not in counts
 
     def test_types_with_zero_events_omitted(self):
         stage = _make_stage()
         _record(stage, EventType.ASSERTION_CREATED, AssertionAuthor.AI, "ast_001")
-        assert EventType.RED_TEAM_TRIGGERED.value not in count_events_by_type(stage)
+        assert EventType.RED_TEAM_TRIGGERED not in count_events_by_type(stage)
 
     def test_total_count_matches_total_events(self):
         stage = _make_stage()
