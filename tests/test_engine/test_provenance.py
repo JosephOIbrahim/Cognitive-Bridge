@@ -362,7 +362,7 @@ class TestCountEventsByType:
         for key in count_events_by_type(stage):
             assert isinstance(key, EventType)
 
-    def test_enum_member_indexes_the_dict(self):
+    def test_enum_member_indexes_the_dict(self) -> None:
         """Keys are EventType members, not bare ad-hoc strings.
 
         EventType is a str-backed enum, so a member compares equal to its string
