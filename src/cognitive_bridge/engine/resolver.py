@@ -189,14 +189,18 @@ def promote_assertion(
     """Promote an assertion to a stronger composition arc.
 
     Promotion means the arc integer decreases (e.g., INHERITS=20 → LOCAL=10).
-    If promotion changes the winner at the path, Layer 4 cascades fire.
+    A promotion is a material epistemic event at the path: a claim moves from a
+    weaker stance (e.g., an inherited pattern) to a stronger one (e.g., a verified
+    LOCAL fact). Layer 4 cascades fire when the promotion changes which claim wins
+    OR when it strengthens the claim that already holds the winning slot — in both
+    cases the foundation that dependents rest on has shifted.
 
     Side effects:
         - Mutates assertion.arc on the target assertion.
         - Appends evidence to assertion.evidence if provided.
         - Records an ASSERTION_PROMOTED event.
         - May add Conflict objects to stage.conflicts.
-        - Appends cascade events if the winner changes.
+        - Appends cascade events if the foundation changes.
 
     Args:
         stage: The composition stage to modify.
@@ -249,14 +253,35 @@ def promote_assertion(
     if new_winner:
         result.new_winner_id = new_winner.id
 
-    if old_winner and new_winner and old_winner.id != new_winner.id:
-        result.winner_changed = True
+    # Trigger Layer 4 cascades when the foundation at this path shifts. Two cases:
+    #   1. identity changed — the promotion overtook a different winner; or
+    #   2. the promoted assertion is the (still-)winning claim and just got a
+    #      stronger arc — dependents were resting on a foundation that moved.
+    # Promoting a claim that remains a non-winner changes no foundation, so no
+    # cascade fires (and with no dependents detect_cascading_conflicts returns []).
+    identity_changed = bool(
+        old_winner and new_winner and old_winner.id != new_winner.id
+    )
+    winner_strengthened = new_winner is not None and new_winner.id == assertion.id
+    result.winner_changed = identity_changed
+
+    if identity_changed or winner_strengthened:
         cascades = detect_cascading_conflicts(
             stage, assertion.topic_path, new_winner.id
         )
         result.cascading_conflicts = cascades
         for cascade in cascades:
             stage.conflicts[cascade.id] = cascade
+            stage.record_event(
+                EventType.CONFLICT_DETECTED,
+                AssertionAuthor.SYSTEM,
+                cascade.id,
+                {
+                    "layer": "cascading",
+                    "source_path": assertion.topic_path,
+                    "dependent_id": cascade.assertion_b_id,
+                },
+            )
 
     return result
 
