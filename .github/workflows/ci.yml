@@ -32,7 +32,7 @@ jobs:
         run: pytest -q
 
   coverage:
-    name: Full coverage (informational)
+    name: Full coverage (hard gate)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,9 +54,8 @@ jobs:
       - name: Full suite with coverage (incl. slow)
         # `-m "slow or not slow"` overrides the pyproject marker filter so
         # every test runs. fail_under=85 comes from pyproject's
-        # [tool.coverage.report]. Marked continue-on-error for the first
-        # landing — flip to false once the baseline is confirmed green.
-        continue-on-error: true
+        # [tool.coverage.report] and now blocks: this PR's CI run is the
+        # confirmation that the floor actually holds.
         run: >-
           pytest -m "slow or not slow"
           --cov=cognitive_bridge
