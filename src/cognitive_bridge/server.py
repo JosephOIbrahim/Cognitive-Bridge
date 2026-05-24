@@ -54,9 +54,9 @@ from cognitive_bridge.storage.sqlite_store import (
 )
 from cognitive_bridge.tools._common import validate_project_id
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # Constants
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 DEFAULT_DB_DIR: Path = Path.home() / ".cognitive_bridge" / "projects"
 
@@ -68,9 +68,9 @@ MAX_CAPSULE_SIZE = 10 * 1024 * 1024  # 10MB
 # threading.Lock().
 _ACTIVE_STAGES: dict[str, CompositionStage] = {}
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # Upsert Column Lists
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # These must be kept in sync with their corresponding SQLModel tables.
 # If you add a field to a model and its Row, add the column name here.
 
@@ -99,9 +99,9 @@ _VARIANT_SET_UPDATE_COLS = (
 )
 
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # Lifespan
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 
 @asynccontextmanager
@@ -130,9 +130,9 @@ async def lifespan(server: Any):
         store.engine.dispose()
 
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # FastMCP Application
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 mcp = FastMCP(
     "Cognitive Bridge",
@@ -146,9 +146,9 @@ mcp = FastMCP(
 )
 
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # Internal Helpers
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 
 def _get_store(ctx: Context) -> SQLiteStore:
@@ -327,9 +327,9 @@ def load_stage_from_db(store: SQLiteStore, project_id: str) -> CompositionStage:
         )
 
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # Export / Import Helpers
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 
 def export_stage_to_json(stage: CompositionStage) -> str:
@@ -338,7 +338,12 @@ def export_stage_to_json(stage: CompositionStage) -> str:
     The capsule is a self-contained, version-stamped JSON document that can be
     stored, transmitted, or imported into any Cognitive Bridge instance. All
     Pydantic models are serialized via ``model_dump(mode="json")`` so that enum
-    values, datetime objects, embeddings, and nested structures are JSON-safe.
+    values, datetime objects, and nested structures are JSON-safe.
+
+    Assertion embeddings carry ``exclude=True`` on the model (kept out of routine
+    dumps), so they are re-injected explicitly here. The capsule is the canonical
+    long-term storage format and must round-trip embeddings losslessly
+    (TEST_CONSTITUTION rule C10).
 
     Args:
         stage: The in-memory CompositionStage to export.
@@ -352,7 +357,8 @@ def export_stage_to_json(stage: CompositionStage) -> str:
         "project_name": stage.project_name,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "assertions": {
-            k: v.model_dump(mode="json") for k, v in stage.assertions.items()
+            k: {**v.model_dump(mode="json"), "embedding": v.embedding}
+            for k, v in stage.assertions.items()
         },
         "conflicts": {
             k: v.model_dump(mode="json") for k, v in stage.conflicts.items()
@@ -423,9 +429,9 @@ def import_stage_from_json(json_str: str) -> CompositionStage:
     )
 
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # cb_manage_project Tool
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 
 @mcp.tool(
@@ -648,9 +654,9 @@ async def cb_manage_project(
         )
 
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # Register Tool Modules
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 # Importing these modules causes their @mcp.tool decorators to fire,
 # binding each tool to the shared FastMCP instance declared above.
@@ -664,9 +670,9 @@ import cognitive_bridge.tools.payload_tool  # noqa: E402, F401
 import cognitive_bridge.tools.probe_tool  # noqa: E402, F401
 import cognitive_bridge.tools.variant_tool  # noqa: E402, F401
 
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 # Entry Point
-# ═════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     mcp.run()
