@@ -356,20 +356,24 @@ class TestCountEventsByType:
         assert counts[EventType.RED_TEAM_TRIGGERED] == 1
 
     def test_returns_event_type_keyed_dict(self):
-        """P0-3 verification: keys are EventType enum members, not strings."""
+        """P0-3 verification: keys are EventType enum members."""
         stage = _make_stage()
         _record(stage, EventType.ASSERTION_CREATED, AssertionAuthor.AI, "ast_001")
         for key in count_events_by_type(stage):
             assert isinstance(key, EventType)
-            assert not isinstance(key, str)
 
-    def test_string_value_lookup_does_not_match(self):
-        """String values are NOT keys after the migration; this guards regressions."""
+    def test_enum_member_indexes_the_dict(self) -> None:
+        """Keys are EventType members, not bare ad-hoc strings.
+
+        EventType is a str-backed enum, so a member compares equal to its string
+        value; the meaningful regression guard is that every key is an EventType
+        instance and the member itself indexes the dict.
+        """
         stage = _make_stage()
         _record(stage, EventType.ASSERTION_CREATED, AssertionAuthor.AI, "ast_001")
         counts = count_events_by_type(stage)
-        # The string "assertion_created" is NOT a key; only the enum member is.
-        assert EventType.ASSERTION_CREATED.value not in counts
+        assert EventType.ASSERTION_CREATED in counts
+        assert all(isinstance(k, EventType) for k in counts)
 
     def test_types_with_zero_events_omitted(self):
         stage = _make_stage()

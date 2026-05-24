@@ -69,44 +69,44 @@ class TestShouldTriggerRedTeam:
         stage = _make_stage(exchange_count=0)
         threshold = stage.parameters.red_team_threshold
         for i in range(threshold + 2):
-            _add_local(stage, f"/feature/{i}", f"Claim {i}")
+            _add_local(stage, f"/feature/f{i}", f"Claim {i}")
         assert should_trigger_red_team(stage) is False
 
     def test_false_when_local_count_below_threshold(self):
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
         for i in range(threshold - 1):
-            _add_local(stage, f"/feature/{i}", f"Claim {i}")
+            _add_local(stage, f"/feature/f{i}", f"Claim {i}")
         assert should_trigger_red_team(stage) is False
 
     def test_true_when_all_conditions_met(self):
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
         for i in range(threshold):
-            _add_local(stage, f"/feature/{i}", f"Claim {i}")
+            _add_local(stage, f"/feature/f{i}", f"Claim {i}")
         assert should_trigger_red_team(stage) is True
 
     def test_true_with_extra_locals_above_threshold(self):
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
         for i in range(threshold + 5):
-            _add_local(stage, f"/feature/{i}", f"Claim {i}")
+            _add_local(stage, f"/feature/f{i}", f"Claim {i}")
         assert should_trigger_red_team(stage) is True
 
     def test_false_when_active_conflict_exists(self):
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
-        assertions = [_add_local(stage, f"/feature/{i}", f"Claim {i}") for i in range(threshold)]
-        _add_active_conflict(stage, assertions[0].id, assertions[1].id, "/feature/0")
+        assertions = [_add_local(stage, f"/feature/f{i}", f"Claim {i}") for i in range(threshold)]
+        _add_active_conflict(stage, assertions[0].id, assertions[1].id, "/feature/f0")
         assert should_trigger_red_team(stage) is False
 
     def test_deferred_conflict_does_not_block_trigger(self):
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
-        assertions = [_add_local(stage, f"/feature/{i}", f"Claim {i}") for i in range(threshold)]
+        assertions = [_add_local(stage, f"/feature/f{i}", f"Claim {i}") for i in range(threshold)]
         c = Conflict(
             assertion_a_id=assertions[0].id, assertion_b_id=assertions[1].id,
-            topic_path="/feature/0", detection_layer=ConflictDetectionLayer.STRUCTURAL,
+            topic_path="/feature/f0", detection_layer=ConflictDetectionLayer.STRUCTURAL,
         )
         c.status = ConflictStatus.DEFERRED
         stage.conflicts[c.id] = c
@@ -116,14 +116,14 @@ class TestShouldTriggerRedTeam:
         stage = _make_stage(exchange_count=1)
         stage.parameters = stage.parameters.model_copy(update={"red_team_threshold": 3})
         for i in range(3):
-            _add_local(stage, f"/feature/{i}", f"Claim {i}")
+            _add_local(stage, f"/feature/f{i}", f"Claim {i}")
         assert should_trigger_red_team(stage) is True
 
     def test_inactive_locals_not_counted(self):
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
         for i in range(threshold):
-            a = _make_local(f"/feature/{i}", f"Claim {i}")
+            a = _make_local(f"/feature/f{i}", f"Claim {i}")
             a.active = False
             stage.assertions[a.id] = a
         _add_local(stage, "/active/one", "Active claim")
@@ -133,7 +133,7 @@ class TestShouldTriggerRedTeam:
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
         for i in range(threshold):
-            _add_local(stage, f"/feature/{i}", f"Claim {i}")
+            _add_local(stage, f"/feature/f{i}", f"Claim {i}")
         assert should_trigger_red_team(stage) is True
 
 
@@ -221,7 +221,7 @@ class TestFindUnfalsifiableLocals:
 
     def test_multiple_live_locals_all_returned(self):
         stage = _make_stage()
-        assertions = [_add_local(stage, f"/arch/service/{i}", f"Claim {i}") for i in range(4)]
+        assertions = [_add_local(stage, f"/arch/service/s{i}", f"Claim {i}") for i in range(4)]
         result = find_unfalsifiable_locals(stage)
         for a in assertions:
             assert a in result
@@ -305,7 +305,7 @@ class TestGenerateRedTeamReport:
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
         for i in range(threshold):
-            _add_local(stage, f"/feature/{i}", f"Claim {i}")
+            _add_local(stage, f"/feature/f{i}", f"Claim {i}")
         assert "TRIGGERED" in generate_red_team_report(stage)
 
     def test_report_shows_monitoring_when_below_threshold(self):
@@ -367,7 +367,7 @@ class TestRecordRedTeamTrigger:
         stage = _make_stage(exchange_count=1)
         threshold = stage.parameters.red_team_threshold
         for i in range(threshold):
-            _add_local(stage, f"/feature/{i}", f"Claim {i}")
+            _add_local(stage, f"/feature/f{i}", f"Claim {i}")
         record_red_team_trigger(stage)
         evt = stage.events[-1]
         assert "local_count" in evt.detail
