@@ -10,8 +10,9 @@ Design notes:
 - PAYLOADS assertions (arc=50) represent known unknowns: evidence that exists
   in the world but has not yet been loaded into the composition stage. They are
   epistemic placeholders, not active claims.
-- The tool filters by path prefix (topic_path.startswith) so a check at
-  '/architecture' surfaces payloads at '/architecture/database', etc.
+- The tool filters by path subtree (segment-aware, see _is_at_or_below) so a
+  check at '/architecture' surfaces payloads at '/architecture/database', etc.,
+  while a check at '/arch' does NOT match the unrelated '/architecture' segment.
 - When decisions already recorded at overlapping paths are found, a WARNING
   block is emitted. This surfaces the risk of having committed before loading
   available evidence.
@@ -28,9 +29,25 @@ from cognitive_bridge.models import (
 from cognitive_bridge.server import mcp
 from cognitive_bridge.tools._common import get_active_stage
 
-# ═══════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════
+# Path helpers
+# ═════════════════════════════════════════════════════════════════
+
+
+def _is_at_or_below(path: str, prefix: str) -> bool:
+    """Return True if ``path`` equals ``prefix`` or lies within its subtree.
+
+    Segment-aware containment: '/architecture/database' is at/below
+    '/architecture', but '/architecture' is NOT at/below '/arch'. A raw
+    str.startswith would wrongly match the partial '/arch' segment; appending
+    the separator ('/arch/') restricts matches to true path descendants.
+    """
+    return path == prefix or path.startswith(prefix + "/")
+
+
+# ═════════════════════════════════════════════════════════════════
 # Tool
-# ═══════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════
 
 
 @mcp.tool(
@@ -58,12 +75,13 @@ async def cb_payload_check(
     unknowns is an epistemically indefensible shortcut.
 
     If no topic_path is provided, surfaces ALL payloads across the project.
-    If topic_path is provided, surfaces only payloads at or below that prefix.
+    If topic_path is provided, surfaces only payloads at or below that path.
 
     Arguments:
-        topic_path: Optional path prefix to filter. Surfaces payloads at and
-            below this path (prefix match). E.g., '/architecture' will match
-            '/architecture/database/engine'.
+        topic_path: Optional path to filter. Surfaces payloads at and below this
+            path (segment-aware subtree match). E.g., '/architecture' matches
+            '/architecture/database/engine', but '/arch' does NOT match the
+            unrelated '/architecture' segment.
         project_id: Optional — omit if only one project is active.
     """
     try:
@@ -78,9 +96,9 @@ async def cb_payload_check(
         if a.active and a.arc == CompositionArc.PAYLOADS
     ]
 
-    # Filter by path prefix if provided
+    # Filter by path subtree if provided (segment-aware; see _is_at_or_below).
     if topic_path:
-        payloads = [p for p in payloads if p.topic_path.startswith(topic_path)]
+        payloads = [p for p in payloads if _is_at_or_below(p.topic_path, topic_path)]
 
     # No payloads found — safe to proceed
     if not payloads:
@@ -110,13 +128,15 @@ async def cb_payload_check(
         "Consider investigating before committing to decisions at these paths."
     )
 
-    # Warn when existing decisions overlap with payload paths
+    # Warn when existing decisions overlap with payload paths. Overlap is
+    # tree-containment in either direction (decision at/below a payload path, or
+    # a payload at/below the decision path) — segment-aware, not raw prefix.
     payload_paths = {p.topic_path for p in payloads}
     decisions_at_risk = [
         d
         for d in stage.decisions
         if any(
-            d.topic_path.startswith(pp) or pp.startswith(d.topic_path)
+            _is_at_or_below(d.topic_path, pp) or _is_at_or_below(pp, d.topic_path)
             for pp in payload_paths
         )
     ]
