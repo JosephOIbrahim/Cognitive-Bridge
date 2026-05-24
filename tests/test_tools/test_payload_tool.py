@@ -155,6 +155,20 @@ class TestSubtreeFiltering:
         assert target.id in result
         assert sibling.id not in result
 
+    @pytest.mark.asyncio
+    async def test_partial_segment_prefix_does_not_surface(self) -> None:
+        """A check at '/arch' must NOT surface '/architecture/...'.
+
+        '/arch' is a distinct path segment, not an ancestor of '/architecture'.
+        Regression guard for the segment-aware match (raw str.startswith would
+        wrongly match here).
+        """
+        ctx, stage, store = _make_ctx_with_stage()
+        arch = _add_payload(stage, store, "/architecture/database", "DB evidence")
+        result = await cb_payload_check(topic_path="/arch", ctx=ctx)
+        assert arch.id not in result
+        assert "no pending payloads" in result.lower()
+
 
 class TestInactivePayloadsExcluded:
     @pytest.mark.asyncio
@@ -233,6 +247,26 @@ class TestDecisionOverlapWarning:
         result = await cb_payload_check(ctx=ctx)
         assert "WARNING" in result
         assert dec.id in result
+
+    @pytest.mark.asyncio
+    async def test_partial_segment_decision_does_not_trigger_warning(self) -> None:
+        """A decision at '/arch' must not be flagged against a '/architecture/...'
+        payload — distinct segments, no tree overlap. Regression guard for the
+        segment-aware overlap check.
+        """
+        ctx, stage, store = _make_ctx_with_stage()
+        _add_payload(stage, store, "/architecture/database", "Evidence pending")
+        dec = Decision(
+            topic_path="/arch", decision="Some unrelated arch decision",
+            rationale="reasons",
+            alternatives_rejected=["alt — rejected"],
+            second_order_effects=["some effect"],
+        )
+        stage.decisions.append(dec)
+        save_stage_to_db(store, stage)
+        result = await cb_payload_check(ctx=ctx)
+        assert "PENDING PAYLOADS" in result
+        assert dec.id not in result
 
 
 class TestErrorConditions:
