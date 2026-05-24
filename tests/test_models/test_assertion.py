@@ -26,9 +26,9 @@ from cognitive_bridge.models.arcs import (
 from cognitive_bridge.models.assertion import Assertion
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 def make_assertion(**overrides) -> Assertion:
     """Construct a valid SPECIALIZES assertion with sensible defaults.
@@ -59,9 +59,9 @@ def make_local(**overrides) -> Assertion:
     return Assertion(**defaults)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # Construction and defaults
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 class TestAssertionConstruction:
     def test_minimal_valid_assertion(self) -> None:
@@ -122,9 +122,9 @@ class TestAssertionConstruction:
         assert a.tags == ["performance", "database"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # Topic path pattern validation
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 class TestTopicPathValidation:
     def test_valid_simple_path(self) -> None:
@@ -174,9 +174,9 @@ class TestTopicPathValidation:
             make_assertion(topic_path="/architecture/my-component")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # LOCAL falsifiability enforcement
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 class TestLocalFalsifiabilityValidator:
     def test_local_without_falsifiable_if_raises(self) -> None:
@@ -223,9 +223,9 @@ class TestLocalFalsifiabilityValidator:
         assert a.falsifiable_if == "If domain expert consensus shifts."
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # Dependency path validation
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 class TestDependencyPathValidation:
     def test_self_referential_dependency_raises(self) -> None:
@@ -241,7 +241,7 @@ class TestDependencyPathValidation:
             make_assertion(
                 depends_on_paths=["architecture/database"],
             )
-        assert "valid topic path" in str(exc_info.value)
+        assert "must match topic_path pattern" in str(exc_info.value)
 
     def test_valid_single_dependency(self) -> None:
         a = make_assertion(
@@ -276,9 +276,9 @@ class TestDependencyPathValidation:
             )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # __lt__ ordering
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 class TestAssertionOrdering:
     def test_local_beats_inherits(self) -> None:
@@ -364,9 +364,9 @@ class TestAssertionOrdering:
         assert result[2] == a1
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # Confidence bounds
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 class TestConfidenceBounds:
     def test_confidence_zero_is_valid(self) -> None:
@@ -394,9 +394,9 @@ class TestConfidenceBounds:
             make_assertion(confidence=-1.0)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # Retraction lifecycle
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 class TestRetraction:
     def test_retraction_sets_active_false(self) -> None:
@@ -422,9 +422,9 @@ class TestRetraction:
         assert a.topic_path == "/architecture/database/engine"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 # Embedding excluded from serialization
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 
 class TestEmbeddingExclusion:
     def test_embedding_excluded_from_model_dump(self) -> None:

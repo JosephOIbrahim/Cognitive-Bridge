@@ -59,23 +59,23 @@ def compute_suggested_parameters(
 
     # Autonomy boundary → ai_default_arc.
     # High autonomy (> 0.7) = AI can assert strongly = INHERITS (20).
-    # Medium (0.3–0.7) = moderate = REFERENCES (40).
+    # Medium [0.3, 0.7] = moderate = REFERENCES (40).
     # Low (< 0.3) = check everything = SPECIALIZES (60).
     if kernel.autonomy_boundary > 0.7:
         suggestions["ai_default_arc"] = 20   # CompositionArc.INHERITS
-    elif kernel.autonomy_boundary > 0.3:
+    elif kernel.autonomy_boundary >= 0.3:
         suggestions["ai_default_arc"] = 40   # CompositionArc.REFERENCES
     else:
         suggestions["ai_default_arc"] = 60   # CompositionArc.SPECIALIZES
 
     # Energy level → exploration_budget and red_team_threshold.
     # High energy (> 0.7) = can handle more = larger budget, lower threshold.
-    # Medium (0.3–0.7) = normal capacity = default budget and threshold.
+    # Medium [0.3, 0.7] = normal capacity = default budget and threshold.
     # Low (< 0.3) = depleted = smaller budget, higher threshold (less pressure).
     if kernel.energy_level > 0.7:
         suggestions["exploration_budget"] = 7  # was 5, expanded range allows more
         suggestions["red_team_threshold"] = 5
-    elif kernel.energy_level > 0.3:
+    elif kernel.energy_level >= 0.3:
         suggestions["exploration_budget"] = 3
         suggestions["red_team_threshold"] = 8
     else:
@@ -111,7 +111,7 @@ def apply_kernel_tuning(
     for key, new_value in suggestions.items():
         old_value = current.get(key)
         if old_value != new_value:
-            changes[key] = f"{old_value} \u2192 {new_value}"
+            changes[key] = f"{old_value} → {new_value}"
             current[key] = new_value
 
     updated = CognitiveParameters(**current)
