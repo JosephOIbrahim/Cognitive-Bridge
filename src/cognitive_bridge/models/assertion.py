@@ -83,9 +83,10 @@ class Assertion(BaseModel):
     created_at: datetime = Field(default_factory=_now_utc)
     retracted_at: Optional[datetime] = Field(default=None)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    # Embeddings are part of canonical state (not excluded from model_dump): the
-    # storage converter and JSON capsule export rely on uniform serialisation.
-    embedding: Optional[list[float]] = Field(default=None)
+    # Embeddings are derived, recomputable data (sentence-transformers over content).
+    # Excluded from model_dump() so logical dumps stay compact; the SQLite converter
+    # persists them via direct attribute access (assertion.embedding), not model_dump.
+    embedding: Optional[list[float]] = Field(default=None, exclude=True)
     tags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

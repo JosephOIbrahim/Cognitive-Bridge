@@ -178,7 +178,7 @@ class TestAddEvidenceAction:
         )
         assert "ERROR" not in result
         mongo = next(v for v in stage.variant_sets[vs.id].variants if v.name == "MongoDB")
-        assert "No ACID guarantees" in mongo.evidence_against
+        assert "No ACID guarantees for multi-document transactions" in mongo.evidence_against
 
     @pytest.mark.asyncio
     async def test_add_evidence_fires_variant_set_evidence_event(self) -> None:
