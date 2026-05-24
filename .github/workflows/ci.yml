@@ -10,6 +10,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   test:
     name: Fast suite (hard gate)
@@ -28,8 +32,27 @@ jobs:
       - name: Run fast test suite
         # pyproject addopts injects `-m 'not slow'`, so the heavy
         # sentence-transformers tests are excluded here. This job is the
-        # merge gate: the suite must pass.
-        run: pytest -q
+        # merge gate: the suite must pass. Output is teed to a file so the
+        # failure-reporting step can surface it on the PR.
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tee pytest-fast.txt
+
+      - name: Report failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### CI failure — \`test\` job (fast suite, \`pytest -q\`)"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo '```text'
+            tail -c 55000 pytest-fast.txt 2>/dev/null || echo "(no pytest output captured — failure likely occurred before pytest ran, e.g. during pip install)"
+            echo '```'
+          } > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
 
   coverage:
     name: Full coverage (hard gate)
@@ -54,13 +77,26 @@ jobs:
       - name: Full suite with coverage (incl. slow)
         # `-m "slow or not slow"` overrides the pyproject marker filter so
         # every test runs. fail_under=85 comes from pyproject's
-        # [tool.coverage.report] and now blocks: this PR's CI run is the
-        # confirmation that the floor actually holds.
-        run: >-
-          pytest -m "slow or not slow"
-          --cov=cognitive_bridge
-          --cov-report=term-missing
-          --cov-report=xml
+        # [tool.coverage.report] and blocks. Output is teed for PR reporting.
+        run: |
+          set -o pipefail
+          pytest -m "slow or not slow" --cov=cognitive_bridge --cov-report=term-missing --cov-report=xml 2>&1 | tee pytest-cov.txt
+
+      - name: Report failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### CI failure — \`coverage\` job (full suite incl. slow, \`--cov\`, fail_under=85)"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo '```text'
+            tail -c 55000 pytest-cov.txt 2>/dev/null || echo "(no pytest output captured — failure likely before pytest ran)"
+            echo '```'
+          } > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
 
       - name: Upload coverage XML
         if: always()
