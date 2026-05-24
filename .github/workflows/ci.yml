@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Fast suite (hard gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install (dev extras)
+        run: pip install -e ".[dev]"
+
+      - name: Run fast test suite
+        # pyproject addopts injects `-m 'not slow'`, so the heavy
+        # sentence-transformers tests are excluded here. This job is the
+        # merge gate: the suite must pass.
+        run: pytest -q
+
+  coverage:
+    name: Full coverage (informational)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-sentence-transformers-v1
+
+      - name: Install (dev + semantic extras)
+        run: pip install -e ".[dev,semantic]"
+
+      - name: Full suite with coverage (incl. slow)
+        # `-m "slow or not slow"` overrides the pyproject marker filter so
+        # every test runs. fail_under=85 comes from pyproject's
+        # [tool.coverage.report]. Marked continue-on-error for the first
+        # landing — flip to false once the baseline is confirmed green.
+        continue-on-error: true
+        run: >-
+          pytest -m "slow or not slow"
+          --cov=cognitive_bridge
+          --cov-report=term-missing
+          --cov-report=xml
+
+      - name: Upload coverage XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
