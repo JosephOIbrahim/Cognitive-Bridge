@@ -79,40 +79,51 @@ def resolve_via_text(stage_dir: str | Path) -> dict[str, dict[str, Any]]:
     return resolved
 
 
+# Opinion child prims (named ``opinion_N``) preserve losing same-arc opinions
+# non-destructively in the export. They are nested under an assertion prim and
+# are NOT composition winners, so the resolver must not surface them as paths.
+_OPINION_RE = re.compile(r"^opinion_\d+$")
+
+
 def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
     """Parse prim paths and cb: attributes from USDA text.
 
-    Extracts all prims with their custom cb: namespace attributes.
-    Uses regex parsing — not a full USD parser, but sufficient
-    for the structured USDA we generate.
+    Extracts all prims with their custom cb: namespace attributes. Uses regex
+    parsing — not a full USD parser, but sufficient for the structured USDA we
+    generate.
+
+    Each prim accumulates its own attributes via a stack parallel to the path
+    stack, so a prim is recorded even when it contains child prims — both
+    legitimate nested topic paths (``/db`` with a ``/db/engine`` child) and
+    ``opinion_N`` children. Opinion children are dropped: they hold shadowed
+    (losing) same-arc opinions, not winners, and surfacing them would create
+    phantom paths that diverge from CompositionStage.resolve().
 
     Returns:
         Dict mapping prim path strings to attribute dicts.
     """
     prims: dict[str, dict[str, Any]] = {}
 
-    # Track current prim path via nesting
+    # Parallel stacks: path segments and the attributes accumulated for each
+    # open prim. The innermost open prim is at index -1.
     path_stack: list[str] = []
-    current_attrs: dict[str, Any] = {}
+    attrs_stack: list[dict[str, Any]] = []
 
     for line in text.split("\n"):
         stripped = line.strip()
 
         # Match prim definitions: def Scope "name" or over "name"
-        prim_match = re.match(
-            r'(?:def|over)\s+\w+\s+"([^"]+)"', stripped
-        )
+        prim_match = re.match(r'(?:def|over)\s+\w+\s+"([^"]+)"', stripped)
         if prim_match:
-            name = prim_match.group(1)
-            path_stack.append(name)
-            current_attrs = {}
+            path_stack.append(prim_match.group(1))
+            attrs_stack.append({})
             continue
 
-        # Match cb: attributes
+        # Match cb: attributes — they apply to the innermost open prim.
         attr_match = re.match(
             r'custom\s+\w+(?:\[\])?\s+cb:(\w+)\s*=\s*(.+)', stripped
         )
-        if attr_match and path_stack:
+        if attr_match and attrs_stack:
             attr_name = attr_match.group(1)
             attr_value: Any = attr_match.group(2).strip()
 
@@ -121,8 +132,7 @@ def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
                 attr_value = attr_value[1:-1]
             # Parse string array
             elif attr_value.startswith('['):
-                items = re.findall(r'"([^"]*)"', attr_value)
-                attr_value = items
+                attr_value = re.findall(r'"([^"]*)"', attr_value)
             # Parse float
             elif '.' in attr_value:
                 try:
@@ -130,16 +140,23 @@ def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
                 except ValueError:
                     pass
 
-            current_attrs[attr_name] = attr_value
+            attrs_stack[-1][attr_name] = attr_value
+            continue
 
-        # Match closing brace — check if this closes a prim with attrs
+        # Closing brace — record the innermost prim's own attributes, then pop.
         if stripped == "}" and path_stack:
-            if current_attrs:
+            name = path_stack[-1]
+            attrs = attrs_stack.pop()
+            # Skip opinion_N children: they are shadowed opinions nested under
+            # an assertion prim (the parent carries cb:content), not winners.
+            is_opinion = bool(_OPINION_RE.match(name)) and (
+                bool(attrs_stack) and "content" in attrs_stack[-1]
+            )
+            if attrs and not is_opinion:
                 prim_path = "/" + "/".join(path_stack)
                 if prim_path not in prims:
-                    prims[prim_path] = current_attrs.copy()
+                    prims[prim_path] = attrs
             path_stack.pop()
-            current_attrs = {}
 
     return prims
 

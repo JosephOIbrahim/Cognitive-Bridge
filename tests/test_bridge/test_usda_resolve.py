@@ -544,3 +544,97 @@ class TestEndToEndConsistency:
             assert names_lower.index("local.usda") < names_lower.index(
                 "references.usda"
             ), "local.usda must come before references.usda in sublayer order"
+
+
+@_e2e_skip
+class TestSamePathSameArcConsistency:
+    """Regression: SQL and USDA resolution must agree in two structural cases the
+    earlier scenarios never exercised:
+
+    1. Two active assertions at the SAME (topic_path, arc). The export nests the
+       loser as an ``opinion_N`` child; the text resolver must surface the winner
+       prim and must NOT surface the opinion child as a phantom path.
+    2. An asserted path that is also a prefix of another asserted path
+       (``/db`` and ``/db/engine``). The parent prim carries ``cb:content`` AND a
+       child prim; the resolver must still record the parent.
+    """
+
+    def _stage(self):
+        from cognitive_bridge.models.stage import CompositionStage
+
+        return CompositionStage(
+            project_id="same-arc", project_name="Same-arc regression"
+        )
+
+    def test_higher_confidence_inserted_second_wins_both_ways(self, tmp_path):
+        from cognitive_bridge.models.arcs import AssertionAuthor, CompositionArc
+        from cognitive_bridge.models.assertion import Assertion
+
+        stage = self._stage()
+        # The WINNER (higher confidence) is inserted SECOND, so insertion order
+        # deliberately disagrees with resolution order.
+        loser = Assertion(
+            topic_path="/db/engine",
+            content="SQLite",
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.AI,
+            confidence=0.4,
+            falsifiable_if="If it cannot sustain concurrent writers",
+        )
+        winner = Assertion(
+            topic_path="/db/engine",
+            content="PostgreSQL",
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.USER,
+            confidence=0.9,
+            falsifiable_if="If p99 query latency exceeds 1s under load",
+        )
+        stage.assertions[loser.id] = loser  # inserted first
+        stage.assertions[winner.id] = winner  # inserted second, the real winner
+
+        sql_resolved = stage.resolve()
+        assert sql_resolved["/db/engine"]["winning"].content == "PostgreSQL"
+
+        export_stage_to_usda(stage, tmp_path)
+        usda_resolved = resolve_via_text(tmp_path)
+
+        # USDA surfaces the same winner — not the insertion-order primary — and
+        # does not leak the loser as a phantom opinion path.
+        assert usda_resolved["/db/engine"]["content"] == "PostgreSQL"
+        assert "/db/engine/opinion_1" not in usda_resolved
+
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+        assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)
+
+    def test_asserted_parent_with_asserted_child_both_resolve(self, tmp_path):
+        from cognitive_bridge.models.arcs import AssertionAuthor, CompositionArc
+        from cognitive_bridge.models.assertion import Assertion
+
+        stage = self._stage()
+        parent = Assertion(
+            topic_path="/db",
+            content="relational",
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.USER,
+            falsifiable_if="If a document store replaces it",
+        )
+        child = Assertion(
+            topic_path="/db/engine",
+            content="PostgreSQL",
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.USER,
+            falsifiable_if="If p99 query latency exceeds 1s under load",
+        )
+        stage.assertions[parent.id] = parent
+        stage.assertions[child.id] = child
+
+        sql_resolved = stage.resolve()
+        export_stage_to_usda(stage, tmp_path)
+        usda_resolved = resolve_via_text(tmp_path)
+
+        # The parent prim must be surfaced even though it has a child prim.
+        assert usda_resolved["/db"]["content"] == "relational"
+        assert usda_resolved["/db/engine"]["content"] == "PostgreSQL"
+
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+        assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)

@@ -97,7 +97,13 @@ def _render_prim_tree(tree: dict, indent: int = 0) -> str:
         assertions = subtree.get("_assertions", [])
 
         if assertions:
-            ast = assertions[0]  # Primary assertion at this path
+            # Strongest assertion is the primary prim; the rest are shadowed
+            # opinions. sorted() uses Assertion.__lt__ (arc -> confidence ->
+            # recency), so sorted(...)[0] is the composition winner — this keeps
+            # the USDA primary prim identical to CompositionStage.resolve(),
+            # even when the winner was not inserted first.
+            assertions = sorted(assertions)
+            ast = assertions[0]  # Primary = composition winner at this path
             lines.append(f'{pad}def Scope "{key}" (')
             lines.append(f'{pad}    doc = "{_escape_usda_string(ast.content)}"')
             lines.append(f'{pad}) {{')
