@@ -50,10 +50,17 @@ SUBLAYER_ORDER = [
 def _escape_usda_string(s: str) -> str:
     """Escape a string for USDA attribute values.
 
-    Handles backslashes, double-quotes, and newlines — the three characters
-    that would break a USDA string literal if unescaped.
+    Handles backslash, double-quote, newline, and carriage return — the
+    characters that would otherwise break a single-line USDA string literal.
+    Carriage return is escaped because universal-newline decoding on read would
+    reinterpret a lone CR as a line break and split the value.
     """
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return (
+        s.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
 
 def _build_prim_tree(assertions: list[Assertion]) -> dict:

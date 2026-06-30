@@ -82,17 +82,18 @@ def resolve_via_text(stage_dir: str | Path) -> dict[str, dict[str, Any]]:
 def _unescape_usda_string(s: str) -> str:
     """Reverse usda_export._escape_usda_string.
 
-    The exporter escapes a backslash, a double-quote, and a newline before
-    writing a string literal; this restores them so a round-tripped cb:content
-    matches the in-memory assertion exactly.
+    The exporter escapes a backslash, a double-quote, a newline, and a carriage
+    return before writing a string literal; this restores them so a
+    round-tripped cb:content matches the in-memory assertion exactly.
     """
+    specials = {"n": "\n", "r": "\r"}
     out: list[str] = []
     i, n = 0, len(s)
     while i < n:
         ch = s[i]
-        if ch == "\\" and i + 1 < n and s[i + 1] in ('"', "\\", "n"):
+        if ch == "\\" and i + 1 < n and s[i + 1] in ('"', "\\", "n", "r"):
             nxt = s[i + 1]
-            out.append("\n" if nxt == "n" else nxt)
+            out.append(specials.get(nxt, nxt))
             i += 2
             continue
         out.append(ch)

@@ -825,3 +825,27 @@ class TestUsdaConsistencyEdgeCases:
         assert "/target" not in usda_resolved
         discrepancies = check_consistency(sql_resolved, usda_resolved)
         assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)
+
+    def test_carriage_return_in_content_round_trips(self, tmp_path):
+        # A lone CR (and CRLF) inside content must survive the round trip: it is
+        # escaped, not left literal where universal-newline decoding on read
+        # would split the value and corrupt the winner.
+        from cognitive_bridge.models.arcs import AssertionAuthor, CompositionArc
+        from cognitive_bridge.models.assertion import Assertion
+
+        stage = self._stage()
+        cr = Assertion(
+            topic_path="/cr",
+            content="line1\rline2\r\nline3",
+            arc=CompositionArc.SPECIALIZES,
+            author=AssertionAuthor.AI,
+        )
+        stage.assertions[cr.id] = cr
+
+        sql_resolved = stage.resolve()
+        export_stage_to_usda(stage, tmp_path)
+        usda_resolved = resolve_via_text(tmp_path)
+
+        assert usda_resolved["/cr"]["content"] == "line1\rline2\r\nline3"
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+        assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)
