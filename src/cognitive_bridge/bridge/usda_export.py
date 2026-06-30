@@ -131,6 +131,10 @@ def _render_prim_tree(tree: dict, indent: int = 0) -> str:
                 lines.append(f'{pad}    def Scope "opinion_{i}" (')
                 lines.append(f'{pad}        doc = "{_escape_usda_string(extra_ast.content)}"')
                 lines.append(f'{pad}    ) {{')
+                # cb:shadow marks a non-winning shadowed opinion so the text
+                # resolver drops it structurally — not by a name heuristic that
+                # could collide with a real "opinion_N" topic-path segment.
+                lines.append(f'{pad}        custom bool cb:shadow = true')
                 lines.append(f'{pad}        custom string cb:content = "{_escape_usda_string(extra_ast.content)}"')
                 lines.append(f'{pad}        custom string cb:assertion_id = "{extra_ast.id}"')
                 lines.append(f'{pad}    }}')

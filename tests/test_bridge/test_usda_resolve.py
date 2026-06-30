@@ -638,3 +638,123 @@ class TestSamePathSameArcConsistency:
 
         discrepancies = check_consistency(sql_resolved, usda_resolved)
         assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)
+
+
+@_e2e_skip
+class TestUsdaConsistencyEdgeCases:
+    """Edge cases for the SQL/USDA mechanical-equivalence guarantee surfaced by
+    an adversarial sweep: a real ``opinion_N``-named topic path, special
+    characters in content, and a USD VariantSet that must not pollute resolution.
+    """
+
+    def _stage(self):
+        from cognitive_bridge.models.stage import CompositionStage
+
+        return CompositionStage(project_id="edge", project_name="Edge cases")
+
+    def test_real_opinion_named_path_is_not_dropped(self, tmp_path):
+        # A legitimate topic path whose final segment is literally "opinion_1",
+        # with the same-arc parent asserted. The shadow-opinion skip must key on
+        # the cb:shadow marker, not the name, so this real node is preserved.
+        from cognitive_bridge.models.arcs import AssertionAuthor, CompositionArc
+        from cognitive_bridge.models.assertion import Assertion
+
+        stage = self._stage()
+        parent = Assertion(
+            topic_path="/config",
+            content="config root",
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.USER,
+            falsifiable_if="If config is removed",
+        )
+        opinion_named = Assertion(
+            topic_path="/config/opinion_1",
+            content="a real node literally named opinion_1",
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.USER,
+            falsifiable_if="If this node is deleted",
+        )
+        stage.assertions[parent.id] = parent
+        stage.assertions[opinion_named.id] = opinion_named
+
+        sql_resolved = stage.resolve()
+        export_stage_to_usda(stage, tmp_path)
+        usda_resolved = resolve_via_text(tmp_path)
+
+        assert (
+            usda_resolved["/config/opinion_1"]["content"]
+            == "a real node literally named opinion_1"
+        )
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+        assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)
+
+    def test_special_characters_round_trip(self, tmp_path):
+        from cognitive_bridge.models.arcs import AssertionAuthor, CompositionArc
+        from cognitive_bridge.models.assertion import Assertion
+
+        stage = self._stage()
+        tricky = 'He said "hi"; path C:\\Users\\db;\nsecond line'
+        ast = Assertion(
+            topic_path="/x",
+            content=tricky,
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.USER,
+            falsifiable_if="If the round-trip mangles it",
+        )
+        stage.assertions[ast.id] = ast
+
+        sql_resolved = stage.resolve()
+        export_stage_to_usda(stage, tmp_path)
+        usda_resolved = resolve_via_text(tmp_path)
+
+        # Quotes, backslashes, and newlines must survive the export/parse round trip.
+        assert usda_resolved["/x"]["content"] == tricky
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+        assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)
+
+    def test_variant_set_does_not_pollute_resolution(self, tmp_path):
+        from cognitive_bridge.models.arcs import AssertionAuthor, CompositionArc
+        from cognitive_bridge.models.assertion import Assertion
+        from cognitive_bridge.models.variant_set import Variant, VariantSet
+
+        stage = self._stage()
+        engine = Assertion(
+            topic_path="/architecture/database/engine",
+            content="PostgreSQL",
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.USER,
+            confidence=0.9,
+            falsifiable_if="If p99 latency exceeds 1s under load",
+        )
+        baseline = Assertion(
+            topic_path="/architecture/database",
+            content="any relational DB",
+            arc=CompositionArc.SPECIALIZES,
+            author=AssertionAuthor.AI,
+        )
+        stage.assertions[engine.id] = engine
+        stage.assertions[baseline.id] = baseline
+
+        # An unresolved VariantSet at a path overlapping the assertions above.
+        vs = VariantSet(
+            name="Engine Choice",
+            topic_path="/architecture/database",
+            variants=[
+                Variant(name="MongoDB", content="MongoDB is the best engine"),
+                Variant(name="Postgres", content="Postgres is the best engine"),
+            ],
+        )
+        stage.variant_sets[vs.id] = vs
+
+        sql_resolved = stage.resolve()
+        export_stage_to_usda(stage, tmp_path)
+        usda_resolved = resolve_via_text(tmp_path)
+
+        # The variant block must not invent /architecture, nor override the real
+        # SPECIALIZES winner at /architecture/database with a variant opinion.
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+        assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)
+        assert usda_resolved["/architecture/database"]["content"] == "any relational DB"
+        assert (
+            usda_resolved["/architecture/database/engine"]["content"] == "PostgreSQL"
+        )

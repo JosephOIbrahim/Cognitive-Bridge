@@ -79,10 +79,30 @@ def resolve_via_text(stage_dir: str | Path) -> dict[str, dict[str, Any]]:
     return resolved
 
 
-# Opinion child prims (named ``opinion_N``) preserve losing same-arc opinions
-# non-destructively in the export. They are nested under an assertion prim and
-# are NOT composition winners, so the resolver must not surface them as paths.
-_OPINION_RE = re.compile(r"^opinion_\d+$")
+def _unescape_usda_string(s: str) -> str:
+    """Reverse usda_export._escape_usda_string.
+
+    The exporter escapes a backslash, a double-quote, and a newline before
+    writing a string literal; this restores them so a round-tripped cb:content
+    matches the in-memory assertion exactly.
+    """
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        ch = s[i]
+        if ch == "\\" and i + 1 < n and s[i + 1] in ('"', "\\", "n"):
+            nxt = s[i + 1]
+            out.append("\n" if nxt == "n" else nxt)
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+# A USD variantSet block — `variantSet "name" = {` — opens braces that are not
+# prims; its variant opinions are not resolve() winners and must be skipped.
+_VARIANTSET_OPEN_RE = re.compile(r'variantSet\s+"[^"]+"\s*=\s*\{')
 
 
 def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
@@ -93,11 +113,18 @@ def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
     generate.
 
     Each prim accumulates its own attributes via a stack parallel to the path
-    stack, so a prim is recorded even when it contains child prims — both
-    legitimate nested topic paths (``/db`` with a ``/db/engine`` child) and
-    ``opinion_N`` children. Opinion children are dropped: they hold shadowed
-    (losing) same-arc opinions, not winners, and surfacing them would create
-    phantom paths that diverge from CompositionStage.resolve().
+    stack, so a prim is recorded even when it contains child prims (legitimate
+    nested topic paths like ``/db`` with a ``/db/engine`` child). Two kinds of
+    non-winner content are skipped so text resolution matches
+    CompositionStage.resolve() exactly:
+
+    - Shadowed opinions (``cb:shadow``): losing same-arc opinions rendered as
+      child prims. Identified by the structural marker, not by name, so a real
+      topic path whose final segment is literally ``opinion_1`` is unaffected.
+    - variantSet blocks: hypothesis variants are not resolve() winners; their
+      braces are tracked separately so they never pop the real prim stack.
+
+    String values are unescaped to reverse the exporter's escaping.
 
     Returns:
         Dict mapping prim path strings to attribute dicts.
@@ -108,9 +135,20 @@ def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
     # open prim. The innermost open prim is at index -1.
     path_stack: list[str] = []
     attrs_stack: list[dict[str, Any]] = []
+    # Brace depth inside a variantSet block (0 = not inside one).
+    variant_depth = 0
 
     for line in text.split("\n"):
         stripped = line.strip()
+
+        # Skip the contents of variantSet blocks wholesale — variants are not
+        # composition winners, and their braces would otherwise pop real prims.
+        if variant_depth == 0 and _VARIANTSET_OPEN_RE.match(stripped):
+            variant_depth = 1
+            continue
+        if variant_depth > 0:
+            variant_depth += stripped.count("{") - stripped.count("}")
+            continue
 
         # Match prim definitions: def Scope "name" or over "name"
         prim_match = re.match(r'(?:def|over)\s+\w+\s+"([^"]+)"', stripped)
@@ -129,10 +167,13 @@ def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
 
             # Parse string value
             if attr_value.startswith('"') and attr_value.endswith('"'):
-                attr_value = attr_value[1:-1]
+                attr_value = _unescape_usda_string(attr_value[1:-1])
             # Parse string array
             elif attr_value.startswith('['):
-                attr_value = re.findall(r'"([^"]*)"', attr_value)
+                attr_value = [
+                    _unescape_usda_string(it)
+                    for it in re.findall(r'"((?:[^"\\]|\\.)*)"', attr_value)
+                ]
             # Parse float
             elif '.' in attr_value:
                 try:
@@ -143,16 +184,12 @@ def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
             attrs_stack[-1][attr_name] = attr_value
             continue
 
-        # Closing brace — record the innermost prim's own attributes, then pop.
+        # Closing brace — record the innermost prim, then pop. Shadowed
+        # opinions (cb:shadow) are dropped so they don't surface as phantom
+        # paths that diverge from CompositionStage.resolve().
         if stripped == "}" and path_stack:
-            name = path_stack[-1]
             attrs = attrs_stack.pop()
-            # Skip opinion_N children: they are shadowed opinions nested under
-            # an assertion prim (the parent carries cb:content), not winners.
-            is_opinion = bool(_OPINION_RE.match(name)) and (
-                bool(attrs_stack) and "content" in attrs_stack[-1]
-            )
-            if attrs and not is_opinion:
+            if attrs and "shadow" not in attrs:
                 prim_path = "/" + "/".join(path_stack)
                 if prim_path not in prims:
                     prims[prim_path] = attrs
