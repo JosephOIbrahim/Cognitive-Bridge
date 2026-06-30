@@ -758,3 +758,70 @@ class TestUsdaConsistencyEdgeCases:
         assert (
             usda_resolved["/architecture/database/engine"]["content"] == "PostgreSQL"
         )
+
+    def test_empty_content_assertion_is_consistent(self, tmp_path):
+        # An empty-string content is model-valid; check_consistency must gate on
+        # presence, not truthiness, or it falsely reports the path as missing.
+        from cognitive_bridge.models.arcs import AssertionAuthor, CompositionArc
+        from cognitive_bridge.models.assertion import Assertion
+
+        stage = self._stage()
+        empty = Assertion(
+            topic_path="/empty/path",
+            content="",
+            arc=CompositionArc.SPECIALIZES,
+            author=AssertionAuthor.AI,
+        )
+        keep = Assertion(
+            topic_path="/kept",
+            content="non-empty",
+            arc=CompositionArc.SPECIALIZES,
+            author=AssertionAuthor.AI,
+        )
+        stage.assertions[empty.id] = empty
+        stage.assertions[keep.id] = keep
+
+        sql_resolved = stage.resolve()
+        export_stage_to_usda(stage, tmp_path)
+        usda_resolved = resolve_via_text(tmp_path)
+
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+        assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)
+        assert usda_resolved["/empty/path"]["content"] == ""
+
+    def test_variant_content_with_brace_does_not_leak_phantom_path(self, tmp_path):
+        # A literal "}" inside variant content must not close the variantSet
+        # brace-skip early — the exporter does not escape curly braces.
+        from cognitive_bridge.models.arcs import AssertionAuthor, CompositionArc
+        from cognitive_bridge.models.assertion import Assertion
+        from cognitive_bridge.models.variant_set import Variant, VariantSet
+
+        stage = self._stage()
+        safe = Assertion(
+            topic_path="/safe",
+            content="unrelated",
+            arc=CompositionArc.LOCAL,
+            author=AssertionAuthor.USER,
+            falsifiable_if="If safe breaks",
+        )
+        stage.assertions[safe.id] = safe
+
+        vs = VariantSet(
+            name="Config Choice",
+            topic_path="/target",
+            variants=[
+                Variant(name="A", content="use config }"),
+                Variant(name="B", content="normal option"),
+            ],
+        )
+        stage.variant_sets[vs.id] = vs
+
+        sql_resolved = stage.resolve()
+        export_stage_to_usda(stage, tmp_path)
+        usda_resolved = resolve_via_text(tmp_path)
+
+        # /target is a VariantSet, not an assertion: it must not surface as a
+        # resolved winner on the USDA side.
+        assert "/target" not in usda_resolved
+        discrepancies = check_consistency(sql_resolved, usda_resolved)
+        assert discrepancies == [], "SQL/USDA diverged:\n" + "\n".join(discrepancies)

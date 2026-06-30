@@ -147,7 +147,11 @@ def _parse_prims_from_usda(text: str) -> dict[str, dict[str, Any]]:
             variant_depth = 1
             continue
         if variant_depth > 0:
-            variant_depth += stripped.count("{") - stripped.count("}")
+            # Count only STRUCTURAL braces: strip quoted string literals first,
+            # because variant content can contain unescaped "{"/"}" (the
+            # exporter escapes only backslash, double-quote, and newline).
+            bare = re.sub(r'"(?:[^"\\]|\\.)*"', "", stripped)
+            variant_depth += bare.count("{") - bare.count("}")
             continue
 
         # Match prim definitions: def Scope "name" or over "name"
@@ -279,7 +283,10 @@ def check_consistency(
     usda_winners: dict[str, str] = {}
     for path, attrs in usda_resolved.items():
         content = attrs.get("content")
-        if content:
+        # Gate on presence, not truthiness — an empty-string winner is still a
+        # winner, and the SQL side (gated on the assertion) keeps it too, so a
+        # symmetric gate avoids a spurious "exists in SQL but not in USDA".
+        if content is not None:
             usda_winners[path] = content
 
     # Check all SQL paths exist in USDA
