@@ -26,6 +26,7 @@ the backbone to flag a contradiction instead of quietly going along with it.
 - [What Does This Do?](#what-does-this-do)
 - [Installation](#installation)
 - [Claude Desktop Setup](#claude-desktop-setup)
+- [Claude Code Setup](#claude-code-setup)
 - [How It Works](#how-it-works)
 - [USD Composition Bridge](#usd-composition-bridge)
 - [Tools](#tools)
@@ -324,6 +325,10 @@ flowchart TD
     Resolve -->|"1. lowest arc value wins"| Tie
     Tie["Tie-break (same arc): higher confidence, then newer created_at"]
     Tie --> Winner["Winning assertion per topic_path (+ shadow_stack of losers)"]
+    classDef orange fill:#E8A86B,stroke:#B5722E,stroke-width:1px,color:#2A2014;
+    classDef yellow fill:#F0D27A,stroke:#BF9D2E,stroke-width:1px,color:#2A2014;
+    class L,I,V,R,P,S orange;
+    class Resolve,Tie,Winner yellow;
 ```
 
 ### The Argumentation Flow
@@ -360,6 +365,10 @@ flowchart TD
     F -->|"challenge"| G --> H --> E
     F -->|"resolve / defer / propose_experiment"| R --> S
     S --> T --> U
+    classDef orange fill:#E8A86B,stroke:#B5722E,stroke-width:1px,color:#2A2014;
+    classDef yellow fill:#F0D27A,stroke:#BF9D2E,stroke-width:1px,color:#2A2014;
+    class A,C,D,F,R,S,T orange;
+    class B,E,G,H,U yellow;
 ```
 
 ### Conflict Detection and Cascade
@@ -401,6 +410,10 @@ flowchart TD
   D2 -->|"on winner change"| CH
   D1 -->|"on falsification"| ORP["assumption_status = ORPHANED<br/>+ ASSERTION_ORPHANED event"]
   D2 -->|"on falsification"| ORP
+  classDef orange fill:#E8A86B,stroke:#B5722E,stroke-width:1px,color:#2A2014;
+  classDef yellow fill:#F0D27A,stroke:#BF9D2E,stroke-width:1px,color:#2A2014;
+  class A,L1,L2,L3,L4,RES orange;
+  class F,D1,D2,CH,ORP,FALS yellow;
 ```
 
 ### Four Coworker Postures
@@ -433,6 +446,10 @@ stateDiagram-v2
     AUTHORITATIVE --> ENGAGED: a new conflict becomes active
     AUTHORITATIVE --> RED_TEAMING: local_count reaches red_team_threshold, zero conflicts
     RED_TEAMING --> ENGAGED: red team creates a conflict or variant set
+    classDef orange fill:#E8A86B,stroke:#B5722E,color:#2A2014;
+    classDef yellow fill:#F0D27A,stroke:#BF9D2E,color:#2A2014;
+    class ENGAGED,RED_TEAMING orange
+    class LEARNING,AUTHORITATIVE yellow
 ```
 
 ---
@@ -477,6 +494,10 @@ flowchart TD
   SQL --> Check
   Txt --> Check
   Check --> Result
+  classDef orange fill:#E8A86B,stroke:#B5722E,stroke-width:1px,color:#2A2014;
+  classDef yellow fill:#F0D27A,stroke:#BF9D2E,stroke-width:1px,color:#2A2014;
+  class Stage,SQL,Txt,Check,Result orange;
+  class L,I,V,R,P,S,Root yellow;
 ```
 
 Each composition arc maps to a sublayer file:
@@ -602,7 +623,7 @@ flowchart TD
     end
 
     subgraph EngineL["Engine Layer"]
-        Engine["engine (conflict_detector, resolver, cascade, provenance, trust)"]
+        Engine["engine (conflict_detector, resolver, cascade, provenance, trust, sensitivity, red_team)"]
     end
 
     subgraph ModelL["Model Layer (base — no upward imports)"]
@@ -630,6 +651,10 @@ flowchart TD
     Storage -->|"converts to/from rows"| Models
     Bridge -->|"reads stage"| Models
     Bridge -->|writes| USDA
+    classDef orange fill:#E8A86B,stroke:#B5722E,stroke-width:1px,color:#2A2014;
+    classDef yellow fill:#F0D27A,stroke:#BF9D2E,stroke-width:1px,color:#2A2014;
+    class Client,Server,Tools,Resources,Prompts orange;
+    class Engine,Models,Storage,Bridge,USDA yellow;
 ```
 
 ```
@@ -725,6 +750,7 @@ test-coverage and hardening pass with continuous integration. The history is lin
 `main`:
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"git0":"#E8A86B","commitLabelColor":"#2A2014","commitLabelBackground":"#FBF3E4","tagLabelColor":"#2A2014","tagLabelBackground":"#F0D27A","tagLabelBorder":"#BF9D2E"}}}%%
 gitGraph
    commit id: "P0 scaffolding"
    commit id: "4-phase build"
@@ -756,6 +782,7 @@ Most work lands on `main` via short-lived branches and pull requests. The recomm
 4. **Merge** back to `main`, then tag a release when a milestone lands.
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"git0":"#E8A86B","git1":"#F0D27A","commitLabelColor":"#2A2014","commitLabelBackground":"#FBF3E4","tagLabelColor":"#2A2014","tagLabelBackground":"#F0D27A","tagLabelBorder":"#BF9D2E","gitBranchLabel0":"#2A2014","gitBranchLabel1":"#2A2014"}}}%%
 gitGraph
    commit id: "main"
    branch feature
