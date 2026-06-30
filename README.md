@@ -1,19 +1,28 @@
 # Cognitive Bridge
 
-**An MCP server that gives AI a compositional mind.**
+[![version](https://img.shields.io/badge/version-0.1.0-2563eb.svg)](https://github.com/JosephOIbrahim/Cognitive-Bridge/releases)
+[![python](https://img.shields.io/badge/python-3.11%2B-2563eb.svg)](https://www.python.org/downloads/)
+[![tests](https://img.shields.io/badge/tests-1317%20passing-22c55e.svg)](#development)
+[![MCP](https://img.shields.io/badge/MCP-server-7c3aed.svg)](https://modelcontextprotocol.io)
+[![USD](https://img.shields.io/badge/USD-LIVRPS%20verified-f97316.svg)](#usd-composition-bridge)
+[![license](https://img.shields.io/badge/license-MIT-16a34a.svg)](#license)
 
-Persistent epistemic state. Automatic conflict detection. Structured disagreement
-as a generative force. Built on USD composition arc semantics -- not inspired by
-USD, mechanically verified against it.
+**An MCP server that gives AI a compositional mind** — a memory it can't lose, and
+the backbone to flag a contradiction instead of quietly going along with it.
 
-```
-1168 tests | Python 3.11+ | SQLite + USDA export | Claude Desktop ready
-```
+> **TL;DR** — Normal AI assistants forget what you told them and rarely push back.
+> Cognitive Bridge gives the AI a notebook it can't lose and one hard rule: surface
+> contradictions, don't bury them. The ranking math that decides which idea "wins" is
+> borrowed *exactly* from **USD** — the layering format animation studios use to stack
+> 3D scenes — and the code proves the two are mechanically identical.
+
+**Tags:** `mcp` · `model-context-protocol` · `claude` · `usd` · `openusd` · `livrps` · `argumentation-framework` · `critical-thinking` · `knowledge-graph` · `reasoning` · `fastmcp` · `pydantic` · `sqlite` · `python`
 
 ---
 
 ## Table of Contents
 
+- [In Plain English](#in-plain-english)
 - [What Does This Do?](#what-does-this-do)
 - [Installation](#installation)
 - [Claude Desktop Setup](#claude-desktop-setup)
@@ -24,8 +33,46 @@ USD, mechanically verified against it.
 - [Examples](#examples)
 - [Architecture](#architecture)
 - [Development](#development)
+- [Development History](#development-history)
+- [Contributing](#contributing)
 - [The Novel Claim](#the-novel-claim)
 - [License](#license)
+
+---
+
+## In Plain English
+
+*New here? Start with this. Want the technical version? Jump to [How It Works](#how-it-works).*
+
+**The problem: AI has goldfish memory.**
+Tell a chat assistant in message 5 that your app uses PostgreSQL, and by message 50 it
+will happily suggest MongoDB — with no memory that it just contradicted you.
+
+**The fix: give it a notebook with rules.**
+Cognitive Bridge is a memory layer the AI writes to while you work. Every claim gets
+written down, ranked by how sure we are, and **automatically checked against everything
+already in the notebook.** When something clashes, it gets *flagged* — not silently
+overwritten.
+
+**It also enforces good thinking** — four house rules baked into the code, not just
+polite suggestions the AI can ignore:
+
+| House rule | In everyday terms |
+|---|---|
+| 🎯 **No strong claim without a way to be proven wrong** | Like a scientist: "here's exactly what would change my mind." |
+| 🤝 **Understand before you argue** | It has to restate your point *fairly* before it is allowed to disagree. |
+| ⚖️ **Name the trade-off** | Every decision must say what it gave up and what it will affect later. |
+| 🔬 **When nobody knows, run a test** | Instead of arguing in circles, it proposes a concrete experiment to settle it. |
+
+**Why "composition"?**
+The ranking system is borrowed — *exactly*, not loosely — from **USD (Universal Scene
+Description)**, the format film and animation studios use to stack the layers of a 3D
+scene so the right one "wins." Here, the same math decides which *idea* wins. The project
+even exports its own reasoning as real USD files to prove the two are identical.
+
+**Who is it for?**
+Anyone using Claude (Desktop or Code) who is tired of re-explaining context and wants an
+assistant that **remembers, pushes back, and shows its work.**
 
 ---
 
@@ -255,6 +302,30 @@ what overrides what. Lower number = stronger claim = harder to override.
 When two assertions compete at the same topic path, the one with the lower
 arc value wins. Ties break by confidence, then by recency (newer wins).
 
+```mermaid
+flowchart TD
+    subgraph Stack["LIVRPS arc stack (lower value = stronger)"]
+        direction TB
+        L["LOCAL (10): verified, high-confidence — requires falsifiability"]
+        I["INHERITS (20): domain expertise, structural priors"]
+        V["VARIANT_SET (30): active hypothesis branches (coexist)"]
+        R["REFERENCES (40): stated preferences, external citations"]
+        P["PAYLOADS (50): known unknowns — evidence not yet loaded"]
+        S["SPECIALIZES (60): baseline training knowledge, always overridable"]
+        L --> I --> V --> R --> P --> S
+    end
+    L -->|group by topic_path| Resolve
+    I -->|group by topic_path| Resolve
+    V -->|group by topic_path| Resolve
+    R -->|group by topic_path| Resolve
+    P -->|group by topic_path| Resolve
+    S -->|group by topic_path| Resolve
+    Resolve{"resolve(): per topic_path sort active assertions"}
+    Resolve -->|"1. lowest arc value wins"| Tie
+    Tie["Tie-break (same arc): higher confidence, then newer created_at"]
+    Tie --> Winner["Winning assertion per topic_path (+ shadow_stack of losers)"]
+```
+
 ### The Argumentation Flow
 
 ```
@@ -264,6 +335,72 @@ arc value wins. Ties break by confidence, then by recency (newer wins).
 4. RESOLVE   -- Accept, promote, challenge, synthesize, experiment, defer, or dismiss
 5. CASCADE   -- If a foundation changes, all dependent claims are flagged
 6. DECIDE    -- Record the decision with rejected alternatives and downstream effects
+```
+
+The same flow as a diagram — note the **steelman gate** before any challenge:
+
+```mermaid
+flowchart TD
+    A["1 ASSERT — cb_manage_assertion: assert / promote / retract / falsify"]
+    B["record claim at topic_path with arc (LOCAL 10 to SPECIALIZES 60)"]
+    C["2 DETECT — 4-layer conflict check: structural / semantic / delegated / cascading"]
+    D{"Conflict detected?"}
+    E["cb_manage_conflict (conflict is a first-class event, not an error)"]
+    F{"Challenge opposing view, or close it?"}
+    G["3 STEELMAN GATE — steelman_summary required: strongest, most charitable opposing view"]
+    H["challenge registered: conflict stays ACTIVE (debate continues)"]
+    R["4 RESOLVE — accept / promote / synthesize / dismiss / defer / propose_experiment"]
+    S["5 CASCADE — winner change flags dependents ORPHANED/CHALLENGED via dependency DAG"]
+    T["6 DECIDE — cb_decide: alternatives_rejected (>=1) + second_order_effects (>=1)"]
+    U["second_order_effects become INHERITS constraints persisted at the decision path"]
+
+    A --> B --> C --> D
+    D -->|"no conflict"| S
+    D -->|"conflict"| E --> F
+    F -->|"challenge"| G --> H --> E
+    F -->|"resolve / defer / propose_experiment"| R --> S
+    S --> T --> U
+```
+
+### Conflict Detection and Cascade
+
+DETECT is four layers, and when the winning assertion at a path changes, the effect
+ripples downstream through the dependency DAG:
+
+```mermaid
+flowchart TD
+  A["New assertion / winner-change event"]
+
+  subgraph Det["Four-Layer Conflict Detection"]
+    direction TB
+    L1["Layer 1 STRUCTURAL<br/>same topic_path + different content<br/>O(1) lookup, LIVRPS __lt__ ordering"]
+    L2["Layer 2 SEMANTIC<br/>embeddings (all-MiniLM-L6-v2)<br/>cosine sim >= semantic_threshold, cross-path"]
+    L3["Layer 3 DELEGATED<br/>warning dicts in tool response text<br/>Claude judges each one"]
+    L4["Layer 4 CASCADING<br/>dependency-DAG propagation (engine/cascade.py)"]
+  end
+
+  A --> L1
+  L1 -->|"same-path conflict: Conflict(STRUCTURAL)"| RES["Resolve via cb_manage_conflict"]
+  L1 -->|"then (cross-path scan)"| L2
+  L2 -->|"gate: cross_path_detection + sentence-transformers installed"| L3
+  L3 -->|"Claude escalates: cb_manage_conflict(action=create)"| RES
+  RES -->|"winning assertion at path changes"| L4
+
+  subgraph Casc["DAG Cascade Example: downstream re-evaluation"]
+    direction TB
+    F["Foundation @ /database/engine"]
+    D1["Dependent @ /cache/strategy<br/>depends_on_paths includes /database/engine"]
+    D2["Dependent @ /api/timeout<br/>depends_on_paths includes /database/engine"]
+    F -->|"get_dependents(changed_path)"| D1
+    F -->|"get_dependents(changed_path)"| D2
+  end
+
+  L4 -->|"winner changed (override / promote / retract)"| F
+  FALS["check_falsification(): Claude confirms condition met"] -->|"foundation falsified"| F
+  D1 -->|"on winner change"| CH["assumption_status = CHALLENGED<br/>+ ASSERTION_CHALLENGED event"]
+  D2 -->|"on winner change"| CH
+  D1 -->|"on falsification"| ORP["assumption_status = ORPHANED<br/>+ ASSERTION_ORPHANED event"]
+  D2 -->|"on falsification"| ORP
 ```
 
 ### Four Coworker Postures
@@ -277,6 +414,27 @@ The system adapts its behavior based on how much it knows:
 | AUTHORITATIVE | Many verified claims | Assert with confidence, surface payloads |
 | RED_TEAMING | Too stable (echo chamber risk) | Hunt blind spots, challenge own positions |
 
+Posture is recomputed from the stage on every call — these are the typical transitions
+(`red_team_threshold` defaults to 8):
+
+```mermaid
+stateDiagram-v2
+    [*] --> LEARNING
+    LEARNING: active assertions below 3
+    ENGAGED: one or more active conflicts
+    AUTHORITATIVE: local_count 3 to threshold minus 1, zero conflicts
+    RED_TEAMING: local_count at or above red_team_threshold, zero conflicts
+    LEARNING --> ENGAGED: a conflict becomes active
+    LEARNING --> AUTHORITATIVE: local_count reaches 3, zero conflicts
+    LEARNING --> LEARNING: assertions present but local_count below 3
+    ENGAGED --> AUTHORITATIVE: conflicts resolved, local_count 3 to threshold minus 1
+    ENGAGED --> RED_TEAMING: conflicts resolved, local_count reaches red_team_threshold
+    ENGAGED --> LEARNING: conflicts resolved, local_count below 3
+    AUTHORITATIVE --> ENGAGED: a new conflict becomes active
+    AUTHORITATIVE --> RED_TEAMING: local_count reaches red_team_threshold, zero conflicts
+    RED_TEAMING --> ENGAGED: red team creates a conflict or variant set
+```
+
 ---
 
 ## USD Composition Bridge
@@ -284,6 +442,42 @@ The system adapts its behavior based on how much it knows:
 The LIVRPS naming is not metaphorical -- it maps directly to USD (Universal
 Scene Description) composition arc semantics. The bridge module proves this
 mechanically by exporting the epistemic state as valid `.usda` files.
+
+```mermaid
+flowchart TD
+  Stage["CompositionStage (SQL store)"]
+  subgraph Arcs["6 arc sublayers (LIVRPS order, strongest first)"]
+    L["session_local.usda :: LOCAL (10)"]
+    I["domain_inherits.usda :: INHERITS (20)"]
+    V["hypothesis_variants.usda :: VARIANT_SET (30)"]
+    R["evidence_refs.usda :: REFERENCES (40)"]
+    P["deferred_payloads.usda :: PAYLOADS (50)"]
+    S["safety_specializes.usda :: SPECIALIZES (60)"]
+  end
+  Root["stage.usda (subLayers: first listed wins)"]
+  SQL["resolve() -> SQL winners"]
+  Txt["resolve_via_text() -> USDA winners"]
+  Check["consistency check (must be identical)"]
+  Result["check_consistency() returns [] (zero discrepancies)"]
+
+  Stage -->|"export_stage_to_usda()"| L
+  Stage --> I
+  Stage --> V
+  Stage --> R
+  Stage --> P
+  Stage --> S
+  L -->|"1st / strongest"| Root
+  I --> Root
+  V --> Root
+  R --> Root
+  P --> Root
+  S -->|"6th / weakest"| Root
+  Stage -->|"resolve()"| SQL
+  Root -->|"resolve_via_text()"| Txt
+  SQL --> Check
+  Txt --> Check
+  Check --> Result
+```
 
 Each composition arc maps to a sublayer file:
 
@@ -391,6 +585,53 @@ python examples/mongodb_scenario.py
 
 ## Architecture
 
+The whole system is a clean one-way dependency graph: models know nothing about the
+engine, the engine knows nothing about the tools, and nothing imports "upward." That is
+what keeps it free of circular imports.
+
+```mermaid
+flowchart TD
+    Client["MCP Client (Claude Desktop / Claude Code)"]
+    Client -->|"stdio / streamable HTTP"| Server
+    Server["server.py (FastMCP entry + lifespan)"]
+
+    subgraph Surface["Surface Layer"]
+        Tools["tools (cb_manage_assertion, cb_manage_conflict, cb_decide, ...)"]
+        Resources["resources (stage_resources: 8 read-only endpoints)"]
+        Prompts["prompts (negotiation_prompts)"]
+    end
+
+    subgraph EngineL["Engine Layer"]
+        Engine["engine (conflict_detector, resolver, cascade, provenance, trust)"]
+    end
+
+    subgraph ModelL["Model Layer (base — no upward imports)"]
+        Models["models (Assertion, Conflict, CompositionStage, CompositionArc 10..60)"]
+    end
+
+    subgraph SideL["Persistence + USD Bridge"]
+        Storage["storage (SQLModel rows + converters)"]
+        Bridge["bridge (usda_export, usda_resolve)"]
+        USDA[".usda files (stage.usda + LIVRPS arc layers)"]
+    end
+
+    Server -->|"registers @mcp.tool"| Tools
+    Server -->|registers| Resources
+    Server -->|registers| Prompts
+    Server -->|"persists via"| Storage
+    Server -->|"usda_export action"| Bridge
+
+    Tools -->|import| Engine
+    Tools -->|import| Models
+    Resources -->|import| Engine
+    Resources -->|import| Models
+    Prompts -->|import| Models
+    Engine -->|"imports models only"| Models
+    Storage -->|"converts to/from rows"| Models
+    Bridge -->|"reads stage"| Models
+    Bridge -->|writes| USDA
+```
+
 ```
 src/cognitive_bridge/
   server.py            FastMCP entry point, lifespan, project management
@@ -473,6 +714,59 @@ ruff check src/ tests/
 | pydantic | >= 2.0 | Yes |
 | sentence-transformers | >= 3.0 | Optional (semantic detection) |
 | numpy | >= 1.24 | Optional (with sentence-transformers) |
+
+---
+
+## Development History
+
+Cognitive Bridge was built in four phases — foundation models, the conflict protocol,
+decisions plus semantic detection, then the USD composition bridge — followed by a
+test-coverage and hardening pass with continuous integration. The history is linear on
+`main`:
+
+```mermaid
+gitGraph
+   commit id: "P0 scaffolding"
+   commit id: "4-phase build"
+   commit id: "audit pass"
+   commit id: "kernel resource"
+   commit id: "substrate docs"
+   commit id: "MOE audit fixes"
+   commit id: "auto-tune+embed"
+   commit id: "patent align"
+   commit id: "USDA export"
+   commit id: "USDA tool wiring"
+   commit id: "README+MCP setup"
+   commit id: "test coverage"
+   commit id: "P0/P1 hardening"
+   commit id: "CI + coverage gate"
+   commit id: "payload fix"
+   commit id: "docs + diagrams" tag: "v0.1.0"
+```
+
+---
+
+## Contributing
+
+Most work lands on `main` via short-lived branches and pull requests. The recommended flow for any change:
+
+1. **Branch** off `main` (e.g. `feat/your-change`).
+2. **Commit** small, atomic units — one logical change each, in `[scope] description` form.
+3. **Test** before you merge: `pytest tests/` must stay green (1317 passing).
+4. **Merge** back to `main`, then tag a release when a milestone lands.
+
+```mermaid
+gitGraph
+   commit id: "main"
+   branch feature
+   checkout feature
+   commit id: "impl"
+   commit id: "polish"
+   commit id: "tests" type: HIGHLIGHT
+   checkout main
+   merge feature
+   commit id: "release" tag: "v0.1.0"
+```
 
 ---
 
