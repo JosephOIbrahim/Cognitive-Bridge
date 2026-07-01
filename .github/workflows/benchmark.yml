@@ -3,24 +3,28 @@ name: Benchmarks
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
-# Least privilege at the workflow level; the publish job elevates to the exact
-# writes the benchmark action needs (push history to gh-pages + deploy Pages).
+# Least privilege at the workflow level; the job elevates to the exact writes
+# the benchmark action needs (push gh-pages history + deploy Pages + PR comment).
 permissions:
   contents: read
 
 concurrency:
-  # Serialise gh-pages pushes across runs; never cancel a run mid-push.
-  group: benchmarks
-  cancel-in-progress: false
+  # Per-ref: a ref's runs serialise (main pushes never overlap a gh-pages
+  # write); superseded PR runs cancel, but a main push is never cancelled.
+  group: benchmarks-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   benchmark:
     name: Run & publish benchmarks
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # push benchmark history to the gh-pages branch
-      deployments: write   # deploy the GitHub Pages site
+      contents: write        # push benchmark history to gh-pages (main only)
+      deployments: write     # deploy the GitHub Pages site
+      pull-requests: write   # comment the benchmark comparison on PRs
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +44,7 @@ jobs:
         # place the pytest-benchmark suite runs — the merge gate never does.
         run: pytest benchmarks/ --benchmark-json output.json -q
 
-      - name: Publish to gh-pages + alert on regression
+      - name: Publish / compare
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: Cognitive Bridge engine benchmarks
@@ -49,11 +53,17 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: dev/bench
-          auto-push: true
-          # Alert (commit comment) on a >2x slowdown vs the previous run, but do
-          # NOT fail the build — a hard perf gate would reintroduce wall-clock
-          # flakiness. The fast coarse guards in test_performance.py stay the gate.
           alert-threshold: "200%"
+          # Only a push to main updates the published baseline/history; a PR run
+          # compares against that baseline without polluting it.
+          auto-push: ${{ github.event_name == 'push' }}
+          # Comment every PR run (show its perf impact inline); on main, comment
+          # only when a regression trips the threshold.
+          comment-always: ${{ github.event_name == 'pull_request' }}
           comment-on-alert: true
           summary-always: true
-          fail-on-alert: false
+          # A >2x regression FAILS a PR check (the perf gate); it never fails a
+          # main push — main only tracks the trend, so runner noise can't red it.
+          # Tune via alert-threshold; the CPU benchmarks are low-variance, the two
+          # I/O (usda) benchmarks are the ones to watch for occasional noise.
+          fail-on-alert: ${{ github.event_name == 'pull_request' }}
