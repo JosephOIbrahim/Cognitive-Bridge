@@ -57,9 +57,9 @@ jobs:
           # Only a push to main updates the published baseline/history; a PR run
           # compares against that baseline without polluting it.
           auto-push: ${{ github.event_name == 'push' }}
-          # Comment every PR run (show its perf impact inline); on main, comment
-          # only when a regression trips the threshold.
-          comment-always: ${{ github.event_name == 'pull_request' }}
+          # Regression commit-comment on main; PR comments are handled by the
+          # sticky-comment steps below (the action's own PR comment targets the
+          # invisible merge commit and never surfaces in the PR).
           comment-on-alert: true
           summary-always: true
           # A >2x regression FAILS a PR check (the perf gate); it never fails a
@@ -67,3 +67,25 @@ jobs:
           # Tune via alert-threshold; the CPU benchmarks are low-variance, the two
           # I/O (usda) benchmarks are the ones to watch for occasional noise.
           fail-on-alert: ${{ github.event_name == 'pull_request' }}
+
+      - name: Render PR benchmark table
+        if: github.event_name == 'pull_request'
+        run: python benchmarks/_pr_comment.py > bench_table.md
+
+      - name: Sticky benchmark comment on the PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          body="$(cat bench_table.md)"
+          cid=$(gh api "repos/$REPO/issues/$PR/comments" \
+            --jq 'map(select(.body | test("<!-- cb-benchmarks -->"))) | .[0].id // empty')
+          if [ -n "$cid" ]; then
+            gh api "repos/$REPO/issues/comments/$cid" -X PATCH -f body="$body" >/dev/null
+            echo "updated sticky comment $cid"
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+            echo "created sticky comment"
+          fi
