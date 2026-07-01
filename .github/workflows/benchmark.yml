@@ -1,0 +1,59 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+
+# Least privilege at the workflow level; the publish job elevates to the exact
+# writes the benchmark action needs (push history to gh-pages + deploy Pages).
+permissions:
+  contents: read
+
+concurrency:
+  # Serialise gh-pages pushes across runs; never cancel a run mid-push.
+  group: benchmarks
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Run & publish benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # push benchmark history to the gh-pages branch
+      deployments: write   # deploy the GitHub Pages site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          # Dependencies live in pyproject extras, not requirements.txt — hash
+          # that so the pip cache key is valid and invalidates on dep changes.
+          cache-dependency-path: pyproject.toml
+
+      - name: Install (bench extras)
+        run: pip install -e ".[bench]"
+
+      - name: Run benchmarks
+        # benchmarks/ lives outside testpaths=["tests"], so this is the only
+        # place the pytest-benchmark suite runs — the merge gate never does.
+        run: pytest benchmarks/ --benchmark-json output.json -q
+
+      - name: Publish to gh-pages + alert on regression
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Cognitive Bridge engine benchmarks
+          tool: pytest
+          output-file-path: output.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+          auto-push: true
+          # Alert (commit comment) on a >2x slowdown vs the previous run, but do
+          # NOT fail the build — a hard perf gate would reintroduce wall-clock
+          # flakiness. The fast coarse guards in test_performance.py stay the gate.
+          alert-threshold: "200%"
+          comment-on-alert: true
+          summary-always: true
+          fail-on-alert: false

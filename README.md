@@ -3,6 +3,7 @@
 [![version](https://img.shields.io/badge/version-0.1.0-2563eb.svg)](https://github.com/JosephOIbrahim/Cognitive-Bridge/releases)
 [![python](https://img.shields.io/badge/python-3.11%2B-2563eb.svg)](https://www.python.org/downloads/)
 [![tests](https://img.shields.io/badge/tests-1317%20passing-22c55e.svg)](#development)
+[![benchmarks](https://img.shields.io/badge/benchmarks-live-f97316.svg)](https://josephoibrahim.github.io/Cognitive-Bridge/dev/bench/)
 [![MCP](https://img.shields.io/badge/MCP-server-7c3aed.svg)](https://modelcontextprotocol.io)
 [![USD](https://img.shields.io/badge/USD-LIVRPS%20verified-f97316.svg)](#usd-composition-bridge)
 [![license](https://img.shields.io/badge/license-MIT-16a34a.svg)](#license)
