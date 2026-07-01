@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782911698673,
+  "lastUpdate": 1782912232787,
   "repoUrl": "https://github.com/JosephOIbrahim/Cognitive-Bridge",
   "entries": {
     "Cognitive Bridge engine benchmarks": [
@@ -184,6 +184,98 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0001404547033020737",
             "extra": "mean: 2.1190079509042925 msec\nrounds: 387"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "joseph@josephibrahim.com",
+            "name": "Joseph Ibrahim"
+          },
+          "committer": {
+            "email": "joseph@josephibrahim.com",
+            "name": "Joseph Ibrahim"
+          },
+          "distinct": true,
+          "id": "8443f5d9e50d0ccd1a62a29d4cad19fccb74a3f1",
+          "message": "[bench] post a visible sticky PR comment with benchmark results\n\ngithub-action-benchmark posts its PR comment on github.sha (the ephemeral\nmerge commit on pull_request events), which never surfaces in the PR\nconversation. Render the pytest-benchmark output.json as a markdown table and\nupsert it as a sticky PR comment via gh, so a PR shows its perf numbers inline\nalongside the gating check. No third-party action.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-01T09:23:14-04:00",
+          "tree_id": "f12e52ffb8a09b9dacffa80be7ceb30d3f8f5446",
+          "url": "https://github.com/JosephOIbrahim/Cognitive-Bridge/commit/8443f5d9e50d0ccd1a62a29d4cad19fccb74a3f1"
+        },
+        "date": 1782912232030,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_50",
+            "value": 9820.205154373527,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000005815244437403326",
+            "extra": "mean: 101.83086649209564 usec\nrounds: 3438"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_100",
+            "value": 4737.486228320616,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003262378491451379",
+            "extra": "mean: 211.08240780142353 usec\nrounds: 3102"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_500",
+            "value": 672.6324664249782,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001989842029232233",
+            "extra": "mean: 1.4866960040079102 msec\nrounds: 499"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_shadow_stacks_100x3",
+            "value": 2453.8389662049317,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011704160962975533",
+            "extra": "mean: 407.5247046657606 usec\nrounds: 2079"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_structural_detection_500",
+            "value": 13971.25842930554,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000005257312148407314",
+            "extra": "mean: 71.57551376348754 usec\nrounds: 8973"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_cascade_50_dependents",
+            "value": 1177.373287260437,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004392353612009658",
+            "extra": "mean: 849.3482999999458 usec\nrounds: 50"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_trust_500_conflicts_50_paths",
+            "value": 3190.2764024059975,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014151360838923739",
+            "extra": "mean: 313.45246425853077 usec\nrounds: 2630"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_red_team_200_locals",
+            "value": 2523.052869009119,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000046119909444469965",
+            "extra": "mean: 396.345242021318 usec\nrounds: 2256"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_usda_export_100",
+            "value": 812.3038059076777,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0002306276994899772",
+            "extra": "mean: 1.2310664959677105 msec\nrounds: 992"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_usda_resolve_via_text_100",
+            "value": 431.0341994415603,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003190182451767453",
+            "extra": "mean: 2.3200015249267483 msec\nrounds: 341"
           }
         ]
       }
