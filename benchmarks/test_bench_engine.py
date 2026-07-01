@@ -207,3 +207,5 @@ def test_usda_resolve_via_text_100(benchmark, tmp_path):
     export_stage_to_usda(stage, tmp_path)
     result = benchmark(resolve_via_text, tmp_path)
     assert len(result) == 100
+
+# throwaway line to trigger the benchmark PR-comparison path (do not merge)
