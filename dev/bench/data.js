@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782911289619,
+  "lastUpdate": 1782911698673,
   "repoUrl": "https://github.com/JosephOIbrahim/Cognitive-Bridge",
   "entries": {
     "Cognitive Bridge engine benchmarks": [
@@ -92,6 +92,98 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0000687836757578625",
             "extra": "mean: 2.3734070865674455 msec\nrounds: 335"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "joseph@josephibrahim.com",
+            "name": "Joseph Ibrahim"
+          },
+          "committer": {
+            "email": "joseph@josephibrahim.com",
+            "name": "Joseph Ibrahim"
+          },
+          "distinct": true,
+          "id": "a518d5f84f4535a32cce88c34c4f3ea3cb4d23c4",
+          "message": "[bench] gate PRs on >2x regression + comment perf impact; main tracks only\n\nTwo-mode benchmark workflow:\n- push to main: update the published gh-pages baseline/history, alert-comment\n  on regression, never fail (runner noise can't red main).\n- pull_request: compare against the main baseline, comment the perf impact on\n  the PR, and fail the check on a >2x regression (the perf gate). PR runs do\n  not push to gh-pages, so they never pollute the baseline.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-01T09:14:23-04:00",
+          "tree_id": "9bd60bc86c5c3542bba854891c17b58c04424bee",
+          "url": "https://github.com/JosephOIbrahim/Cognitive-Bridge/commit/a518d5f84f4535a32cce88c34c4f3ea3cb4d23c4"
+        },
+        "date": 1782911698187,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_50",
+            "value": 10380.68574079457,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000003137886420392748",
+            "extra": "mean: 96.33274958610363 usec\nrounds: 3622"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_100",
+            "value": 5229.183074401039,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000004490433458863878",
+            "extra": "mean: 191.23445971807786 usec\nrounds: 3550"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_500",
+            "value": 740.2223305355278,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001839310483842426",
+            "extra": "mean: 1.3509454642857521 msec\nrounds: 504"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_shadow_stacks_100x3",
+            "value": 2642.486325139186,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000068529453424810796",
+            "extra": "mean: 378.43147587427063 usec\nrounds: 2259"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_structural_detection_500",
+            "value": 16668.024885212504,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000027403721980036153",
+            "extra": "mean: 59.99511081167016 usec\nrounds: 10387"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_cascade_50_dependents",
+            "value": 1338.1124644486322,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016084091857573215",
+            "extra": "mean: 747.321339998166 usec\nrounds: 50"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_trust_500_conflicts_50_paths",
+            "value": 3550.93703115296,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000006455548765036648",
+            "extra": "mean: 281.6158076662115 usec\nrounds: 2948"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_red_team_200_locals",
+            "value": 2892.4613758259757,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013668185404000507",
+            "extra": "mean: 345.72631059401385 usec\nrounds: 2492"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_usda_export_100",
+            "value": 1337.8123435967434,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001773748924061545",
+            "extra": "mean: 747.4889918502873 usec\nrounds: 1227"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_usda_resolve_via_text_100",
+            "value": 471.9189465868909,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001404547033020737",
+            "extra": "mean: 2.1190079509042925 msec\nrounds: 387"
           }
         ]
       }
