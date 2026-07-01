@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782912232787,
+  "lastUpdate": 1782913518667,
   "repoUrl": "https://github.com/JosephOIbrahim/Cognitive-Bridge",
   "entries": {
     "Cognitive Bridge engine benchmarks": [
@@ -276,6 +276,98 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.00003190182451767453",
             "extra": "mean: 2.3200015249267483 msec\nrounds: 341"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "joseph@josephibrahim.com",
+            "name": "Joseph Ibrahim"
+          },
+          "committer": {
+            "email": "joseph@josephibrahim.com",
+            "name": "Joseph Ibrahim"
+          },
+          "distinct": true,
+          "id": "c6a84e8c07274bb944c5a74b59c298533d2723f5",
+          "message": "[docs] add USDA composition mechanical-equivalence proof + evidence tests\n\nDocument and machine-verify the Novel Claim (claims 12-13): SQL resolve() and\nUSDA text resolve_via_text() produce identical winners at every topic path,\nwith VariantSets exported as real USD variantSet blocks. Backed by 28 portable\ntests over LIVRPS cascade, variant composition, dependency-DAG encoding, and\ncross-scenario consistency.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-07-01T09:44:44-04:00",
+          "tree_id": "9789c0f63f3c342120154d8c0652a0b2c20fb562",
+          "url": "https://github.com/JosephOIbrahim/Cognitive-Bridge/commit/c6a84e8c07274bb944c5a74b59c298533d2723f5"
+        },
+        "date": 1782913518378,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_50",
+            "value": 9793.522607275578,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000006962339472231075",
+            "extra": "mean: 102.10830567308878 usec\nrounds: 3543"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_100",
+            "value": 4742.767408095204,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004224303830766247",
+            "extra": "mean: 210.84736272184625 usec\nrounds: 3380"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_500",
+            "value": 761.3425346977249,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0010184672593551046",
+            "extra": "mean: 1.3134692394363978 msec\nrounds: 497"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_resolve_shadow_stacks_100x3",
+            "value": 2482.490120728776,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010593819419184739",
+            "extra": "mean: 402.8213412210613 usec\nrounds: 2113"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_structural_detection_500",
+            "value": 13717.012029187246,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008312858075428933",
+            "extra": "mean: 72.90217416680733 usec\nrounds: 10111"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_cascade_50_dependents",
+            "value": 1176.5273660619923,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000023728153215385302",
+            "extra": "mean: 849.958979999883 usec\nrounds: 50"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_trust_500_conflicts_50_paths",
+            "value": 3167.886951711964,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000028065113069900197",
+            "extra": "mean: 315.6678300845263 usec\nrounds: 2719"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_red_team_200_locals",
+            "value": 2585.3021192575497,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015773477874005073",
+            "extra": "mean: 386.80198826711256 usec\nrounds: 2216"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_usda_export_100",
+            "value": 888.5142552619138,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00010564922644008022",
+            "extra": "mean: 1.1254743456031808 msec\nrounds: 978"
+          },
+          {
+            "name": "benchmarks/test_bench_engine.py::test_usda_resolve_via_text_100",
+            "value": 426.7192374182403,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00007665310790172366",
+            "extra": "mean: 2.343461255813667 msec\nrounds: 344"
           }
         ]
       }
